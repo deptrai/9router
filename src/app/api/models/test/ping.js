@@ -4,6 +4,39 @@ import { getConsistentMachineId } from "@/shared/utils/machineId";
 
 const CLI_TOKEN_SALT = "9r-cli-auth";
 
+function createSilentWavFile() {
+  const sampleRate = 16000;
+  const channels = 1;
+  const bitsPerSample = 16;
+  const durationMs = 250;
+  const sampleCount = Math.max(1, Math.floor((sampleRate * durationMs) / 1000));
+  const dataSize = sampleCount * channels * (bitsPerSample / 8);
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+
+  const writeAscii = (offset, value) => {
+    for (let i = 0; i < value.length; i += 1) {
+      view.setUint8(offset + i, value.charCodeAt(i));
+    }
+  };
+
+  writeAscii(0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeAscii(8, "WAVE");
+  writeAscii(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * channels * (bitsPerSample / 8), true);
+  view.setUint16(32, channels * (bitsPerSample / 8), true);
+  view.setUint16(34, bitsPerSample, true);
+  writeAscii(36, "data");
+  view.setUint32(40, dataSize, true);
+
+  return new File([buffer], "test.wav", { type: "audio/wav" });
+}
+
 async function getInternalHeaders() {
   let apiKey = null;
   try {
@@ -70,7 +103,7 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
 
   if (kind === "stt") {
     const form = new FormData();
-    const sampleAudio = new File([new Uint8Array([82, 73, 70, 70, 36, 0, 0, 0, 87, 65, 86, 69, 102, 109, 116, 32, 16, 0, 0, 0, 1, 0, 1, 0, 64, 31, 0, 0, 128, 62, 0, 0, 2, 0, 16, 0, 100, 97, 116, 97, 0, 0, 0, 0])], "test.wav", { type: "audio/wav" });
+    const sampleAudio = createSilentWavFile();
     form.append("file", sampleAudio);
     form.append("model", model);
 
