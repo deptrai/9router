@@ -9,10 +9,12 @@
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
-
+_bmad/
+_bmad-output/
 # testing
 /coverage
-
+/.agents
+/.claude
 # next.js
 /.next/
 /.next-cli-build/
@@ -51,6 +53,8 @@ source/*
 .cursor/*
 docs/*
 !docs/ARCHITECTURE.md
+!docs/SAAS_ARCHITECTURE.md
+!docs/SAAS_ROADMAP.md
 test/*
 open-sse/test/*
 RM.vn.md

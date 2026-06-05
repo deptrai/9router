@@ -1,46 +1,46 @@
-# 9Router Architecture
+# Kiến trúc 9Router
 
-_Last updated: 2026-02-06_
+_Cập nhật lần cuối: 2026-02-06_
 
-## Executive Summary
+## Tóm tắt điều hành (Executive Summary)
 
-9Router is a local AI routing gateway and dashboard built on Next.js.
-It provides a single OpenAI-compatible endpoint (`/v1/*`) and routes traffic across multiple upstream providers with translation, fallback, token refresh, and usage tracking.
+9Router là một cổng định tuyến AI cục bộ (local AI routing gateway) và dashboard được xây dựng trên Next.js.
+Hệ thống cung cấp một endpoint tương thích OpenAI (OpenAI-compatible endpoint) duy nhất (`/v1/*`) và định tuyến traffic qua nhiều upstream provider với khả năng dịch định dạng (translation), fallback, làm mới token (token refresh), và theo dõi usage.
 
-Core capabilities:
+Năng lực cốt lõi:
 
-- OpenAI-compatible API surface for CLI/tools
-- Request/response translation across provider formats
-- Model combo fallback (multi-model sequence)
-- Account-level fallback (multi-account per provider)
-- OAuth + API-key provider connection management
-- Local persistence for providers, keys, aliases, combos, settings, pricing
-- Usage/cost tracking and request logging
-- Optional cloud sync for multi-device/state sync
+- Bề mặt API tương thích OpenAI cho CLI/tools
+- Dịch request/response giữa các định dạng provider
+- Fallback theo combo model (chuỗi nhiều model)
+- Fallback cấp account (nhiều account cho mỗi provider)
+- Quản lý kết nối provider bằng OAuth và API key
+- Lưu trữ cục bộ cho providers, keys, aliases, combos, settings, pricing
+- Theo dõi usage/cost và ghi log request
+- Cloud sync tùy chọn cho đồng bộ đa thiết bị/trạng thái
 
-Primary runtime model:
+Mô hình runtime chính:
 
-- Next.js app routes under `src/app/api/*` implement both dashboard APIs and compatibility APIs
-- A shared SSE/routing core in `src/sse/*` + `open-sse/*` handles provider execution, translation, streaming, fallback, and usage
+- Next.js app routes dưới `src/app/api/*` triển khai cả dashboard APIs và compatibility APIs
+- SSE/routing core dùng chung trong `src/sse/*` + `open-sse/*` xử lý provider execution, translation, streaming, fallback, và usage
 
-## Scope and Boundaries
+## Phạm vi và ranh giới (Scope and Boundaries)
 
-### In Scope
+### Trong phạm vi (In Scope)
 
 - Local gateway runtime
 - Dashboard management APIs
-- Provider authentication and token refresh
-- Request translation and SSE streaming
+- Provider authentication và token refresh
+- Request translation và SSE streaming
 - Local state + usage persistence
-- Optional cloud sync orchestration
+- Điều phối cloud sync tùy chọn
 
-### Out of Scope
+### Ngoài phạm vi (Out of Scope)
 
-- Cloud service implementation behind `NEXT_PUBLIC_CLOUD_URL`
-- Provider SLA/control plane outside local process
-- External CLI binaries themselves (Claude CLI, Codex CLI, etc.)
+- Triển khai cloud service phía sau `NEXT_PUBLIC_CLOUD_URL`
+- Provider SLA/control plane bên ngoài local process
+- Bản thân các external CLI binaries như Claude CLI, Codex CLI, v.v.
 
-## High-Level System Context
+## Bối cảnh hệ thống cấp cao (High-Level System Context)
 
 ```mermaid
 flowchart LR
@@ -88,17 +88,17 @@ flowchart LR
     DASH --> CLOUD
 ```
 
-## Core Runtime Components
+## Thành phần runtime cốt lõi (Core Runtime Components)
 
-## 1) API and Routing Layer (Next.js App Routes)
+## 1) Lớp API và định tuyến (API and Routing Layer - Next.js App Routes)
 
-Main directories:
+Thư mục chính:
 
-- `src/app/api/v1/*` and `src/app/api/v1beta/*` for compatibility APIs
-- `src/app/api/*` for management/configuration APIs
-- Next rewrites in `next.config.mjs` map `/v1/*` to `/api/v1/*`
+- `src/app/api/v1/*` và `src/app/api/v1beta/*` cho compatibility APIs
+- `src/app/api/*` cho management/configuration APIs
+- Next rewrites trong `next.config.mjs` map `/v1/*` sang `/api/v1/*`
 
-Important compatibility routes:
+Các compatibility routes quan trọng:
 
 - `src/app/api/v1/chat/completions/route.js`
 - `src/app/api/v1/messages/route.js`
@@ -108,7 +108,7 @@ Important compatibility routes:
 - `src/app/api/v1beta/models/route.js`
 - `src/app/api/v1beta/models/[...path]/route.js`
 
-Management domains:
+Các domain quản lý:
 
 - Auth/settings: `src/app/api/auth/*`, `src/app/api/settings/*`
 - Providers/connections: `src/app/api/providers*`
@@ -121,10 +121,10 @@ Management domains:
 
 ## 2) SSE + Translation Core
 
-Main flow modules:
+Các module luồng chính:
 
 - Entry: `src/sse/handlers/chat.js`
-- Core orchestration: `open-sse/handlers/chatCore.js`
+- Điều phối core: `open-sse/handlers/chatCore.js`
 - Provider execution adapters: `open-sse/executors/*`
 - Format detection/provider config: `open-sse/services/provider.js`
 - Model parse/resolve: `src/sse/services/model.js`, `open-sse/services/model.js`
@@ -133,26 +133,26 @@ Main flow modules:
 - Stream transformations: `open-sse/utils/stream.js`, `open-sse/utils/streamHandler.js`
 - Usage extraction/normalization: `open-sse/utils/usageTracking.js`
 
-## 3) Persistence Layer
+## 3) Lớp lưu trữ (Persistence Layer)
 
 Primary state DB:
 
 - `src/lib/localDb.js`
-- file: `${DATA_DIR}/db.json` (or `~/.9router/db.json` when `DATA_DIR` is unset)
+- file: `${DATA_DIR}/db.json` hoặc `~/.9router/db.json` khi chưa set `DATA_DIR`
 - entities: providerConnections, providerNodes, modelAliases, combos, apiKeys, settings, pricing
 
 Usage DB:
 
 - `src/lib/usageDb.js`
 - files: `~/.9router/usage.json`, `~/.9router/log.txt`
-- note: currently independent from `DATA_DIR`
+- ghi chú: hiện độc lập với `DATA_DIR`
 
 ## 4) Auth + Security Surfaces
 
 - Dashboard cookie auth: `src/proxy.js`, `src/app/api/auth/login/route.js`
 - API key generation/verification: `src/shared/utils/apiKey.js`
-- Provider secrets persisted in `providerConnections` entries
-- Optional proxy support for upstream calls via env proxy variables (`open-sse/utils/proxyFetch.js`)
+- Provider secrets được lưu trong các entry `providerConnections`
+- Hỗ trợ proxy tùy chọn cho upstream calls qua env proxy variables (`open-sse/utils/proxyFetch.js`)
 
 ## 5) Cloud Sync
 
@@ -160,7 +160,7 @@ Usage DB:
 - Periodic task: `src/shared/services/cloudSyncScheduler.js`
 - Control route: `src/app/api/sync/cloud/route.js`
 
-## Request Lifecycle (`/v1/chat/completions`)
+## Vòng đời request (`/v1/chat/completions`)
 
 ```mermaid
 sequenceDiagram
@@ -207,7 +207,7 @@ sequenceDiagram
     Stream->>Usage: extract usage + persist history/log
 ```
 
-## Combo + Account Fallback Flow
+## Luồng Combo + Account Fallback
 
 ```mermaid
 flowchart TD
@@ -237,9 +237,9 @@ flowchart TD
     Q -- No --> R[Return all unavailable]
 ```
 
-Fallback decisions are driven by `open-sse/services/accountFallback.js` using status codes and error-message heuristics.
+Các quyết định fallback được điều khiển bởi `open-sse/services/accountFallback.js`, dựa trên status codes và error-message heuristics.
 
-## OAuth Onboarding and Token Refresh Lifecycle
+## Vòng đời OAuth Onboarding và Token Refresh
 
 ```mermaid
 sequenceDiagram
@@ -269,9 +269,9 @@ sequenceDiagram
     Test-->>UI: validation result
 ```
 
-Refresh during live traffic is executed inside `open-sse/handlers/chatCore.js` via executor `refreshCredentials()`.
+Refresh trong live traffic được thực thi bên trong `open-sse/handlers/chatCore.js` qua executor `refreshCredentials()`.
 
-## Cloud Sync Lifecycle (Enable / Sync / Disable)
+## Vòng đời Cloud Sync (Enable / Sync / Disable)
 
 ```mermaid
 sequenceDiagram
@@ -303,9 +303,9 @@ sequenceDiagram
     Sync-->>UI: disabled
 ```
 
-Periodic sync is triggered by `CloudSyncScheduler` when cloud is enabled.
+Periodic sync được kích hoạt bởi `CloudSyncScheduler` khi cloud được bật.
 
-## Data Model and Storage Map
+## Data Model và Storage Map
 
 ```mermaid
 erDiagram
@@ -375,12 +375,12 @@ erDiagram
     }
 ```
 
-Physical storage files:
+Các file lưu trữ vật lý:
 
-- main state: `${DATA_DIR}/db.json` (or `~/.9router/db.json`)
+- main state: `${DATA_DIR}/db.json` hoặc `~/.9router/db.json`
 - usage stats: `~/.9router/usage.json`
 - request log lines: `~/.9router/log.txt`
-- optional translator/request debug sessions: `<repo>/logs/...`
+- translator/request debug sessions tùy chọn: `<repo>/logs/...`
 
 ## Deployment Topology
 
@@ -413,31 +413,31 @@ flowchart LR
     Next --> SyncCloud
 ```
 
-## Module Mapping (Decision-Critical)
+## Module Mapping quan trọng cho quyết định (Decision-Critical)
 
-### Route and API Modules
+### Route và API Modules
 
 - `src/app/api/v1/*`, `src/app/api/v1beta/*`: compatibility APIs
 - `src/app/api/providers*`: provider CRUD, validation, testing
-- `src/app/api/provider-nodes*`: custom compatible node management
+- `src/app/api/provider-nodes*`: quản lý custom compatible node
 - `src/app/api/oauth/*`: OAuth/device-code flows
 - `src/app/api/keys*`: local API key lifecycle
 - `src/app/api/models/alias`: alias management
 - `src/app/api/combos*`: fallback combo management
-- `src/app/api/pricing`: pricing overrides for cost calculation
-- `src/app/api/usage/*`: usage and logs APIs
-- `src/app/api/sync/*` + `src/app/api/cloud/*`: cloud sync and cloud-facing helpers
+- `src/app/api/pricing`: pricing overrides cho cost calculation
+- `src/app/api/usage/*`: usage và logs APIs
+- `src/app/api/sync/*` + `src/app/api/cloud/*`: cloud sync và cloud-facing helpers
 - `src/app/api/cli-tools/*`: local CLI config writers/checkers
 
-### Routing and Execution Core
+### Routing và Execution Core
 
 - `src/sse/handlers/chat.js`: request parse, combo handling, account selection loop
 - `open-sse/handlers/chatCore.js`: translation, executor dispatch, retry/refresh handling, stream setup
-- `open-sse/executors/*`: provider-specific network and format behavior
+- `open-sse/executors/*`: network behavior và format behavior riêng theo provider
 
-### Translation Registry and Format Converters
+### Translation Registry và Format Converters
 
-- `open-sse/translator/index.js`: translator registry and orchestration
+- `open-sse/translator/index.js`: translator registry và orchestration
 - Request translators: `open-sse/translator/request/*`
 - Response translators: `open-sse/translator/response/*`
 - Format constants: `open-sse/translator/formats.js`
@@ -445,9 +445,9 @@ flowchart LR
 ### Persistence
 
 - `src/lib/localDb.js`: persistent config/state
-- `src/lib/usageDb.js`: usage history and rolling request logs
+- `src/lib/usageDb.js`: usage history và rolling request logs
 
-## Provider Executor Coverage
+## Phạm vi Provider Executor Coverage
 
 Specialized executors:
 
@@ -460,18 +460,18 @@ Specialized executors:
 
 Default executor path:
 
-- all other providers (including compatible node providers) use `open-sse/executors/default.js`
+- Tất cả provider khác, bao gồm compatible node providers, dùng `open-sse/executors/default.js`
 
-## Format Translation Coverage
+## Phạm vi Format Translation Coverage
 
-Detected source formats include:
+Detected source formats gồm:
 
 - `openai`
 - `openai-responses`
 - `claude`
 - `gemini`
 
-Target formats include:
+Target formats gồm:
 
 - OpenAI chat/Responses
 - Claude
@@ -479,79 +479,79 @@ Target formats include:
 - Kiro
 - Cursor
 
-Translations are selected dynamically based on source payload shape and provider target format.
+Translation được chọn động dựa trên source payload shape và provider target format.
 
-## Failure Modes and Resilience
+## Failure Modes và Resilience
 
 ## 1) Account/Provider Availability
 
-- provider account cooldown on transient/rate/auth errors
-- account fallback before failing request
-- combo model fallback when current model/provider path is exhausted
+- provider account cooldown trên transient/rate/auth errors
+- account fallback trước khi request thất bại
+- combo model fallback khi current model/provider path đã cạn lựa chọn
 
 ## 2) Token Expiry
 
-- pre-check and refresh with retry for refreshable providers
-- 401/403 retry after refresh attempt in core path
+- pre-check và refresh kèm retry cho refreshable providers
+- retry sau refresh attempt cho lỗi 401/403 trong core path
 
 ## 3) Stream Safety
 
 - disconnect-aware stream controller
-- translation stream with end-of-stream flush and `[DONE]` handling
-- usage estimation fallback when provider usage metadata is missing
+- translation stream có end-of-stream flush và xử lý `[DONE]`
+- fallback ước lượng usage khi provider usage metadata bị thiếu
 
 ## 4) Cloud Sync Degradation
 
-- sync errors are surfaced but local runtime continues
-- scheduler has retry-capable logic, but periodic execution currently calls single-attempt sync by default
+- sync errors được surface nhưng local runtime vẫn tiếp tục
+- scheduler có retry-capable logic, nhưng periodic execution hiện mặc định gọi single-attempt sync
 
 ## 5) Data Integrity
 
-- DB shape migration/repair for missing keys
-- corrupt JSON reset safeguards for localDb and usageDb
+- DB shape migration/repair cho missing keys
+- corrupt JSON reset safeguards cho localDb và usageDb
 
-## Observability and Operational Signals
+## Observability và Operational Signals
 
-Runtime visibility sources:
+Nguồn runtime visibility:
 
-- console logs from `src/sse/utils/logger.js`
-- per-request usage aggregates in `usage.json`
-- textual request status log in `log.txt`
-- optional deep request/translation logs under `logs/` when `ENABLE_REQUEST_LOGS=true`
-- dashboard usage endpoints (`/api/usage/*`) for UI consumption
+- console logs từ `src/sse/utils/logger.js`
+- per-request usage aggregates trong `usage.json`
+- textual request status log trong `log.txt`
+- optional deep request/translation logs dưới `logs/` khi `ENABLE_REQUEST_LOGS=true`
+- dashboard usage endpoints (`/api/usage/*`) cho UI consumption
 
 ## Security-Sensitive Boundaries
 
-- JWT secret (`JWT_SECRET`) secures dashboard session cookie verification/signing
-- Initial password fallback (`INITIAL_PASSWORD`, default `123456`) must be overridden in real deployments
-- API key HMAC secret (`API_KEY_SECRET`) secures generated local API key format
-- Provider secrets (API keys/tokens) are persisted in local DB and should be protected at filesystem level
-- Cloud sync endpoints rely on API key auth + machine id semantics
+- JWT secret (`JWT_SECRET`) bảo vệ dashboard session cookie verification/signing
+- Initial password fallback (`INITIAL_PASSWORD`, mặc định `123456`) phải được override trong real deployments
+- API key HMAC secret (`API_KEY_SECRET`) bảo vệ generated local API key format
+- Provider secrets (API keys/tokens) được persist trong local DB và cần được bảo vệ ở filesystem level
+- Cloud sync endpoints dựa vào API key auth + machine id semantics
 
-## Environment and Runtime Matrix
+## Environment và Runtime Matrix
 
-Environment variables actively used by code:
+Environment variables đang được code sử dụng:
 
 - App/auth: `JWT_SECRET`, `INITIAL_PASSWORD`
 - Storage: `DATA_DIR`
 - Security hashing: `API_KEY_SECRET`, `MACHINE_ID_SALT`
 - Logging: `ENABLE_REQUEST_LOGS`
 - Sync/cloud URLing: `NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_CLOUD_URL`
-- Outbound proxy: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and lowercase variants
-- Platform/runtime helpers (not app-specific config): `APPDATA`, `NODE_ENV`, `PORT`, `HOSTNAME`
+- Outbound proxy: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` và các biến lowercase tương ứng
+- Platform/runtime helpers, không phải app-specific config: `APPDATA`, `NODE_ENV`, `PORT`, `HOSTNAME`
 
-## Known Architectural Notes
+## Ghi chú kiến trúc đã biết (Known Architectural Notes)
 
-1. `usageDb` currently stores under `~/.9router` and does not follow `DATA_DIR`.
-2. `/api/v1/route.js` returns a static model list and is not the main models source used by `/v1/models`.
-3. Request logger writes full headers/body when enabled; treat log directory as sensitive.
-4. Cloud behavior depends on correct `NEXT_PUBLIC_BASE_URL` and cloud endpoint reachability.
+1. `usageDb` hiện lưu dưới `~/.9router` và không đi theo `DATA_DIR`.
+2. `/api/v1/route.js` trả về static model list và không phải nguồn models chính được `/v1/models` sử dụng.
+3. Request logger ghi full headers/body khi bật; cần xem log directory là dữ liệu nhạy cảm.
+4. Cloud behavior phụ thuộc vào `NEXT_PUBLIC_BASE_URL` chính xác và cloud endpoint có thể truy cập được.
 
-## Operational Verification Checklist
+## Checklist xác minh vận hành (Operational Verification Checklist)
 
 - Build from source: `cd /root/dev/9router && npm run build`
 - Build Docker image: `cd /root/dev/9router && docker build -t 9router .`
-- Start service and verify:
+- Start service và verify:
 - `GET /api/settings`
 - `GET /api/v1/models`
-- CLI target base URL should be `http://<host>:20128/v1` when `PORT=20128`
+- CLI target base URL nên là `http://<host>:20128/v1` khi `PORT=20128`
