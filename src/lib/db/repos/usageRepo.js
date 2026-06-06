@@ -278,6 +278,19 @@ export async function saveRequestUsage(entry) {
       const cur = db.get(`SELECT value FROM _meta WHERE key = 'totalRequestsLifetime'`);
       const next = (cur ? parseInt(cur.value, 10) : 0) + 1;
       db.run(`INSERT INTO _meta(key, value) VALUES('totalRequestsLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(next)]);
+
+      // Credit deduction (AC1 — Story 2.4): atomic, inside same transaction
+      // Only deduct if: apiKey is a string, cost > 0, and key belongs to a user (not legacy)
+      if (entry.apiKey && typeof entry.apiKey === "string" && (entry.cost || 0) > 0) {
+        const keyRow = db.get(`SELECT userId FROM apiKeys WHERE key = ?`, [entry.apiKey]);
+        if (keyRow?.userId) {
+          db.run(
+            `UPDATE users SET creditsBalance = creditsBalance - ?, updatedAt = ? WHERE id = ?`,
+            [entry.cost, new Date().toISOString(), keyRow.userId]
+          );
+        }
+        // legacy key (userId=null) or key not found → skip (fail-open by design)
+      }
     });
 
     pushToRing(entry);

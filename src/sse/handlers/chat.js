@@ -20,6 +20,7 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { checkKeyQuota } from "@/lib/quota/keyQuota.js";
+import { checkCredits } from "@/lib/billing/checkCredits.js";
 
 /**
  * Handle chat completion request
@@ -166,6 +167,20 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       `[${provider}/${model}] quota exceeded`,
       quota.retryAfter,
       quota.retryAfterHuman
+    );
+  }
+
+  // --- Credit admission check (Story 2.4, AC3) ---
+  // After quota check, before fetching provider credentials.
+  // Fail-open: if checkCredits throws, request proceeds.
+  const creditResult = await checkCredits(apiKey);
+  if (!creditResult.allowed) {
+    log.warn("BILLING", `[${provider}/${model}] key="${log.maskKey(apiKey || "")}" credit check failed: ${creditResult.reason}`);
+    return unavailableResponse(
+      HTTP_STATUS.RATE_LIMITED,
+      creditResult.reason || "insufficient credits",
+      60,
+      "60s"
     );
   }
 
