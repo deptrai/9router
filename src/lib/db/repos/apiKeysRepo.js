@@ -31,6 +31,17 @@ export async function getApiKeyById(id) {
 export async function createApiKey(name, machineId, userId = null, description = null) {
   if (!machineId) throw new Error("machineId is required");
   const db = await getAdapter();
+
+  // 10-key limit for users (count active keys only)
+  if (userId) {
+    const { c } = db.get(`SELECT COUNT(*) as c FROM apiKeys WHERE userId = ? AND isActive = 1`, [userId]);
+    if (c >= 10) {
+      const err = new Error("Key limit reached: max 10 keys per user");
+      err.code = "KEY_LIMIT";
+      throw err;
+    }
+  }
+
   const { generateApiKeyWithMachine } = await import("@/shared/utils/apiKey");
   const result = generateApiKeyWithMachine(machineId);
   const apiKey = {
@@ -84,4 +95,15 @@ export async function validateApiKey(key) {
   const row = db.get(`SELECT isActive FROM apiKeys WHERE key = ?`, [key]);
   if (!row) return false;
   return row.isActive === 1 || row.isActive === true;
+}
+
+export async function getApiKeysByUser(userId) {
+  const db = await getAdapter();
+  const rows = db.all(`SELECT * FROM apiKeys WHERE userId = ? ORDER BY createdAt ASC`, [userId]);
+  return rows.map(rowToKey);
+}
+
+export async function updateLastUsed(keyString) {
+  const db = await getAdapter();
+  db.run(`UPDATE apiKeys SET lastUsedAt = ? WHERE key = ?`, [new Date().toISOString(), keyString]);
 }

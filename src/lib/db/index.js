@@ -30,6 +30,7 @@ export {
 // API keys
 export {
   getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey, validateApiKey,
+  getApiKeysByUser, updateLastUsed,
 } from "./repos/apiKeysRepo.js";
 
 // Users

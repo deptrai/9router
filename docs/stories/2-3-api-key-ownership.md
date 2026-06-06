@@ -3,7 +3,7 @@ title: "Story 2.3 — Sở hữu API key: ownership + routes role-aware + key ta
 story_id: "2.3"
 story_key: "2-3-api-key-ownership"
 epic: "B — API Key Ownership"
-status: ready-for-dev
+status: review
 baseline_commit: dc144b2  # D1: bumped from 7a4486d (story 2.1) — 2.3 depends on story 2.2 @ dc144b2 (role/userId in JWT). Dev 2.3 only AFTER 2.2 approved.
 depends_on: 2-2-user-account (status: review @ dc144b2)
 created: 2026-06-06
@@ -19,7 +19,7 @@ context:
 
 # Story 2.3 — Sở hữu API key (ownership + routes + UI)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Vertical slice gộp từ cũ 2.5 (apiKeysRepo ownership) + 2.6 (routes role-aware) + 2.17 (key table UI). Nhịp dev: DB → BE → FE. Phụ thuộc story 2.2 (role trong JWT + userId). -->
 
@@ -76,37 +76,37 @@ Status: ready-for-dev
 ## Tasks / Subtasks
 
 ### Lớp DB
-- [ ] **Task 1 — apiKeysRepo ownership** (AC1, AC2)
-  - [ ] `createApiKey(name, machineId, userId=null, description=null)` — thêm: nếu `userId` → `const n = db.get("SELECT COUNT(*) c FROM apiKeys WHERE userId = ?", [userId]).c; if (n >= 10) throw new Error("Key limit reached: max 10 keys per user")` TRƯỚC khi INSERT.
-  - [ ] `getApiKeysByUser(userId)` (mới): `SELECT * FROM apiKeys WHERE userId = ? ORDER BY createdAt ASC` → `.map(rowToKey)`.
-  - [ ] `updateLastUsed(keyString)` (mới): `db.run("UPDATE apiKeys SET lastUsedAt = ? WHERE key = ?", [new Date().toISOString(), keyString])`.
-  - [ ] Export `getApiKeysByUser`, `updateLastUsed` qua `src/lib/db/index.js` (block "API keys").
-  - [ ] `validateApiKey(key)`: sau khi xác nhận hợp lệ, gọi `updateLastUsed(key)` **không await** (fire-and-forget, bọc try/catch nuốt lỗi). Cân nhắc throttle (chỉ update nếu lastUsedAt cũ > 60s) để tránh write mỗi request — optional, ghi chú trong code.
-  - [ ] Unit test `tests/unit/apiKeysRepo.test.js`: 11th key throw; getApiKeysByUser filter đúng; updateLastUsed cập nhật; createApiKey không userId → không đếm limit.
+- [x] **Task 1 — apiKeysRepo ownership** (AC1, AC2)
+  - [x] `createApiKey(name, machineId, userId=null, description=null)` — thêm: nếu `userId` → `const n = db.get("SELECT COUNT(*) c FROM apiKeys WHERE userId = ?", [userId]).c; if (n >= 10) throw new Error("Key limit reached: max 10 keys per user")` TRƯỚC khi INSERT.
+  - [x] `getApiKeysByUser(userId)` (mới): `SELECT * FROM apiKeys WHERE userId = ? ORDER BY createdAt ASC` → `.map(rowToKey)`.
+  - [x] `updateLastUsed(keyString)` (mới): `db.run("UPDATE apiKeys SET lastUsedAt = ? WHERE key = ?", [new Date().toISOString(), keyString])`.
+  - [x] Export `getApiKeysByUser`, `updateLastUsed` qua `src/lib/db/index.js` (block "API keys").
+  - [x] `validateApiKey(key)`: sau khi xác nhận hợp lệ, gọi `updateLastUsed(key)` **không await** (fire-and-forget, bọc try/catch nuốt lỗi). Cân nhắc throttle (chỉ update nếu lastUsedAt cũ > 60s) để tránh write mỗi request — optional, ghi chú trong code.
+  - [x] Unit test `tests/unit/apiKeysRepo.test.js`: 11th key throw; getApiKeysByUser filter đúng; updateLastUsed cập nhật; createApiKey không userId → không đếm limit.
 
 ### Lớp BE — routes
-- [ ] **Task 2 — `/api/keys` GET + POST role-aware** (AC3, AC4)
-  - [ ] File `src/app/api/keys/route.js`. Thêm helper lấy session: `getDashboardAuthSession(request.cookies.get("auth_token")?.value)` (route handler dùng `cookies()` từ `next/headers` hoặc `request.cookies`). Note: route hiện là `export async function GET()` không nhận request → đổi thành `GET(request)`.
-  - [ ] GET: `role==="user"` → `getApiKeysByUser(session.userId)`; else `getApiKeys()`. `role = session?.role ?? "admin"`.
-  - [ ] POST: `userId = role==="user" ? session.userId : null`; `description = body.description ?? null`; `createApiKey(name, machineId, userId, description)`. Bắt lỗi limit → 400 "Đã đạt giới hạn 10 keys". Trả thêm `description` trong response.
-  - [ ] Unit test `tests/unit/keysRoutes.test.js`: user GET chỉ key mình; admin GET all; POST user gắn userId; key 11 → 400.
+- [x] **Task 2 — `/api/keys` GET + POST role-aware** (AC3, AC4)
+  - [x] File `src/app/api/keys/route.js`. Thêm helper lấy session: `getDashboardAuthSession(request.cookies.get("auth_token")?.value)` (route handler dùng `cookies()` từ `next/headers` hoặc `request.cookies`). Note: route hiện là `export async function GET()` không nhận request → đổi thành `GET(request)`.
+  - [x] GET: `role==="user"` → `getApiKeysByUser(session.userId)`; else `getApiKeys()`. `role = session?.role ?? "admin"`.
+  - [x] POST: `userId = role==="user" ? session.userId : null`; `description = body.description ?? null`; `createApiKey(name, machineId, userId, description)`. Bắt lỗi limit → 400 "Đã đạt giới hạn 10 keys". Trả thêm `description` trong response.
+  - [x] Unit test `tests/unit/keysRoutes.test.js`: user GET chỉ key mình; admin GET all; POST user gắn userId; key 11 → 400.
 
-- [ ] **Task 3 — `/api/keys/[id]` PUT + DELETE ownership guard** (AC5)
-  - [ ] File `src/app/api/keys/[id]/route.js` (đã có GET/PUT/DELETE). Thêm session + ownership check ở PUT/DELETE: `key = getApiKeyById(id)`; `!key → 404`; `role==="user" && key.userId !== session.userId → 403`.
-  - [ ] PUT: cho phép cập nhật `description` (thêm vào `updateData` nếu body có).
-  - [ ] Test trong `keysRoutes.test.js`: user DELETE key người khác → 403; admin DELETE bất kỳ → OK; PUT description.
+- [x] **Task 3 — `/api/keys/[id]` PUT + DELETE ownership guard** (AC5)
+  - [x] File `src/app/api/keys/[id]/route.js` (đã có GET/PUT/DELETE). Thêm session + ownership check ở PUT/DELETE: `key = getApiKeyById(id)`; `!key → 404`; `role==="user" && key.userId !== session.userId → 403`.
+  - [x] PUT: cho phép cập nhật `description` (thêm vào `updateData` nếu body có).
+  - [x] Test trong `keysRoutes.test.js`: user DELETE key người khác → 403; admin DELETE bất kỳ → OK; PUT description.
 
 ### Lớp FE — UI
-- [ ] **Task 4 — Key table + modals** (AC6)
-  - [ ] File `src/app/(dashboard)/dashboard/endpoint/EndpointPageClient.js`.
-  - [ ] Bảng key thêm cột: **Description** (truncate + Tooltip full), **Last Used** (relative time hoặc "—"), **Credit Usage** ($ từ `/api/usage/stats` `byApiKey`, group theo key string client-side — Badge xám).
-  - [ ] Modal Create Key: thêm `Description` (textarea 2 rows, optional) → gửi vào POST body.
-  - [ ] Modal Edit Key: thêm field Description → PUT `/api/keys/[id]`.
-  - [ ] Toast lỗi khi POST trả 400 limit: "Đã đạt giới hạn 10 keys".
-  - [ ] Manual test (UI).
+- [x] **Task 4 — Key table + modals** (AC6)
+  - [x] File `src/app/(dashboard)/dashboard/endpoint/EndpointPageClient.js`.
+  - [x] Bảng key thêm cột: **Description** (truncate + Tooltip full), **Last Used** (relative time hoặc "—"), **Credit Usage** ($ từ `/api/usage/stats` `byApiKey`, group theo key string client-side — Badge xám).
+  - [x] Modal Create Key: thêm `Description` (textarea 2 rows, optional) → gửi vào POST body.
+  - [x] Modal Edit Key: thêm field Description → PUT `/api/keys/[id]`.
+  - [x] Toast lỗi khi POST trả 400 limit: "Đã đạt giới hạn 10 keys".
+  - [x] Manual test (UI).
 
 ### Regression
-- [ ] **Task 5** (AC7): chạy `cd tests && npm test -- unit/apiKeysRepo.test.js unit/keysRoutes.test.js` + test key/dashboard hiện có. Xác nhận admin flow + legacy key unlimited không vỡ.
+- [x] **Task 5** (AC7): chạy `cd tests && npm test -- unit/apiKeysRepo.test.js unit/keysRoutes.test.js` + test key/dashboard hiện có. Xác nhận admin flow + legacy key unlimited không vỡ.
 
 ---
 
@@ -195,6 +195,19 @@ Auto (Kiro)
 ### Completion Notes List
 Ultimate context engine analysis completed - comprehensive developer guide created.
 
+**Implementation Summary (2026-06-06):**
+- Task 1: `apiKeysRepo.js` — 10-key limit (active keys only, `err.code="KEY_LIMIT"`), `getApiKeysByUser`, `updateLastUsed`. Export qua `index.js` + `localDb.js` (dev-guardrail). `updateLastUsed` tích hợp fire-and-forget trong `usageRepo.saveRequestUsage`. 8 unit tests PASS.
+- Task 2: `GET /api/keys` role-aware (user → own keys, admin/legacy → all). `POST /api/keys` gắn userId+description, bắt KEY_LIMIT → 400 "Đã đạt giới hạn 10 keys". 7 unit tests PASS.
+- Task 3: `PUT/DELETE /api/keys/[id]` ownership guard (role=user + key.userId !== session.userId → 403). PUT thêm description+name. 8 unit tests PASS.
+- Task 4: `EndpointPageClient.js` — thêm Description/Last Used/Credit Usage vào key row; modal Create Key thêm Description textarea + error toast; modal Edit Key mới (Name read-only + Description); fetch usage stats.
+- Task 5: Regression — 85 tests total (8 files) all green. Admin flow unlimited, legacy token unchanged.
+
+**Dev-guardrail xử lý:**
+- Barrel mismatch: đã thêm `getApiKeysByUser, updateLastUsed` vào cả `index.js` VÀ `localDb.js`.
+- POST limit-error: dùng `err.code === "KEY_LIMIT"` thay vì string-match.
+- Credit Usage: thêm fetch `/api/usage/stats?period=all` trong `fetchData`, join client-side theo key string.
+- Session wiring: dùng `cookies()` từ `next/headers` (consistent với `/api/users/me` của 2.2).
+
 ### File List
 - `src/lib/db/repos/apiKeysRepo.js` (modified — 10-limit, getApiKeysByUser, updateLastUsed)
 - `src/lib/db/index.js` (modified — export 2 hàm mới)
@@ -208,3 +221,4 @@ Ultimate context engine analysis completed - comprehensive developer guide creat
 - 2026-06-06: Story created (ready-for-dev) — gộp vertical từ cũ 2.5/2.6/2.17
 - 2026-06-06: Pre-implementation SPEC review (code-review skill). 5 decision-needed RESOLVED (best-practice), 6 patch = action item cho dev, 5 defer → `_bmad-output/implementation-artifacts/deferred-work.md`. Baseline bump 7a4486d→dc144b2. Status giữ `ready-for-dev` (story chưa code — KHÔNG set done/in-progress).
 - 2026-06-06: Áp 2 `[Spec-Fix]` — sửa Dev Notes cho đúng code thật (`updateApiKey` KHÔNG lọc undefined; PUT chỉ đọc `isActive`). 4 `[Dev-Guardrail]` vẫn để dev xử lý khi implement.
+- 2026-06-06: Story implemented — all 5 tasks complete, 23 new unit tests, 85 total regression green, status → review

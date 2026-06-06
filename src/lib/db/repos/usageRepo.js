@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
+import { updateLastUsed } from "./apiKeysRepo.js";
 
 const PENDING_TIMEOUT_MS = 60 * 1000;
 const RING_CAP = 50;
@@ -281,6 +282,11 @@ export async function saveRequestUsage(entry) {
 
     pushToRing(entry);
     statsEmitter.emit("update");
+
+    // Update lastUsedAt for the API key (fire-and-forget, non-blocking)
+    if (entry.apiKey) {
+      try { updateLastUsed(entry.apiKey); } catch {}
+    }
   } catch (e) {
     console.error("Failed to save usage stats:", e);
   }

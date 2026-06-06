@@ -60,8 +60,13 @@ export default function APIPageClient({ machineId }) {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyDescription, setNewKeyDescription] = useState("");
+  const [createError, setCreateError] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
+  const [editKey, setEditKey] = useState(null); // key object being edited
+  const [editDescription, setEditDescription] = useState("");
+  const [usageByKey, setUsageByKey] = useState({}); // keyString → total cost
 
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
@@ -327,10 +332,23 @@ export default function APIPageClient({ machineId }) {
 
   const fetchData = async () => {
     try {
-      const keysRes = await fetch("/api/keys");
+      const [keysRes, usageRes] = await Promise.all([
+        fetch("/api/keys"),
+        fetch("/api/usage/stats?period=all").catch(() => null),
+      ]);
       const keysData = await keysRes.json();
       if (keysRes.ok) {
         setKeys(keysData.keys || []);
+      }
+      // Build usageByKey map: keyString → total cost
+      if (usageRes?.ok) {
+        const usageData = await usageRes.json();
+        const byKey = {};
+        for (const entry of Object.values(usageData?.byApiKey || {})) {
+          const k = entry.apiKey;
+          if (k) byKey[k] = (byKey[k] || 0) + (entry.cost || 0);
+        }
+        setUsageByKey(byKey);
       }
     } catch (error) {
       console.log("Error fetching data:", error);
@@ -681,12 +699,13 @@ export default function APIPageClient({ machineId }) {
 
   const handleCreateKey = async () => {
     if (!newKeyName.trim()) return;
+    setCreateError("");
 
     try {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
+        body: JSON.stringify({ name: newKeyName, description: newKeyDescription || undefined }),
       });
       const data = await res.json();
 
@@ -694,10 +713,14 @@ export default function APIPageClient({ machineId }) {
         setCreatedKey(data.key);
         await fetchData();
         setNewKeyName("");
+        setNewKeyDescription("");
         setShowAddModal(false);
+      } else {
+        setCreateError(data.error || "Failed to create key");
       }
     } catch (error) {
       console.log("Error creating key:", error);
+      setCreateError("An error occurred");
     }
   };
 
@@ -737,6 +760,45 @@ export default function APIPageClient({ machineId }) {
     } catch (error) {
       console.log("Error toggling key:", error);
     }
+  };
+
+  const handleOpenEdit = (key) => {
+    setEditKey(key);
+    setEditDescription(key.description || "");
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editKey) return;
+    try {
+      const res = await fetch(`/api/keys/${editKey.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description: editDescription }),
+      });
+      if (res.ok) {
+        setKeys(prev => prev.map(k => k.id === editKey.id ? { ...k, description: editDescription } : k));
+        setEditKey(null);
+      }
+    } catch (error) {
+      console.log("Error editing key:", error);
+    }
+  };
+
+  const formatRelative = (iso) => {
+    if (!iso) return "—";
+    const diff = Date.now() - new Date(iso).getTime();
+    const s = Math.floor(diff / 1000);
+    if (s < 60) return `${s}s ago`;
+    const m = Math.floor(s / 60);
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    return `${Math.floor(h / 24)}d ago`;
+  };
+
+  const formatCost = (cost) => {
+    if (!cost) return null;
+    return `$${cost.toFixed(4)}`;
   };
 
   const maskKey = (fullKey) => {
@@ -1168,6 +1230,22 @@ export default function APIPageClient({ machineId }) {
                     {key.isActive === false && (
                       <p className="text-xs text-orange-500 mt-1">Paused</p>
                     )}
+                    {/* Description, Last Used, Credit Usage */}
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1">
+                      {key.description && (
+                        <span className="text-xs text-text-muted" title={key.description}>
+                          {key.description.length > 40 ? `${key.description.slice(0, 40)}…` : key.description}
+                        </span>
+                      )}
+                      <span className="text-xs text-text-muted">
+                        Last used: <span className="text-text-main">{formatRelative(key.lastUsedAt)}</span>
+                      </span>
+                      {formatCost(usageByKey[key.key]) && (
+                        <span className="text-xs bg-surface-2 text-text-muted px-1.5 py-0.5 rounded">
+                          {formatCost(usageByKey[key.key])}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <Toggle
@@ -1195,6 +1273,13 @@ export default function APIPageClient({ machineId }) {
                     >
                       <span className="material-symbols-outlined text-[18px]">delete</span>
                     </button>
+                    <button
+                      onClick={() => handleOpenEdit(key)}
+                      className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                      title="Edit key"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">edit</span>
+                    </button>
                   </div>
                 </div>
                 {/* Quota section per key — C2/C3/C4 */}
@@ -1212,6 +1297,8 @@ export default function APIPageClient({ machineId }) {
         onClose={() => {
           setShowAddModal(false);
           setNewKeyName("");
+          setNewKeyDescription("");
+          setCreateError("");
         }}
       >
         <div className="flex flex-col gap-4">
@@ -1221,6 +1308,19 @@ export default function APIPageClient({ machineId }) {
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder="Production Key"
           />
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium">Description (optional)</label>
+            <textarea
+              className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
+              rows={2}
+              value={newKeyDescription}
+              onChange={(e) => setNewKeyDescription(e.target.value)}
+              placeholder="What is this key for?"
+            />
+          </div>
+          {createError && (
+            <p className="text-xs text-red-500">{createError}</p>
+          )}
           <div className="flex gap-2">
             <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
               Create
@@ -1229,6 +1329,8 @@ export default function APIPageClient({ machineId }) {
               onClick={() => {
                 setShowAddModal(false);
                 setNewKeyName("");
+                setNewKeyDescription("");
+                setCreateError("");
               }}
               variant="ghost"
               fullWidth
@@ -1429,6 +1531,34 @@ export default function APIPageClient({ machineId }) {
         message={confirmState?.message}
         variant="danger"
       />
+
+      {/* Edit Key Modal */}
+      <Modal
+        isOpen={!!editKey}
+        title="Edit API Key"
+        onClose={() => setEditKey(null)}
+      >
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-text-muted">Key Name (read-only)</label>
+            <p className="text-sm font-mono bg-surface-2 px-3 py-2 rounded-lg border border-border">{editKey?.name}</p>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium">Description</label>
+            <textarea
+              className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
+              rows={2}
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+              placeholder="Describe what this key is for..."
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={handleSaveEdit} fullWidth>Save</Button>
+            <Button onClick={() => setEditKey(null)} variant="ghost" fullWidth>Cancel</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
