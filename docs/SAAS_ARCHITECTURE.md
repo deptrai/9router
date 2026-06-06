@@ -1,5 +1,10 @@
 # Kiến trúc SaaS cho 9Router — Phân tích & Roadmap
 
+> ⚠️ **SUPERSEDED (2026-06-06)**: Tài liệu này là phân tích/roadmap đời đầu, **không còn là nguồn kiến trúc chính thức**.
+> - **Architecture canonical**: `docs/ARCHITECTURE_SAAS_MULTITENANT.md` (ADR Winston — schema, billing, multi-tenant).
+> - **Roadmap/phasing**: `docs/SAAS_ROADMAP.md` + `docs/PRD_SAAS_MVP.md`.
+> - Giữ lại file này chỉ để tham khảo phần "Mô hình TrollLLM" + "9Router hiện có gì". Khi xung đột, theo file canonical.
+
 ## 1. Mô hình TrollLLM (tham khảo)
 
 **Features chính:**
