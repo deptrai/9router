@@ -55,6 +55,7 @@ docs/*
 !docs/ARCHITECTURE.md
 !docs/SAAS_ARCHITECTURE.md
 !docs/SAAS_ROADMAP.md
+!docs/stories/
 test/*
 open-sse/test/*
 RM.vn.md

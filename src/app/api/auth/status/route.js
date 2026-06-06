@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { getSettings } from "@/lib/localDb";
 import { isOidcConfigured } from "@/lib/auth/oidc";
 import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
+import { getUserById } from "@/lib/db/index.js";
 
 export async function GET() {
   try {
@@ -16,6 +17,20 @@ export async function GET() {
     const displayName = oidcName || oidcEmail || (session?.oidc ? "OIDC user" : "Password user");
     const loginMethod = session?.oidc ? "OIDC" : "Password";
 
+    // New fields for user accounts (Story 2.2)
+    const role = session?.role ?? "admin"; // legacy tokens without role → admin
+    const userId = session?.userId ?? null;
+    const email = session?.email ?? null;
+    let creditsBalance = null;
+    if (userId) {
+      try {
+        const user = await getUserById(userId);
+        creditsBalance = user?.creditsBalance ?? null;
+      } catch {
+        creditsBalance = null;
+      }
+    }
+
     return NextResponse.json({
       requireLogin,
       authMode,
@@ -27,6 +42,11 @@ export async function GET() {
       oidcName: oidcName || null,
       oidcEmail: oidcEmail || null,
       oidcLogin: !!session?.oidc,
+      // New fields
+      role,
+      userId,
+      email,
+      creditsBalance,
     });
   } catch {
     return NextResponse.json({
@@ -40,6 +60,11 @@ export async function GET() {
       oidcName: null,
       oidcEmail: null,
       oidcLogin: false,
+      // New fields — null in fallback
+      role: "admin",
+      userId: null,
+      email: null,
+      creditsBalance: null,
     });
   }
 }

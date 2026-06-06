@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSettings, validateApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { verifyDashboardAuthToken, getDashboardAuthSession } from "@/lib/auth/dashboardSession";
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
@@ -26,6 +26,7 @@ const PUBLIC_API_PATHS = [
   "/api/auth/login",
   "/api/auth/logout",
   "/api/auth/status",
+  "/api/auth/register",
   "/api/auth/oidc",
   "/api/version",
   "/api/settings/require-login",
@@ -55,6 +56,26 @@ const PROTECTED_API_PATHS = [
   "/api/models",
   "/api/usage",
   "/api/oauth",
+  "/api/cloud",
+  "/api/media-providers",
+  "/api/pricing",
+  "/api/tags",
+  "/api/cli-tools",
+  "/api/mcp",
+  "/api/translator",
+  "/api/tunnel",
+  "/api/users",
+];
+
+// Admin-only API paths — user role must NOT access these.
+// User-accessible paths (/api/keys, /api/usage, /api/users/me) are excluded.
+const ADMIN_ONLY_API_PATHS = [
+  "/api/settings",
+  "/api/providers",
+  "/api/provider-nodes",
+  "/api/proxy-pools",
+  "/api/combos",
+  "/api/models",
   "/api/cloud",
   "/api/media-providers",
   "/api/pricing",
@@ -187,9 +208,22 @@ export async function proxy(request) {
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
   if (pathname.startsWith("/api/")) {
     if (isPublicApi(pathname)) return NextResponse.next();
-    if (await hasValidCliToken(request) || await isAuthenticated(request))
-      return NextResponse.next();
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (await hasValidCliToken(request)) return NextResponse.next();
+    if (!(await isAuthenticated(request))) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Role-based guard: block user role from admin-only paths
+    if (ADMIN_ONLY_API_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+      const token = request.cookies.get("auth_token")?.value;
+      const session = await getDashboardAuthSession(token);
+      const role = session?.role ?? "admin"; // legacy token → admin (backward-compat)
+      if (role !== "admin") {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+    }
+
+    return NextResponse.next();
   }
 
   // Protect all dashboard routes

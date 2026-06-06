@@ -6,6 +6,176 @@ import { useTheme } from "@/shared/hooks/useTheme";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
 
+function UserProfileCard() {
+  const [profile, setProfile] = useState(null);
+  const [editName, setEditName] = useState("");
+  const [nameLoading, setNameLoading] = useState(false);
+  const [nameStatus, setNameStatus] = useState({ type: "", message: "" });
+  const [userPass, setUserPass] = useState({ current: "", new: "", confirm: "" });
+  const [userPassLoading, setUserPassLoading] = useState(false);
+  const [userPassStatus, setUserPassStatus] = useState({ type: "", message: "" });
+  const [role, setRole] = useState(null);
+
+  useEffect(() => {
+    async function loadProfile() {
+      try {
+        const statusRes = await fetch("/api/auth/status");
+        if (statusRes.ok) {
+          const status = await statusRes.json();
+          setRole(status.role);
+          if (status.role === "user") {
+            const meRes = await fetch("/api/users/me");
+            if (meRes.ok) {
+              const me = await meRes.json();
+              setProfile(me);
+              setEditName(me.displayName || "");
+            }
+          }
+        }
+      } catch {}
+    }
+    loadProfile();
+  }, []);
+
+  if (role !== "user") return null;
+
+  const handleNameUpdate = async (e) => {
+    e.preventDefault();
+    setNameLoading(true);
+    setNameStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/users/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ displayName: editName }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setProfile(data);
+        setNameStatus({ type: "success", message: "Display name updated" });
+      } else {
+        const data = await res.json();
+        setNameStatus({ type: "error", message: data.error || "Failed to update" });
+      }
+    } catch {
+      setNameStatus({ type: "error", message: "An error occurred" });
+    } finally {
+      setNameLoading(false);
+    }
+  };
+
+  const handleUserPassChange = async (e) => {
+    e.preventDefault();
+    if (userPass.new !== userPass.confirm) {
+      setUserPassStatus({ type: "error", message: "Passwords do not match" });
+      return;
+    }
+    if (userPass.new.length < 8) {
+      setUserPassStatus({ type: "error", message: "New password must be at least 8 characters" });
+      return;
+    }
+    setUserPassLoading(true);
+    setUserPassStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/users/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword: userPass.current, newPassword: userPass.new }),
+      });
+      if (res.ok) {
+        setUserPassStatus({ type: "success", message: "Password updated" });
+        setUserPass({ current: "", new: "", confirm: "" });
+      } else {
+        const data = await res.json();
+        setUserPassStatus({ type: "error", message: data.error || "Failed to update password" });
+      }
+    } catch {
+      setUserPassStatus({ type: "error", message: "An error occurred" });
+    } finally {
+      setUserPassLoading(false);
+    }
+  };
+
+  return (
+    <Card>
+      <div className="flex items-center gap-3 mb-4">
+        <div className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
+          <span className="material-symbols-outlined text-[20px]">person</span>
+        </div>
+        <h3 className="text-base sm:text-lg font-semibold">My Account</h3>
+      </div>
+
+      <div className="flex flex-col gap-4">
+        {profile && (
+          <div className="p-3 rounded-lg bg-bg border border-border">
+            <p className="text-sm"><span className="text-text-muted">Email:</span> {profile.email}</p>
+            <p className="text-sm"><span className="text-text-muted">Credits:</span> {profile.creditsBalance}</p>
+          </div>
+        )}
+
+        {/* Display Name */}
+        <form onSubmit={handleNameUpdate} className="flex flex-col gap-3 pt-3 border-t border-border/50">
+          <div className="flex flex-col gap-2">
+            <label className="text-xs sm:text-sm font-medium">Display Name</label>
+            <Input
+              type="text"
+              placeholder="Your display name"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+            />
+          </div>
+          {nameStatus.message && (
+            <p className={`text-xs sm:text-sm ${nameStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
+              {nameStatus.message}
+            </p>
+          )}
+          <Button type="submit" variant="primary" loading={nameLoading} className="w-full sm:w-auto">
+            Update Name
+          </Button>
+        </form>
+
+        {/* Change Password */}
+        <form onSubmit={handleUserPassChange} className="flex flex-col gap-3 pt-3 border-t border-border/50">
+          <p className="text-sm font-medium">Change Password</p>
+          <div className="flex flex-col gap-2">
+            <Input
+              type="password"
+              placeholder="Current password"
+              value={userPass.current}
+              onChange={(e) => setUserPass({ ...userPass, current: e.target.value })}
+              required
+            />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              type="password"
+              placeholder="New password"
+              value={userPass.new}
+              onChange={(e) => setUserPass({ ...userPass, new: e.target.value })}
+              required
+            />
+            <Input
+              type="password"
+              placeholder="Confirm new password"
+              value={userPass.confirm}
+              onChange={(e) => setUserPass({ ...userPass, confirm: e.target.value })}
+              required
+            />
+          </div>
+          {userPassStatus.message && (
+            <p className={`text-xs sm:text-sm ${userPassStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
+              {userPassStatus.message}
+            </p>
+          )}
+          <Button type="submit" variant="primary" loading={userPassLoading} className="w-full sm:w-auto">
+            Change Password
+          </Button>
+        </form>
+      </div>
+    </Card>
+  );
+}
+
 export default function ProfilePage() {
   const { theme, setTheme, isDark } = useTheme();
   const [settings, setSettings] = useState({ fallbackStrategy: "fill-first" });
@@ -592,6 +762,9 @@ export default function ProfilePage() {
             )}
           </div>
         </Card>
+
+        {/* User Profile (shown for user role) */}
+        <UserProfileCard />
 
         {/* Security */}
         <Card>

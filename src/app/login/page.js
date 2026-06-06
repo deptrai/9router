@@ -5,6 +5,8 @@ import { Card, Button, Input } from "@/shared/components";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
+  const [loginTab, setLoginTab] = useState("user"); // "user" | "admin"
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [resetHint, setResetHint] = useState("");
@@ -47,7 +49,6 @@ export default function LoginPage() {
           setOidcConfigured(data.oidcConfigured === true);
           setOidcLoginLabel(data.oidcLoginLabel || "Sign in with OIDC");
         } else {
-          // Safe fallback on non-OK response to avoid infinite loading state.
           setHasPassword(true);
         }
       } catch (err) {
@@ -65,10 +66,15 @@ export default function LoginPage() {
     setResetHint("");
 
     try {
+      const body =
+        loginTab === "user"
+          ? { email, password }
+          : { password };
+
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify(body),
       });
 
       if (res.ok) {
@@ -76,7 +82,7 @@ export default function LoginPage() {
         router.refresh();
       } else {
         const data = await res.json();
-        setError(data.error || "Invalid password");
+        setError(data.error || "Invalid credentials");
         if (data.resetHint) setResetHint(data.resetHint);
         if (data.retryAfter) setRetryAfter(Number(data.retryAfter));
       }
@@ -116,7 +122,7 @@ export default function LoginPage() {
           <p className="text-text-muted">
             {authMode === "oidc" && oidcConfigured
               ? "Sign in with your OIDC provider to access the dashboard"
-              : "Enter your password to access the dashboard"}
+              : "Sign in to access the dashboard"}
           </p>
         </div>
 
@@ -130,65 +136,113 @@ export default function LoginPage() {
 
             {oidcAvailable && passwordAvailable && <div className="h-px bg-border/60" />}
 
-            {passwordAvailable ? (
-              <form onSubmit={handleLogin} className="flex flex-col gap-4">
-                {((authMode === "oidc" && !oidcConfigured) || (authMode === "both" && !oidcConfigured)) && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400 text-center">
-                    OIDC login is enabled, but the issuer/client fields are not configured yet. Password login is still available for recovery.
-                  </p>
-                )}
-
-                {authMode === "both" && oidcConfigured && (
-                  <p className="text-xs text-text-muted text-center">
-                    Password and OIDC login are both enabled.
-                  </p>
-                )}
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-sm font-medium">Password</label>
-                  <Input
-                    type="password"
-                    placeholder="Enter password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    autoFocus={!oidcAvailable}
-                  />
-                  {error && <p className="text-xs text-red-500">{error}</p>}
-                  {retryAfter > 0 && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400">
-                      Locked. Retry in <span className="font-mono">{retryAfter}s</span>.
-                    </p>
-                  )}
-                  {resetHint && (
-                    <p className="text-xs text-text-muted">
-                      Forgot password? Open <code className="bg-sidebar px-1 rounded">9router</code> CLI on the host → <b>Settings</b> → <b>Reset Password to Default</b>.
-                    </p>
-                  )}
+            {passwordAvailable && (
+              <>
+                {/* Tab switcher: User / Admin */}
+                <div className="inline-flex p-1 rounded-lg bg-black/5 dark:bg-white/5 w-full">
+                  <button
+                    type="button"
+                    onClick={() => { setLoginTab("user"); setError(""); }}
+                    className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                      loginTab === "user"
+                        ? "bg-white dark:bg-white/10 text-text-main shadow-sm"
+                        : "text-text-muted hover:text-text-main"
+                    }`}
+                  >
+                    User
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setLoginTab("admin"); setError(""); }}
+                    className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                      loginTab === "admin"
+                        ? "bg-white dark:bg-white/10 text-text-main shadow-sm"
+                        : "text-text-muted hover:text-text-main"
+                    }`}
+                  >
+                    Admin
+                  </button>
                 </div>
 
-                <Button
-                  type="submit"
-                  variant="primary"
-                  className="w-full"
-                  loading={loading}
-                  disabled={retryAfter > 0}
-                >
-                  {retryAfter > 0 ? `Wait ${retryAfter}s` : "Login"}
-                </Button>
+                <form onSubmit={handleLogin} className="flex flex-col gap-4">
+                  {((authMode === "oidc" && !oidcConfigured) || (authMode === "both" && !oidcConfigured)) && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 text-center">
+                      OIDC login is enabled, but the issuer/client fields are not configured yet. Password login is still available for recovery.
+                    </p>
+                  )}
 
-                <p className="text-xs text-center text-text-muted mt-2">
-                  Default password is <code className="bg-sidebar px-1 rounded">123456</code>
-                </p>
-                {hasPassword === false && (
-                  <p className="text-xs text-center text-text-muted">
-                    No custom password is set yet. The default password above will work until you change it.
-                  </p>
-                )}
-              </form>
-            ) : (
-              error && <p className="text-xs text-red-500">{error}</p>
+                  {/* User tab: email + password */}
+                  {loginTab === "user" && (
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-medium">Email</label>
+                      <Input
+                        type="email"
+                        placeholder="you@example.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        required
+                        autoFocus
+                      />
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-medium">Password</label>
+                    <Input
+                      type="password"
+                      placeholder="Enter password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      autoFocus={loginTab === "admin" && !oidcAvailable}
+                    />
+                    {error && <p className="text-xs text-red-500">{error}</p>}
+                    {retryAfter > 0 && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400">
+                        Locked. Retry in <span className="font-mono">{retryAfter}s</span>.
+                      </p>
+                    )}
+                    {resetHint && (
+                      <p className="text-xs text-text-muted">
+                        Forgot password? Open <code className="bg-sidebar px-1 rounded">9router</code> CLI on the host → <b>Settings</b> → <b>Reset Password to Default</b>.
+                      </p>
+                    )}
+                  </div>
+
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    className="w-full"
+                    loading={loading}
+                    disabled={retryAfter > 0}
+                  >
+                    {retryAfter > 0 ? `Wait ${retryAfter}s` : "Sign In"}
+                  </Button>
+
+                  {loginTab === "admin" && (
+                    <p className="text-xs text-center text-text-muted mt-2">
+                      Default password is <code className="bg-sidebar px-1 rounded">123456</code>
+                    </p>
+                  )}
+                  {loginTab === "admin" && hasPassword === false && (
+                    <p className="text-xs text-center text-text-muted">
+                      No custom password is set yet. The default password above will work until you change it.
+                    </p>
+                  )}
+
+                  {loginTab === "user" && (
+                    <p className="text-xs text-center text-text-muted mt-2">
+                      Don&apos;t have an account?{" "}
+                      <a href="/register" className="text-primary hover:underline">
+                        Sign up
+                      </a>
+                    </p>
+                  )}
+                </form>
+              </>
             )}
+
+            {!passwordAvailable && error && <p className="text-xs text-red-500">{error}</p>}
           </div>
         </Card>
       </div>

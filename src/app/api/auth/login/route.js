@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
 import { isOidcConfigured } from "@/lib/auth/oidc";
 import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
+import { getUserByEmail } from "@/lib/db/index.js";
 
 const RESET_HINT = "Forgot password? Reset to default via 9Router CLI → Settings → Reset Password to Default.";
 
@@ -26,7 +27,7 @@ export async function POST(request) {
       );
     }
 
-    const { password } = await request.json();
+    const body = await request.json();
     const settings = await getSettings();
 
     // Block login via tunnel/tailscale if dashboard access is disabled
@@ -34,7 +35,43 @@ export async function POST(request) {
       return NextResponse.json({ error: "Dashboard access via tunnel is disabled" }, { status: 403 });
     }
 
-    // Default password is '123456' if not set
+    // ─── USER LOGIN BRANCH (email provided) ───
+    if (body.email) {
+      const email = body.email.trim().toLowerCase();
+      const userLockKey = `user:${ip}`;
+      const userLock = checkLock(userLockKey);
+      if (userLock.locked) {
+        return NextResponse.json(
+          { error: `Too many failed attempts. Try again in ${userLock.retryAfter}s` },
+          { status: 429, headers: { "Retry-After": String(userLock.retryAfter) } }
+        );
+      }
+
+      const user = await getUserByEmail(email);
+      if (!user || !user.isActive) {
+        recordFail(userLockKey);
+        return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
+      }
+
+      const isValid = await bcrypt.compare(body.password || "", user.passwordHash);
+      if (!isValid) {
+        recordFail(userLockKey);
+        return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
+      }
+
+      recordSuccess(userLockKey);
+      const cookieStore = await cookies();
+      await setDashboardAuthCookie(cookieStore, request, {
+        role: "user",
+        userId: user.id,
+        email: user.email,
+      });
+
+      return NextResponse.json({ success: true });
+    }
+
+    // ─── ADMIN LOGIN BRANCH (password only — existing behavior) ───
+    const { password } = body;
     const storedHash = settings.password;
 
     if (settings.authMode === "oidc" && isOidcConfigured(settings)) {
@@ -43,7 +80,7 @@ export async function POST(request) {
 
     let isValid = false;
     if (storedHash) {
-      isValid = await bcrypt.compare(password, storedHash);
+      isValid = await bcrypt.compare(password || "", storedHash);
     } else {
       // Use env var or default
       const initialPassword = process.env.INITIAL_PASSWORD || "123456";
@@ -53,7 +90,7 @@ export async function POST(request) {
     if (isValid) {
       recordSuccess(ip);
       const cookieStore = await cookies();
-      await setDashboardAuthCookie(cookieStore, request);
+      await setDashboardAuthCookie(cookieStore, request, { role: "admin" });
 
       return NextResponse.json({ success: true });
     }
