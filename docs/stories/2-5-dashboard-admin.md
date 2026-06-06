@@ -3,7 +3,7 @@ title: "Story 2.5 — Dashboard credit & quản trị: admin API + usage filter 
 story_id: "2.5"
 story_key: "2-5-dashboard-admin"
 epic: "C+G — Credit & Billing / Dashboard phân quyền"
-status: review
+status: in-progress
 baseline_commit: 3043ac0  # bumped from 7a4486d — 2.5 phụ thuộc 2.2 (@dc144b2) + 2.3 (@b27e425) + 2.4 (@3043ac0). Tất cả đã landed.
 depends_on: 2-2-user-account, 2-3-api-key-ownership, 2-4-credit-billing
 created: 2026-06-06
@@ -21,7 +21,7 @@ context:
 
 # Story 2.5 — Dashboard credit & quản trị (role-aware)
 
-Status: review
+Status: in-progress
 
 <!-- Vertical slice gộp từ cũ 2.10 (admin topup+users API, Epic C) + 2.11 (usage filter) + 2.12 (sidebar) + 2.13 (credits/users pages) + 2.14 (route guard). Story cuối MVP-1. Phụ thuộc 2.2 (role/status), 2.3 (getApiKeysByUser), 2.4 (creditsBalance). -->
 
@@ -184,6 +184,27 @@ Status: review
 ### confirm / khép finding cũ
 - [x] [Review][Confirm] **2.5 ĐÓNG lỗ hổng privilege-escalation của 2.2** — `requireAdmin` guard ở providers/nodes/pools/combos/settings = route-guard role mà 2.2 còn thiếu (AC4).
 - [x] [Review][Confirm] **2.5 ĐÓNG info-leak usage của 2.3 (D5)** — `/api/usage/stats` role-aware (AC2) → user chỉ thấy data mình. Ràng buộc "KHÔNG multi-tenant prod trước 2.5" từ 2.3 được giải.
+
+---
+
+### Code Review — post-implementation (2026-06-07, commit `13ae39c`)
+
+> Review diff `3043ac0..13ae39c` (17 files, +1330/−187). Tests **22/22 PASS**. **Prior 8 findings: hầu hết đã xử lý** — baseline ✓, requireRole reuse+cải tiến no-token ✓, G2 (404+refetch newBalance) ✓, G3 (`Number.isFinite` amount) ✓, G4 (chỉ guard settings PATCH, GET mở) ✓, G5 (Sidebar skeleton-while-null, chống flash) ✓, decision (ẩn Quota cho user) ✓. Nhưng phát hiện **lỗ hổng bảo mật nghiêm trọng**. Triage: 4 patch (1 CRITICAL, 1 HIGH, 1 MED, 1 LOW), 3 defer, 2 dismiss. **Status → in-progress** (còn CRITICAL/HIGH).
+
+#### patch
+- [ ] [Review][Patch][CRITICAL] **`/api/settings/database` KHÔNG guard** [`src/app/api/settings/database/route.js`] — `GET = exportDb()` trả **TOÀN BỘ DB** (users kèm `passwordHash`, mọi API key, provider credentials, settings) → **rò rỉ dữ liệu**; `POST = importDb()` → **ghi đè/wipe DB**. Route nằm trong `PROTECTED_API_PATHS` nên **bất kỳ user đã login** qua middleware → handler không check role → chạy như admin. Thêm `requireAdmin` cho cả GET+POST NGAY.
+- [ ] [Review][Patch][HIGH] **Route-guard sót — chỉ guard collection `route.js`, bỏ 20 sub-routes** [`providers/[id]`, `combos/[id]`, `provider-nodes/[id]`, `proxy-pools/[id]` (PUT/DELETE), `proxy-pools/{cloudflare,vercel,deno}-deploy`, ...] — Task 5 ghi "mọi method" nhưng chỉ làm GET/POST của 5 collection. User role có thể **sửa/xoá** provider connection, combo, node, proxy pool của admin + trigger deploy. **Fails AC4**. Thêm `requireAdmin` vào tất cả handler mutation admin (ưu tiên `[id]` PUT/DELETE + deploy). Cân nhắc gom guard vào middleware `dashboardGuard` (role-aware) thay vì rải từng handler để khỏi sót.
+- [ ] [Review][Patch][MEDIUM] **`getUsageStats` user mode rò rỉ cross-user qua các section live** [`src/lib/db/repos/usageRepo.js`] — `recentRequests`, `last10Minutes`, `activeRequests`/`pending` build TRƯỚC khi áp `userKeySet` → user thấy model/provider/token-count/active của TẤT CẢ user. (Aggregates chính totals/byModel/byProvider/byApiKey ĐÃ filter đúng.) Filter các section này theo `userKeySet` (hoặc trả rỗng cho user mode).
+- [ ] [Review][Patch][LOW] **`adminGuard.test.js` yếu → false confidence** [`tests/unit/adminGuard.test.js`] — chỉ string-check `providers/route.js` + `settings/route.js` chứa "requireAdmin"; KHÔNG test `[id]`/`database`/deploy routes → bỏ lọt đúng 2 lỗ hổng trên. Thêm test 403 cho user trên các sub-route mutation (sẽ bắt được regression).
+
+#### defer
+- [x] [Review][Defer] `requireAdmin` trả sentinel `{role:"admin"}` khi no-token → KHÔNG phải auth check độc lập, dựa hoàn toàn vào `dashboardGuard` chặn anon. Nếu path admin nào lọt khỏi `PROTECTED_API_PATHS` → anon = admin. Document coupling này.
+- [x] [Review][Defer] Topup `amount` không có chặn trên (giá trị cực lớn) — thấp, thêm max sau.
+- [x] [Review][Defer] Sub-routes đọc/test (`providers/validate`, `test`, `test-batch`, `suggested-models`, `client`, `kilo/free-models`, `provider-nodes/validate`, `proxy-pools/[id]/test`) chưa guard — ưu tiên thấp hơn mutation; guard cùng đợt fix HIGH.
+
+#### dismiss
+- Sidebar fail-open `setRole("admin")` khi `/api/auth/status` lỗi — client nav KHÔNG phải security boundary (API vẫn phải tự guard); chấp nhận.
+- `MaxListenersExceededWarning` khi test — noise harness.
 
 ---
 

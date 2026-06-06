@@ -100,7 +100,7 @@ function buildKiroFingerprintHeaders(credentials) {
  *
  * The `auto` model is special: Kiro picks the underlying model server-side,
  * so the chunked-write `-agentic` prompt is not meaningful (the prompt
- * targets coding-agent file writes). Match CLIProxyAPIPlus and skip
+ * targets coding-agent file writes). Match upstream Go implementation and skip
  * `-agentic` / `-thinking-agentic` for `auto`.
  */
 function buildVariants(upstream, displayName) {

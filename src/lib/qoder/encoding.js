@@ -1,6 +1,6 @@
 /**
  * Qoder body encoding ported from qoder2api's QoderEncoding.java (via the
- * CLIProxyAPIPlus qoder-provider branch).
+ * upstream Go implementation qoder-provider branch).
  *
  * Algorithm:
  *   1. base64-encode the plaintext bytes (standard alphabet).

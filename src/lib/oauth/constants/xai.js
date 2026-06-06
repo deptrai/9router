@@ -1,7 +1,7 @@
 /**
  * xAI (Grok) OAuth Configuration
  *
- * Source of truth: router-for-me/CLIProxyAPI internal/auth/xai/types.go
+ * Source of truth: upstream reference internal/auth/xai/types.go
  * Mirrors the upstream Go constants 1:1.
  */
 

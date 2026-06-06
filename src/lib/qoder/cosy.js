@@ -1,5 +1,5 @@
 /**
- * Qoder COSY (hybrid RSA+AES+MD5) signing, ported from CLIProxyAPIPlus
+ * Qoder COSY (hybrid RSA+AES+MD5) signing, ported from upstream Go implementation
  * qoder-provider branch (internal/auth/qoder/cosy.go).
  *
  * Every signed request carries:

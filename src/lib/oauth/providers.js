@@ -253,7 +253,7 @@ const PROVIDERS = {
       };
     },
     buildAuthUrl: (config, redirectUri, state, codeChallenge) => {
-      // Mirror CLIProxyAPI BuildAuthorizeURL: includes nonce, plan, referrer
+      // Mirror upstream Go implementation BuildAuthorizeURL: includes nonce, plan, referrer
       const nonce = crypto.randomBytes(16).toString("hex");
       const params = {
         response_type: "code",

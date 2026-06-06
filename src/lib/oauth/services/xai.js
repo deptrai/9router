@@ -9,7 +9,7 @@ import { spinner as createSpinner } from "../utils/ui.js";
 /**
  * xAI (Grok) OAuth Service
  *
- * Source of truth: router-for-me/CLIProxyAPI internal/auth/xai/xai.go
+ * Source of truth: upstream reference internal/auth/xai/xai.go
  *
  * Flow:
  *  1. Discover endpoints from `${XAI_ISSUER}/.well-known/openid-configuration`
@@ -77,7 +77,7 @@ export async function discoverEndpoints() {
 
 /**
  * Decode the `email` claim from an id_token JWT. No signature verification —
- * mirrors CLIProxyAPI Go behavior. Returns undefined if not parseable.
+ * mirrors upstream Go implementation Go behavior. Returns undefined if not parseable.
  */
 export function decodeIdTokenEmail(idToken) {
   if (!idToken || typeof idToken !== "string") return undefined;

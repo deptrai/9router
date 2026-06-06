@@ -1,5 +1,5 @@
 /**
- * Qoder API constants ported from CLIProxyAPIPlus qoder-provider branch.
+ * Qoder API constants ported from upstream Go implementation qoder-provider branch.
  *
  * Endpoint set:
  *   openapi.qoder.sh   - device flow + userinfo + quota usage
@@ -54,7 +54,7 @@ export const QODER_MODEL_MAP = {
 };
 
 // RSA public key for COSY encryption (extracted from Qoder IDE v0.9).
-// Matches the CLIProxyAPIPlus branch and live qodercli traffic.
+// Matches the upstream Go implementation branch and live qodercli traffic.
 export const QODER_RSA_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
 MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDA8iMH5c02LilrsERw9t6Pv5Nc
 4k6Pz1EaDicBMpdpxKduSZu5OANqUq8er4GM95omAGIOPOh+Nx0spthYA2BqGz+l

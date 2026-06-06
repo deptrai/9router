@@ -3,7 +3,7 @@
  *
  * Mirrors the behaviour of `internal/translator/kiro/common/constants.go` and
  * `internal/translator/kiro/claude/kiro_claude_request.go` from the
- * CLIProxyAPIPlus reference implementation, scoped down to what 9router needs:
+ * upstream Go implementation reference implementation, scoped down to what 9router needs:
  *
  *   - `-agentic` model suffix detection + chunked-write system prompt
  *   - reasoning / thinking trigger detection (Anthropic-Beta header,
@@ -212,7 +212,7 @@ export function resolveKiroModel(model) {
 
 /**
  * Build the magic system-prompt prefix that turns Kiro reasoning on.
- * Same shape as CLIProxyAPIPlus.
+ * Same shape as upstream Go implementation.
  *
  * @param {number} [budget=KIRO_THINKING_BUDGET_DEFAULT]
  */

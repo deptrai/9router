@@ -2,7 +2,7 @@
  * Unit tests for Codex (OpenAI) refresh token mechanism
  *
  * Verifies that:
- * - Early refresh lead times are configured per provider (synced with CLIProxyAPI)
+ * - Early refresh lead times are configured per provider (synced with upstream Go implementation)
  * - New refresh_token from response is persisted (token rotation)
  * - Falls back to old refresh_token when server doesn't return new one
  */
@@ -58,7 +58,7 @@ describe("Codex Refresh Token", () => {
     it("should return provider-specific lead time for OAuth providers", async () => {
       const { getRefreshLeadMs } = await import("../../open-sse/services/tokenRefresh.js");
 
-      // Synced with CLIProxyAPI refresh_registry
+      // Synced with upstream Go implementation refresh_registry
       expect(getRefreshLeadMs("codex")).toBe(5 * 24 * 60 * 60 * 1000);   // 5 days
       expect(getRefreshLeadMs("claude")).toBe(4 * 60 * 60 * 1000);       // 4 hours
       expect(getRefreshLeadMs("iflow")).toBe(24 * 60 * 60 * 1000);       // 24 hours

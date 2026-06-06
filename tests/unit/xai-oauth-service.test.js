@@ -41,7 +41,7 @@ describe("xai/oauth service", () => {
     );
   });
 
-  it("builds authorize URLs with CLIProxyAPI query extras", async () => {
+  it("builds authorize URLs with upstream Go implementation query extras", async () => {
     const { XaiService } = await import("../../src/lib/oauth/services/xai.js");
     const authUrl = new XaiService().buildXaiAuthUrl(
       "http://127.0.0.1:56121/callback",
@@ -63,7 +63,7 @@ describe("xai/oauth service", () => {
     expect(parsed.searchParams.get("referrer")).toBe("cli-proxy-api");
   });
 
-  it("generates dashboard auth data with CLIProxyAPI PKCE size and discovered endpoints", async () => {
+  it("generates dashboard auth data with upstream Go implementation PKCE size and discovered endpoints", async () => {
     fetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
