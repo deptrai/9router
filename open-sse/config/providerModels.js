@@ -125,28 +125,66 @@ export const PROVIDER_MODELS = {
     { id: "text-embedding-3-large", name: "Text Embedding 3 Large (GitHub)", type: "embedding" },
   ],
   kr: [  // Kiro AI
-    // --- Base Claude variants ---
-    // { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
+    // --- Auto routing ---
+    { id: "auto", name: "Auto" },
+    { id: "auto-thinking", name: "Auto (Thinking)" },
+    // --- Claude base variants ---
+    { id: "claude-opus-4.8", name: "Claude Opus 4.8" },
+    { id: "claude-opus-4.7", name: "Claude Opus 4.7" },
+    { id: "claude-opus-4.6", name: "Claude Opus 4.6" },
+    { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
     { id: "claude-sonnet-4.6", name: "Claude Sonnet 4.6" },
     { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
+    { id: "claude-sonnet-4", name: "Claude Sonnet 4" },
     { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
+    // --- Non-Claude base models ---
     { id: "deepseek-3.2", name: "DeepSeek 3.2", strip: ["image", "audio"] },
     { id: "qwen3-coder-next", name: "Qwen3 Coder Next", strip: ["image", "audio"] },
     { id: "glm-5", name: "GLM 5" },
-    { id: "MiniMax-M2.5", name: "MiniMax M2.5" },
-    // --- Thinking variants (alias to base; thinking is enabled at request time
-    //     via <thinking_mode>enabled</thinking_mode> system-prompt injection) ---
+    { id: "minimax-m2.5", name: "MiniMax M2.5" },
+    { id: "minimax-m2.1", name: "MiniMax M2.1" },
+    // --- Thinking variants ---
+    { id: "claude-opus-4.8-thinking", name: "Claude Opus 4.8 (Thinking)" },
+    { id: "claude-opus-4.7-thinking", name: "Claude Opus 4.7 (Thinking)" },
+    { id: "claude-opus-4.6-thinking", name: "Claude Opus 4.6 (Thinking)" },
+    { id: "claude-opus-4.5-thinking", name: "Claude Opus 4.5 (Thinking)" },
     { id: "claude-sonnet-4.6-thinking", name: "Claude Sonnet 4.6 (Thinking)" },
     { id: "claude-sonnet-4.5-thinking", name: "Claude Sonnet 4.5 (Thinking)" },
+    { id: "claude-sonnet-4-thinking", name: "Claude Sonnet 4 (Thinking)" },
     { id: "claude-haiku-4.5-thinking", name: "Claude Haiku 4.5 (Thinking)" },
-    // --- Agentic variants (synthetic; same upstream model + chunked-write
-    //     system prompt to dodge Kiro's 2-3 min server timeout on big writes) ---
+    { id: "deepseek-3.2-thinking", name: "DeepSeek 3.2 (Thinking)", strip: ["image", "audio"] },
+    { id: "qwen3-coder-next-thinking", name: "Qwen3 Coder Next (Thinking)", strip: ["image", "audio"] },
+    { id: "glm-5-thinking", name: "GLM 5 (Thinking)" },
+    { id: "minimax-m2.5-thinking", name: "MiniMax M2.5 (Thinking)" },
+    { id: "minimax-m2.1-thinking", name: "MiniMax M2.1 (Thinking)" },
+    // --- Agentic variants ---
+    { id: "claude-opus-4.8-agentic", name: "Claude Opus 4.8 (Agentic)" },
+    { id: "claude-opus-4.7-agentic", name: "Claude Opus 4.7 (Agentic)" },
+    { id: "claude-opus-4.6-agentic", name: "Claude Opus 4.6 (Agentic)" },
+    { id: "claude-opus-4.5-agentic", name: "Claude Opus 4.5 (Agentic)" },
     { id: "claude-sonnet-4.6-agentic", name: "Claude Sonnet 4.6 (Agentic)" },
     { id: "claude-sonnet-4.5-agentic", name: "Claude Sonnet 4.5 (Agentic)" },
+    { id: "claude-sonnet-4-agentic", name: "Claude Sonnet 4 (Agentic)" },
     { id: "claude-haiku-4.5-agentic", name: "Claude Haiku 4.5 (Agentic)" },
+    { id: "deepseek-3.2-agentic", name: "DeepSeek 3.2 (Agentic)", strip: ["image", "audio"] },
+    { id: "qwen3-coder-next-agentic", name: "Qwen3 Coder Next (Agentic)", strip: ["image", "audio"] },
+    { id: "glm-5-agentic", name: "GLM 5 (Agentic)" },
+    { id: "minimax-m2.5-agentic", name: "MiniMax M2.5 (Agentic)" },
+    { id: "minimax-m2.1-agentic", name: "MiniMax M2.1 (Agentic)" },
+    // --- Thinking + Agentic variants ---
+    { id: "claude-opus-4.8-thinking-agentic", name: "Claude Opus 4.8 (Thinking + Agentic)" },
+    { id: "claude-opus-4.7-thinking-agentic", name: "Claude Opus 4.7 (Thinking + Agentic)" },
+    { id: "claude-opus-4.6-thinking-agentic", name: "Claude Opus 4.6 (Thinking + Agentic)" },
+    { id: "claude-opus-4.5-thinking-agentic", name: "Claude Opus 4.5 (Thinking + Agentic)" },
     { id: "claude-sonnet-4.6-thinking-agentic", name: "Claude Sonnet 4.6 (Thinking + Agentic)" },
     { id: "claude-sonnet-4.5-thinking-agentic", name: "Claude Sonnet 4.5 (Thinking + Agentic)" },
+    { id: "claude-sonnet-4-thinking-agentic", name: "Claude Sonnet 4 (Thinking + Agentic)" },
     { id: "claude-haiku-4.5-thinking-agentic", name: "Claude Haiku 4.5 (Thinking + Agentic)" },
+    { id: "deepseek-3.2-thinking-agentic", name: "DeepSeek 3.2 (Thinking + Agentic)", strip: ["image", "audio"] },
+    { id: "qwen3-coder-next-thinking-agentic", name: "Qwen3 Coder Next (Thinking + Agentic)", strip: ["image", "audio"] },
+    { id: "glm-5-thinking-agentic", name: "GLM 5 (Thinking + Agentic)" },
+    { id: "minimax-m2.5-thinking-agentic", name: "MiniMax M2.5 (Thinking + Agentic)" },
+    { id: "minimax-m2.1-thinking-agentic", name: "MiniMax M2.1 (Thinking + Agentic)" },
   ],
   qd: [  // Qoder - tier + frontier models (server-published catalog)
     // Tier models — pick a quality/cost tradeoff
