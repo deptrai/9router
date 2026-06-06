@@ -15,6 +15,8 @@ function UserProfileCard() {
   const [userPassLoading, setUserPassLoading] = useState(false);
   const [userPassStatus, setUserPassStatus] = useState({ type: "", message: "" });
   const [role, setRole] = useState(null);
+  const [sendVerifyLoading, setSendVerifyLoading] = useState(false);
+  const [sendVerifyStatus, setSendVerifyStatus] = useState({ type: "", message: "" });
 
   useEffect(() => {
     async function loadProfile() {
@@ -64,6 +66,29 @@ function UserProfileCard() {
     }
   };
 
+  const handleSendVerification = async () => {
+    setSendVerifyLoading(true);
+    setSendVerifyStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/auth/send-verification", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.alreadyVerified) {
+          setSendVerifyStatus({ type: "success", message: "Email của bạn đã được xác minh" });
+        } else {
+          setSendVerifyStatus({ type: "success", message: "Email xác minh đã được gửi. Vui lòng kiểm tra hộp thư." });
+        }
+      } else {
+        const data = await res.json();
+        setSendVerifyStatus({ type: "error", message: data.error || "Gửi thất bại" });
+      }
+    } catch {
+      setSendVerifyStatus({ type: "error", message: "Đã xảy ra lỗi" });
+    } finally {
+      setSendVerifyLoading(false);
+    }
+  };
+
   const handleUserPassChange = async (e) => {
     e.preventDefault();
     if (userPass.new !== userPass.confirm) {
@@ -110,6 +135,37 @@ function UserProfileCard() {
           <div className="p-3 rounded-lg bg-bg border border-border">
             <p className="text-sm"><span className="text-text-muted">Email:</span> {profile.email}</p>
             <p className="text-sm"><span className="text-text-muted">Credits:</span> {profile.creditsBalance}</p>
+            <div className="flex items-center gap-2 mt-2">
+              {profile.isEmailVerified ? (
+                <span className="inline-flex items-center gap-1 text-xs bg-green-500/10 text-green-600 dark:text-green-400 px-2 py-0.5 rounded-full">
+                  <span className="material-symbols-outlined text-[12px]">check_circle</span>
+                  Email đã xác minh
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-xs bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full">
+                  <span className="material-symbols-outlined text-[12px]">warning</span>
+                  Email chưa xác minh
+                </span>
+              )}
+            </div>
+            {!profile.isEmailVerified && (
+              <div className="mt-3">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  loading={sendVerifyLoading}
+                  onClick={handleSendVerification}
+                  className="w-full sm:w-auto text-xs"
+                >
+                  Gửi lại email xác minh
+                </Button>
+                {sendVerifyStatus.message && (
+                  <p className={`text-xs mt-2 ${sendVerifyStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
+                    {sendVerifyStatus.message}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
 

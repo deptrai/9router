@@ -4,6 +4,8 @@ import { cookies } from "next/headers";
 import { getUserByEmail, createUser } from "@/lib/db/index.js";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
 import { checkLock, recordFail, getClientIp } from "@/lib/auth/loginLimiter";
+import { createEmailVerifyToken } from "@/lib/auth/emailVerifyToken.js";
+import { sendEmail } from "@/lib/email/sendEmail.js";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -72,6 +74,23 @@ export async function POST(request) {
       userId: user.id,
       email: user.email,
     });
+
+    // Fail-soft: send verification email — errors MUST NOT block registration (AC3)
+    try {
+      const baseUrl = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:20128";
+      const token = await createEmailVerifyToken(user.id, user.email);
+      await sendEmail({
+        to: user.email,
+        subject: "Xác minh email 9Router",
+        html: `<p>Chào ${user.displayName || user.email},</p>
+<p>Click vào link dưới đây để xác minh địa chỉ email của bạn:</p>
+<p><a href="${baseUrl}/verify-email?token=${token}">${baseUrl}/verify-email?token=${token}</a></p>
+<p>Link có hiệu lực trong 24 giờ. Nếu bạn không đăng ký, hãy bỏ qua email này.</p>`,
+      });
+    } catch (emailErr) {
+      // Intentionally swallowed — email failure NEVER blocks registration
+      console.warn("[register] email send failed (non-critical):", emailErr?.message);
+    }
 
     return NextResponse.json({
       success: true,
