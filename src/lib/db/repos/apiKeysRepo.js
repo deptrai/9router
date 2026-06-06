@@ -67,6 +67,12 @@ export async function deleteApiKey(id) {
   return (res?.changes ?? 0) > 0;
 }
 
+export async function getApiKeyByKey(keyString) {
+  const db = await getAdapter();
+  const row = db.get(`SELECT * FROM apiKeys WHERE key = ?`, [keyString]);
+  return rowToKey(row);
+}
+
 export async function validateApiKey(key) {
   const db = await getAdapter();
   const row = db.get(`SELECT isActive FROM apiKeys WHERE key = ?`, [key]);

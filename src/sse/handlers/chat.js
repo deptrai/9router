@@ -19,6 +19,7 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { checkKeyQuota } from "@/lib/quota/keyQuota.js";
 
 /**
  * Handle chat completion request
@@ -153,6 +154,19 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     log.info("ROUTING", `${modelStr} → ${provider}/${model}`);
   } else {
     log.info("ROUTING", `Provider: ${provider}, Model: ${model}`);
+  }
+
+  // --- Quota enforcement (AC#1-7, Story 1.3) ---
+  // Kiểm tra sau khi resolve canonical model, trước khi lấy credentials
+  const quota = await checkKeyQuota(apiKey, model);
+  if (!quota.allowed) {
+    log.warn("QUOTA", `[${provider}/${model}] key="${log.maskKey(apiKey || "")}" quota exceeded — consumed ${quota.limit?.consumed ?? "?"}/${quota.limit?.maxTokens ?? "?"} tokens (${quota.limit?.window ?? "?"}) ${quota.retryAfterHuman || ""}`);
+    return unavailableResponse(
+      HTTP_STATUS.RATE_LIMITED,
+      `[${provider}/${model}] quota exceeded`,
+      quota.retryAfter,
+      quota.retryAfterHuman
+    );
   }
 
   // Extract userAgent from request
