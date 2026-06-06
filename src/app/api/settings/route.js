@@ -3,6 +3,7 @@ import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
 import bcrypt from "bcryptjs";
+import { requireAdmin } from "@/lib/auth/requireRole";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -33,6 +34,9 @@ export async function GET() {
 }
 
 export async function PATCH(request) {
+  if (!await requireAdmin(request)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   try {
     const body = await request.json();
 

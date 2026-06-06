@@ -336,7 +336,7 @@ function loadDaysInRange(adapter, maxDays) {
   return adapter.all(`SELECT dateKey, data FROM usageDaily WHERE dateKey >= ?`, [cutoffKey]);
 }
 
-export async function getUsageStats(period = "all") {
+export async function getUsageStats(period = "all", userId = null) {
   const db = await getAdapter();
 
   const [{ getProviderConnections }, { getApiKeys }, { getProviderNodes }] = await Promise.all([
@@ -356,8 +356,19 @@ export async function getUsageStats(period = "all") {
     for (const n of nodes) if (n.id && n.name) providerNodeNameMap[n.id] = n.name;
   } catch {}
 
+  // AC1 — userId filter: build key set from user's own keys only
+  // userId=null → admin mode (all keys, backward-compat)
   let allApiKeys = [];
-  try { allApiKeys = await getApiKeys(); } catch {}
+  let userKeySet = null; // null = no filter (admin)
+  if (userId) {
+    try {
+      const { getApiKeysByUser } = await import("./apiKeysRepo.js");
+      allApiKeys = await getApiKeysByUser(userId);
+      userKeySet = new Set(allApiKeys.map((k) => k.key));
+    } catch { allApiKeys = []; userKeySet = new Set(); }
+  } else {
+    try { allApiKeys = await getApiKeys(); } catch {}
+  }
   const apiKeyMap = {};
   for (const k of allApiKeys) apiKeyMap[k.key] = { name: k.name, id: k.id, createdAt: k.createdAt };
 
@@ -445,6 +456,63 @@ export async function getUsageStats(period = "all") {
     for (const dr of dayRows) {
       const dateKey = dr.dateKey;
       const day = parseJson(dr.data, {});
+
+      // AC1 userId filter: when userKeySet is set, re-derive totals + byModel/byProvider
+      // entirely from byApiKey entries that belong to the user. Skip global totals.
+      if (userKeySet !== null) {
+        // Re-aggregate from byApiKey filtered by userKeySet
+        for (const [akKey, ak] of Object.entries(day.byApiKey || {})) {
+          const apiKeyVal = ak.apiKey;
+          if (!apiKeyVal || !userKeySet.has(apiKeyVal)) continue; // skip keys not belonging to user
+
+          const rawModel = ak.rawModel || "";
+          const provider = ak.provider || "";
+          const providerDisplayName = providerNodeNameMap[provider] || provider;
+          const akRequests = ak.requests || 0;
+          const akPrompt = ak.promptTokens || 0;
+          const akCompletion = ak.completionTokens || 0;
+          const akCost = ak.cost || 0;
+
+          // Accumulate totals
+          stats.totalPromptTokens += akPrompt;
+          stats.totalCompletionTokens += akCompletion;
+          stats.totalCost += akCost;
+
+          // byProvider
+          if (!stats.byProvider[provider]) stats.byProvider[provider] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0 };
+          stats.byProvider[provider].requests += akRequests;
+          stats.byProvider[provider].promptTokens += akPrompt;
+          stats.byProvider[provider].completionTokens += akCompletion;
+          stats.byProvider[provider].cost += akCost;
+
+          // byModel
+          const statsKey = provider ? `${rawModel} (${provider})` : rawModel;
+          if (!stats.byModel[statsKey]) {
+            stats.byModel[statsKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, rawModel, provider: providerDisplayName, lastUsed: dateKey };
+          }
+          stats.byModel[statsKey].requests += akRequests;
+          stats.byModel[statsKey].promptTokens += akPrompt;
+          stats.byModel[statsKey].completionTokens += akCompletion;
+          stats.byModel[statsKey].cost += akCost;
+          if (dateKey > (stats.byModel[statsKey].lastUsed || "")) stats.byModel[statsKey].lastUsed = dateKey;
+
+          // byApiKey
+          const keyInfo = apiKeyVal ? apiKeyMap[apiKeyVal] : null;
+          const keyName = keyInfo?.name || (apiKeyVal ? apiKeyVal.slice(0, 8) + "..." : "Local (No API Key)");
+          if (!stats.byApiKey[akKey]) {
+            stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, rawModel, provider: providerDisplayName, apiKey: apiKeyVal, keyName, apiKeyKey: apiKeyVal || "local-no-key", lastUsed: dateKey };
+          }
+          stats.byApiKey[akKey].requests += akRequests;
+          stats.byApiKey[akKey].promptTokens += akPrompt;
+          stats.byApiKey[akKey].completionTokens += akCompletion;
+          stats.byApiKey[akKey].cost += akCost;
+          if (dateKey > (stats.byApiKey[akKey].lastUsed || "")) stats.byApiKey[akKey].lastUsed = dateKey;
+        }
+        // skip rest of day (byEndpoint, byAccount not user-isolated → omit for userId mode)
+        continue;
+      }
+
+      // Admin mode (userKeySet === null): existing logic unchanged
       stats.totalPromptTokens += day.promptTokens || 0;
       stats.totalCompletionTokens += day.completionTokens || 0;
       stats.totalCost += day.cost || 0;
@@ -564,6 +632,11 @@ export async function getUsageStats(period = "all") {
     );
 
     for (const r of filtered) {
+      // AC1 userId filter: skip rows not belonging to user's key set
+      if (userKeySet !== null) {
+        if (!r.apiKey || !userKeySet.has(r.apiKey)) continue;
+      }
+
       const tokens = parseJson(r.tokens, {}) || {};
       const promptTokens = tokens.prompt_tokens || 0;
       const completionTokens = tokens.completion_tokens || 0;

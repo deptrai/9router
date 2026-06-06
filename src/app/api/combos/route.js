@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCombos, createCombo, getComboByName } from "@/lib/localDb";
+import { requireAdmin } from "@/lib/auth/requireRole";
 
 export const dynamic = "force-dynamic";
 
@@ -7,7 +8,10 @@ export const dynamic = "force-dynamic";
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 
 // GET /api/combos - Get all combos
-export async function GET() {
+export async function GET(request) {
+  if (!await requireAdmin(request)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   try {
     const combos = await getCombos();
     return NextResponse.json({ combos });
@@ -19,6 +23,9 @@ export async function GET() {
 
 // POST /api/combos - Create new combo
 export async function POST(request) {
+  if (!await requireAdmin(request)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   try {
     const body = await request.json();
     const { name, models, kind } = body;

@@ -16,7 +16,8 @@ const VISIBLE_MEDIA_KINDS = ["embedding", "image", "tts", "stt"];
 // Combined entry: webSearch + webFetch share one page at /dashboard/media-providers/web
 const COMBINED_WEB_ITEM = { id: "web", label: "Web Fetch & Search", icon: "travel_explore", href: "/dashboard/media-providers/web" };
 
-const navItems = [
+// AC5: Admin-only nav items (hidden from role=user)
+const adminNavItems = [
   { href: "/dashboard/endpoint", label: "Endpoint", icon: "api" },
   { href: "/dashboard/providers", label: "Providers", icon: "dns" },
   // { href: "/dashboard/basic-chat", label: "Basic Chat", icon: "chat" }, // Hidden
@@ -25,6 +26,14 @@ const navItems = [
   { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage" },
   { href: "/dashboard/mitm", label: "MITM", icon: "security" },
   { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
+  { href: "/dashboard/users", label: "Users", icon: "group" },
+];
+
+// AC5: User-visible nav items (limited view for role=user)
+const userNavItems = [
+  { href: "/dashboard/endpoint", label: "Endpoint", icon: "api" },
+  { href: "/dashboard/usage", label: "Usage", icon: "bar_chart" },
+  { href: "/dashboard/credits", label: "Credits", icon: "paid" },
 ];
 
 const debugItems = [
@@ -48,6 +57,8 @@ export default function Sidebar({ onClose }) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [shutdownCountdown, setShutdownCountdown] = useState(0);
   const [enableTranslator, setEnableTranslator] = useState(false);
+  // AC5: role state — null = loading (skeleton), "admin"/"user" = loaded
+  const [role, setRole] = useState(null);
   const { copied, copy } = useCopyToClipboard(2000);
 
   const INSTALL_CMD = UPDATER_CONFIG.installCmdLatest;
@@ -57,6 +68,18 @@ export default function Sidebar({ onClose }) {
       .then(res => res.json())
       .then(data => { if (data.enableTranslator) setEnableTranslator(true); })
       .catch(() => {});
+  }, []);
+
+  // AC5: Fetch role from /api/auth/status; default to "admin" on error (backward-compat)
+  useEffect(() => {
+    fetch("/api/auth/status")
+      .then(res => res.json())
+      .then(data => {
+        setRole(data.role ?? "admin");
+      })
+      .catch(() => {
+        setRole("admin"); // fail-open: treat as admin
+      });
   }, []);
 
   // Lazy check for new npm version on mount
@@ -169,115 +192,17 @@ export default function Sidebar({ onClose }) {
 
         {/* Navigation */}
         <nav className="flex-1 px-4 py-2 space-y-0.5 overflow-y-auto custom-scrollbar">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onClose}
-              className={cn(
-                "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
-                isActive(item.href)
-                  ? "bg-primary/10 text-primary"
-                  : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-              )}
-            >
-              <span
-                className={cn(
-                  "material-symbols-outlined text-[18px]",
-                  isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
-                )}
-              >
-                {item.icon}
-              </span>
-              <span className="text-[13px] font-medium">{item.label}</span>
-            </Link>
-          ))}
-
-          {/* System section */}
-          <div className="pt-3 mt-2 space-y-0.5">
-            <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
-              System
-            </p>
-
-            {/* Media Providers accordion */}
-            <button
-              onClick={() => setMediaOpen((v) => !v)}
-              className={cn(
-                "w-full flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
-                pathname.startsWith("/dashboard/media-providers")
-                  ? "bg-primary/10 text-primary"
-                  : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-              )}
-            >
-              <span className="material-symbols-outlined text-[18px]">perm_media</span>
-              <span className="text-[13px] font-medium flex-1 text-left">Media Providers</span>
-              <span className="material-symbols-outlined text-[14px] transition-transform" style={{ transform: mediaOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
-                expand_more
-              </span>
-            </button>
-            {mediaOpen && (
-              <div className="pl-4">
-                {MEDIA_PROVIDER_KINDS.filter((k) => VISIBLE_MEDIA_KINDS.includes(k.id)).map((kind) => (
-                  <Link
-                    key={kind.id}
-                    href={`/dashboard/media-providers/${kind.id}`}
-                    onClick={onClose}
-                    className={cn(
-                      "flex items-center gap-3 px-4 py-1 rounded-lg transition-all group",
-                      pathname.startsWith(`/dashboard/media-providers/${kind.id}`)
-                        ? "bg-primary/10 text-primary"
-                        : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-                    )}
-                  >
-                    <span className="material-symbols-outlined text-[16px]">{kind.icon}</span>
-                    <span className="text-sm">{kind.label}</span>
-                  </Link>
-                ))}
-                <Link
-                  key={COMBINED_WEB_ITEM.id}
-                  href={COMBINED_WEB_ITEM.href}
-                  onClick={onClose}
-                  className={cn(
-                    "flex items-center gap-3 px-4 py-1 rounded-lg transition-all group",
-                    pathname.startsWith(COMBINED_WEB_ITEM.href)
-                      ? "bg-primary/10 text-primary"
-                      : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-                  )}
-                >
-                  <span className="material-symbols-outlined text-[16px]">{COMBINED_WEB_ITEM.icon}</span>
-                  <span className="text-sm">{COMBINED_WEB_ITEM.label}</span>
-                </Link>
-              </div>
-            )}
-
-            {systemItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onClose}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
-                  isActive(item.href)
-                    ? "bg-primary/10 text-primary"
-                    : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-                )}
-              >
-                <span
-                  className={cn(
-                    "material-symbols-outlined text-[18px]",
-                    isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
-                  )}
-                >
-                  {item.icon}
-                </span>
-                <span className="text-[13px] font-medium">{item.label}</span>
-              </Link>
-            ))}
-
-            {/* Debug items (inside System section, before Settings) */}
-            {debugItems.map((item) => {
-              const show = item.href !== "/dashboard/translator" || enableTranslator;
-              return show ? (
+          {/* AC5: While role is loading, show skeleton to avoid flash of admin nav */}
+          {role === null ? (
+            <div className="space-y-1 px-2 py-1">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-7 rounded-lg bg-surface-2 animate-pulse" />
+              ))}
+            </div>
+          ) : (
+            <>
+              {/* AC5: role=user → userNavItems only; role=admin/legacy → adminNavItems */}
+              {(role === "user" ? userNavItems : adminNavItems).map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
@@ -299,46 +224,188 @@ export default function Sidebar({ onClose }) {
                   </span>
                   <span className="text-[13px] font-medium">{item.label}</span>
                 </Link>
-              ) : null;
-            })}
+              ))}
 
-            {/* Settings */}
-            <Link
-              href="/dashboard/profile"
-              onClick={onClose}
-              className={cn(
-                "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
-                isActive("/dashboard/profile")
-                  ? "bg-primary/10 text-primary"
-                  : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+              {/* AC5: System section — admin/legacy only */}
+              {role !== "user" && (
+                <div className="pt-3 mt-2 space-y-0.5">
+                  <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
+                    System
+                  </p>
+
+                  {/* Media Providers accordion */}
+                  <button
+                    onClick={() => setMediaOpen((v) => !v)}
+                    className={cn(
+                      "w-full flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                      pathname.startsWith("/dashboard/media-providers")
+                        ? "bg-primary/10 text-primary"
+                        : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                    )}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">perm_media</span>
+                    <span className="text-[13px] font-medium flex-1 text-left">Media Providers</span>
+                    <span className="material-symbols-outlined text-[14px] transition-transform" style={{ transform: mediaOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
+                      expand_more
+                    </span>
+                  </button>
+                  {mediaOpen && (
+                    <div className="pl-4">
+                      {MEDIA_PROVIDER_KINDS.filter((k) => VISIBLE_MEDIA_KINDS.includes(k.id)).map((kind) => (
+                        <Link
+                          key={kind.id}
+                          href={`/dashboard/media-providers/${kind.id}`}
+                          onClick={onClose}
+                          className={cn(
+                            "flex items-center gap-3 px-4 py-1 rounded-lg transition-all group",
+                            pathname.startsWith(`/dashboard/media-providers/${kind.id}`)
+                              ? "bg-primary/10 text-primary"
+                              : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                          )}
+                        >
+                          <span className="material-symbols-outlined text-[16px]">{kind.icon}</span>
+                          <span className="text-sm">{kind.label}</span>
+                        </Link>
+                      ))}
+                      <Link
+                        key={COMBINED_WEB_ITEM.id}
+                        href={COMBINED_WEB_ITEM.href}
+                        onClick={onClose}
+                        className={cn(
+                          "flex items-center gap-3 px-4 py-1 rounded-lg transition-all group",
+                          pathname.startsWith(COMBINED_WEB_ITEM.href)
+                            ? "bg-primary/10 text-primary"
+                            : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                        )}
+                      >
+                        <span className="material-symbols-outlined text-[16px]">{COMBINED_WEB_ITEM.icon}</span>
+                        <span className="text-sm">{COMBINED_WEB_ITEM.label}</span>
+                      </Link>
+                    </div>
+                  )}
+
+                  {systemItems.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={onClose}
+                      className={cn(
+                        "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                        isActive(item.href)
+                          ? "bg-primary/10 text-primary"
+                          : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "material-symbols-outlined text-[18px]",
+                          isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
+                        )}
+                      >
+                        {item.icon}
+                      </span>
+                      <span className="text-[13px] font-medium">{item.label}</span>
+                    </Link>
+                  ))}
+
+                  {/* Debug items (inside System section, before Settings) */}
+                  {debugItems.map((item) => {
+                    const show = item.href !== "/dashboard/translator" || enableTranslator;
+                    return show ? (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={onClose}
+                        className={cn(
+                          "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                          isActive(item.href)
+                            ? "bg-primary/10 text-primary"
+                            : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "material-symbols-outlined text-[18px]",
+                            isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
+                          )}
+                        >
+                          {item.icon}
+                        </span>
+                        <span className="text-[13px] font-medium">{item.label}</span>
+                      </Link>
+                    ) : null;
+                  })}
+
+                  {/* Settings */}
+                  <Link
+                    href="/dashboard/profile"
+                    onClick={onClose}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                      isActive("/dashboard/profile")
+                        ? "bg-primary/10 text-primary"
+                        : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "material-symbols-outlined text-[18px]",
+                        isActive("/dashboard/profile") ? "fill-1" : "group-hover:text-primary transition-colors"
+                      )}
+                    >
+                      settings
+                    </span>
+                    <span className="text-[13px] font-medium">Settings</span>
+                  </Link>
+                </div>
               )}
-            >
-              <span
-                className={cn(
-                  "material-symbols-outlined text-[18px]",
-                  isActive("/dashboard/profile") ? "fill-1" : "group-hover:text-primary transition-colors"
-                )}
-              >
-                settings
-              </span>
-              <span className="text-[13px] font-medium">Settings</span>
-            </Link>
-          </div>
+
+              {/* AC5: user role — minimal System: only Settings (profile) */}
+              {role === "user" && (
+                <div className="pt-3 mt-2 space-y-0.5">
+                  <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
+                    Account
+                  </p>
+                  <Link
+                    href="/dashboard/profile"
+                    onClick={onClose}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                      isActive("/dashboard/profile")
+                        ? "bg-primary/10 text-primary"
+                        : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "material-symbols-outlined text-[18px]",
+                        isActive("/dashboard/profile") ? "fill-1" : "group-hover:text-primary transition-colors"
+                      )}
+                    >
+                      settings
+                    </span>
+                    <span className="text-[13px] font-medium">Settings</span>
+                  </Link>
+                </div>
+              )}
+            </>
+          )}
         </nav>
 
-        {/* Footer section */}
-        <div className="p-3 border-t border-border-subtle">
-          {/* Shutdown button */}
-          <Button
-            variant="outline"
-            fullWidth
-            icon="power_settings_new"
-            onClick={() => setShowShutdownModal(true)}
-            className="text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300"
-          >
-            Shutdown
-          </Button>
-        </div>
+        {/* Footer section — AC5: hide Shutdown for role=user */}
+        {role !== "user" && (
+          <div className="p-3 border-t border-border-subtle">
+            <Button
+              variant="outline"
+              fullWidth
+              icon="power_settings_new"
+              onClick={() => setShowShutdownModal(true)}
+              className="text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300"
+            >
+              Shutdown
+            </Button>
+          </div>
+        )}
       </aside>
 
       {/* Shutdown Confirmation Modal */}

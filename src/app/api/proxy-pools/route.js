@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createProxyPool, getProviderConnections, getProxyPools } from "@/models";
+import { requireAdmin } from "@/lib/auth/requireRole";
 
 function toBoolean(value) {
   if (value === "true") return true;
@@ -43,6 +44,9 @@ function buildUsageMap(connections = []) {
 
 // GET /api/proxy-pools - List proxy pools
 export async function GET(request) {
+  if (!await requireAdmin(request)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   try {
     const { searchParams } = new URL(request.url);
     const isActive = toBoolean(searchParams.get("isActive"));
@@ -76,6 +80,9 @@ export async function GET(request) {
 
 // POST /api/proxy-pools - Create proxy pool
 export async function POST(request) {
+  if (!await requireAdmin(request)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   try {
     const body = await request.json();
     const normalized = normalizeProxyPoolInput(body);
