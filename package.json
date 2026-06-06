@@ -9,6 +9,9 @@
     "start": "next start",
     "dev:bun": "bun --bun next dev --webpack --port 20128",
     "build:bun": "bun --bun next build --webpack",
+    "seed": "node scripts/seed.js",
+    "seed:reset": "node scripts/seed.js --reset",
+    "seed:show": "node scripts/seed.js --show",
     "start:bun": "bun ./.next/standalone/server.js"
   },
   "dependencies": {
