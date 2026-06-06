@@ -52,7 +52,7 @@ Enruta inteligentemente las solicitudes a través de múltiples proveedores de I
 
 ## ¿9Router es gratis?
 
-**Sí, 9Router en sí es 100% gratis y open source.**
+**Sí, 9Router en sí es 100% gratis y free.**
 
 **Proveedores de nivel gratis disponibles:**
 - **Gemini CLI** - 180K completados/mes (cuenta Google GRATIS)
@@ -172,7 +172,7 @@ Cursor Settings → Models → Advanced:
 **Alternativa:** Auto-hospéda en VPS con dominio público:
 ```bash
 # Despliega en VPS
-git clone https://github.com/decolua/9router.git
+
 cd 9router/app
 npm install && npm run build
 npm start
@@ -206,7 +206,7 @@ npm install -g 9router
 
 ### VPS/Cloud
 ```bash
-git clone https://github.com/decolua/9router.git
+
 cd 9router/app
 npm install && npm run build
 
@@ -257,7 +257,7 @@ Consulta la [guía de despliegue](getting-started/installation.md#deployment) pa
 - Sin analítica
 - Sin phone-home
 
-**Open source:**
+**Free:**
 - Código fuente completo disponible en GitHub
 - Audita la seguridad tú mismo
 - Revisado por la comunidad
@@ -316,7 +316,7 @@ docker run -d \
 ```
 
 **Cambios disruptivos:**
-- Revisa [CHANGELOG.md](https://github.com/decolua/9router/blob/main/CHANGELOG.md)
+- Revisa [CHANGELOG.md](https://9router.com)
 - Respalda `~/.9router` antes de actualizaciones mayores
 - Revisa las guías de migración para versiones mayores
 
@@ -329,11 +329,11 @@ docker run -d \
 ### Formas de contribuir:
 
 1. **Reportar bugs:**
-   - [GitHub Issues](https://github.com/decolua/9router/issues)
+   - [GitHub Issues](https://9router.com/docs)
    - Incluye logs de error, pasos para reproducir
 
 2. **Solicitar características:**
-   - [GitHub Discussions](https://github.com/decolua/9router/discussions)
+   - [GitHub Discussions](https://9router.com)
    - Describe el caso de uso y los beneficios
 
 3. **Enviar código:**
@@ -375,13 +375,10 @@ docker run -d \
 - Actualiza la documentación
 - Mantén los commits atómicos y descriptivos
 
-Consulta [CONTRIBUTING.md](https://github.com/decolua/9router/blob/main/CONTRIBUTING.md) para detalles.
 
 ---
 
 ## ¿Necesitas más ayuda?
 
 - **Documentación:** [9router.com/docs](https://9router.com/docs)
-- **GitHub:** [github.com/decolua/9router](https://github.com/decolua/9router)
-- **Issues:** [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
 - **Troubleshooting:** [troubleshooting.md](troubleshooting.md)

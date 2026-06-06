@@ -1,10 +1,8 @@
 # Docker
 
-Run 9Router in a container. Published image: [`decolua/9router`](https://hub.docker.com/r/decolua/9router) — multi-platform `linux/amd64` + `linux/arm64`.
+Run 9Router in a container.
 
 ---
-
-# 👤 For Users
 
 ## Quick start
 
@@ -35,8 +33,6 @@ docker rm -f 9router          # remove
 -e DATA_DIR=/app/data
 ```
 
-Without `DATA_DIR`, the app falls back to `~/.9router/` (macOS/Linux) or `%APPDATA%\9router\` (Windows). In the container, `DATA_DIR=/app/data` makes the bind mount work.
-
 Data layout under `$DATA_DIR/`:
 
 ```text
@@ -46,9 +42,6 @@ $DATA_DIR/
 │   └── backups/          # auto backups
 └── ...                   # certs, logs, runtime configs
 ```
-
-Host path: `$HOME/.9router/db/data.sqlite`
-Container path: `/app/data/db/data.sqlite`
 
 ## Optional env vars
 
@@ -74,31 +67,13 @@ docker rm -f 9router
 
 ---
 
-# 🛠 For Developers
-
-## Build image locally (test)
+## Build image locally (dev)
 
 ```bash
-cd app && docker build -t 9router .
+docker build -t 9router .
 
 docker run --rm -p 20128:20128 \
   -v "$HOME/.9router:/app/data" \
   -e DATA_DIR=/app/data \
   9router
 ```
-
-## Publish (automatic via CI)
-
-Push a git tag `v*` → GitHub Actions builds multi-platform (amd64+arm64) and pushes to:
-- `ghcr.io/decolua/9router:v{version}` + `:latest`
-- `decolua/9router:v{version}` + `:latest`
-
-```bash
-# Use scripts/release.js (recommended)
-node scripts/release.js "Release title" "Notes"
-
-# Or manually
-git tag v0.4.x && git push origin v0.4.x
-```
-
-Workflow: `app/.github/workflows/docker-publish.yml`

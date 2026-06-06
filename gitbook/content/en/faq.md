@@ -52,7 +52,7 @@ It intelligently routes requests across multiple AI providers using a 3-tier fal
 
 ## Is 9Router free?
 
-**Yes, 9Router itself is 100% free and open source.**
+**Yes, 9Router itself is free to use.**
 
 **Free tier providers available:**
 - **Gemini CLI** - 180K completions/month (FREE Google account)
@@ -172,7 +172,7 @@ Cursor Settings → Models → Advanced:
 **Alternative:** Self-host on VPS with public domain:
 ```bash
 # Deploy to VPS
-git clone https://github.com/decolua/9router.git
+
 cd 9router/app
 npm install && npm run build
 npm start
@@ -206,7 +206,7 @@ npm install -g 9router
 
 ### VPS/Cloud
 ```bash
-git clone https://github.com/decolua/9router.git
+
 cd 9router/app
 npm install && npm run build
 
@@ -257,7 +257,7 @@ See [deployment guide](getting-started/installation.md#deployment) for details.
 - No analytics
 - No phone-home
 
-**Open source:**
+**Free:**
 - Full source code available on GitHub
 - Audit security yourself
 - Community-reviewed
@@ -316,72 +316,14 @@ docker run -d \
 ```
 
 **Breaking changes:**
-- Check [CHANGELOG.md](https://github.com/decolua/9router/blob/main/CHANGELOG.md)
+- Check [CHANGELOG.md](https://9router.com)
 - Backup `~/.9router` before major updates
 - Review migration guides for major versions
 
 ---
 
-## How can I contribute?
-
-**We welcome contributions!**
-
-### Ways to contribute:
-
-1. **Report bugs:**
-   - [GitHub Issues](https://github.com/decolua/9router/issues)
-   - Include error logs, steps to reproduce
-
-2. **Request features:**
-   - [GitHub Discussions](https://github.com/decolua/9router/discussions)
-   - Describe use case and benefits
-
-3. **Submit code:**
-   ```bash
-   # Fork repo
-   git clone https://github.com/YOUR_USERNAME/9router.git
-   cd 9router
-   
-   # Create branch
-   git checkout -b feature/your-feature
-   
-   # Make changes
-   npm install
-   npm run dev
-   
-   # Test
-   npm test
-   
-   # Commit and push
-   git add .
-   git commit -m "Add your feature"
-   git push origin feature/your-feature
-   
-   # Create Pull Request on GitHub
-   ```
-
-4. **Improve docs:**
-   - Fix typos, add examples
-   - Translate to other languages
-   - Write tutorials
-
-5. **Add providers:**
-   - Implement new provider adapters
-   - See `app/lib/providers/` for examples
-
-**Contribution guidelines:**
-- Follow existing code style
-- Add tests for new features
-- Update documentation
-- Keep commits atomic and descriptive
-
-See [CONTRIBUTING.md](https://github.com/decolua/9router/blob/main/CONTRIBUTING.md) for details.
-
----
 
 ## Need More Help?
 
 - **Documentation:** [9router.com/docs](https://9router.com/docs)
-- **GitHub:** [github.com/decolua/9router](https://github.com/decolua/9router)
-- **Issues:** [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
 - **Troubleshooting:** [troubleshooting.md](troubleshooting.md)

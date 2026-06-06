@@ -21,7 +21,7 @@ export default function HeroSection() {
 
         {/* Description */}
         <p className="text-lg md:text-xl text-gray-400 max-w-2xl mx-auto font-light">
-          AI endpoint proxy with web dashboard - A JavaScript port of CLIProxyAPI. Works seamlessly with Claude Code, OpenAI Codex, Cline, RooCode, and other CLI tools.
+          AI endpoint proxy with web dashboard. Works seamlessly with Claude Code, OpenAI Codex, Cline, RooCode, and other CLI tools.
         </p>
 
         {/* CTA Buttons */}
@@ -30,15 +30,6 @@ export default function HeroSection() {
             <span className="material-symbols-outlined">rocket_launch</span>
             Get Started
           </button>
-          <a 
-            href="https://github.com/decolua/9router" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="h-12 px-8 rounded-lg border border-[#3a2f27] bg-[#23180f] hover:bg-[#3a2f27] text-white text-base font-bold transition-all flex items-center gap-2"
-          >
-            <span className="material-symbols-outlined">code</span>
-            View on GitHub
-          </a>
         </div>
       </div>
     </section>

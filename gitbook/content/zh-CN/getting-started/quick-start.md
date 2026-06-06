@@ -243,5 +243,3 @@ CLI 中使用: premium-coding
 ## 需要帮助?
 
 - **网站**: [9router.com](https://9router.com)
-- **GitHub**: [github.com/decolua/9router](https://github.com/decolua/9router)
-- **Issues**: [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
