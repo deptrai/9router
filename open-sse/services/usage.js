@@ -752,10 +752,15 @@ function parseKiroQuotaData(data) {
 }
 
 async function getKiroUsage(accessToken, providerSpecificData, proxyOptions = null) {
-  // Default profileArn fallback
+  // Default profileArn fallback — NOTE: do NOT use placeholder ARN for IDC/Enterprise accounts
+  // Community finding (Kiro-account-manager v1.7.3): placeholder ARN "profile/AAAACCCCXXXX"
+  // triggers 403 for IDC/Enterprise users. Only use profileArn if explicitly set by user.
   const DEFAULT_PROFILE_ARN = "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
-  const profileArn = providerSpecificData?.profileArn || DEFAULT_PROFILE_ARN;
+  const storedProfileArn = providerSpecificData?.profileArn;
   const authMethod = providerSpecificData?.authMethod || "builder-id";
+  // For IDC/Enterprise accounts, do NOT send placeholder ARN — it causes 403
+  const isPlaceholderArn = !storedProfileArn || storedProfileArn === DEFAULT_PROFILE_ARN;
+  const profileArn = (authMethod === "idc" && isPlaceholderArn) ? null : (storedProfileArn || DEFAULT_PROFILE_ARN);
 
   const getUsageParams = new URLSearchParams({
     isEmailRequired: "true",
@@ -793,7 +798,7 @@ async function getKiroUsage(accessToken, providerSpecificData, proxyOptions = nu
         },
         body: JSON.stringify({
           origin: "AI_EDITOR",
-          profileArn,
+          ...(profileArn ? { profileArn } : {}),
           resourceType: "AGENTIC_REQUEST",
         }),
       }, proxyOptions),
@@ -803,9 +808,9 @@ async function getKiroUsage(accessToken, providerSpecificData, proxyOptions = nu
       run: async () => {
         const params = new URLSearchParams({
           origin: "AI_EDITOR",
-          profileArn,
           resourceType: "AGENTIC_REQUEST",
         });
+        if (profileArn) params.set("profileArn", profileArn);
         return proxyAwareFetch(`https://q.us-east-1.amazonaws.com/getUsageLimits?${params}`, {
           method: "GET",
           headers: {
