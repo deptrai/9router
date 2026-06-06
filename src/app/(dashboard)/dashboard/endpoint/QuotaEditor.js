@@ -275,7 +275,7 @@ export default function QuotaEditor({ keyId }) {
               {/* Toggle enabled */}
               <div className="flex items-center justify-between mb-3">
                 <span className="text-sm font-medium">Bật quota</span>
-                <Toggle value={enabled} onChange={setEnabled} />
+                <Toggle checked={enabled} onChange={setEnabled} />
               </div>
 
               {/* Usage display — C3 */}
