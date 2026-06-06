@@ -377,7 +377,10 @@ function buildToolChoiceDirective(forced) {
 export function buildKiroPayload(model, body, stream, credentials) {
   const messages = body.messages || [];
   const tools = body.tools || [];
-  const maxTokens = 32000;
+  // Forward client's max_tokens, capped at 32000 (Kiro upstream limit).
+  // Previously hardcoded 32000 — client had no control over output length.
+  const KIRO_MAX_TOKENS = 32000;
+  const maxTokens = body.max_tokens ? Math.min(body.max_tokens, KIRO_MAX_TOKENS) : KIRO_MAX_TOKENS;
   const temperature = body.temperature;
   const topP = body.top_p;
 

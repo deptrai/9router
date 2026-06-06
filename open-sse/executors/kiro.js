@@ -86,12 +86,32 @@ export class KiroExecutor extends BaseExecutor {
     const state = {
       endDetected: false,
       finishEmitted: false,
+      usageEmitted: false,      // guards against emitting usage multiple times
       hasToolCalls: false,
       hasReasoningContent: false,
       reasoningChunkCount: 0,
       toolCallIndex: 0,
       seenToolIds: new Map()
     };
+
+    /**
+     * Compute usage from state. Uses metricsEvent exact tokens when available;
+     * falls back to estimating from totalContentLength + contextUsagePercentage.
+     */
+    function computeUsage(st) {
+      if (st.usage) return st.usage;
+      const estimatedOutputTokens = (st.totalContentLength || 0) > 0
+        ? Math.max(1, Math.floor(st.totalContentLength / 4))
+        : 0;
+      const estimatedInputTokens = (st.contextUsagePercentage || 0) > 0
+        ? Math.floor(st.contextUsagePercentage * 200000 / 100)
+        : 0;
+      return {
+        prompt_tokens: estimatedInputTokens,
+        completion_tokens: estimatedOutputTokens,
+        total_tokens: estimatedInputTokens + estimatedOutputTokens
+      };
+    }
 
     const transformStream = new TransformStream({
       async transform(chunk, controller) {
@@ -285,19 +305,32 @@ export class KiroExecutor extends BaseExecutor {
 
           // Handle messageStopEvent
           if (eventType === "messageStopEvent") {
-            const chunk = {
-              id: responseId,
-              object: "chat.completion.chunk",
-              created,
-              model,
-              choices: [{
-                index: 0,
-                delta: {},
-                finish_reason: state.hasToolCalls ? "tool_calls" : "stop"
-              }]
-            };
-            state.finishEmitted = true;
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            // If the metering+context branch already emitted the finish chunk,
+            // skip — we only need one finish chunk.
+            if (!state.finishEmitted) {
+              // Compute and attach usage to the stop chunk so it is always present,
+              // regardless of whether meteringEvent/contextUsageEvent arrived first.
+              // This prevents the race where messageStopEvent fires before metering
+              // events, leaving parseSSEToOpenAIResponse with no usage chunk.
+              if (!state.usageEmitted) {
+                state.usageEmitted = true;
+                state.usage = state.usage || computeUsage(state);
+              }
+              const chunk = {
+                id: responseId,
+                object: "chat.completion.chunk",
+                created,
+                model,
+                choices: [{
+                  index: 0,
+                  delta: {},
+                  finish_reason: state.hasToolCalls ? "tool_calls" : "stop"
+                }],
+                ...(state.usage && { usage: state.usage })
+              };
+              state.finishEmitted = true;
+              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            }
           }
 
           // Handle contextUsageEvent to extract contextUsagePercentage
@@ -331,27 +364,14 @@ export class KiroExecutor extends BaseExecutor {
           }
 
           // Emit final chunk only after receiving BOTH meteringEvent AND contextUsageEvent
+          // (only fires if messageStopEvent hasn't already emitted a finish chunk with usage)
           if (state.hasMeteringEvent && state.hasContextUsage && !state.finishEmitted) {
             state.finishEmitted = true;
-            
+            state.usageEmitted = true;
+
             // Estimate tokens if not available from events
             if (!state.usage) {
-              // Estimate output tokens from content length
-              const estimatedOutputTokens = state.totalContentLength > 0 
-                ? Math.max(1, Math.floor(state.totalContentLength / 4))
-                : 0;
-              
-              // Estimate input tokens from contextUsagePercentage
-              // Kiro models typically have 200k context window
-              const estimatedInputTokens = state.contextUsagePercentage > 0
-                ? Math.floor(state.contextUsagePercentage * 200000 / 100)
-                : 0;
-              
-              state.usage = {
-                prompt_tokens: estimatedInputTokens,
-                completion_tokens: estimatedOutputTokens,
-                total_tokens: estimatedInputTokens + estimatedOutputTokens
-              };
+              state.usage = computeUsage(state);
             }
             
             const finishChunk = {
@@ -373,6 +393,23 @@ export class KiroExecutor extends BaseExecutor {
             
             controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(finishChunk)}\n\n`));
           }
+          // Late metering: messageStopEvent already emitted but usage wasn't known yet.
+          // Emit a standalone usage chunk so downstream parsers can pick it up.
+          if (state.finishEmitted && !state.usageEmitted && state.hasMeteringEvent && state.hasContextUsage) {
+            state.usageEmitted = true;
+            if (!state.usage) state.usage = computeUsage(state);
+            if (state.usage) {
+              const usageChunk = {
+                id: responseId,
+                object: "chat.completion.chunk",
+                created,
+                model,
+                choices: [{ index: 0, delta: {}, finish_reason: null }],
+                usage: state.usage
+              };
+              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(usageChunk)}\n\n`));
+            }
+          }
         }
 
         if (iterations >= maxIterations) {
@@ -384,6 +421,10 @@ export class KiroExecutor extends BaseExecutor {
         // Emit finish chunk if not already sent
         if (!state.finishEmitted) {
           state.finishEmitted = true;
+          if (!state.usageEmitted) {
+            state.usageEmitted = true;
+            if (!state.usage) state.usage = computeUsage(state);
+          }
           const finishChunk = {
             id: responseId,
             object: "chat.completion.chunk",
@@ -393,7 +434,8 @@ export class KiroExecutor extends BaseExecutor {
               index: 0,
               delta: {},
               finish_reason: state.hasToolCalls ? "tool_calls" : "stop"
-            }]
+            }],
+            ...(state.usage && { usage: state.usage })
           };
           controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(finishChunk)}\n\n`));
         }
