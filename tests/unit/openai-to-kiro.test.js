@@ -143,4 +143,29 @@ describe("buildKiroPayload", () => {
       expect(currentMsg.userInputMessage.content).toContain("[Image: https://example.com/photo.jpg]");
     });
   });
+
+  // Story 1.4 AC#1, #2 — client max_tokens is forwarded into inferenceConfig (capped at 32000)
+  describe("max_tokens forwarding", () => {
+    const baseBody = { messages: [{ role: "user", content: "Hi" }] };
+
+    it("forwards client max_tokens=2048 into inferenceConfig.maxTokens", () => {
+      const result = buildKiroPayload("claude-sonnet-4.6", { ...baseBody, max_tokens: 2048 }, true, {});
+      expect(result.inferenceConfig.maxTokens).toBe(2048);
+    });
+
+    it("caps max_tokens > 32000 at the Kiro upstream limit (32000)", () => {
+      const result = buildKiroPayload("claude-sonnet-4.6", { ...baseBody, max_tokens: 64000 }, true, {});
+      expect(result.inferenceConfig.maxTokens).toBe(32000);
+    });
+
+    it("defaults to 32000 when client omits max_tokens", () => {
+      const result = buildKiroPayload("claude-sonnet-4.6", { ...baseBody }, true, {});
+      expect(result.inferenceConfig.maxTokens).toBe(32000);
+    });
+
+    it("treats max_tokens=0 (falsy) as default 32000", () => {
+      const result = buildKiroPayload("claude-sonnet-4.6", { ...baseBody, max_tokens: 0 }, true, {});
+      expect(result.inferenceConfig.maxTokens).toBe(32000);
+    });
+  });
 });

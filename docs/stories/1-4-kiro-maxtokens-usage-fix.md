@@ -1,6 +1,10 @@
+---
+baseline_commit: 367aa62fe8f52a82a0d884e29add9ad41609a1e4
+---
+
 # Story 1.4: Fix Kiro forward `max_tokens` + đảm bảo usage luôn được emit
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -36,26 +40,22 @@ Thứ tự event upstream là nondeterministic → giải thích Symptom D (nond
 ## Tasks / Subtasks
 
 ### Phần A — max_tokens forwarding (AC#1, #2)
-- [ ] **A1**: `open-sse/translator/request/openai-to-kiro.js` trong `buildKiroPayload`: đổi `const maxTokens = 32000` → `const maxTokens = Math.min(body.max_tokens || 32000, 32000)`.
-- [ ] **A2**: Kiểm tra `MAX_KIRO_TOKENS` có nên thành hằng số đặt tên trong `kiroConstants.js` (tùy chọn, cho dễ chỉnh).
+- [x] **A1**: `open-sse/translator/request/openai-to-kiro.js` trong `buildKiroPayload`: đọc `body.max_tokens` và cap ở 32000. Implement: `const KIRO_MAX_TOKENS = 32000; const maxTokens = body.max_tokens ? Math.min(body.max_tokens, KIRO_MAX_TOKENS) : KIRO_MAX_TOKENS;`
+- [x] **A2**: (tùy chọn) Đã đánh giá: dùng hằng số cục bộ `KIRO_MAX_TOKENS` ngay trong `buildKiroPayload` — đủ rõ ràng, không cần tách sang `kiroConstants.js` (chỉ dùng 1 chỗ). Không thay đổi thêm.
 
 ### Phần B — usage emission không phụ thuộc thứ tự event (AC#3-7)
-- [ ] **B1**: `open-sse/executors/kiro.js` → `transformEventStreamToSSE`: tách logic tính `state.usage` ra một hàm `computeUsage(state)` (dùng `metricsEvent` nếu có, else estimate từ `totalContentLength` + `contextUsagePercentage`).
-- [ ] **B2**: Trong nhánh `messageStopEvent`: trước khi emit finish chunk, gọi `computeUsage` và gắn `chunk.usage` nếu có giá trị.
-- [ ] **B3**: Trong `flush()`: tương tự — gắn `state.usage` (hoặc `computeUsage`) vào finish chunk nếu chưa emit usage.
-- [ ] **B4**: Theo dõi cờ `state.usageEmitted` để tránh emit usage trùng (metering+context branch vs messageStop vs flush).
-- [ ] **B5**: Đảm bảo nhánh `meteringEvent && contextUsageEvent` hiện có vẫn hoạt động khi nó đến trước (ưu tiên giữ, chỉ thêm fallback ở messageStop/flush).
+- [x] **B1**: `open-sse/executors/kiro.js` → `transformEventStreamToSSE`: đã có hàm `computeUsage(st)` (ưu tiên `metricsEvent`, else estimate từ `totalContentLength/4` + `contextUsagePercentage*200000/100`).
+- [x] **B2**: Nhánh `messageStopEvent`: gọi `computeUsage` + gắn `usage` vào finish chunk khi `!finishEmitted` (set `usageEmitted`).
+- [x] **B3**: `flush()`: gắn `state.usage` (computeUsage nếu chưa có) vào finish chunk khi stream kết thúc không có messageStop.
+- [x] **B4**: Cờ `state.usageEmitted` chống emit usage trùng giữa các nhánh (metering+context / messageStop / flush / late-metering).
+- [x] **B5**: Nhánh `meteringEvent && contextUsageEvent && !finishEmitted` vẫn hoạt động khi đến trước; thêm nhánh "late metering" emit usage chunk độc lập khi metering đến sau messageStop.
 
 ### Phần C — Test (AC#3-7)
-- [ ] **C1**: `tests/unit/kiro-usage-emission.test.js` — mô phỏng các thứ tự event:
-  - `metricsEvent` → `messageStopEvent` → assert usage có.
-  - `messageStopEvent` → `meteringEvent` → `contextUsageEvent` → assert usage có (regression cho race).
-  - chỉ `toolUseEvent` + `meteringEvent` + `contextUsageEvent` (không metricsEvent) → assert usage estimate > 0.
-  - stream kết thúc qua `flush` không có messageStop → assert usage có.
-- [ ] **C2**: Test `buildKiroPayload` max_tokens: `body.max_tokens=2048` → payload.inferenceConfig.maxTokens=2048; >32000 → cap 32000; absent → 32000.
+- [x] **C1**: `tests/unit/kiro-usage-emission.test.js` — phủ AC#3 (metrics trước stop), AC#5 (stop trước metering + late metrics), AC#4 (estimate từ content + tool_use args), AC#6 (usage emit đúng 1 lần), AC#7 (flush path). 14/14 pass.
+- [x] **C2**: Bổ sung test thật vào `tests/unit/openai-to-kiro.test.js` (describe "max_tokens forwarding") assert trực tiếp `buildKiroPayload(...).inferenceConfig.maxTokens`: 2048→2048, 64000→cap 32000, absent→32000, 0→32000. 4 case pass.
 
 ### Phần D — Verify production
-- [ ] **D1**: Sau deploy, chạy lại reproduce script: assert `completion_tokens` luôn > 0 và `max_tokens` được tôn trọng (ctok <= max_tokens client gửi, trừ khi model tự dừng sớm).
+- [ ] **D1**: (PENDING DEPLOY) Sau deploy, chạy lại reproduce script: assert `completion_tokens` luôn > 0 và `max_tokens` được tôn trọng. Bước này là kiểm chứng sau triển khai — KHÔNG thể chạy trong môi trường dev (không có production access). Để mở chờ deploy.
 
 ## Dev Notes
 
@@ -87,7 +87,27 @@ Thứ tự event upstream là nondeterministic → giải thích Symptom D (nond
 - [Source: docs/stories/1-2-kiro-toolcall-token-count.md] — fix totalContentLength cho tool_use
 
 ## Dev Agent Record
+
 ### Agent Model Used
+claude-opus-4.8 (Kiro CLI dev-story workflow)
+
 ### Debug Log References
+- Full unit suite trước/sau: 619 → 623 passed | 24 skipped | 0 failed (chỉ thêm 4 test C2, không regression).
+- `kiro-usage-emission.test.js`: 14/14 pass (AC#3-7). `openai-to-kiro.test.js`: 11/11 pass (7 cũ + 4 max_tokens mới).
+
 ### Completion Notes List
+- Phần A (max_tokens) và Phần B (usage emission) đã được implement sẵn trong code (`openai-to-kiro.js`, `kiro.js`) đúng theo AC#1-7; story ở trạng thái `ready-for-dev` nhưng chưa hoàn tất workflow (chưa tick task, chưa có test C2 thật).
+- Đã đối chiếu code với từng AC: tất cả 7 AC đều thoả.
+- **Gap đã đóng**: C2 trước đây chỉ test logic `resolveMaxTokens` tách rời (không gọi code thật). Đã bổ sung describe "max_tokens forwarding" trong `openai-to-kiro.test.js` assert trực tiếp `buildKiroPayload(...).inferenceConfig.maxTokens` cho 4 case (2048, 64000→cap, absent, 0).
+- A2 (optional): giữ hằng số cục bộ `KIRO_MAX_TOKENS` trong `buildKiroPayload`, không tách sang `kiroConstants.js` (chỉ dùng 1 nơi).
+- **D1 còn mở**: kiểm chứng production sau deploy (chạy reproduce script) — không thực hiện được trong môi trường dev (không có production access). Cần chạy thủ công sau khi deploy.
+
 ### File List
+- `tests/unit/openai-to-kiro.test.js` (modified) — thêm describe "max_tokens forwarding" (4 test, AC#1/#2)
+- `docs/stories/1-4-kiro-maxtokens-usage-fix.md` (modified) — frontmatter `baseline_commit`, tick tasks, Dev Agent Record, Change Log, Status
+- (đã có sẵn từ trước, không sửa trong story này) `open-sse/translator/request/openai-to-kiro.js`, `open-sse/executors/kiro.js`, `tests/unit/kiro-usage-emission.test.js`
+
+## Change Log
+| Date | Change |
+|------|--------|
+| 2026-06-07 | Verify + hoàn tất story 1.4: đối chiếu code A/B với AC#1-7, bổ sung test C2 thật cho `buildKiroPayload` max_tokens. Full suite 623 passed/0 failed. Status → review. D1 (verify production) để mở chờ deploy. |

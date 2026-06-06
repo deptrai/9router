@@ -3,7 +3,7 @@ title: "Story 2.2 — Tài khoản user: đăng ký + đăng nhập + hồ sơ"
 story_id: "2.2"
 story_key: "2-2-user-account"
 epic: "A — User Accounts & Authentication"
-status: review
+status: done
 baseline_commit: 7a4486d
 created: 2026-06-06
 source-epics: docs/stories/epics-saas.md
@@ -17,7 +17,7 @@ context:
 
 # Story 2.2 — Tài khoản user (đăng ký + đăng nhập + hồ sơ)
 
-Status: review
+Status: done
 
 <!-- Story gộp (vertical slice) từ 5 story cũ: 2.2 usersRepo, 2.3 register, 2.4 login/status, 2.15 UI, 2.16 profile. Ranh giới = vertical (1 feature đủ DB+BE+FE). Nhịp thực thi = task theo lớp DB → BE → FE, commit/review từng chặng. -->
 
@@ -201,16 +201,16 @@ Status: review
 ## Review Findings
 
 ### decision-needed
-- [ ] [Review][Decision] **Privilege escalation — role chưa được enforce ở `dashboardGuard`** [`src/dashboardGuard.js`] — Guard chỉ `verifyDashboardAuthToken` (verify chữ ký JWT), KHÔNG đọc `role`. Token `role:"user"` (do 2.2 phát hành) qua được toàn bộ `PROTECTED_API_PATHS` (`/api/settings`, `/api/providers`, `/api/keys` GET-all, `/api/usage`...). Route-guard role thuộc scope **Story 2.5**, nhưng 2.2 đã bật đăng ký user → mở lỗ hổng NGAY khi 2.5 chưa làm. Cần quyết định: (a) chấp nhận tới khi 2.5, (b) thêm role-guard tối thiểu vào 2.2, (c) gate đăng ký sau cờ tới khi 2.5.
+- [x] [Review][Decision] **Privilege escalation — role chưa được enforce ở `dashboardGuard`** [`src/dashboardGuard.js`] — Guard chỉ `verifyDashboardAuthToken` (verify chữ ký JWT), KHÔNG đọc `role`. Token `role:"user"` (do 2.2 phát hành) qua được toàn bộ `PROTECTED_API_PATHS` (`/api/settings`, `/api/providers`, `/api/keys` GET-all, `/api/usage`...). Route-guard role thuộc scope **Story 2.5**, nhưng 2.2 đã bật đăng ký user → mở lỗ hổng NGAY khi 2.5 chưa làm. Cần quyết định: (a) chấp nhận tới khi 2.5, (b) thêm role-guard tối thiểu vào 2.2, (c) gate đăng ký sau cờ tới khi 2.5.
 
 ### patch
-- [ ] [Review][Patch] Lockout dùng chung key IP — user login thành công xoá bộ đếm brute-force admin [`src/app/api/auth/login/route.js`, `src/lib/auth/loginLimiter.js`] — attacker tạo account riêng, login thành công (`recordSuccess(ip)` → `attempts.delete(ip)`) reset lockout admin → bypass khoá. Fix: key limiter theo `${mode}:${ip}` (user/admin tách).
-- [ ] [Review][Patch] `/api/auth/register` không rate-limit → enumeration + DoS [`src/app/api/auth/register/route.js`] — endpoint public, mỗi request `bcrypt.hash` block CPU; 409 lộ email tồn tại. Fix: áp `loginLimiter`/throttle theo IP cho register.
-- [ ] [Review][Patch] Email không normalize (case-sensitive) [`register/route.js`, `usersRepo.getUserByEmail`] — `Foo@x.com` vs `foo@x.com` tạo account trùng + login fail. Fix: `email.trim().toLowerCase()` trước lưu/tra.
-- [ ] [Review][Patch] TOCTOU trùng email → 500 + lộ `error.message` [`register/route.js`, `usersRepo.createUser`] — 2 register đồng thời vượt check → INSERT thứ 2 ném UNIQUE → catch trả 500 raw. Fix: try/catch quanh `createUser` map UNIQUE → 409; không trả `error.message` thô.
-- [ ] [Review][Patch] Admin login password rỗng → `bcrypt.compare(undefined,...)` ném → 500 + bỏ `recordFail` [`src/app/api/auth/login/route.js`] — nhánh admin thiếu `|| ""` (nhánh user đã có). Fix: `bcrypt.compare(password || "", storedHash)`.
-- [ ] [Review][Patch] `updateUser` serialize `isActive` sai với boolean `false`/`null` [`usersRepo.js`] — ternary trả `false`/`null` → driver không bind boolean → 500 (latent, chưa caller nào trigger). Fix: `merged.isActive ? 1 : 0`.
-- [ ] [Review][Patch] `users/me` PATCH displayName crash nếu `updateUser` trả null (user bị xoá mid-session) [`src/app/api/users/me/route.js`] — `updated.id` throw → 500. Fix: null-check → 404.
+- [x] [Review][Patch] Lockout dùng chung key IP — user login thành công xoá bộ đếm brute-force admin [`src/app/api/auth/login/route.js`, `src/lib/auth/loginLimiter.js`] — attacker tạo account riêng, login thành công (`recordSuccess(ip)` → `attempts.delete(ip)`) reset lockout admin → bypass khoá. Fix: key limiter theo `${mode}:${ip}` (user/admin tách).
+- [x] [Review][Patch] `/api/auth/register` không rate-limit → enumeration + DoS [`src/app/api/auth/register/route.js`] — endpoint public, mỗi request `bcrypt.hash` block CPU; 409 lộ email tồn tại. Fix: áp `loginLimiter`/throttle theo IP cho register.
+- [x] [Review][Patch] Email không normalize (case-sensitive) [`register/route.js`, `usersRepo.getUserByEmail`] — `Foo@x.com` vs `foo@x.com` tạo account trùng + login fail. Fix: `email.trim().toLowerCase()` trước lưu/tra.
+- [x] [Review][Patch] TOCTOU trùng email → 500 + lộ `error.message` [`register/route.js`, `usersRepo.createUser`] — 2 register đồng thời vượt check → INSERT thứ 2 ném UNIQUE → catch trả 500 raw. Fix: try/catch quanh `createUser` map UNIQUE → 409; không trả `error.message` thô.
+- [x] [Review][Patch] Admin login password rỗng → `bcrypt.compare(undefined,...)` ném → 500 + bỏ `recordFail` [`src/app/api/auth/login/route.js`] — nhánh admin thiếu `|| ""` (nhánh user đã có). Fix: `bcrypt.compare(password || "", storedHash)`.
+- [x] [Review][Patch] `updateUser` serialize `isActive` sai với boolean `false`/`null` [`usersRepo.js`] — ternary trả `false`/`null` → driver không bind boolean → 500 (latent, chưa caller nào trigger). Fix: `merged.isActive ? 1 : 0`.
+- [x] [Review][Patch] `users/me` PATCH displayName crash nếu `updateUser` trả null (user bị xoá mid-session) [`src/app/api/users/me/route.js`] — `updated.id` throw → 500. Fix: null-check → 404.
 
 ### defer (pre-existing / ngoài scope)
 - [x] [Review][Defer] `getClientIp` tin `X-Forwarded-For` client → spoof bypass lockout [`loginLimiter.js`] — pre-existing, cần allowlist proxy (hạ tầng).
@@ -262,3 +262,4 @@ Ultimate context engine analysis completed - comprehensive developer guide creat
 ### Change Log
 - 2026-06-06: Story created (ready-for-dev) — gộp vertical từ cũ 2.2/2.3/2.4/2.15/2.16
 - 2026-06-06: Story implemented — all 9 tasks complete, 34 new unit tests, status → review
+- 2026-06-07: Review findings resolved — 7 [Patch] security fixes applied in code (limiter user:ip split, register rate-limit, email lowercase, TOCTOU→409, bcrypt.compare(||""), isActive?1:0, users/me null→404) + decision-needed (role enforce) closed via dashboardGuard role-gate (story 2.5). Verified via deepgrep + grep + tests (56 pass). Status → done.
