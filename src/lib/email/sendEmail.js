@@ -1,28 +1,68 @@
 /**
- * sendEmail — Resend REST API, fail-soft (Story 2.6, AC1)
+ * sendEmail — multi-adapter, fail-soft (Story 2.6, AC1)
  *
- * Fail-soft rules:
- * - RESEND_API_KEY/EMAIL_FROM missing → { sent:false, skipped:true } (no throw, no fetch)
- * - Resend non-2xx → { sent:false, error } (no throw)
- * - Network error → { sent:false, error } (no throw)
+ * Priority order:
+ *   1. MAILPIT_URL (e.g. http://localhost:8025) → Mailpit HTTP API (dev/local)
+ *   2. RESEND_API_KEY + EMAIL_FROM → Resend REST API (production)
+ *   3. Neither configured → skip silently { sent:false, skipped:true }
  *
  * Never throws — safe to call from any request handler.
+ * No external SDK — pure fetch (Node 20+ global).
  */
 
-const RESEND_API_URL = "https://api.resend.com/emails";
-
 export async function sendEmail({ to, subject, html }) {
+  // ── Adapter 1: Mailpit (local dev) ──────────────────────────────────────
+  const mailpitUrl = process.env.MAILPIT_URL;
+  if (mailpitUrl) {
+    return sendViaMailpit({ to, subject, html, mailpitUrl });
+  }
+
+  // ── Adapter 2: Resend (production) ──────────────────────────────────────
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM;
 
-  // Fail-soft: missing config → skip silently
-  if (!apiKey || !from) {
-    console.warn("[sendEmail] RESEND_API_KEY or EMAIL_FROM not configured — skipping email send");
-    return { sent: false, skipped: true };
+  if (apiKey && from) {
+    return sendViaResend({ to, subject, html, apiKey, from });
   }
 
+  // ── Neither configured → skip silently ──────────────────────────────────
+  console.warn("[sendEmail] No email provider configured (MAILPIT_URL or RESEND_API_KEY+EMAIL_FROM) — skipping");
+  return { sent: false, skipped: true };
+}
+
+async function sendViaMailpit({ to, subject, html, mailpitUrl }) {
+  const from = process.env.EMAIL_FROM || "9Router <noreply@localhost>";
   try {
-    const res = await fetch(RESEND_API_URL, {
+    const res = await fetch(`${mailpitUrl.replace(/\/$/, "")}/api/v1/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from,
+        to: Array.isArray(to) ? to : [to], // Mailpit expects array
+        subject,
+        html,
+      }),
+    });
+
+    if (!res.ok) {
+      let errorBody;
+      try { errorBody = await res.json(); } catch { errorBody = await res.text(); }
+      console.error("[sendEmail/mailpit] error:", res.status, errorBody);
+      return { sent: false, error: `Mailpit ${res.status}: ${JSON.stringify(errorBody)}` };
+    }
+
+    const data = await res.json().catch(() => ({}));
+    console.info("[sendEmail/mailpit] sent →", data?.ID || data?.id || "ok");
+    return { sent: true };
+  } catch (err) {
+    console.error("[sendEmail/mailpit] network error:", err?.message || err);
+    return { sent: false, error: err?.message || String(err) };
+  }
+}
+
+async function sendViaResend({ to, subject, html, apiKey, from }) {
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -34,13 +74,13 @@ export async function sendEmail({ to, subject, html }) {
     if (!res.ok) {
       let errorBody;
       try { errorBody = await res.json(); } catch { errorBody = await res.text(); }
-      console.error("[sendEmail] Resend error:", res.status, errorBody);
+      console.error("[sendEmail/resend] error:", res.status, errorBody);
       return { sent: false, error: `Resend ${res.status}: ${JSON.stringify(errorBody)}` };
     }
 
     return { sent: true };
   } catch (err) {
-    console.error("[sendEmail] Network error:", err?.message || err);
+    console.error("[sendEmail/resend] network error:", err?.message || err);
     return { sent: false, error: err?.message || String(err) };
   }
 }
