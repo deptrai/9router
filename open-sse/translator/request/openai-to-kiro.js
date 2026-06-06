@@ -287,9 +287,74 @@ function convertMessages(messages, tools, model) {
 }
 
 /**
+ * Resolve the forced-tool directive from OpenAI/Claude tool_choice.
+ *
+ * Kiro/AWS CodeWhisperer protocol has no native field to force a specific tool call.
+ * Workaround: inject a plain-text directive into the user message content.
+ * Verified live (2026-06-06): both Sonnet 4.6 and Haiku 4.5 honour the directive.
+ *
+ * @param {*} toolChoice - body.tool_choice (OpenAI or Claude shape)
+ * @param {Array} tools  - body.tools array (OpenAI function schema)
+ * @returns {{ mode: "named"|"required"|"none", name?: string }}
+ */
+function resolveForcedTool(toolChoice, tools) {
+  if (!toolChoice) return { mode: "none" };
+
+  const toolList = Array.isArray(tools) ? tools : [];
+
+  // OpenAI: "required" / "auto" / "none"
+  if (typeof toolChoice === "string") {
+    if (toolChoice === "required") return toolList.length > 0 ? { mode: "required" } : { mode: "none" };
+    return { mode: "none" }; // "auto" / "none"
+  }
+
+  if (typeof toolChoice !== "object") return { mode: "none" };
+
+  // Claude shape: { type: "any" } or { type: "auto" }
+  if (toolChoice.type === "any") return toolList.length > 0 ? { mode: "required" } : { mode: "none" };
+  if (toolChoice.type === "auto") return { mode: "none" };
+
+  // Claude shape: { type: "tool", name: "X" }
+  if (toolChoice.type === "tool" && toolChoice.name) {
+    return _validateNamedTool(toolChoice.name, tools);
+  }
+
+  // OpenAI shape: { type: "function", function: { name: "X" } }
+  if (toolChoice.type === "function" && toolChoice.function?.name) {
+    return _validateNamedTool(toolChoice.function.name, tools);
+  }
+
+  return { mode: "none" };
+}
+
+function _validateNamedTool(name, tools) {
+  if (!name) return { mode: "none" };
+  const toolList = Array.isArray(tools) ? tools : [];
+  const exists = toolList.some(t => (t.function?.name || t.name) === name);
+  if (exists) return { mode: "named", name };
+  // Tool not in declared list — downgrade to required (if any tools) or no-op
+  if (toolList.length > 0) return { mode: "required" };
+  return { mode: "none" };
+}
+
+/**
+ * Build the forced-tool directive text to append to finalContent.
+ * Returns empty string when no directive is needed (mode === "none").
+ */
+function buildToolChoiceDirective(forced) {
+  if (forced.mode === "named") {
+    return `\n\n[TOOL DIRECTIVE] You MUST now call the tool \`${forced.name}\`. Do not call any other tool. Do not reply with plain text.`;
+  }
+  if (forced.mode === "required") {
+    return `\n\n[TOOL DIRECTIVE] You MUST call one of the available tools now. Do not reply with plain text.`;
+  }
+  return "";
+}
+
+/**
  * Build Kiro payload from OpenAI format
  *
- * Two 9router-specific behaviours implemented here:
+ * Three 9router-specific behaviours implemented here:
  *
  * 1. `-agentic` model suffix. Synthetic variant — same upstream model, but we
  *    inject a chunked-write system prompt to keep large file writes under
@@ -302,6 +367,12 @@ function convertMessages(messages, tools, model) {
  *    sent upstream. Detection covers Anthropic-Beta header, Claude API
  *    `thinking`, OpenAI `reasoning_effort`, AMP/Cursor magic tags, and model
  *    name hints.
+ *
+ * 3. tool_choice enforcement. Kiro protocol has no native field to force a
+ *    specific tool call. When the client sends tool_choice (named or required),
+ *    we inject a plain-text directive at the end of finalContent so the model
+ *    is explicitly instructed to call the right tool — verified live on Sonnet 4.6
+ *    and Haiku 4.5. No-op when tool_choice is absent / "auto" / "none".
  */
 export function buildKiroPayload(model, body, stream, credentials) {
   const messages = body.messages || [];
@@ -332,6 +403,11 @@ export function buildKiroPayload(model, body, stream, credentials) {
     prefixParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
   }
   finalContent = `${prefixParts.join("\n\n")}\n\n${finalContent}`;
+
+  // Enforce tool_choice via prompt injection (Kiro protocol has no native field).
+  // Appended AFTER all other prefixes so the model sees it as the last instruction.
+  const forced = resolveForcedTool(body.tool_choice, tools);
+  finalContent += buildToolChoiceDirective(forced);
 
   const payload = {
     conversationState: {

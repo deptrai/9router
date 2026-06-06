@@ -294,12 +294,27 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
 // Convert OpenAI tool choice to Claude format
 function convertOpenAIToolChoice(choice) {
   if (!choice) return { type: "auto" };
-  if (typeof choice === "object" && choice.type) return choice;
-  if (choice === "auto" || choice === "none") return { type: "auto" };
-  if (choice === "required") return { type: "any" };
-  if (typeof choice === "object" && choice.function) {
+
+  // String shortcuts
+  if (typeof choice === "string") {
+    if (choice === "required") return { type: "any" };
+    return { type: "auto" }; // "auto" / "none"
+  }
+
+  if (typeof choice !== "object") return { type: "auto" };
+
+  // OpenAI named-function shape: { type: "function", function: { name: "X" } }
+  // Must be checked BEFORE the generic passthrough below — otherwise {type:"function",...}
+  // would be returned as-is, which Anthropic rejects.
+  if (choice.function?.name) {
     return { type: "tool", name: choice.function.name };
   }
+
+  // Claude-native shapes: { type: "auto" | "any" | "tool", ... } — pass through as-is
+  if (choice.type === "auto" || choice.type === "none") return { type: "auto" };
+  if (choice.type === "any" || choice.type === "tool") return choice;
+
+  // Unknown object shape — default to auto
   return { type: "auto" };
 }
 

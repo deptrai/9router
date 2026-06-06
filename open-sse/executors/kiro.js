@@ -254,6 +254,11 @@ export class KiroExecutor extends BaseExecutor {
                   continue;
                 }
 
+                // Count tool arguments towards output token estimate.
+                // metricsEvent (exact tokens) takes priority when available; this
+                // ensures the estimate is non-zero for pure tool-call responses.
+                state.totalContentLength += argumentsStr.length;
+
                 const argsChunk = {
                   id: responseId,
                   object: "chat.completion.chunk",
