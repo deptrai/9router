@@ -14,12 +14,22 @@
 import { getApiKeyByKey } from "../db/repos/apiKeysRepo.js";
 import { getQuotaConfig, getQuotaState, setQuotaState, sumUsageTokens } from "../db/repos/quotaRepo.js";
 import { resolveWindow, duration, formatResetCountdown } from "./window.js";
+import { normalizeModelName } from "./normalize.js";
 
 // Map window type → key trong state object
 const WINDOW_STATE_KEY = {
   "5h": "win5h",
   "weekly": "winWeek",
 };
+
+/**
+ * Check if 2 model names are equivalent after normalization.
+ */
+function modelsMatch(limitModel, requestModel) {
+  if (limitModel === "*") return true;
+  if (limitModel === requestModel) return true;
+  return normalizeModelName(limitModel) === normalizeModelName(requestModel);
+}
 
 /**
  * Kiểm tra quota cho một API key + model.
@@ -53,7 +63,7 @@ export async function checkKeyQuota(apiKey, model) {
 
     // Lọc limits áp dụng cho model này (model-specific + wildcard)
     const applicable = limits.filter(
-      (l) => l.model === model || l.model === "*"
+      (l) => modelsMatch(l.model, model)
     );
     if (applicable.length === 0) {
       return { allowed: true };

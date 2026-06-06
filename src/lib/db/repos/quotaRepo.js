@@ -7,6 +7,7 @@
 
 import { getAdapter } from "../driver.js";
 import { makeKv } from "../helpers/kvStore.js";
+import { normalizeModelName } from "../../quota/normalize.js";
 
 const quotaConfigKv = makeKv("keyQuota");
 const quotaStateKv = makeKv("keyQuotaState");
@@ -75,12 +76,24 @@ export async function sumUsageTokens(apiKey, model, sinceISO) {
   const db = await getAdapter();
   let row;
   if (model && model !== "*") {
-    row = db.get(
-      `SELECT COALESCE(SUM(promptTokens + completionTokens), 0) AS total
-         FROM usageHistory
-        WHERE apiKey = ? AND timestamp >= ? AND model = ?`,
-      [apiKey, sinceISO, model]
-    );
+    // Query cả normalized variant (dot) lẫn original để match cross-provider naming
+    // e.g. "claude-opus-4-8" (cc) vs "claude-opus-4.8" (kr)
+    const normalized = normalizeModelName(model);
+    if (normalized !== model) {
+      row = db.get(
+        `SELECT COALESCE(SUM(promptTokens + completionTokens), 0) AS total
+           FROM usageHistory
+          WHERE apiKey = ? AND timestamp >= ? AND (model = ? OR model = ?)`,
+        [apiKey, sinceISO, model, normalized]
+      );
+    } else {
+      row = db.get(
+        `SELECT COALESCE(SUM(promptTokens + completionTokens), 0) AS total
+           FROM usageHistory
+          WHERE apiKey = ? AND timestamp >= ? AND model = ?`,
+        [apiKey, sinceISO, model]
+      );
+    }
   } else {
     row = db.get(
       `SELECT COALESCE(SUM(promptTokens + completionTokens), 0) AS total
