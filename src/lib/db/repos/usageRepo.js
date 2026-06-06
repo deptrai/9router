@@ -285,7 +285,8 @@ export async function saveRequestUsage(entry) {
 
     // Update lastUsedAt for the API key (fire-and-forget, non-blocking)
     if (entry.apiKey) {
-      try { updateLastUsed(entry.apiKey); } catch {}
+      // async fire-and-forget: must .catch() — a sync try/catch cannot catch a rejected promise
+      updateLastUsed(entry.apiKey).catch(() => {});
     }
   } catch (e) {
     console.error("Failed to save usage stats:", e);

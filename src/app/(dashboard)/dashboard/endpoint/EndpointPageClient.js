@@ -66,6 +66,7 @@ export default function APIPageClient({ machineId }) {
   const [confirmState, setConfirmState] = useState(null);
   const [editKey, setEditKey] = useState(null); // key object being edited
   const [editDescription, setEditDescription] = useState("");
+  const [editError, setEditError] = useState("");
   const [usageByKey, setUsageByKey] = useState({}); // keyString → total cost
 
   const [requireApiKey, setRequireApiKey] = useState(false);
@@ -765,10 +766,12 @@ export default function APIPageClient({ machineId }) {
   const handleOpenEdit = (key) => {
     setEditKey(key);
     setEditDescription(key.description || "");
+    setEditError("");
   };
 
   const handleSaveEdit = async () => {
     if (!editKey) return;
+    setEditError("");
     try {
       const res = await fetch(`/api/keys/${editKey.id}`, {
         method: "PUT",
@@ -778,9 +781,13 @@ export default function APIPageClient({ machineId }) {
       if (res.ok) {
         setKeys(prev => prev.map(k => k.id === editKey.id ? { ...k, description: editDescription } : k));
         setEditKey(null);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setEditError(data.error || "Failed to update key");
       }
     } catch (error) {
       console.log("Error editing key:", error);
+      setEditError("An error occurred");
     }
   };
 
@@ -1553,9 +1560,12 @@ export default function APIPageClient({ machineId }) {
               placeholder="Describe what this key is for..."
             />
           </div>
+          {editError && (
+            <p className="text-xs text-red-500">{editError}</p>
+          )}
           <div className="flex gap-2">
             <Button onClick={handleSaveEdit} fullWidth>Save</Button>
-            <Button onClick={() => setEditKey(null)} variant="ghost" fullWidth>Cancel</Button>
+            <Button onClick={() => { setEditKey(null); setEditError(""); }} variant="ghost" fullWidth>Cancel</Button>
           </div>
         </div>
       </Modal>

@@ -3,7 +3,7 @@ title: "Story 2.3 — Sở hữu API key: ownership + routes role-aware + key ta
 story_id: "2.3"
 story_key: "2-3-api-key-ownership"
 epic: "B — API Key Ownership"
-status: review
+status: done
 baseline_commit: dc144b2  # D1: bumped from 7a4486d (story 2.1) — 2.3 depends on story 2.2 @ dc144b2 (role/userId in JWT). Dev 2.3 only AFTER 2.2 approved.
 depends_on: 2-2-user-account (status: review @ dc144b2)
 created: 2026-06-06
@@ -19,7 +19,7 @@ context:
 
 # Story 2.3 — Sở hữu API key (ownership + routes + UI)
 
-Status: review
+Status: done
 
 <!-- Vertical slice gộp từ cũ 2.5 (apiKeysRepo ownership) + 2.6 (routes role-aware) + 2.17 (key table UI). Nhịp dev: DB → BE → FE. Phụ thuộc story 2.2 (role trong JWT + userId). -->
 
@@ -182,6 +182,22 @@ Status: review
 - [x] [Review][Defer] Tái dùng `src/lib/auth/requireRole.js` (untracked: `requireAdmin/getSessionRole`) thay vì inline `role ?? "admin"` — optional, có thể là artifact của story 2.5.
 - [x] [Review][Defer] Token legacy/null bị coi là admin → thấy mọi key [`route.js`] — by design (backward-compat), kế thừa caveat "role chưa enforce ở guard" của 2.2.
 
+### Code Review — post-implementation (2026-06-06, commit `b27e425`)
+
+> Review diff `a5eda92..b27e425` (10 files, +656/−37). Tests: **23/23 PASS** (`apiKeysRepo` 8 + `keysRoutes` 15). **Tất cả 12 finding pre-implementation đã được xử lý** (5 decision ✓, 2 spec-fix ✓, 4 dev-guardrail ✓). Chất lượng cao. Triage: 0 decision-needed, 2 patch, 2 defer, 2 dismiss.
+
+#### patch
+- [x] [Review][Patch] (✅ ĐÃ FIX) **`updateLastUsed` fire-and-forget KHÔNG bắt được async rejection** [`src/lib/db/repos/usageRepo.js:286`] — `try { updateLastUsed(entry.apiKey); } catch {}`: `updateLastUsed` là `async` → trả promise; try/catch đồng bộ KHÔNG bắt rejection. Nếu UPDATE lỗi (DB lock/close, adapter fail) → unhandled promise rejection (AC2 yêu cầu "KHÔNG throw nếu lỗi"). Fix: `updateLastUsed(entry.apiKey).catch(() => {})`. Mức: thấp-trung (hiếm throw — UPDATE no-op an toàn + getAdapter cached).
+- [x] [Review][Patch] (✅ ĐÃ FIX) **`handleSaveEdit` nuốt lỗi im lặng** [`EndpointPageClient.js`] — nếu PUT trả `!ok` (vd 403), không hiện lỗi, modal vẫn mở → user tưởng đã lưu. Thêm hiển thị lỗi như modal Create. Mức: thấp (UX).
+
+#### defer
+- [x] [Review][Defer] `updateLastUsed` đặt NGOÀI transaction `saveRequestUsage` — thêm 1 DB write/round-trip mỗi request (không atomic với usage insert). Chạy OK; cân nhắc gộp vào txn khi làm story 2.4 (cùng chỗ trừ credit).
+- [x] [Review][Defer] PUT trả `{ key: null }` nếu `updateApiKey` trả null (key bị xoá giữa getApiKeyById và updateApiKey — TOCTOU) [`keys/[id]/route.js`] — edge hiếm, low.
+
+#### dismiss
+- Modal Edit không có Status toggle bên trong (UX §4 gợi ý có) — status vẫn sửa được qua Toggle inline ở row → chấp nhận thiết kế.
+- `MaxListenersExceededWarning` khi chạy test — noise của test harness, không phải code sản phẩm.
+
 ---
 
 ## Dev Agent Record
@@ -222,3 +238,4 @@ Ultimate context engine analysis completed - comprehensive developer guide creat
 - 2026-06-06: Pre-implementation SPEC review (code-review skill). 5 decision-needed RESOLVED (best-practice), 6 patch = action item cho dev, 5 defer → `_bmad-output/implementation-artifacts/deferred-work.md`. Baseline bump 7a4486d→dc144b2. Status giữ `ready-for-dev` (story chưa code — KHÔNG set done/in-progress).
 - 2026-06-06: Áp 2 `[Spec-Fix]` — sửa Dev Notes cho đúng code thật (`updateApiKey` KHÔNG lọc undefined; PUT chỉ đọc `isActive`). 4 `[Dev-Guardrail]` vẫn để dev xử lý khi implement.
 - 2026-06-06: Story implemented — all 5 tasks complete, 23 new unit tests, 85 total regression green, status → review
+- 2026-06-06: Post-implementation code review (commit b27e425). 12/12 prior findings verified addressed; 23/23 tests PASS. 2 patch ÁP NGAY (updateLastUsed `.catch()`; handleSaveEdit hiện lỗi), 2 defer, 2 dismiss. Re-test 40/40 green. Status → **done**.

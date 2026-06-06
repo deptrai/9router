@@ -4,7 +4,8 @@ story_id: "2.4"
 story_key: "2-4-credit-billing"
 epic: "C — Credit & Billing"
 status: ready-for-dev
-baseline_commit: 7a4486d
+baseline_commit: b27e425  # bumped from 7a4486d — 2.4 cần usersRepo (2.2 @dc144b2) + ĐỤNG saveRequestUsage (2.3 @b27e425). Commit fix review 2.3 trước khi dev 2.4.
+depends_on: 2-2-user-account (@dc144b2), 2-3-api-key-ownership (@b27e425)
 created: 2026-06-06
 source-epics: docs/stories/epics-saas.md
 source-prd: docs/PRD_SAAS_MVP.md
@@ -152,6 +153,24 @@ Status: ready-for-dev
 - Epic C trong `docs/stories/epics-saas.md`.
 - PRD FR-12, FR-16, FR-17, NFR-3 (atomicity), NFR-5 (performance).
 - Code: `usageRepo.js`, `sse/handlers/chat.js`, `apiKeysRepo.js`, `usersRepo.js` (story 2.2).
+
+---
+
+## Review Findings
+
+> **Pre-implementation SPEC review** (story CHƯA code) — 2026-06-06. Code-claims verify tại HEAD `b27e425` (+ uncommitted 2.3 fixes). **Verdict: spec chất lượng cao** — phần lớn code-claims ĐÚNG: `apiKey` in scope (`handleSingleModelChat` param), điểm chèn `checkKeyQuota`(chat.js:161)→`getProviderCredentials`(181) ✓, `unavailableResponse(status,msg,retryAfter,retryAfterHuman)` xác nhận tại chat.js:189 (FR-16 OK) ✓, `getUserById`/`getApiKeyByKey`/`saveRequestUsage` txn ✓. Triage: 0 decision-needed, 1 spec-fix, 3 dev-guardrail, 2 confirm/defer.
+
+### spec-fix
+- [x] [Review][Spec-Fix] **`baseline_commit: 7a4486d` SAI** (đã sửa → `b27e425`) — 7a4486d (story 2.1) chưa có `usersRepo`/`getUserById` (story 2.2) và chưa có thay đổi `saveRequestUsage` của story 2.3. 2.4 phụ thuộc cả hai. Dev 2.4 phải base trên HEAD sau 2.2+2.3.
+
+### dev-guardrail (xử lý khi implement)
+- [ ] [Review][Dev-Guardrail] **`saveRequestUsage` GIỜ đã có `updateLastUsed(...).catch()` (story 2.3) đặt SAU `db.transaction()`** [`src/lib/db/repos/usageRepo.js`] — spec mô tả "3 writes" theo trạng thái 7a4486d (cũ). Thực tế đặt deduction TRONG transaction (sau 3 writes, trước khi đóng) — KHÔNG đụng/đừng xoá block `updateLastUsed` ở sau. Lưu ý merge với fix review 2.3 (đang uncommitted).
+- [ ] [Review][Dev-Guardrail] **Resolve key/userId LẶP nhiều lần mỗi request** [`chat.js`, `keyQuota.js`, `usageRepo.js`] — mỗi request hiện sẽ: `checkKeyQuota`→`getApiKeyByKey`; `checkCredits`→`getApiKeyByKey`+`getUserById`; deduction→`SELECT userId FROM apiKeys`; lastUsedAt→`UPDATE apiKeys WHERE key`. ~3-4 lần chạm key/user. Cân nhắc resolve `userId` 1 lần và truyền xuống (perf hot-path, NFR-5). Nếu không tối ưu ngay → ít nhất ghi nhận.
+- [ ] [Review][Dev-Guardrail] **Commit fix review story 2.3 TRƯỚC khi dev 2.4** [working tree] — `usageRepo.js` + `EndpointPageClient.js` đang sửa (uncommitted). 2.4 cũng sửa `usageRepo.js` (`saveRequestUsage`) → commit 2.3 trước để tránh commit lẫn lộn + conflict.
+
+### confirm / defer
+- [x] [Review][Confirm] **Deduct khi `cost > 0` bất kể status** — đúng best-practice: cost = token thật provider tính, dùng token thì trừ (kể cả stream lỗi giữa chừng). Giữ nguyên cách spec.
+- [x] [Review][Defer] **Overshoot balance âm do concurrent** (checkCredits admission trước, deduction sau) — đã accept là soft-limit (REAL, documented kiến trúc §6). Không cần pessimistic lock MVP-1.
 
 ---
 
