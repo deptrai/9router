@@ -14,6 +14,9 @@ const originalFetch = global.fetch;
 describe("Codex Refresh Token", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset modules so the per-(provider,refreshToken) dedup cache in tokenRefresh.js
+    // does not leak a previous test's result into the next (both tests reuse "old-refresh-token").
+    vi.resetModules();
   });
 
   afterEach(() => {

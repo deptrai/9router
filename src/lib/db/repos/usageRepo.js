@@ -373,9 +373,10 @@ export async function getUsageStats(period = "all", userId = null) {
   for (const k of allApiKeys) apiKeyMap[k.key] = { name: k.name, id: k.id, createdAt: k.createdAt };
 
   // recentRequests from live history (last 100 entries enough for 20 deduped)
-  const recentRows = db.all(`SELECT timestamp, provider, model, tokens, status FROM usageHistory ORDER BY id DESC LIMIT 100`);
+  const recentRows = db.all(`SELECT timestamp, provider, model, tokens, status, apiKey FROM usageHistory ORDER BY id DESC LIMIT 100`);
   const seen = new Set();
   const recentRequests = recentRows
+    .filter((r) => userKeySet === null || (r.apiKey && userKeySet.has(r.apiKey)))
     .map((r) => {
       const t = parseJson(r.tokens, {}) || {};
       return {
@@ -406,8 +407,11 @@ export async function getUsageStats(period = "all", userId = null) {
     errorProvider: (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "",
   };
 
-  // Active requests
-  for (const [connectionId, models] of Object.entries(pendingRequests.byAccount)) {
+  // Active requests (user mode: pending/active are keyed by connection, not user → omit for isolation)
+  if (userKeySet !== null) {
+    stats.pending = { byModel: {}, byAccount: {} };
+  }
+  for (const [connectionId, models] of Object.entries(userKeySet === null ? pendingRequests.byAccount : {})) {
     for (const [modelKey, count] of Object.entries(models)) {
       if (count > 0) {
         const accountName = connectionMap[connectionId] || `Account ${connectionId.slice(0, 8)}...`;
@@ -432,10 +436,11 @@ export async function getUsageStats(period = "all", userId = null) {
     stats.last10Minutes.push(bucketMap[ts]);
   }
   const recent10 = db.all(
-    `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
+    `SELECT timestamp, promptTokens, completionTokens, cost, apiKey FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
     [tenMinutesAgo.toISOString(), now.toISOString()]
   );
   for (const r of recent10) {
+    if (userKeySet !== null && (!r.apiKey || !userKeySet.has(r.apiKey))) continue;
     const tt = new Date(r.timestamp).getTime();
     const minuteStart = Math.floor(tt / 60000) * 60000;
     if (bucketMap[minuteStart]) {

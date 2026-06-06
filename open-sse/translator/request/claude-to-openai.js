@@ -109,6 +109,15 @@ function fixMissingToolResponses(messages) {
   }
 }
 
+// Flatten a content-parts array to a string when EVERY part is text (preserve multimodal otherwise).
+// Mirrors how `system` content is joined; improves compat with strict OpenAI/ollama providers.
+function flattenTextParts(parts) {
+  if (Array.isArray(parts) && parts.length > 0 && parts.every(p => p && p.type === "text")) {
+    return parts.map(p => p.text || "").join("\n");
+  }
+  return parts;
+}
+
 // Convert single Claude message - returns single message or array of messages
 function convertClaudeMessage(msg) {
   const role = msg.role === "user" || msg.role === "tool" ? "user" : "assistant";
@@ -177,9 +186,7 @@ function convertClaudeMessage(msg) {
     // If has tool results, return array of tool messages
     if (toolResults.length > 0) {
       if (parts.length > 0) {
-        const textContent = parts.length === 1 && parts[0].type === "text" 
-          ? parts[0].text 
-          : parts;
+        const textContent = flattenTextParts(parts);
         return [...toolResults, { role: "user", content: textContent }];
       }
       return toolResults;
@@ -189,9 +196,7 @@ function convertClaudeMessage(msg) {
     if (toolCalls.length > 0) {
       const result = { role: "assistant" };
       if (parts.length > 0) {
-        result.content = parts.length === 1 && parts[0].type === "text" 
-          ? parts[0].text 
-          : parts;
+        result.content = flattenTextParts(parts);
       }
       result.tool_calls = toolCalls;
       return result;
@@ -201,7 +206,7 @@ function convertClaudeMessage(msg) {
     if (parts.length > 0) {
       return {
         role,
-        content: parts.length === 1 && parts[0].type === "text" ? parts[0].text : parts
+        content: flattenTextParts(parts)
       };
     }
     

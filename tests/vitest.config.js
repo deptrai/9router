@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { defineConfig, configDefaults } from "vitest/config";
 import { resolve } from "path";
 import { fileURLToPath } from "url";
 
@@ -9,6 +9,12 @@ export default defineConfig({
     environment: "node",
     globals: true,
     include: ["**/*.test.js"],
+    exclude: [
+      ...configDefaults.exclude,
+      // embeddings.cloud.test.js targets the separate `cloud/` Cloudflare Workers package,
+      // which is not part of this repository — its imports cannot resolve here.
+      "**/embeddings.cloud.test.js",
+    ],
     // Suppress noisy console output from handlers under test
     silent: false,
   },

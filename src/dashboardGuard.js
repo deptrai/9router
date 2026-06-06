@@ -193,10 +193,20 @@ export async function proxy(request) {
     }
   }
 
-  // Always protected - require valid JWT or local CLI token (machineId-based)
+  // Always protected — admin/host ops (shutdown, update, DB export/import).
+  // CLI token (local/trusted) bypasses role; JWT sessions must be admin role
+  // (legacy/no-role → admin for backward-compat). Closes ALWAYS_PROTECTED role-gate bypass.
   if (ALWAYS_PROTECTED.some((p) => pathname.startsWith(p))) {
-    if (await hasValidCliToken(request) || await hasValidToken(request))
+    if (await hasValidCliToken(request)) return NextResponse.next();
+    if (await hasValidToken(request)) {
+      const token = request.cookies.get("auth_token")?.value;
+      const session = await getDashboardAuthSession(token);
+      const role = session?.role ?? "admin"; // legacy token → admin (backward-compat)
+      if (role !== "admin") {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
       return NextResponse.next();
+    }
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

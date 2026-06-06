@@ -49,7 +49,12 @@ export function filterToOpenAIFormat(body) {
       if (filteredContent.length === 0) {
         filteredContent.push({ type: "text", text: "" });
       }
-      
+
+      // Flatten text-only arrays to string (strict OpenAI/ollama compat); preserve multimodal
+      if (filteredContent.every(b => b.type === "text")) {
+        return { ...msg, content: filteredContent.map(b => b.text || "").join("\n") };
+      }
+
       return { ...msg, content: filteredContent };
     }
     

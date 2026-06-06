@@ -145,7 +145,8 @@ describe("openaiToClaudeResponse", () => {
               })
             }
           }]
-        }
+        },
+        finish_reason: "tool_calls"
       }]
     };
 

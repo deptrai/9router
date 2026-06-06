@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { exportDb, getSettings, importDb } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
+import { requireAdmin } from "@/lib/auth/requireRole";
 
-export async function GET() {
+export async function GET(request) {
+  if (!await requireAdmin(request)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   try {
     const payload = await exportDb();
     return NextResponse.json(payload);
@@ -13,6 +17,9 @@ export async function GET() {
 }
 
 export async function POST(request) {
+  if (!await requireAdmin(request)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   try {
     const payload = await request.json();
     await importDb(payload);

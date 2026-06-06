@@ -109,6 +109,30 @@ describe("/api/users/[id]/credits route — role guard", () => {
   });
 });
 
+// --- /api/settings/database route guard (CRITICAL: full DB export/import) ---
+describe("/api/settings/database route — role guard (CRITICAL)", () => {
+  it("user role → GET (exportDb) returns 403", async () => {
+    vi.doMock("@/lib/auth/requireRole", () => ({
+      requireAdmin: vi.fn().mockResolvedValue(null),
+      getSessionRole: vi.fn().mockResolvedValue({ session: null, role: "user" }),
+    }));
+    const { GET } = await import("@/app/api/settings/database/route.js");
+    const res = await GET(makeReq("user-tok"));
+    expect(res.status).toBe(403);
+  });
+
+  it("user role → POST (importDb) returns 403", async () => {
+    vi.doMock("@/lib/auth/requireRole", () => ({
+      requireAdmin: vi.fn().mockResolvedValue(null),
+      getSessionRole: vi.fn().mockResolvedValue({ session: null, role: "user" }),
+    }));
+    const { POST } = await import("@/app/api/settings/database/route.js");
+    const req = { ...makeReq("user-tok"), json: async () => ({ apiKeys: [] }) };
+    const res = await POST(req);
+    expect(res.status).toBe(403);
+  });
+});
+
 // --- requireRole module source-code check: providers/settings guards (AC4) ---
 describe("admin-only route files — requireAdmin import present", () => {
   it("providers route GET imports requireAdmin and uses it", async () => {
