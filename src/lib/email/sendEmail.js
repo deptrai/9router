@@ -31,16 +31,26 @@ export async function sendEmail({ to, subject, html }) {
 }
 
 async function sendViaMailpit({ to, subject, html, mailpitUrl }) {
-  const from = process.env.EMAIL_FROM || "9Router <noreply@localhost>";
+  const fromStr = process.env.EMAIL_FROM || "9Router <noreply@localhost>";
+
+  // Mailpit API expects { Name, Email } object for From/To, not plain string
+  const parseAddress = (addr) => {
+    const match = addr.match(/^(.*?)\s*<([^>]+)>$/);
+    if (match) return { Name: match[1].trim(), Email: match[2].trim() };
+    return { Name: "", Email: addr.trim() };
+  };
+
+  const toAddresses = (Array.isArray(to) ? to : [to]).map(parseAddress);
+
   try {
     const res = await fetch(`${mailpitUrl.replace(/\/$/, "")}/api/v1/send`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        from,
-        to: Array.isArray(to) ? to : [to], // Mailpit expects array
-        subject,
-        html,
+        From: parseAddress(fromStr),
+        To: toAddresses,
+        Subject: subject,
+        HTML: html,
       }),
     });
 

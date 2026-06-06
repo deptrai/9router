@@ -84,7 +84,7 @@ describe("sendEmail — Resend adapter", () => {
 });
 
 describe("sendEmail — Mailpit adapter", () => {
-  it("Mailpit OK → { sent:true }, to is array in body", async () => {
+  it("Mailpit OK → { sent:true }, to is array of objects in body", async () => {
     process.env.MAILPIT_URL = "http://localhost:8025";
     process.env.EMAIL_FROM = "9Router <noreply@localhost>";
 
@@ -100,9 +100,12 @@ describe("sendEmail — Mailpit adapter", () => {
     const [url, opts] = global.fetch.mock.calls[0];
     expect(url).toBe("http://localhost:8025/api/v1/send");
     const body = JSON.parse(opts.body);
-    expect(Array.isArray(body.to)).toBe(true);
-    expect(body.to).toContain("user@example.com");
-    expect(body.subject).toBe("Test");
+    // Mailpit API uses From/To as objects, Subject/HTML capitalized
+    expect(Array.isArray(body.To)).toBe(true);
+    expect(body.To[0].Email).toBe("user@example.com");
+    expect(body.From.Email).toBe("noreply@localhost");
+    expect(body.From.Name).toBe("9Router");
+    expect(body.Subject).toBe("Test");
   });
 
   it("Mailpit takes priority over Resend when both set", async () => {
@@ -154,6 +157,7 @@ describe("sendEmail — Mailpit adapter", () => {
     await sendEmail({ to: "user@example.com", subject: "Test", html: "<p>x</p>" });
 
     const body = JSON.parse(global.fetch.mock.calls[0][1].body);
-    expect(body.from).toBe("9Router <noreply@localhost>"); // default
+    expect(body.From.Email).toBe("noreply@localhost");
+    expect(body.From.Name).toBe("9Router");
   });
 });
