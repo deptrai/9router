@@ -127,6 +127,7 @@ export const PROVIDER_MODELS = {
   kr: [  // Kiro AI
     // --- Base Claude variants ---
     // { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
+    { id: "claude-sonnet-4.6", name: "Claude Sonnet 4.6" },
     { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
     { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
     { id: "deepseek-3.2", name: "DeepSeek 3.2", strip: ["image", "audio"] },
@@ -135,12 +136,15 @@ export const PROVIDER_MODELS = {
     { id: "MiniMax-M2.5", name: "MiniMax M2.5" },
     // --- Thinking variants (alias to base; thinking is enabled at request time
     //     via <thinking_mode>enabled</thinking_mode> system-prompt injection) ---
+    { id: "claude-sonnet-4.6-thinking", name: "Claude Sonnet 4.6 (Thinking)" },
     { id: "claude-sonnet-4.5-thinking", name: "Claude Sonnet 4.5 (Thinking)" },
     { id: "claude-haiku-4.5-thinking", name: "Claude Haiku 4.5 (Thinking)" },
     // --- Agentic variants (synthetic; same upstream model + chunked-write
     //     system prompt to dodge Kiro's 2-3 min server timeout on big writes) ---
+    { id: "claude-sonnet-4.6-agentic", name: "Claude Sonnet 4.6 (Agentic)" },
     { id: "claude-sonnet-4.5-agentic", name: "Claude Sonnet 4.5 (Agentic)" },
     { id: "claude-haiku-4.5-agentic", name: "Claude Haiku 4.5 (Agentic)" },
+    { id: "claude-sonnet-4.6-thinking-agentic", name: "Claude Sonnet 4.6 (Thinking + Agentic)" },
     { id: "claude-sonnet-4.5-thinking-agentic", name: "Claude Sonnet 4.5 (Thinking + Agentic)" },
     { id: "claude-haiku-4.5-thinking-agentic", name: "Claude Haiku 4.5 (Thinking + Agentic)" },
   ],
