@@ -116,4 +116,38 @@ describe("paymentsRepo", () => {
     expect(typeof db.listPayments).toBe("function");
     expect(typeof db.getPaymentsByUser).toBe("function");
   });
+
+  // --- Review patches (code review 2026-06-07) ---
+
+  it("getPaymentsByUser(falsy) → [] (không leak cross-user)", async () => {
+    const { createPayment, getPaymentsByUser } = await import("@/lib/db/repos/paymentsRepo.js");
+    await createPayment({ userId: "user-X", network: "tron", coin: "USDT", amountExpected: 5, gatewayPaymentId: "leak-1" });
+    await createPayment({ userId: "user-Y", network: "polygon", coin: "USDC", amountExpected: 9, gatewayPaymentId: "leak-2" });
+
+    expect(await getPaymentsByUser(undefined)).toEqual([]);
+    expect(await getPaymentsByUser(null)).toEqual([]);
+    expect(await getPaymentsByUser("")).toEqual([]);
+
+    const owned = await getPaymentsByUser("user-X");
+    expect(owned.length).toBe(1);
+    expect(owned[0].userId).toBe("user-X");
+  });
+
+  it("updatePayment không throw khi thiếu/null data", async () => {
+    const { createPayment, updatePayment } = await import("@/lib/db/repos/paymentsRepo.js");
+    const p = await createPayment({ userId: "u", network: "tron", coin: "USDT", amountExpected: 1, gatewayPaymentId: "nd-1" });
+    expect(await updatePayment(p.id)).toBeNull();
+    expect(await updatePayment(p.id, null)).toBeNull();
+    expect(await updatePayment(p.id, {})).toBeNull();
+  });
+
+  it("listPayments clamp limit (âm/null → default, không unbounded/empty)", async () => {
+    const { createPayment, listPayments } = await import("@/lib/db/repos/paymentsRepo.js");
+    for (let i = 0; i < 3; i++) {
+      await createPayment({ userId: "u", network: "tron", coin: "USDT", amountExpected: 1, gatewayPaymentId: `lim-${i}` });
+    }
+    expect((await listPayments({ limit: 2 })).length).toBe(2);    // limit hợp lệ áp dụng
+    expect((await listPayments({ limit: -1 })).length).toBe(3);   // âm → fallback default, KHÔNG empty/unbounded
+    expect((await listPayments({ limit: null })).length).toBe(3); // null → fallback default
+  });
 });

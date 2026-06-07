@@ -73,11 +73,11 @@ export async function getPaymentByGatewayId(gatewayPaymentId) {
   return rowToPayment(row);
 }
 
-export async function updatePayment(id, data) {
+export async function updatePayment(id, data = {}) {
   const db = await getAdapter();
-  // Filter undefined (bài học story 2.1)
+  // Filter undefined (bài học story 2.1). `data || {}` guard tránh TypeError khi gọi updatePayment(id, null).
   const clean = Object.fromEntries(
-    Object.entries(data).filter(([, v]) => v !== undefined)
+    Object.entries(data || {}).filter(([, v]) => v !== undefined)
   );
   if (Object.keys(clean).length === 0) return null;
 
@@ -99,6 +99,14 @@ export async function updatePayment(id, data) {
 
 export async function listPayments({ userId, status, limit = 50, offset = 0 } = {}) {
   const db = await getAdapter();
+
+  // Clamp limit/offset về integer an toàn: tránh LIMIT -1/null (SQLite = unbounded → dump cả bảng).
+  // Giá trị không hợp lệ (null/NaN/≤0) → fallback default 50; cap trần 500.
+  const nLimit = Math.trunc(Number(limit));
+  const safeLimit = Number.isFinite(nLimit) && nLimit > 0 ? Math.min(nLimit, 500) : 50;
+  const nOffset = Math.trunc(Number(offset));
+  const safeOffset = Number.isFinite(nOffset) && nOffset > 0 ? nOffset : 0;
+
   let sql = `SELECT * FROM payments`;
   const conds = [];
   const params = [];
@@ -107,13 +115,16 @@ export async function listPayments({ userId, status, limit = 50, offset = 0 } = 
   if (status) { conds.push(`status = ?`); params.push(status); }
 
   if (conds.length) sql += ` WHERE ${conds.join(" AND ")}`;
-  sql += ` ORDER BY createdAt DESC LIMIT ? OFFSET ?`;
-  params.push(limit, offset);
+  // Tie-break bằng id để pagination ổn định khi createdAt trùng millisecond.
+  sql += ` ORDER BY createdAt DESC, id DESC LIMIT ? OFFSET ?`;
+  params.push(safeLimit, safeOffset);
 
   const rows = db.all(sql, params);
   return rows.map(rowToPayment);
 }
 
 export async function getPaymentsByUser(userId) {
+  // Guard: userId falsy → trả [] thay vì leak payment của MỌI user (listPayments bỏ WHERE khi falsy).
+  if (!userId) return [];
   return listPayments({ userId });
 }
