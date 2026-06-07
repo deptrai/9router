@@ -22,7 +22,7 @@ export async function POST(request) {
       return NextResponse.json({ error: "Email is required" }, { status: 400 });
     }
 
-    // Always return success (anti-enumeration: don't reveal if email exists)
+    // Show user when email doesn't exist (UX over anti-enumeration for 9Router)
     const user = await getUserByEmail(email);
 
     if (!user) {

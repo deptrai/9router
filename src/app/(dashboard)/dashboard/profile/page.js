@@ -242,6 +242,7 @@ export default function ProfilePage() {
   const { theme, setTheme, isDark } = useTheme();
   const [settings, setSettings] = useState({ fallbackStrategy: "fill-first" });
   const [loading, setLoading] = useState(true);
+  const [role, setRole] = useState(null); // null = loading, "admin"/"user" = loaded
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
   const [passStatus, setPassStatus] = useState({ type: "", message: "" });
   const [passLoading, setPassLoading] = useState(false);
@@ -272,6 +273,12 @@ export default function ProfilePage() {
   const [proxyTestLoading, setProxyTestLoading] = useState(false);
 
   useEffect(() => {
+    // Load role first so we can gate admin sections early
+    fetch("/api/auth/status")
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => setRole(data?.role ?? "admin"))
+      .catch(() => setRole("admin")); // fail-open: default admin
+
     fetch("/api/settings")
       .then((res) => res.json())
       .then((data) => {
@@ -750,16 +757,16 @@ export default function ProfilePage() {
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-0">
       <div className="flex flex-col gap-6">
-        {/* Local Mode Info */}
+        {/* Theme Switcher — shown for all roles */}
         <Card>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center gap-3 sm:gap-4">
               <div className="size-10 sm:size-12 rounded-lg bg-green-500/10 text-green-500 flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-xl sm:text-2xl">computer</span>
+                <span className="material-symbols-outlined text-xl sm:text-2xl">{role === "user" ? "palette" : "computer"}</span>
               </div>
               <div>
-                <h2 className="text-lg sm:text-xl font-semibold">Local Mode</h2>
-                <p className="text-sm text-text-muted">Running on your machine</p>
+                <h2 className="text-lg sm:text-xl font-semibold">{role === "user" ? "Appearance" : "Local Mode"}</h2>
+                <p className="text-sm text-text-muted">{role === "user" ? "Customize your experience" : "Running on your machine"}</p>
               </div>
             </div>
             <div className="inline-flex p-1 rounded-lg bg-black/5 dark:bg-white/5 w-full sm:w-auto">
@@ -783,6 +790,8 @@ export default function ProfilePage() {
               ))}
             </div>
           </div>
+          {/* DB Location + Backup: admin only */}
+          {role !== "user" && (
           <div className="flex flex-col gap-3 pt-4 border-t border-border">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3 rounded-lg bg-bg border border-border gap-2">
               <div>
@@ -823,12 +832,14 @@ export default function ProfilePage() {
               </p>
             )}
           </div>
+          )}
         </Card>
 
         {/* User Profile (shown for user role) */}
         <UserProfileCard />
 
-        {/* Security */}
+        {/* Security — admin only */}
+        {role !== "user" && (
         <Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
@@ -909,8 +920,10 @@ export default function ProfilePage() {
             )}
           </div>
         </Card>
+        )}
 
-        {/* OIDC */}
+        {/* OIDC — admin only */}
+        {role !== "user" && (
         <Card>
           <button
             type="button"
@@ -1072,8 +1085,10 @@ export default function ProfilePage() {
           </div>
           )}
         </Card>
+        )}
 
-        {/* Routing Preferences */}
+        {/* Routing Preferences — admin only */}
+        {role !== "user" && (
         <Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500 shrink-0">
@@ -1163,8 +1178,10 @@ export default function ProfilePage() {
             </p>
           </div>
         </Card>
+        )}
 
-        {/* Network */}
+        {/* Network — admin only */}
+        {role !== "user" && (
         <Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500 shrink-0">
@@ -1235,8 +1252,10 @@ export default function ProfilePage() {
             )}
           </div>
         </Card>
+        )}
 
-        {/* Observability Settings */}
+        {/* Observability Settings — admin only */}
+        {role !== "user" && (
         <Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500 shrink-0">
@@ -1258,6 +1277,7 @@ export default function ProfilePage() {
             />
           </div>
         </Card>
+        )}
 
         {/* App Info */}
         <div className="text-center text-xs sm:text-sm text-text-muted py-4">
