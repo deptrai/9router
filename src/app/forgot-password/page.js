@@ -26,7 +26,7 @@ export default function ForgotPasswordPage() {
       } else {
         const data = await res.json().catch(() => ({}));
         if (res.status === 404) {
-          setError("Email không tồn tại. Bạn muốn đăng ký?");
+          setError("notfound");
         } else {
           setError(data.error || "Đã xảy ra lỗi");
         }
@@ -77,7 +77,15 @@ export default function ForgotPasswordPage() {
                   autoFocus
                 />
               </div>
-              {error && <p className="text-xs text-red-500">{error}</p>}
+              {error && error !== "notfound" && <p className="text-xs text-red-500">{error}</p>}
+              {error === "notfound" && (
+                <div className="text-xs text-center">
+                  <p className="text-red-500 mb-1">Email không tồn tại trong hệ thống.</p>
+                  <a href="/register" className="inline-block px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-medium hover:opacity-90 transition-opacity">
+                    Đăng ký tài khoản mới
+                  </a>
+                </div>
+              )}
               <Button type="submit" variant="primary" className="w-full" loading={loading}>
                 Gửi link đặt lại
               </Button>
