@@ -33,6 +33,7 @@ const PUBLIC_API_PATHS = [
   "/api/auth/oidc",
   "/api/version",
   "/api/settings/require-login",
+  "/api/webhooks/crypto",
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
@@ -68,6 +69,7 @@ const PROTECTED_API_PATHS = [
   "/api/translator",
   "/api/tunnel",
   "/api/users",
+  "/api/payments",
 ];
 
 // Admin-only API paths — user role must NOT access these.
