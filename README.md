@@ -1083,6 +1083,9 @@ docker pull decolua/9router:latest   # update
 | `ENABLE_REQUEST_LOGS` | `false` | Enables request/response logs under `logs/` |
 | `AUTH_COOKIE_SECURE` | `false` | Force `Secure` auth cookie (set `true` behind HTTPS reverse proxy) |
 | `REQUIRE_API_KEY` | `false` | Enforce Bearer API key on `/v1/*` routes (recommended for internet-exposed deploys) |
+| `MAILPIT_URL` | empty | Local dev email sink (e.g. `http://localhost:8025`). Takes priority over Resend when set. |
+| `RESEND_API_KEY` | empty | Resend API key for production email (email verification). When unset, email is skipped (fail-soft). |
+| `EMAIL_FROM` | empty | Verified sender for outbound email, e.g. `9Router <noreply@yourdomain.com>` (required with `RESEND_API_KEY`). |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty | Optional outbound proxy for upstream provider calls |
 
 Notes:

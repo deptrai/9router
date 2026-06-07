@@ -3,7 +3,7 @@ title: "Story 2.6 — Email verification (FR-5) qua Resend"
 story_id: "2.6"
 story_key: "2-6-email-verification"
 epic: "A — User Accounts & Authentication (Account enrichment, MVP-2)"
-status: review
+status: done
 created: 2026-06-07
 source-epics: docs/epics-saas.md
 source-prd: docs/PRD_SAAS_MVP.md
@@ -15,7 +15,7 @@ context:
 
 # Story 2.6 — Email verification (FR-5) qua Resend
 
-Status: review
+Status: done
 
 ## Story
 
@@ -181,6 +181,35 @@ Status: review
 - External: Resend transactional API — `POST https://api.resend.com/emails`, Bearer key, body `{from,to,subject,html}`; sender domain phải verify (researched 2026-06-07).
 
 ---
+
+## Review Findings
+
+> Code review 2026-06-07 (adversarial: Blind Hunter + Edge Case Hunter + Acceptance Auditor). Diff = commit `c36a90c`. Findings verified against code.
+>
+> **Resolution 2026-06-07:** ALL 11 patches + the decision applied & verified (full unit suite 652 passed / 0 failed). 5 defers logged to `deferred-work.md`; 2 dismissed (StrictMode dev-only, token-in-URL standard). Status → done.
+
+### decision-needed
+- [x] [Review][Decision] **GET verify-email + token one-time-use dễ bị "đốt" bởi email scanner/prefetch** — ✅ RESOLVED 2026-06-07 (Option 1): update-before-remove — `peekEmailVerifyToken` validate → `updateUser` (check 404) → chỉ `removeEmailVerifyToken` SAU khi commit. Hết bug "đốt token trước commit"; giữ one-time-use (AC2). Prefetch-idempotency đầy đủ (không xoá) sẽ phá AC2 → chấp nhận residual nhỏ. [`src/app/api/auth/verify-email/route.js`] — `GET` consume + remove token ngay lần hit đầu. Mail security scanner / link unfurler / browser prefetch gọi GET trước → token bị tiêu, user bấm thật → 400. Mâu thuẫn với AC2 (one-time use). Lựa chọn: (1) `updateUser` TRƯỚC, chỉ remove token sau khi update OK + cho phép re-click trong 24h (nới one-time → idempotent); (2) GET render trang confirm, POST mới consume (chống prefetch tốt nhất); (3) chấp nhận rủi ro, giữ nguyên.
+
+### patch
+- [x] [Review][Patch] **[HIGH] Rate-limit send-verification là no-op → email bombing** — ✅ FIXED 2026-06-07: gọi `recordFail(ip)` sau mỗi lần gửi → `checkLock` khoá IP khi resend dồn dập; thêm regression test trong `sendVerification.test.js`. (Tách namespace khỏi login lockout → defer.) [`src/app/api/auth/send-verification/route.js`]
+- [x] [Review][Patch] **HTML injection qua displayName trong email** [`src/app/api/auth/send-verification/route.js`, `src/app/api/auth/register/route.js`] — `html: <p>Chào ${user.displayName}...` nội suy thô; displayName do user kiểm soát → inject markup/phishing. Fix: escape HTML (+ giới hạn độ dài).
+- [x] [Review][Patch] **sendEmail không có timeout → register/resend treo** [`src/lib/email/sendEmail.js`] — `fetch` không AbortController; Resend chậm/treo → `await sendEmail` block response tới vài phút (fail-soft chỉ bắt throw, không bắt hang). Fix: AbortController timeout (~10s).
+- [x] [Review][Patch] **verify-email: không check updateUser + token bị đốt trước khi commit** [`src/app/api/auth/verify-email/route.js`] — `await updateUser(...)` không check return (user đã xoá → báo success sai); consume remove token TRƯỚC update, update throw → token mất vĩnh viễn. Fix: update trước/check kết quả → 404; chỉ remove token sau khi update OK.
+- [x] [Review][Patch] **send-verification báo success kể cả khi email skip/fail** [`src/app/api/auth/send-verification/route.js`] — bỏ qua kết quả `sendEmail` (skipped/non-2xx) vẫn trả `{success:true}` → UI nói "đã gửi" sai. Fix: surface trạng thái gửi thật.
+- [x] [Review][Patch] **expiresAt thiếu → token không bao giờ hết hạn** [`src/lib/auth/emailVerifyToken.js`] — `data.expiresAt < Date.now()` = false khi expiresAt undefined → token vĩnh viễn hợp lệ. Fix: thiếu/không hợp lệ expiresAt → coi như invalid.
+- [x] [Review][Patch] **sendEmail throw khi gọi thiếu arg** [`src/lib/email/sendEmail.js`] — `sendEmail()`/`sendEmail(null)` destructure undefined → TypeError trước try/catch, vi phạm hợp đồng "never throws". Fix: default param `= {}`.
+- [x] [Review][Patch] **sendEmail đọc body response 2 lần ở nhánh lỗi** [`src/lib/email/sendEmail.js`] — `res.json()` rồi `res.text()` trên body đã khoá → text() throw, fallback vô tác dụng. Fix: đọc 1 lần (clone hoặc text rồi parse).
+- [x] [Review][Patch] **requireEmailVerified JSDoc ghi "Fail-open" nhưng code fail-closed** [`src/lib/auth/requireEmailVerified.js`] — comment sai dễ gây "sửa nhầm" thành fail-open (auth bypass). Fix: sửa wording (code fail-closed là đúng).
+- [x] [Review][Patch] **Thiếu deliverable spec: test fail-soft register (Task 4, AC3/AC8) + bảng env README (Task 9)** [`tests/unit/authRegister.test.js`, `README.md`] — chưa có test "register vẫn success khi sendEmail skip/throw"; README chưa có `RESEND_API_KEY`/`EMAIL_FROM`. Fix: bổ sung test + bảng env.
+- [x] [Review][Patch] **Profile: badge xác minh stale + parse JSON lỗi không guard** [`src/app/(dashboard)/dashboard/profile/page.js`] — sau resend không refetch trạng thái; `res.json()` ở nhánh lỗi với body non-JSON (429/5xx HTML) → mất chi tiết. Fix: refetch + guard parse.
+
+### defer
+- [x] [Review][Defer] **TOCTOU consume token không atomic** [`src/lib/auth/emailVerifyToken.js`] — deferred: KV không có atomic compare-and-delete; 2 GET đồng thời cùng token có thể cùng pass; rủi ro thấp.
+- [x] [Review][Defer] **KV scope emailVerify phình không giới hạn (no TTL/sweeper)** [`src/lib/auth/emailVerifyToken.js`] — deferred: cần cron cleanup token hết hạn/chưa dùng; gom vào hạ tầng cron MVP-2.
+- [x] [Review][Defer] **verify bỏ qua binding token.email** [`src/app/api/auth/verify-email/route.js`] — deferred: nếu email đổi sau khi phát token, link cũ verify email mới; edge hiếm, rủi ro thấp.
+- [x] [Review][Defer] **BASE_URL/NEXT_PUBLIC_BASE_URL unset → link localhost ở prod** [`send-verification`, `register`] — deferred: vấn đề cấu hình deploy; đã có fallback + ghi `.env.example`.
+- [x] [Review][Defer] **requireEmailVerified bỏ qua isActive** [`src/lib/auth/requireEmailVerified.js`] — deferred: user deactivated nhưng đã verify → gate true; xem lại khi wire Epic D/F.
 
 ## Dev Agent Record
 

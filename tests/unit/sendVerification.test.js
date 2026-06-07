@@ -82,6 +82,9 @@ describe("POST /api/auth/send-verification", () => {
     expect(data.alreadyVerified).toBeUndefined();
     expect(mockSendEmail).toHaveBeenCalledOnce();
     expect(mockSendEmail.mock.calls[0][0].to).toBe("unverif@example.com");
+    // Anti email-bomb: each send must be counted against the IP limiter (regression guard)
+    const { recordFail } = await import("@/lib/auth/loginLimiter");
+    expect(recordFail).toHaveBeenCalled();
   });
 
   it("already verified → { alreadyVerified:true } (no email sent)", async () => {

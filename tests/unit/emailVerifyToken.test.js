@@ -82,6 +82,48 @@ describe("emailVerifyToken — create + consume", () => {
   });
 });
 
+describe("peekEmailVerifyToken + removeEmailVerifyToken (update-before-remove)", () => {
+  it("peek validates WITHOUT consuming; remove consumes", async () => {
+    const { createEmailVerifyToken, peekEmailVerifyToken, removeEmailVerifyToken } = await import("@/lib/auth/emailVerifyToken.js");
+
+    const token = await createEmailVerifyToken("user-peek", "peek@example.com");
+
+    const r1 = await peekEmailVerifyToken(token);
+    expect(r1?.userId).toBe("user-peek");
+    // Peek again → still valid (not consumed)
+    const r2 = await peekEmailVerifyToken(token);
+    expect(r2?.userId).toBe("user-peek");
+
+    await removeEmailVerifyToken(token);
+    expect(await peekEmailVerifyToken(token)).toBeNull();
+  });
+
+  it("peek expired → null + cleaned up", async () => {
+    const { createEmailVerifyToken, peekEmailVerifyToken } = await import("@/lib/auth/emailVerifyToken.js");
+    const { makeKv } = await import("@/lib/db/helpers/kvStore.js");
+
+    const token = await createEmailVerifyToken("u", "e@e.com");
+    const kv = makeKv("emailVerify");
+    await kv.set(token, { userId: "u", email: "e@e.com", expiresAt: Date.now() - 1000 });
+
+    expect(await peekEmailVerifyToken(token)).toBeNull();
+    expect(await kv.get(token, null)).toBeNull();
+  });
+
+  it("missing expiresAt → treated as invalid (never permanently valid)", async () => {
+    const { peekEmailVerifyToken, consumeEmailVerifyToken } = await import("@/lib/auth/emailVerifyToken.js");
+    const { makeKv } = await import("@/lib/db/helpers/kvStore.js");
+
+    const kv = makeKv("emailVerify");
+    await kv.set("no-exp-token", { userId: "u", email: "e@e.com" }); // no expiresAt field
+
+    expect(await peekEmailVerifyToken("no-exp-token")).toBeNull();
+    // also via consume
+    await kv.set("no-exp-token-2", { userId: "u", email: "e@e.com" });
+    expect(await consumeEmailVerifyToken("no-exp-token-2")).toBeNull();
+  });
+});
+
 describe("requireEmailVerified", () => {
   async function seedUser(email, isEmailVerified = false) {
     const { createUser } = await import("@/lib/db/repos/usersRepo.js");

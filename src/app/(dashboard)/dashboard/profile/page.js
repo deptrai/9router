@@ -71,15 +71,21 @@ function UserProfileCard() {
     setSendVerifyStatus({ type: "", message: "" });
     try {
       const res = await fetch("/api/auth/send-verification", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        const data = await res.json();
         if (data.alreadyVerified) {
           setSendVerifyStatus({ type: "success", message: "Email của bạn đã được xác minh" });
+          // Refresh profile so the badge reflects the verified state
+          try {
+            const meRes = await fetch("/api/users/me");
+            if (meRes.ok) setProfile(await meRes.json());
+          } catch {}
+        } else if (data.emailSent === false) {
+          setSendVerifyStatus({ type: "error", message: "Không gửi được email (email provider chưa được cấu hình). Vui lòng liên hệ admin." });
         } else {
           setSendVerifyStatus({ type: "success", message: "Email xác minh đã được gửi. Vui lòng kiểm tra hộp thư." });
         }
       } else {
-        const data = await res.json();
         setSendVerifyStatus({ type: "error", message: data.error || "Gửi thất bại" });
       }
     } catch {

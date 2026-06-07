@@ -6,11 +6,36 @@
  *   2. RESEND_API_KEY + EMAIL_FROM → Resend REST API (production)
  *   3. Neither configured → skip silently { sent:false, skipped:true }
  *
- * Never throws — safe to call from any request handler.
+ * Never throws — safe to call from any request handler (default arg guards
+ * a missing payload). All upstream calls are bounded by a timeout so a stalled
+ * provider cannot block the awaiting request handler.
  * No external SDK — pure fetch (Node 20+ global).
  */
 
-export async function sendEmail({ to, subject, html }) {
+const DEFAULT_TIMEOUT_MS = 10000;
+
+// Bounded fetch — aborts after `ms` so a hung provider can't stall callers.
+async function fetchWithTimeout(url, opts, ms = DEFAULT_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { ...opts, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Read an error response body once (json), no double-read. Returns a short string.
+async function readErrorBody(res) {
+  try {
+    const body = await res.json();
+    return body ? JSON.stringify(body) : "(empty)";
+  } catch {
+    return "(non-JSON body)";
+  }
+}
+
+export async function sendEmail({ to, subject, html } = {}) {
   // ── Adapter 1: Mailpit (local dev) ──────────────────────────────────────
   const mailpitUrl = process.env.MAILPIT_URL;
   if (mailpitUrl) {
@@ -43,7 +68,7 @@ async function sendViaMailpit({ to, subject, html, mailpitUrl }) {
   const toAddresses = (Array.isArray(to) ? to : [to]).map(parseAddress);
 
   try {
-    const res = await fetch(`${mailpitUrl.replace(/\/$/, "")}/api/v1/send`, {
+    const res = await fetchWithTimeout(`${mailpitUrl.replace(/\/$/, "")}/api/v1/send`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -55,10 +80,9 @@ async function sendViaMailpit({ to, subject, html, mailpitUrl }) {
     });
 
     if (!res.ok) {
-      let errorBody;
-      try { errorBody = await res.json(); } catch { errorBody = await res.text(); }
+      const errorBody = await readErrorBody(res);
       console.error("[sendEmail/mailpit] error:", res.status, errorBody);
-      return { sent: false, error: `Mailpit ${res.status}: ${JSON.stringify(errorBody)}` };
+      return { sent: false, error: `Mailpit ${res.status}: ${errorBody}` };
     }
 
     const data = await res.json().catch(() => ({}));
@@ -72,7 +96,7 @@ async function sendViaMailpit({ to, subject, html, mailpitUrl }) {
 
 async function sendViaResend({ to, subject, html, apiKey, from }) {
   try {
-    const res = await fetch("https://api.resend.com/emails", {
+    const res = await fetchWithTimeout("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -82,10 +106,9 @@ async function sendViaResend({ to, subject, html, apiKey, from }) {
     });
 
     if (!res.ok) {
-      let errorBody;
-      try { errorBody = await res.json(); } catch { errorBody = await res.text(); }
+      const errorBody = await readErrorBody(res);
       console.error("[sendEmail/resend] error:", res.status, errorBody);
-      return { sent: false, error: `Resend ${res.status}: ${JSON.stringify(errorBody)}` };
+      return { sent: false, error: `Resend ${res.status}: ${errorBody}` };
     }
 
     return { sent: true };

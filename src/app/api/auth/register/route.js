@@ -6,6 +6,7 @@ import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
 import { checkLock, recordFail, getClientIp } from "@/lib/auth/loginLimiter";
 import { createEmailVerifyToken } from "@/lib/auth/emailVerifyToken.js";
 import { sendEmail } from "@/lib/email/sendEmail.js";
+import { escapeHtml } from "@/lib/email/escapeHtml.js";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -82,7 +83,7 @@ export async function POST(request) {
       await sendEmail({
         to: user.email,
         subject: "Xác minh email 9Router",
-        html: `<p>Chào ${user.displayName || user.email},</p>
+        html: `<p>Chào ${escapeHtml(user.displayName || user.email)},</p>
 <p>Click vào link dưới đây để xác minh địa chỉ email của bạn:</p>
 <p><a href="${baseUrl}/verify-email?token=${token}">${baseUrl}/verify-email?token=${token}</a></p>
 <p>Link có hiệu lực trong 24 giờ. Nếu bạn không đăng ký, hãy bỏ qua email này.</p>`,

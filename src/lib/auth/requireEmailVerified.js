@@ -3,7 +3,7 @@
  *
  * Returns true if user exists and isEmailVerified === true.
  * Returns false for non-existent users or unverified users.
- * Fail-open: exceptions return false (conservative for future use).
+ * Fail-closed: on error or missing user, returns false (deny by default — safe for gating).
  */
 import { getUserById } from "@/lib/db/repos/usersRepo.js";
 
