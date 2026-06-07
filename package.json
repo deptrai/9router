@@ -12,7 +12,12 @@
     "seed": "node scripts/seed.js",
     "seed:reset": "node scripts/seed.js --reset",
     "seed:show": "node scripts/seed.js --show",
-    "start:bun": "bun ./.next/standalone/server.js"
+    "start:bun": "bun ./.next/standalone/server.js",
+    "test:e2e": "npx playwright test",
+    "test:e2e:ui": "npx playwright test --ui",
+    "test:e2e:chromium": "npx playwright test --project=chromium",
+    "test:e2e:api": "npx playwright test --project=api",
+    "test:e2e:report": "npx playwright show-report"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -51,10 +56,13 @@
   },
   "comment_better_sqlite3": "kept in optionalDependencies so npm install doesn't fail on systems without build tools — sql.js is used as fallback at runtime",
   "devDependencies": {
+    "@playwright/test": "^1.50.0",
+    "@seontechnologies/playwright-utils": "^1.0.0",
     "@tailwindcss/postcss": "^4.1.18",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "postcss": "^8.5.6",
-    "tailwindcss": "^4"
+    "tailwindcss": "^4",
+    "typescript": "^5.7.0"
   }
 }

@@ -77,3 +77,9 @@ ecosystem.config.*
 scripts/agSniffer/*
 gitbooks/*
 gitbook/README.md
+
+# Playwright
+/test-results/
+/playwright-report/
+/playwright/.auth/
+/blob-report/
