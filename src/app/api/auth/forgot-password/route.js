@@ -25,7 +25,14 @@ export async function POST(request) {
     // Always return success (anti-enumeration: don't reveal if email exists)
     const user = await getUserByEmail(email);
 
-    if (user && user.isActive) {
+    if (!user) {
+      return NextResponse.json(
+        { error: "Email không tồn tại trong hệ thống" },
+        { status: 404 }
+      );
+    }
+
+    if (user.isActive) {
       try {
         const baseUrl = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:20128";
         const token = await createPasswordResetToken(user.id, user.email);

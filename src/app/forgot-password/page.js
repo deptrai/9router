@@ -24,8 +24,12 @@ export default function ForgotPasswordPage() {
       if (res.ok) {
         setSent(true);
       } else {
-        const data = await res.json();
-        setError(data.error || "Đã xảy ra lỗi");
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 404) {
+          setError("Email không tồn tại. Bạn muốn đăng ký?");
+        } else {
+          setError(data.error || "Đã xảy ra lỗi");
+        }
       }
     } catch {
       setError("Đã xảy ra lỗi. Vui lòng thử lại.");
