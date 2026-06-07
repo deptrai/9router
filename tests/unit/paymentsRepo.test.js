@@ -150,4 +150,20 @@ describe("paymentsRepo", () => {
     expect((await listPayments({ limit: -1 })).length).toBe(3);   // âm → fallback default, KHÔNG empty/unbounded
     expect((await listPayments({ limit: null })).length).toBe(3); // null → fallback default
   });
+
+  // --- Story 2.9: provider column ---
+
+  it("createPayment with provider stores and returns provider", async () => {
+    const { createPayment, getPaymentById } = await import("@/lib/db/repos/paymentsRepo.js");
+    const p = await createPayment({ userId:"user-1", network:"tron", coin:"USDT", amountExpected:10, gatewayPaymentId:"prov-1", provider:"bitcart" });
+    expect(p.provider).toBe("bitcart");
+    const fetched = await getPaymentById(p.id);
+    expect(fetched.provider).toBe("bitcart");
+  });
+
+  it("createPayment without provider → 'nowpayments' (backward compat)", async () => {
+    const { createPayment, getPaymentById } = await import("@/lib/db/repos/paymentsRepo.js");
+    const p = await createPayment({ userId:"user-1", network:"tron", coin:"USDT", amountExpected:10, gatewayPaymentId:"prov-null" });
+    expect((await getPaymentById(p.id)).provider).toBe("nowpayments");
+  });
 });

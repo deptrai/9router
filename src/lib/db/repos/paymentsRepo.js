@@ -22,6 +22,7 @@ function rowToPayment(row) {
     expiresAt: row.expiresAt || null,
     settledAt: row.settledAt || null,
     errorMessage: row.errorMessage || null,
+    provider: row.provider || "nowpayments",
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -50,13 +51,14 @@ export async function createPayment(data) {
     expiresAt: data.expiresAt || null,
     settledAt: data.settledAt || null,
     errorMessage: data.errorMessage || null,
+    provider: data.provider || null,
     createdAt: now,
     updatedAt: now,
   };
   db.run(
-    `INSERT INTO payments(id, userId, gatewayPaymentId, gatewayInvoiceId, txHash, network, coin, amountExpected, amountReceived, creditsAwarded, bonusPercent, status, payAddress, paymentUrl, confirmations, expiresAt, settledAt, errorMessage, createdAt, updatedAt)
-     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [payment.id, payment.userId, payment.gatewayPaymentId, payment.gatewayInvoiceId, payment.txHash, payment.network, payment.coin, payment.amountExpected, payment.amountReceived, payment.creditsAwarded, payment.bonusPercent, payment.status, payment.payAddress, payment.paymentUrl, payment.confirmations, payment.expiresAt, payment.settledAt, payment.errorMessage, payment.createdAt, payment.updatedAt]
+    `INSERT INTO payments(id, userId, gatewayPaymentId, gatewayInvoiceId, txHash, network, coin, amountExpected, amountReceived, creditsAwarded, bonusPercent, status, payAddress, paymentUrl, confirmations, expiresAt, settledAt, errorMessage, provider, createdAt, updatedAt)
+     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [payment.id, payment.userId, payment.gatewayPaymentId, payment.gatewayInvoiceId, payment.txHash, payment.network, payment.coin, payment.amountExpected, payment.amountReceived, payment.creditsAwarded, payment.bonusPercent, payment.status, payment.payAddress, payment.paymentUrl, payment.confirmations, payment.expiresAt, payment.settledAt, payment.errorMessage, payment.provider, payment.createdAt, payment.updatedAt]
   );
   return payment;
 }
@@ -89,8 +91,8 @@ export async function updatePayment(id, data = {}) {
     if (!row) return;
     const merged = { ...rowToPayment(row), ...clean, updatedAt: now };
     db.run(
-      `UPDATE payments SET gatewayPaymentId=?, gatewayInvoiceId=?, txHash=?, network=?, coin=?, amountExpected=?, amountReceived=?, creditsAwarded=?, bonusPercent=?, status=?, payAddress=?, paymentUrl=?, confirmations=?, expiresAt=?, settledAt=?, errorMessage=?, updatedAt=? WHERE id=?`,
-      [merged.gatewayPaymentId, merged.gatewayInvoiceId, merged.txHash, merged.network, merged.coin, merged.amountExpected, merged.amountReceived, merged.creditsAwarded, merged.bonusPercent, merged.status, merged.payAddress, merged.paymentUrl, merged.confirmations, merged.expiresAt, merged.settledAt, merged.errorMessage, merged.updatedAt, id]
+      `UPDATE payments SET gatewayPaymentId=?, gatewayInvoiceId=?, txHash=?, network=?, coin=?, amountExpected=?, amountReceived=?, creditsAwarded=?, bonusPercent=?, status=?, payAddress=?, paymentUrl=?, confirmations=?, expiresAt=?, settledAt=?, errorMessage=?, provider=?, updatedAt=? WHERE id=?`,
+      [merged.gatewayPaymentId, merged.gatewayInvoiceId, merged.txHash, merged.network, merged.coin, merged.amountExpected, merged.amountReceived, merged.creditsAwarded, merged.bonusPercent, merged.status, merged.payAddress, merged.paymentUrl, merged.confirmations, merged.expiresAt, merged.settledAt, merged.errorMessage, merged.provider, merged.updatedAt, id]
     );
     result = merged;
   });

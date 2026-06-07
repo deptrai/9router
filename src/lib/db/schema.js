@@ -193,6 +193,7 @@ export const TABLES = {
       expiresAt: "TEXT",
       settledAt: "TEXT",
       errorMessage: "TEXT",
+      provider: "TEXT",
       createdAt: "TEXT NOT NULL",
       updatedAt: "TEXT NOT NULL",
     },
