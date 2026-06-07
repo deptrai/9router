@@ -28,6 +28,8 @@ const PUBLIC_API_PATHS = [
   "/api/auth/status",
   "/api/auth/register",
   "/api/auth/verify-email",
+  "/api/auth/forgot-password",
+  "/api/auth/reset-password",
   "/api/auth/oidc",
   "/api/version",
   "/api/settings/require-login",

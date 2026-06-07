@@ -232,9 +232,12 @@ export default function LoginPage() {
 
                   {loginTab === "user" && (
                     <p className="text-xs text-center text-text-muted mt-2">
-                      Don&apos;t have an account?{" "}
+                      <a href="/forgot-password" className="text-primary hover:underline">
+                        Quên mật khẩu?
+                      </a>
+                      {" · "}
                       <a href="/register" className="text-primary hover:underline">
-                        Sign up
+                        Đăng ký
                       </a>
                     </p>
                   )}
