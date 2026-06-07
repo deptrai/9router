@@ -394,7 +394,19 @@ export default function Sidebar({ onClose }) {
 
         {/* Footer section — AC5: hide Shutdown for role=user */}
         {role !== "user" && (
-          <div className="p-3 border-t border-border-subtle">
+          <div className="p-3 border-t border-border-subtle flex flex-col gap-2">
+            <Button
+              variant="ghost"
+              fullWidth
+              icon="logout"
+              onClick={async () => {
+                await fetch("/api/auth/logout", { method: "POST" });
+                window.location.href = "/login";
+              }}
+              className="text-text-muted hover:text-text-main"
+            >
+              Logout
+            </Button>
             <Button
               variant="outline"
               fullWidth
@@ -403,6 +415,22 @@ export default function Sidebar({ onClose }) {
               className="text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300"
             >
               Shutdown
+            </Button>
+          </div>
+        )}
+        {role === "user" && (
+          <div className="p-3 border-t border-border-subtle">
+            <Button
+              variant="ghost"
+              fullWidth
+              icon="logout"
+              onClick={async () => {
+                await fetch("/api/auth/logout", { method: "POST" });
+                window.location.href = "/login";
+              }}
+              className="text-text-muted hover:text-text-main"
+            >
+              Logout
             </Button>
           </div>
         )}
