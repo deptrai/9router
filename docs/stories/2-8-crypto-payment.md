@@ -3,7 +3,7 @@ title: "Story 2.8 — Thanh toán crypto (stablecoin USDT/USDC) qua NOWPayments"
 story_id: "2.8"
 story_key: "2-8-crypto-payment"
 epic: "D — Payment & Topup"
-status: in-progress
+status: review
 created: 2026-06-07
 source-arch: docs/ARCHITECTURE_CRYPTO_PAYMENT.md
 source-research: _bmad-output/planning-artifacts/research/technical-crypto-payment-best-practices-research-2026-06-07.md
@@ -15,7 +15,7 @@ context:
 
 # Story 2.8 — Thanh toán crypto (stablecoin USDT/USDC)
 
-Status: in-progress
+Status: review
 
 ## Story
 
