@@ -173,6 +173,35 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_rd_apikey ON requestDetails(apiKey)",
     ],
   },
+  payments: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      userId: "TEXT NOT NULL",
+      gatewayPaymentId: "TEXT UNIQUE",
+      gatewayInvoiceId: "TEXT",
+      txHash: "TEXT",
+      network: "TEXT NOT NULL",
+      coin: "TEXT NOT NULL",
+      amountExpected: "REAL NOT NULL",
+      amountReceived: "REAL",
+      creditsAwarded: "REAL",
+      bonusPercent: "INTEGER DEFAULT 0",
+      status: "TEXT NOT NULL DEFAULT 'pending'",
+      payAddress: "TEXT",
+      paymentUrl: "TEXT",
+      confirmations: "INTEGER DEFAULT 0",
+      expiresAt: "TEXT",
+      settledAt: "TEXT",
+      errorMessage: "TEXT",
+      createdAt: "TEXT NOT NULL",
+      updatedAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_gateway ON payments(gatewayPaymentId)",
+      "CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(userId)",
+      "CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status)",
+    ],
+  },
 };
 
 export function buildCreateTableSql(name, def) {

@@ -38,6 +38,11 @@ export {
   createUser, getUserByEmail, getUserById, updateUser, addCredits, listUsers, deactivateUser,
 } from "./repos/usersRepo.js";
 
+// Payments
+export {
+  createPayment, getPaymentById, getPaymentByGatewayId, updatePayment, listPayments, getPaymentsByUser,
+} from "./repos/paymentsRepo.js";
+
 // Combos
 export {
   getCombos, getComboById, getComboByName,
