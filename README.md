@@ -1242,6 +1242,41 @@ Authorization: Bearer your-api-key
 → Returns all models + combos in OpenAI format
 ```
 
+### Latency Benchmark
+
+Use the benchmark script to compare a local 9Router instance with a production instance:
+
+```bash
+npm run bench:latency -- \
+  --local-url http://localhost:20128 \
+  --prod-url https://your-production-domain \
+  --local-key sk-local \
+  --prod-key sk-prod \
+  --model kr/auto \
+  --runs 5 \
+  --rpm 1
+```
+
+Notes:
+
+- Pass base URLs without the `/v1` suffix. The script calls `/v1/chat/completions` automatically.
+- Use a model that exists on both routers for a fair comparison.
+- Use `--rpm` or `--delay-ms` to avoid upstream provider rate limits and mimic real CLI usage.
+- Chat benchmarks measure end-to-end latency, including upstream model generation time and upstream rate limits.
+- To estimate router + network overhead without upstream model noise, compare `/v1/models` latency separately.
+
+Useful options:
+
+```bash
+--runs 20          # number of measured requests
+--warmup 1         # warmup requests per target
+--rpm 4            # requests per minute; auto-converts to delay
+--delay-ms 15000   # explicit delay between requests
+--prompt "Reply exactly: ok"
+--no-stream        # send stream=false
+--timeout-ms 90000
+```
+
 ## 📧 Support
 
 - **Website**: [9router.com](https://9router.com)

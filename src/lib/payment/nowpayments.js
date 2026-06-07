@@ -2,7 +2,7 @@
  * NOWPayments API client — Story 2.8 Task 2 (AC2)
  * fetch (built-in Node 20+) + crypto (built-in). KHÔNG thêm SDK.
  */
-import { createHmac } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 
 const NP_BASE = "https://api.nowpayments.io/v1";
 
@@ -89,8 +89,18 @@ function sortObjectKeys(obj) {
  */
 export function verifyIpnSignature(rawBody, signature, secret) {
   if (!rawBody || !signature || !secret) return false;
-  const parsed = JSON.parse(rawBody);
-  const sorted = JSON.stringify(sortObjectKeys(parsed));
-  const computed = createHmac("sha512", secret).update(sorted).digest("hex");
-  return computed === signature;
+  let computed;
+  try {
+    const parsed = JSON.parse(rawBody);
+    const sorted = JSON.stringify(sortObjectKeys(parsed));
+    computed = createHmac("sha512", secret).update(sorted).digest("hex");
+  } catch {
+    // Malformed body (non-JSON) → treat as invalid signature, never throw.
+    return false;
+  }
+  // Timing-safe compare. Buffers must be equal length or timingSafeEqual throws.
+  const a = Buffer.from(computed, "utf8");
+  const b = Buffer.from(signature, "utf8");
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
 }

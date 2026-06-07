@@ -78,6 +78,12 @@ describe("POST /api/webhooks/crypto", () => {
     expect(res.status).toBe(401);
   });
 
+  it("401 on malformed JSON body", async () => {
+    const req = makeRequest("not-json", "sig");
+    const res = await POST(req);
+    expect(res.status).toBe(401);
+  });
+
   it("401 when IPN_SECRET not set", async () => {
     delete process.env.NOWPAYMENTS_IPN_SECRET;
     vi.resetModules();
@@ -121,18 +127,33 @@ describe("POST /api/webhooks/crypto", () => {
     expect(mockDb.run).not.toHaveBeenCalled();
   });
 
-  it("confirming → updates payment, does NOT award credits", async () => {
-    const payment = { id: "pay-1", userId: "u1", status: "pending", amountExpected: 10, bonusPercent: 15 };
+  it("confirming → updates payment in a transaction, does NOT award credits", async () => {
+    const payment = { id: "pay-1", userId: "u1", status: "pending", amountExpected: 10, amountReceived: null, confirmations: 0, bonusPercent: 15 };
     getPaymentByGatewayId.mockResolvedValue(payment);
+    mockDb.get.mockReturnValue({ status: "pending", txHash: null });
 
     const body = { payment_id: "gw-1", payment_status: "confirming", confirmations: 5 };
     const req = makeRequest(body);
     const res = await POST(req);
 
     expect(res.status).toBe(200);
-    expect(updatePayment).toHaveBeenCalledWith("pay-1", expect.objectContaining({ status: "confirming", confirmations: 5 }));
-    // NO transaction (no credit award)
-    expect(mockDb.transaction).not.toHaveBeenCalled();
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1);
+    expect(mockDb.run).toHaveBeenCalledTimes(1);
+    expect(mockDb.run.mock.calls[0][1]).toEqual(["confirming", 5, null, null, null, expect.any(String), "pay-1"]);
+  });
+
+  it("late confirming IPN after settle → no status downgrade", async () => {
+    const payment = { id: "pay-1", userId: "u1", status: "confirming", amountExpected: 10, amountReceived: null, confirmations: 0, bonusPercent: 0 };
+    getPaymentByGatewayId.mockResolvedValue(payment);
+    mockDb.get.mockReturnValue({ status: "settled", txHash: null });
+
+    const body = { payment_id: "gw-1", payment_status: "confirming", confirmations: 5 };
+    const req = makeRequest(body);
+    const res = await POST(req);
+
+    expect(res.status).toBe(200);
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1);
+    expect(mockDb.run).not.toHaveBeenCalled();
   });
 
   it("race condition: concurrent finished → only first settles (txn recheck)", async () => {

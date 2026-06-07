@@ -23,6 +23,8 @@ const STATUS_MAP = {
   refunded: "failed",
 };
 
+const TERMINAL_STATUSES = new Set(["settled", "failed", "expired"]);
+
 export async function POST(request) {
   // 1. Read raw body + signature header
   let rawBody;
@@ -97,8 +99,8 @@ export async function POST(request) {
         // Update payment → settled
         const now = new Date().toISOString();
         db.run(
-          `UPDATE payments SET status=?, amountReceived=?, creditsAwarded=?, txHash=?, settledAt=?, confirmations=?, updatedAt=? WHERE id=?`,
-          ["settled", amountReceived, creditsToAward, data.pay_address || null, now, Number(data.confirmations) || 0, now, payment.id]
+          `UPDATE payments SET status=?, amountReceived=?, creditsAwarded=?, txHash=?, payAddress=?, settledAt=?, confirmations=?, updatedAt=? WHERE id=?`,
+          ["settled", amountReceived, creditsToAward, data.payin_hash || data.purchase_id || null, data.pay_address || payment.payAddress || null, now, Number(data.confirmations) || 0, now, payment.id]
         );
 
         // Award credits to user (same transaction → atomic)
@@ -111,14 +113,26 @@ export async function POST(request) {
       return NextResponse.json({ ok: true });
     }
 
-    // 7. Other status transitions → update payment record
-    const updateData = { status: internalStatus };
-    if (data.confirmations != null) updateData.confirmations = Number(data.confirmations) || 0;
-    if (data.pay_address) updateData.payAddress = data.pay_address;
-    if (data.actually_paid) updateData.amountReceived = Number(data.actually_paid);
-    if (data.purchase_id && !payment.txHash) updateData.txHash = String(data.purchase_id);
+    // 7. Other status transitions → update payment record without moving terminal rows backward
+    const db = await getAdapter();
+    db.transaction(() => {
+      const fresh = db.get(`SELECT status, txHash FROM payments WHERE id = ?`, [payment.id]);
+      if (!fresh || TERMINAL_STATUSES.has(fresh.status)) return;
 
-    await updatePayment(payment.id, updateData);
+      const now = new Date().toISOString();
+      db.run(
+        `UPDATE payments SET status=?, confirmations=?, payAddress=?, amountReceived=?, txHash=?, updatedAt=? WHERE id=?`,
+        [
+          internalStatus,
+          data.confirmations != null ? Number(data.confirmations) || 0 : payment.confirmations,
+          data.pay_address || payment.payAddress || null,
+          data.actually_paid ? Number(data.actually_paid) : payment.amountReceived,
+          (data.payin_hash || data.purchase_id || fresh.txHash || payment.txHash || null),
+          now,
+          payment.id,
+        ]
+      );
+    });
     return NextResponse.json({ ok: true });
 
   } catch (err) {

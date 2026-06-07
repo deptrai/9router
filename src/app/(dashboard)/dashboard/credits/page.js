@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import { Card } from "@/shared/components";
 
 const PERIODS = [
@@ -30,6 +31,7 @@ export default function CreditsPage() {
   const [topupError, setTopupError] = useState("");
   const [activePayment, setActivePayment] = useState(null); // {paymentId, paymentUrl, ...}
   const [bonusPercent, setBonusPercent] = useState(15);
+  const [timeLeft, setTimeLeft] = useState(null); // seconds until expiry, or null
 
   // Payment history
   const [payments, setPayments] = useState([]);
@@ -77,6 +79,19 @@ export default function CreditsPage() {
     return () => clearInterval(interval);
   }, [activePayment?.paymentId]);
 
+  // Expiry countdown — ticks every 1s while an active payment has an expiry in the future.
+  useEffect(() => {
+    const expiresAt = activePayment?.expiresAt;
+    const terminal = ["settled", "expired", "failed"].includes(activePayment?.status);
+    if (!expiresAt || terminal) { setTimeLeft(null); return; }
+    const expiryMs = new Date(expiresAt).getTime();
+    if (!Number.isFinite(expiryMs)) { setTimeLeft(null); return; }
+    const tick = () => setTimeLeft(Math.max(0, Math.floor((expiryMs - Date.now()) / 1000)));
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [activePayment?.expiresAt, activePayment?.status]);
+
   const handleTopup = useCallback(async () => {
     setTopupLoading(true);
     setTopupError("");
@@ -92,19 +107,6 @@ export default function CreditsPage() {
     } catch (e) { setTopupError(e.message); }
     finally { setTopupLoading(false); }
   }, [topupAmount, topupCoin, topupNetwork]);
-
-  useEffect(() => {
-    async function load() {
-      try {
-        const statusRes = await fetch("/api/auth/status");
-        if (statusRes.ok) {
-          const status = await statusRes.json();
-          setBalance(status.creditsBalance ?? null);
-        }
-      } catch {}
-    }
-    load();
-  }, []);
 
   useEffect(() => {
     async function loadStats() {
@@ -186,9 +188,26 @@ export default function CreditsPage() {
               <span className="text-xs text-text-muted uppercase">Status</span>
               <span className="text-sm font-medium">{activePayment.status === "pending" ? "Waiting for payment..." : activePayment.status}</span>
             </div>
+            {timeLeft != null && (
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-text-muted uppercase">Expires in</span>
+                <span className={`text-sm font-mono font-medium ${timeLeft <= 60 ? "text-red-500" : "text-text-main"}`}>
+                  {timeLeft > 0
+                    ? `${String(Math.floor(timeLeft / 60)).padStart(2, "0")}:${String(timeLeft % 60).padStart(2, "0")}`
+                    : "expired"}
+                </span>
+              </div>
+            )}
             <div className="text-center p-4 bg-surface-2 rounded-lg">
               <p className="text-xs text-text-muted mb-1">Send exactly {activePayment.amountExpected} {activePayment.coin} ({NETWORK_LABELS[activePayment.network] || activePayment.network}) to:</p>
-              {activePayment.payAddress && <p className="font-mono text-xs break-all select-all mt-1">{activePayment.payAddress}</p>}
+              {activePayment.payAddress && (
+                <>
+                  <div className="mx-auto my-3 w-fit rounded-lg bg-white p-3">
+                    <QRCodeSVG value={activePayment.payAddress} size={160} level="M" includeMargin={false} />
+                  </div>
+                  <p className="font-mono text-xs break-all select-all mt-1">{activePayment.payAddress}</p>
+                </>
+              )}
             </div>
             {activePayment.paymentUrl && (
               <a href={activePayment.paymentUrl} target="_blank" rel="noopener noreferrer" className="block text-center text-sm text-primary hover:underline">

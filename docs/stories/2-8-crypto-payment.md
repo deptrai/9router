@@ -3,7 +3,7 @@ title: "Story 2.8 — Thanh toán crypto (stablecoin USDT/USDC) qua NOWPayments"
 story_id: "2.8"
 story_key: "2-8-crypto-payment"
 epic: "D — Payment & Topup"
-status: review
+status: done
 created: 2026-06-07
 source-arch: docs/ARCHITECTURE_CRYPTO_PAYMENT.md
 source-research: _bmad-output/planning-artifacts/research/technical-crypto-payment-best-practices-research-2026-06-07.md
@@ -15,7 +15,7 @@ context:
 
 # Story 2.8 — Thanh toán crypto (stablecoin USDT/USDC)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -239,6 +239,39 @@ Status: review
 - Giả định adapter sync (thiếu await) → verified an toàn (usersRepo dùng y hệt; adapter normalize sync).
 - Lost update đa tiến trình → 9router single-process (Next.js); JS single-thread + sync txn an toàn.
 - Null return mơ hồ (no-op vs not-found) → ergonomics nhỏ, nhất quán `usersRepo`.
+
+### Review Findings — Tasks 2–7 (2026-06-07, round 2)
+
+> Adversarial review of the full feature (commits `e807a68..428533c`, scope `5c7c5f6..develop`). Subagent layers errored server-side ×4 → all three lenses (Blind Hunter / Edge Case Hunter / Acceptance Auditor) run in-session against real source. Verified: all 4 DB adapters (better/bun/node/sqljs) auto-invoke `transaction(fn)` synchronously → webhook credit award is genuinely atomic (Task-1 "no-op" worry stays FALSE POSITIVE).
+>
+> **AC status:** AC1 SATISFIED (re-confirmed, Task-1 patches hold) · AC2 SATISFIED · AC3 SATISFIED · AC4 SATISFIED after patches · AC5 SATISFIED · AC6 SATISFIED after inline QR + countdown patch · AC7 SATISFIED after env cleanup (README table deferred).
+>
+> **Triage:** 1 decision-needed (resolved → patch) · 7 patch (all applied 2026-06-07) · 4 defer · 6 dismissed.
+
+#### decision-needed (resolved)
+- [x] [Review][Patch] **AC6 UI: inline QR + expiry countdown missing** [`src/app/(dashboard)/dashboard/credits/page.js`] — AC6 requires the pay modal to show a QR of `payAddress` + a countdown of `expiresAt`. Decision resolved 2026-06-07 (best practice): added `qrcode.react@4.2.0` (exact-pinned) rendering `QRCodeSVG` of `payAddress` + a 1s countdown ticker off `expiresAt`. The "no new dependency" constraint is backend-scoped (no NOWPayments SDK); a vetted client-side QR renderer is the safe choice (hand-rolled QR or external QR-image service rejected as risky for a crypto address).
+
+#### patch
+- [x] [Review][Patch] **Late/out-of-order IPN can downgrade a settled payment (status corruption + narrow double-credit window)** [`src/app/api/webhooks/crypto/route.js`:114-121] — the non-finished branch unconditionally `updatePayment({ status: internalStatus })`. Under concurrent/out-of-order delivery (read at :61 races a committed settle), a late `confirming` IPN overwrites `settled` → `confirming`. Corrupts UI status forever, and a subsequent `finished` retry would re-pass the `:81/:94` settled-checks and re-award credits. Fix: guard the non-finished branch — skip status writes when `payment.status` is terminal (`settled`/`failed`/`expired`), i.e. never move a terminal payment backward.
+- [x] [Review][Patch] **HMAC signature compare not timing-safe** [`src/lib/payment/nowpayments.js`:95] — `computed === signature` is a short-circuit string compare (timing side-channel on the IPN secret). Fix: `crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(signature))` inside try/catch (length-mismatch throws → treat as invalid).
+- [x] [Review][Patch] **Settle writes `pay_address` into the `txHash` column** [`src/app/api/webhooks/crypto/route.js`:100-102] — the `finished` UPDATE binds `txHash=?` to `data.pay_address || null`. `pay_address` is the deposit address, not the on-chain tx hash → wrong data persisted (and the non-finished branch correctly uses `data.purchase_id` for txHash, so it's inconsistent too). Fix: use `data.payin_hash || data.purchase_id || null` for txHash; store `pay_address` in `payAddress`.
+- [x] [Review][Patch] **Duplicated crypto env block in `.env.example`** [`.env.example`] — the entire "Crypto Payment — Story 2.8" block (comment + `NOWPAYMENTS_*` + `CRYPTO_PAYMENT_ENABLED` + `CRYPTO_BONUS_PERCENT`) is pasted twice. Fix: delete the duplicate copy.
+- [x] [Review][Patch] **Malformed webhook body → 500 (NP retries) instead of clean 401** [`src/app/api/webhooks/crypto/route.js`:39 → `nowpayments.js`:92] — `verifyIpnSignature` calls `JSON.parse(rawBody)` and is invoked OUTSIDE the route's try/catch (which starts at :60). A non-JSON body with any sig header throws synchronously → uncaught → 500, causing NOWPayments to retry garbage. Fix: wrap the parse in `verifyIpnSignature` (return `false` on throw) or move the verify call inside a guard.
+- [x] [Review][Patch] **Duplicate `useEffect` fetching `/api/auth/status`** [`src/app/(dashboard)/dashboard/credits/page.js`:37-54 & 96-107] — two effects both fetch auth status and `setBalance`; the second (96-107) is a redundant leftover (ignores `isEmailVerified`). Fix: remove the duplicate effect.
+
+#### defer
+- [x] [Review][Defer] **Orphaned `pending` payment row on invoice failure** [`src/app/api/payments/create/route.js`:108-122] — deferred: `createPayment` runs before `createInvoice`; if the NOWPayments call throws, the pending row is never cleaned. Harmless accumulation (never settles), cosmetic cleanup.
+- [x] [Review][Defer] **UI `bonusPercent` hardcoded at 15, never synced to server config** [`src/app/(dashboard)/dashboard/credits/page.js`:32] — deferred: display-only "you'll receive" estimate; actual awarded bonus comes from `payment.bonusPercent` (server config at create-time). No config-read endpoint exists yet → defer until one does.
+- [x] [Review][Defer] **Rate-limit Map is per-process + unbounded** [`src/app/api/payments/create/route.js`:33] — deferred, consistent with existing in-memory limiter pattern (loginLimiter): resets on restart, not shared across instances, entries never evicted. Acceptable for single-process Next.js MVP.
+- [x] [Review][Defer] **README env table not updated** [`README`] — deferred: AC7 asks for a README env table addition; `.env.example` documents the 4 vars inline, so functional coverage exists. Doc-only gap.
+
+#### dismissed (6)
+- `db.transaction(() => {...})` no-op → FALSE POSITIVE: all 4 adapters auto-invoke `transaction(fn)` (better: `db.transaction(fn)()`; bun: `tx()`; node/sqljs: SAVEPOINT wrapper). Verified by reading each adapter.
+- Webhook inlines raw `UPDATE users` instead of calling `addCredits(userId, credits, db)` → equivalent + same-handle atomic; arguably better. By design.
+- `amountReceived` falls back to `amountExpected` when `actually_paid` falsy → `finished` IPNs always carry `actually_paid`; fallback is defensive, never hit on the credit path.
+- `sortObjectKeys` sorts top-level only → NOWPayments IPN payload is flat (all scalar fields); matches arch §5.1.
+- Float money (`amountReceived × multiplier`) → consistent with arch §2.1 + story 2.4 REAL-money defer to MVP-2.
+- `GET /api/payments/[id]` returns internal fields (gatewayInvoiceId/errorMessage) to owner → acceptable; owner-scoped, no cross-user leak.
 
 ## Dev Agent Record
 
