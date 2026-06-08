@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { Card, Button } from "@/shared/components";
 import { useRouter, useSearchParams } from "next/navigation";
 
-export default function VerifyEmailPage() {
+function VerifyEmailContent() {
   const [status, setStatus] = useState("loading"); // "loading" | "success" | "error"
   const [message, setMessage] = useState("");
   const searchParams = useSearchParams();
@@ -103,5 +103,19 @@ export default function VerifyEmailPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+export default function VerifyEmailPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-bg p-4">
+          <div className="inline-block animate-spin rounded-full h-10 w-10 border-b-2 border-primary" />
+        </div>
+      }
+    >
+      <VerifyEmailContent />
+    </Suspense>
   );
 }

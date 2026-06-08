@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { Card, Button, Input } from "@/shared/components";
 import { useRouter, useSearchParams } from "next/navigation";
 
-export default function ResetPasswordPage() {
+function ResetPasswordContent() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [status, setStatus] = useState("form"); // "form" | "success" | "error"
@@ -125,5 +125,19 @@ export default function ResetPasswordPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-bg p-4">
+          <div className="inline-block animate-spin rounded-full h-10 w-10 border-b-2 border-primary" />
+        </div>
+      }
+    >
+      <ResetPasswordContent />
+    </Suspense>
   );
 }
