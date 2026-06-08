@@ -2,6 +2,7 @@
 // CRITICAL: double-credit prevention, HMAC verify, idempotency
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createHmac } from "crypto";
+import { addCredits } from "@/lib/db/repos/usersRepo";
 
 vi.mock("@/lib/db/repos/paymentsRepo", () => ({
   getPaymentByGatewayId: vi.fn(),
@@ -107,10 +108,10 @@ describe("POST /api/webhooks/crypto", () => {
     expect(res.status).toBe(200);
     // Verify transaction ran (settle + credits)
     expect(mockDb.transaction).toHaveBeenCalledTimes(1);
-    expect(mockDb.run).toHaveBeenCalledTimes(2); // UPDATE payments + UPDATE users
-    // Second run call = addCredits (10 * 1.15 = 11.5)
-    const creditsCall = mockDb.run.mock.calls[1];
-    expect(creditsCall[1][0]).toBeCloseTo(11.5); // creditsToAward
+    expect(mockDb.run).toHaveBeenCalledTimes(1); // UPDATE payments
+    // Credits awarded via addCredits (10 * 1.15 = 11.5)
+    expect(addCredits).toHaveBeenCalledTimes(1);
+    expect(addCredits.mock.calls[0][1]).toBeCloseTo(11.5); // creditsToAward
   });
 
   it("already settled → 200 no-op (NO double credit)", async () => {

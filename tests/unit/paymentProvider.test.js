@@ -37,6 +37,7 @@ describe("getActiveProvider — selection logic", () => {
     process.env.BITCART_BASE_URL = "http://bc.local";
     process.env.BITCART_API_KEY = "bc-key";
     process.env.BITCART_STORE_ID = "store-1";
+    process.env.BITCART_WEBHOOK_SECRET = "wh-secret";
     const { getActiveProvider } = await import("@/lib/payment/providers/index.js");
     expect(getActiveProvider().getProviderName()).toBe("bitcart");
   });

@@ -1087,6 +1087,14 @@ docker pull decolua/9router:latest   # update
 | `RESEND_API_KEY` | empty | Resend API key for production email (email verification). When unset, email is skipped (fail-soft). |
 | `EMAIL_FROM` | empty | Verified sender for outbound email, e.g. `9Router <noreply@yourdomain.com>` (required with `RESEND_API_KEY`). |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty | Optional outbound proxy for upstream provider calls |
+| `CRYPTO_PAYMENT_ENABLED` | `true` | Master switch for crypto topup. Set `false` to return 503 from payment creation |
+| `CRYPTO_PAYMENT_PROVIDER` | `auto` | Crypto provider selection: `auto` \| `nowpayments` \| `bitcart`. `auto` prefers NOWPayments if its key is set, else Bitcart if fully configured |
+| `NOWPAYMENTS_API_KEY` | empty | NOWPayments API key. Required to use/auto-select the NOWPayments provider |
+| `NOWPAYMENTS_IPN_SECRET` | empty | NOWPayments IPN HMAC secret. Required to verify `/api/webhooks/crypto` callbacks (fails closed when unset) |
+| `BITCART_BASE_URL` | empty | Bitcart instance API base URL (e.g. `https://bitcart.example.com/api`) |
+| `BITCART_API_KEY` | empty | Bitcart API token (`full_control`) used as Bearer for invoice create/fetch |
+| `BITCART_STORE_ID` | empty | Bitcart store ID invoices are created against |
+| `BITCART_WEBHOOK_SECRET` | empty | Shared secret embedded in the Bitcart `notification_url` and verified (timing-safe) on `/api/webhooks/bitcart`. Required to use Bitcart |
 
 Notes:
 - Lowercase proxy variables are also supported: `http_proxy`, `https_proxy`, `all_proxy`, `no_proxy`.

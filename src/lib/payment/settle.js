@@ -3,6 +3,7 @@
  * Extracted from webhooks/crypto. Both webhook routes call this.
  */
 import { getAdapter } from "@/lib/db/driver";
+import { addCredits } from "@/lib/db/repos/usersRepo";
 
 const TERMINAL_STATUSES = new Set(["settled", "failed", "expired"]);
 
@@ -12,17 +13,15 @@ export async function settlePayment(payment, { amountReceived, txHash, confirmat
 
   adapter.transaction(() => {
     const fresh = adapter.get(`SELECT status FROM payments WHERE id = ?`, [payment.id]);
-    if (fresh?.status === "settled") return;
-    if (fresh && TERMINAL_STATUSES.has(fresh.status) && fresh.status !== "settled") return;
+    if (!fresh) return; // payment row gone — never award credits without a backing record
+    if (fresh.status === "settled") return;
+    if (TERMINAL_STATUSES.has(fresh.status) && fresh.status !== "settled") return;
 
     const now = new Date().toISOString();
     adapter.run(
       `UPDATE payments SET status=?, amountReceived=?, creditsAwarded=?, txHash=?, settledAt=?, confirmations=?, updatedAt=? WHERE id=?`,
       ["settled", amountReceived, creditsToAward, txHash || null, now, confirmations ?? 0, now, payment.id]
     );
-    adapter.run(
-      `UPDATE users SET creditsBalance = creditsBalance + ?, updatedAt = ? WHERE id = ?`,
-      [creditsToAward, now, payment.userId]
-    );
+    addCredits(payment.userId, creditsToAward, adapter);
   });
 }

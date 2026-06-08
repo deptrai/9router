@@ -56,7 +56,7 @@ export async function POST(request) {
   const config = getConfig();
   if (!config.enabled) return NextResponse.json({ error: "Crypto payment unavailable" }, { status: 503 });
 
-  const provider = getActiveProvider();
+  const provider = getActiveProvider(config.provider);
   if (!provider) return NextResponse.json({ error: "Crypto payment unavailable" }, { status: 503 });
 
   let body;
@@ -88,6 +88,10 @@ export async function POST(request) {
     try { invoice = await provider.createInvoice({ amount: numAmount, coin: coin.toUpperCase(), network: network.toLowerCase(), orderId: payment.id }); }
     catch (err) {
       console.error("[payments/create] Provider createInvoice failed:", err.message);
+      // Don't strand the pending row we just created — mark it failed so it isn't a
+      // permanently-unsettleable orphan. Best-effort; ignore secondary failures.
+      try { await updatePayment(payment.id, { status: "failed" }); }
+      catch (e2) { console.error("[payments/create] Failed to mark orphan payment failed:", e2.message); }
       return NextResponse.json({ error: "Crypto payment unavailable" }, { status: 503 });
     }
 

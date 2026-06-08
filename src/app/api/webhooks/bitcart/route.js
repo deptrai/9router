@@ -4,8 +4,9 @@
  */
 import { NextResponse } from "next/server";
 import * as bitcart from "@/lib/payment/bitcart";
-import { getPaymentByGatewayId, updatePayment } from "@/lib/db/repos/paymentsRepo";
+import { getPaymentByGatewayId } from "@/lib/db/repos/paymentsRepo";
 import { settlePayment } from "@/lib/payment/settle";
+import { getAdapter } from "@/lib/db/driver";
 
 export const dynamic = "force-dynamic";
 
@@ -46,8 +47,14 @@ export async function POST(request) {
       return NextResponse.json({ ok: true });
     }
 
-    await updatePayment(payment.id, {
-      status: TERMINAL_STATUSES.has(payment.status) ? payment.status : internalStatus,
+    // Non-terminal transition: guard against concurrent IPNs downgrading a terminal
+    // status by re-reading inside a transaction (mirrors webhooks/crypto).
+    const db = await getAdapter();
+    db.transaction(() => {
+      const fresh = db.get(`SELECT status FROM payments WHERE id = ?`, [payment.id]);
+      if (!fresh || TERMINAL_STATUSES.has(fresh.status)) return;
+      const now = new Date().toISOString();
+      db.run(`UPDATE payments SET status=?, updatedAt=? WHERE id=?`, [internalStatus, now, payment.id]);
     });
     return NextResponse.json({ ok: true });
   } catch (err) {

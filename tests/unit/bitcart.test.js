@@ -89,6 +89,7 @@ describe("createInvoice", () => {
     process.env.BITCART_BASE_URL = "http://bc.local";
     process.env.BITCART_API_KEY = "api-key";
     process.env.BITCART_STORE_ID = "store-abc";
+    process.env.BITCART_WEBHOOK_SECRET = "wh-secret";
     global.fetch.mockResolvedValueOnce({ ok:false, status:503, text:async () => "err" });
     const { createInvoice } = await import("@/lib/payment/bitcart.js");
     await expect(createInvoice({ amount:10, coin:"USDT", network:"tron", orderId:"o" })).rejects.toThrow("503");

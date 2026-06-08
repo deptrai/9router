@@ -22,7 +22,7 @@ const STATUS_MAP = {
 
 export function getProviderName() { return "bitcart"; }
 
-export function verifyAuth(req) {
+export function verifyAuth(req, _rawBody) {
   const secret = process.env.BITCART_WEBHOOK_SECRET;
   if (!secret) return false;
   const url = new URL(req.url);
@@ -60,8 +60,14 @@ export async function getInvoice(gatewayId) {
 export async function resolveSettlement(gatewayId) {
   const invoice = await getInvoice(gatewayId);
   const p = (invoice.payments || [])[0] || {};
+  const amountReceived = Number(p.amount) || 0;
+  // Bitcart marked the invoice complete but the re-fetched invoice has no usable
+  // payment amount (empty payments[] or a partial/buggy API response). Throwing here
+  // makes the webhook return 500 so Bitcart retries, rather than settling for 0 credits.
+  if (amountReceived <= 0)
+    throw new Error(`Bitcart invoice ${gatewayId} settled with no payment amount`);
   return {
-    amountReceived: Number(p.amount) || 0,
+    amountReceived,
     txHash: p.lookup_field || p.tx_hash || null,
     confirmations: Number(p.confirmations) || 0,
   };
@@ -70,10 +76,13 @@ export async function resolveSettlement(gatewayId) {
 export async function createInvoice({ amount, coin, network, orderId }) {
   const { baseUrl, apiKey, storeId } = getConfig();
   const secret = process.env.BITCART_WEBHOOK_SECRET;
+  // Without the webhook secret the notification_url carries no token, so every IPN
+  // Bitcart sends would be rejected 401 by verifyAuth and the payment could never
+  // settle. Fail loudly at create time instead of silently stranding payments.
+  if (!secret)
+    throw new Error("Bitcart not configured: BITCART_WEBHOOK_SECRET is required");
   const base = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:20128";
-  const notifUrl = secret
-    ? `${base}/api/webhooks/bitcart?token=${encodeURIComponent(secret)}`
-    : `${base}/api/webhooks/bitcart`;
+  const notifUrl = `${base}/api/webhooks/bitcart?token=${encodeURIComponent(secret)}`;
 
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 10_000);
@@ -88,6 +97,9 @@ export async function createInvoice({ amount, coin, network, orderId }) {
   } finally { clearTimeout(t); }
   if (!res.ok) { const text = await res.text().catch(() => ""); throw new Error(`Bitcart createInvoice error ${res.status}: ${text}`); }
   const inv = await res.json();
+  // Guard against a falsy id: String(null)/String(undefined) would store the literal
+  // "null"/"undefined" as gatewayPaymentId (a UNIQUE column) and collide on the next such row.
+  if (!inv.id) throw new Error("Bitcart createInvoice returned no invoice id");
   const pm = (inv.payments || [])[0] || {};
   return {
     gatewayId: String(inv.id),

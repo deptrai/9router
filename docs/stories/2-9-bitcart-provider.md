@@ -3,7 +3,7 @@ title: "Story 2.9 — Bitcart as second crypto payment provider (provider abstra
 story_id: "2.9"
 story_key: "2-9-bitcart-provider"
 epic: "D — Payment & Topup"
-status: review
+status: done
 created: 2026-06-07
 baseline_commit: 776d21e760b9acaca96d8a9aa024468d9415ca81
 source-arch: docs/ARCHITECTURE_CRYPTO_PAYMENT.md
@@ -14,7 +14,7 @@ context:
 
 # Story 2.9 — Bitcart provider (crypto payment provider abstraction)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -218,3 +218,34 @@ Claude Opus 4 (Kiro)
 ## Change Log
 
 - 2026-06-08: Story 2.9 implemented — Bitcart provider abstraction. Provider registry, settlePayment shared helper, Bitcart adapter, /api/webhooks/bitcart. 743 tests pass (0 regressions).
+- 2026-06-08: Code review (Blind Hunter + Edge Case Hunter + Acceptance Auditor) on commit `13ba0da` — 12 patch items, 0 decisions, 8 dismissed. See Review Findings.
+
+## Review Findings (Code Review 2026-06-08)
+
+Adversarial 3-layer review on commit `13ba0da`. 12 patch · 0 decision-needed · 8 dismissed. Severity tags reflect money/auth/correctness impact.
+
+### Patch — required fixes
+
+- [ ] [Review][Patch] HIGH: `resolveSettlement` awards 0 credits when `invoice.payments[]` is empty — `(invoice.payments||[])[0]||{}` → `amountReceived=0` → payment marked `settled` with `creditsAwarded=0` (user pays, gets nothing). Guard: throw when `amountReceived<=0` so webhook 500s and Bitcart retries [src/lib/payment/bitcart.js:62-67]
+- [ ] [Review][Patch] MED-HIGH: Orphaned `pending` payment row when `provider.createInvoice` throws — `createPayment` row is written first, then `createInvoice` fails → 503 returned but row stranded with no `gatewayPaymentId`, never settleable, rate-limit slot consumed. Mark payment `failed` (or delete) on the catch [src/app/api/payments/create/route.js]
+- [ ] [Review][Patch] MED-HIGH: Bitcart selectable without `BITCART_WEBHOOK_SECRET` — `getActiveProvider` checks only BASE_URL/API_KEY/STORE_ID; invoice is created with a token-less `notification_url`, then `verifyAuth` rejects every IPN 401 → payments silently never settle. Require the secret in selection or throw in `createInvoice` [src/lib/payment/providers/index.js + src/lib/payment/bitcart.js:72-76]
+- [ ] [Review][Patch] MED: Bitcart non-settled webhook update has no transaction guard — `payment.status` is read outside any txn; under concurrent IPNs a terminal status can be downgraded. NOWPayments crypto route uses `db.transaction()` + fresh read; mirror it [src/app/api/webhooks/bitcart/route.js:49-51]
+- [ ] [Review][Patch] MED: `settlePayment` credits a deleted payment — when `fresh` is null both terminal guards skip, but `UPDATE users SET creditsBalance` still runs. Add `if (!fresh) return;` [src/lib/payment/settle.js:14-16]
+- [ ] [Review][Patch] MED: `String(inv.id)` stores literal `"null"`/`"undefined"` as `gatewayPaymentId` when Bitcart returns a falsy id — `"null" || null` is truthy → written to a UNIQUE column → collision on the next such row. Throw if `!inv.id` before `String()` [src/lib/payment/bitcart.js:93]
+- [ ] [Review][Patch] MED: `cryptoPayment` KV config missing `provider` field (AC5) — admin runtime override not implemented; selection is env-only. Add `provider` to `getConfig()` and honor it in selection [src/app/api/payments/create/route.js getConfig + src/lib/payment/providers/index.js]
+- [ ] [Review][Patch] MED: README env-vars table not updated (AC6) — `CRYPTO_PAYMENT_PROVIDER` / `BITCART_*` / `NOWPAYMENTS_*` rows missing (only `.env.example` was done) [README.md]
+- [ ] [Review][Patch] LOW: `_ipnCache` (nowpayments-adapter) never evicted — module-level Map grows unbounded. `delete` the entry after reading it in `resolveSettlement` [src/lib/payment/nowpayments-adapter.js]
+- [ ] [Review][Patch] LOW: `settlePayment` inlines the credits `UPDATE` instead of calling `addCredits()` — AC1 + Dev Notes specify `addCredits(userId, credits, db)` inside the txn. Replace inline SQL with `addCredits(payment.userId, creditsToAward, adapter)` [src/lib/payment/settle.js:23-26]
+- [ ] [Review][Patch] LOW: Unrecognized `CRYPTO_PAYMENT_PROVIDER` value silently falls through to auto-detect — a typo (e.g. `bitcarts`) is ignored with no warning. Log a warning for unknown values [src/lib/payment/providers/index.js]
+- [ ] [Review][Patch] LOW: `bitcart.verifyAuth(req)` signature differs from interface `verifyAuth(req, rawBody)` — add an ignored 2nd param for contract consistency [src/lib/payment/bitcart.js:25]
+
+### Dismissed (8) — not actionable
+
+- nowpayments-adapter `verifyAuth` "auth bypass" (Blind, High) — FALSE POSITIVE: `verifyIpnSignature` fails closed `if (!rawBody||!signature||!secret) return false` (nowpayments.js:91)
+- `getInvoice` `res.ok` TypeError after abort (Edge) — FALSE POSITIVE: `fetch` throws on abort, exits via exception, never reaches `!res.ok`
+- Secret in `notification_url` query string (Blind) — by design: Bitcart unsigned IPN, shared-secret token is the specified auth mechanism (AC2/AC3)
+- `verifyAuth` length-compare leaks secret length (Blind) — negligible (high-entropy secret) + mirrors the accepted story-2.8 `verifyIpnSignature` pattern
+- `verifyAuth` `new URL(req.url)` unguarded (Edge) — near-unreachable: Next.js App Router `req.url` is always a valid absolute URL
+- `expiresAt` `expiration||time_left` vs spec order (Auditor) — reasonable impl choice (ISO timestamp preferred), both fields set, no functional impact
+- Bitcart non-settled path only updates `status` (Edge) — by design: Bitcart IPN carries only `{id,status}`; re-fetching on every intermediate status adds load
+- Webhook routes hard-import provider vs AC1 "route doesn't know provider" (Auditor) — documented-intentional & correct: settlement must follow the route the invoice was created on so mid-flight payments survive env changes

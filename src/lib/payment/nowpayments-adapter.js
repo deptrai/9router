@@ -33,6 +33,7 @@ export function cacheIpnData(gatewayPaymentId, raw) { _ipnCache.set(gatewayPayme
 export async function resolveSettlement(gatewayPaymentId) {
   const data = _ipnCache.get(gatewayPaymentId);
   if (!data) throw new Error(`[nowpayments-adapter] No cached IPN data for ${gatewayPaymentId}`);
+  _ipnCache.delete(gatewayPaymentId); // consume once — prevents unbounded Map growth + stale reuse
   return {
     amountReceived: Number(data.actually_paid) || Number(data.pay_amount) || 0,
     txHash: data.payin_hash || data.purchase_id || null,
