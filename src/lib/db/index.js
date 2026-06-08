@@ -43,6 +43,11 @@ export {
   createPayment, getPaymentById, getPaymentByGatewayId, updatePayment, listPayments, getPaymentsByUser,
 } from "./repos/paymentsRepo.js";
 
+// Credit Ledger (BP-1..7, Story 2.13)
+export {
+  recordCreditTxn, getLedgerByUser, rebuildBalanceFromLedger, reverseTxn,
+} from "./repos/creditLedgerRepo.js";
+
 // Plans
 export {
   listPlans, getPlanById, getPlanByName, createPlan, updatePlan, deletePlan,

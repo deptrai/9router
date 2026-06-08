@@ -3,17 +3,20 @@
  * Extracted from webhooks/crypto. Both webhook routes call this.
  */
 import { getAdapter } from "@/lib/db/driver";
-import { addCredits } from "@/lib/db/repos/usersRepo";
+import { recordCreditTxn } from "@/lib/db/repos/creditLedgerRepo";
 
 const TERMINAL_STATUSES = new Set(["settled", "failed", "expired"]);
 
 export async function settlePayment(payment, { amountReceived, txHash, confirmations }, db) {
   const adapter = db || (await getAdapter());
-  const creditsToAward = amountReceived * (1 + (payment.bonusPercent || 0) / 100);
+  const bonusPct = payment.bonusPercent || 0;
+  const standardAmount = amountReceived;
+  const bonusAmount = amountReceived * bonusPct / 100;
+  const creditsToAward = standardAmount + bonusAmount;
 
   adapter.transaction(() => {
     const fresh = adapter.get(`SELECT status FROM payments WHERE id = ?`, [payment.id]);
-    if (!fresh) return; // payment row gone — never award credits without a backing record
+    if (!fresh) return;
     if (fresh.status === "settled") return;
     if (TERMINAL_STATUSES.has(fresh.status) && fresh.status !== "settled") return;
 
@@ -22,6 +25,32 @@ export async function settlePayment(payment, { amountReceived, txHash, confirmat
       `UPDATE payments SET status=?, amountReceived=?, creditsAwarded=?, txHash=?, settledAt=?, confirmations=?, updatedAt=? WHERE id=?`,
       ["settled", amountReceived, creditsToAward, txHash || null, now, confirmations ?? 0, now, payment.id]
     );
-    addCredits(payment.userId, creditsToAward, adapter);
+
+    // BP-3: standard credit row (idempotent by payment id)
+    recordCreditTxn({
+      userId: payment.userId,
+      type: "user_payment",
+      bucket: "standard",
+      amount: standardAmount,
+      refId: payment.id,
+      idempotencyKey: `payment:${payment.id}:standard`,
+      note: `Payment settled (network: ${payment.network}, coin: ${payment.coin})`,
+    }, adapter);
+
+    // BP-7: bonus row with expiry (14 days) if bonus > 0
+    if (bonusAmount > 0) {
+      const bonusExpiry = new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString();
+      recordCreditTxn({
+        userId: payment.userId,
+        type: "user_payment",
+        bucket: "bonus",
+        amount: bonusAmount,
+        multiplier: 1 + bonusPct / 100,
+        expiresAt: bonusExpiry,
+        refId: payment.id,
+        idempotencyKey: `payment:${payment.id}:bonus`,
+        note: `Bonus ${bonusPct}% on payment (expires ${bonusExpiry})`,
+      }, adapter);
+    }
   });
 }

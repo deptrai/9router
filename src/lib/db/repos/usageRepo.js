@@ -3,6 +3,7 @@ import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
 import { updateLastUsed } from "./apiKeysRepo.js";
+import { recordCreditTxn } from "./creditLedgerRepo.js";
 
 const PENDING_TIMEOUT_MS = 60 * 1000;
 const RING_CAP = 50;
@@ -279,15 +280,21 @@ export async function saveRequestUsage(entry) {
       const next = (cur ? parseInt(cur.value, 10) : 0) + 1;
       db.run(`INSERT INTO _meta(key, value) VALUES('totalRequestsLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(next)]);
 
-      // Credit deduction (AC1 — Story 2.4): atomic, inside same transaction
-      // Only deduct if: apiKey is a string, cost > 0, and key belongs to a user (not legacy)
+      // Credit deduction (Story 2.4 + 2.13): atomic, inside same transaction
+      // BP-3/5: write ledger row inline (adapter passed = no nested transaction)
+      // idempotencyKey=null: each request is naturally unique (no double-deduction risk at this layer)
       if (entry.apiKey && typeof entry.apiKey === "string" && (entry.cost || 0) > 0) {
         const keyRow = db.get(`SELECT userId FROM apiKeys WHERE key = ?`, [entry.apiKey]);
         if (keyRow?.userId) {
-          db.run(
-            `UPDATE users SET creditsBalance = creditsBalance - ?, updatedAt = ? WHERE id = ?`,
-            [entry.cost, new Date().toISOString(), keyRow.userId]
-          );
+          recordCreditTxn({
+            userId: keyRow.userId,
+            type: "usage_deduction",
+            bucket: "standard",
+            amount: -(entry.cost),
+            refId: entry.timestamp,
+            idempotencyKey: null,
+            note: `${entry.model || "unknown"} @ ${entry.endpoint || "/v1/chat/completions"}`,
+          }, db);
         }
         // legacy key (userId=null) or key not found → skip (fail-open by design)
       }

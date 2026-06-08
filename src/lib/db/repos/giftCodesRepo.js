@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
-import { addCredits } from "./usersRepo.js";
+import { recordCreditTxn } from "./creditLedgerRepo.js";
 
 function rowToGiftCode(row) {
   if (!row) return null;
@@ -229,8 +229,18 @@ export async function redeemGiftCode({ code, userId, db = null }) {
       [redeemedAt, giftCode.id]
     );
 
-    // Award credits (uses same adapter)
-    addCredits(userId, giftCode.creditsAmount, adapter);
+    // Award credits — BP-3/4/7: gift_code type, bonus bucket, 14d expiry, idempotent per giftCodeId+userId
+    const bonusExpiry = new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString();
+    recordCreditTxn({
+      userId,
+      type: "gift_code",
+      bucket: "bonus",
+      amount: giftCode.creditsAmount,
+      expiresAt: bonusExpiry,
+      refId: giftCode.id,
+      idempotencyKey: `gift:${giftCode.id}:${userId}`,
+      note: `Gift code redemption: ${giftCode.code}`,
+    }, adapter);
 
     // Read new balance
     const userRow = adapter.get(`SELECT creditsBalance FROM users WHERE id = ?`, [userId]);

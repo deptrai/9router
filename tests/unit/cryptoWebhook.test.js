@@ -2,13 +2,19 @@
 // CRITICAL: double-credit prevention, HMAC verify, idempotency
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createHmac } from "crypto";
-import { addCredits } from "@/lib/db/repos/usersRepo";
 
 vi.mock("@/lib/db/repos/paymentsRepo", () => ({
   getPaymentByGatewayId: vi.fn(),
   getPaymentById: vi.fn(),
   updatePayment: vi.fn(),
 }));
+
+// settle.js now calls recordCreditTxn directly (Story 2.13 ledger refactor)
+vi.mock("@/lib/db/repos/creditLedgerRepo", () => ({
+  recordCreditTxn: vi.fn(),
+}));
+
+// Keep usersRepo mock for any other imports that may use it
 vi.mock("@/lib/db/repos/usersRepo", () => ({
   addCredits: vi.fn(),
 }));
@@ -109,9 +115,17 @@ describe("POST /api/webhooks/crypto", () => {
     // Verify transaction ran (settle + credits)
     expect(mockDb.transaction).toHaveBeenCalledTimes(1);
     expect(mockDb.run).toHaveBeenCalledTimes(1); // UPDATE payments
-    // Credits awarded via addCredits (10 * 1.15 = 11.5)
-    expect(addCredits).toHaveBeenCalledTimes(1);
-    expect(addCredits.mock.calls[0][1]).toBeCloseTo(11.5); // creditsToAward
+    // Credits awarded via recordCreditTxn (Story 2.13 ledger refactor)
+    const { recordCreditTxn } = await import("@/lib/db/repos/creditLedgerRepo");
+    expect(recordCreditTxn).toHaveBeenCalled();
+    // Standard row: 10 (no bonus in standard bucket)
+    const standardCall = recordCreditTxn.mock.calls.find(c => c[0].bucket === "standard");
+    expect(standardCall).toBeTruthy();
+    expect(standardCall[0].amount).toBeCloseTo(10, 6);
+    // Bonus row: 10 * 15/100 = 1.5
+    const bonusCall = recordCreditTxn.mock.calls.find(c => c[0].bucket === "bonus");
+    expect(bonusCall).toBeTruthy();
+    expect(bonusCall[0].amount).toBeCloseTo(1.5, 6);
   });
 
   it("already settled → 200 no-op (NO double credit)", async () => {

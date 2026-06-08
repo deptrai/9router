@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
+import { recordCreditTxn } from "./creditLedgerRepo.js";
 
 /**
  * Map DB row → user object.
@@ -74,13 +75,10 @@ export async function updateUser(id, data) {
   return result;
 }
 
-export async function addCredits(id, amount, db = null) {
-  const adapter = db || await getAdapter();
-  const now = new Date().toISOString();
-  adapter.run(
-    `UPDATE users SET creditsBalance = creditsBalance + ?, updatedAt = ? WHERE id = ?`,
-    [amount, now, id]
-  );
+export async function addCredits(id, amount, db = null, { type = "admin_topup", refId = null, idempotencyKey = null, note = null } = {}) {
+  // Thin wrapper — delegates to ledger for audit trail (Story 2.13, BP-5).
+  // Callers that already own a db.transaction() pass their adapter as `db`.
+  await recordCreditTxn({ userId: id, type, bucket: "standard", amount, refId, idempotencyKey, note }, db);
 }
 
 export async function listUsers({ offset = 0, limit = 50 } = {}) {

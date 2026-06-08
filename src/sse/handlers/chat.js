@@ -21,6 +21,7 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { checkKeyQuota } from "@/lib/quota/keyQuota.js";
 import { checkCredits } from "@/lib/billing/checkCredits.js";
+import { checkRpmLimit } from "@/lib/quota/rpmLimit.js";
 
 /**
  * Handle chat completion request
@@ -90,6 +91,14 @@ export async function handleChat(request, clientRawRequest = null) {
   const userAgent = request?.headers?.get("user-agent") || "";
   const bypassResponse = handleBypassRequest(body, modelStr, userAgent, !!settings.ccFilterNaming);
   if (bypassResponse) return bypassResponse.response || bypassResponse;
+
+  // RPM admission — count per-user BEFORE combo expansion (1 client request = 1 RPM,
+  // regardless of how many models a combo tries). Bypass requests above don't count RPM.
+  const rpmResult = await checkRpmLimit(apiKey);
+  if (!rpmResult.allowed) {
+    log.warn("RPM", `key="${log.maskKey(apiKey || "")}" RPM exceeded ${rpmResult.count}/${rpmResult.rpm} (plan ${rpmResult.planName}) ${rpmResult.retryAfterHuman || ""}`);
+    return unavailableResponse(HTTP_STATUS.RATE_LIMITED, `[plan ${rpmResult.planName}] RPM limit exceeded (${rpmResult.count}/${rpmResult.rpm})`, rpmResult.retryAfter, rpmResult.retryAfterHuman);
+  }
 
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);

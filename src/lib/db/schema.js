@@ -257,6 +257,29 @@ export const TABLES = {
       "CREATE UNIQUE INDEX IF NOT EXISTS idx_gcr_unique ON giftCodeRedemptions(giftCodeId, userId)",
     ],
   },
+  // BP-1: immutable — NO updatedAt column. Append-only. Corrections via reversal rows.
+  // BP-6: amount/balanceAfter kept as REAL (float) — known-limitation, see Dev Notes 2.13.
+  creditTransactions: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      userId: "TEXT NOT NULL",
+      type: "TEXT NOT NULL",
+      bucket: "TEXT NOT NULL DEFAULT 'standard'",
+      amount: "REAL NOT NULL",
+      multiplier: "REAL DEFAULT 1",
+      expiresAt: "TEXT",
+      refId: "TEXT",
+      idempotencyKey: "TEXT",
+      balanceAfter: "REAL",
+      note: "TEXT",
+      createdAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_ct_user_ts ON creditTransactions(userId, createdAt)",
+      "CREATE INDEX IF NOT EXISTS idx_ct_user_bucket ON creditTransactions(userId, bucket)",
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_ct_idempotency ON creditTransactions(idempotencyKey)",
+    ],
+  },
 };
 
 export function buildCreateTableSql(name, def) {

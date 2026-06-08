@@ -11,6 +11,7 @@ import { normalizeModelName } from "../../quota/normalize.js";
 
 const quotaConfigKv = makeKv("keyQuota");
 const quotaStateKv = makeKv("keyQuotaState");
+const rpmStateKv = makeKv("rpmState");
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -59,6 +60,27 @@ export async function getQuotaState(keyId) {
  */
 export async function setQuotaState(keyId, state) {
   await quotaStateKv.set(keyId, state);
+}
+
+// ── RPM State (per-user, scope="rpmState") ───────────────────────────────────
+
+/**
+ * Lấy RPM state cho một userId.
+ * State shape: { win1m: { startedAt: ISO, count: number } }
+ * @param {string} userId
+ * @returns {Promise<{ win1m?: { startedAt?: string, count?: number } }>}
+ */
+export async function getRpmState(userId) {
+  return await rpmStateKv.get(userId, {});
+}
+
+/**
+ * Lưu RPM state cho một userId.
+ * @param {string} userId
+ * @param {{ win1m: { startedAt: string, count: number } }} state
+ */
+export async function setRpmState(userId, state) {
+  await rpmStateKv.set(userId, state);
 }
 
 // ── Usage ────────────────────────────────────────────────────────────────────
