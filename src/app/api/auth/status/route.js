@@ -22,12 +22,15 @@ export async function GET() {
     const userId = session?.userId ?? null;
     const email = session?.email ?? null;
     let creditsBalance = null;
+    let isEmailVerified = false;
     if (userId) {
       try {
         const user = await getUserById(userId);
         creditsBalance = user?.creditsBalance ?? null;
+        isEmailVerified = !!user?.isEmailVerified;
       } catch {
         creditsBalance = null;
+        isEmailVerified = false;
       }
     }
 
@@ -47,6 +50,7 @@ export async function GET() {
       userId,
       email,
       creditsBalance,
+      isEmailVerified,
     });
   } catch {
     return NextResponse.json({
@@ -65,6 +69,7 @@ export async function GET() {
       userId: null,
       email: null,
       creditsBalance: null,
+      isEmailVerified: false,
     });
   }
 }
