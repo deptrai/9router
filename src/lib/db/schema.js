@@ -203,6 +203,40 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status)",
     ],
   },
+  giftCodes: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      code: "TEXT UNIQUE NOT NULL",
+      creditsAmount: "REAL NOT NULL",
+      maxRedemptions: "INTEGER",
+      redeemedCount: "INTEGER DEFAULT 0",
+      expiresAt: "TEXT",
+      isActive: "INTEGER DEFAULT 1",
+      note: "TEXT",
+      createdBy: "TEXT",
+      createdAt: "TEXT NOT NULL",
+      updatedAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_giftcodes_code ON giftCodes(code)",
+      "CREATE INDEX IF NOT EXISTS idx_giftcodes_active ON giftCodes(isActive)",
+      "CREATE INDEX IF NOT EXISTS idx_giftcodes_expires ON giftCodes(expiresAt)",
+    ],
+  },
+  giftCodeRedemptions: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      giftCodeId: "TEXT NOT NULL",
+      code: "TEXT NOT NULL",
+      userId: "TEXT NOT NULL",
+      creditsAwarded: "REAL NOT NULL",
+      redeemedAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_gcr_user ON giftCodeRedemptions(userId, redeemedAt)",
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_gcr_unique ON giftCodeRedemptions(giftCodeId, userId)",
+    ],
+  },
 };
 
 export function buildCreateTableSql(name, def) {

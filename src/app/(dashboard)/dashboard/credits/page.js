@@ -35,6 +35,11 @@ export default function CreditsPage() {
 
   // Payment history
   const [payments, setPayments] = useState([]);
+  const [giftCode, setGiftCode] = useState("");
+  const [giftRedeemLoading, setGiftRedeemLoading] = useState(false);
+  const [giftRedeemError, setGiftRedeemError] = useState("");
+  const [giftRedeemSuccess, setGiftRedeemSuccess] = useState("");
+  const [giftRedemptions, setGiftRedemptions] = useState([]);
 
   useEffect(() => {
     async function load() {
@@ -50,6 +55,13 @@ export default function CreditsPage() {
       try {
         const res = await fetch("/api/payments?limit=10");
         if (res.ok) setPayments(await res.json());
+      } catch {}
+      try {
+        const redRes = await fetch("/api/gift-codes/redemptions?limit=10");
+        if (redRes.ok) {
+          const data = await redRes.json();
+          setGiftRedemptions(data.redemptions || []);
+        }
       } catch {}
     }
     load();
@@ -107,6 +119,40 @@ export default function CreditsPage() {
     } catch (e) { setTopupError(e.message); }
     finally { setTopupLoading(false); }
   }, [topupAmount, topupCoin, topupNetwork]);
+
+  const handleRedeemGiftCode = useCallback(async () => {
+    setGiftRedeemLoading(true);
+    setGiftRedeemError("");
+    setGiftRedeemSuccess("");
+    try {
+      const res = await fetch("/api/gift-codes/redeem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: giftCode }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setGiftRedeemError(data.error || "Failed to redeem gift code");
+        return;
+      }
+      setGiftRedeemSuccess(`+${data.creditsAwarded} credits redeemed`);
+      setGiftCode("");
+      const statusRes = await fetch("/api/auth/status");
+      if (statusRes.ok) {
+        const status = await statusRes.json();
+        setBalance(status.creditsBalance ?? null);
+        setIsEmailVerified(!!status.isEmailVerified);
+      }
+      const redRes = await fetch("/api/gift-codes/redemptions?limit=10");
+      if (redRes.ok) {
+        const red = await redRes.json();
+        setGiftRedemptions(red.redemptions || []);
+      }
+    } catch {
+      setGiftRedeemError("Network error");
+    }
+    setGiftRedeemLoading(false);
+  }, [giftCode]);
 
   useEffect(() => {
     async function loadStats() {
@@ -175,6 +221,45 @@ export default function CreditsPage() {
           )}
         </Card>
       </div>
+
+      {/* Gift Code Redeem Section */}
+      <Card className="p-5">
+        <p className="text-sm font-semibold text-text-main mb-1">Redeem Gift Code</p>
+        {!isEmailVerified ? (
+          <p className="text-sm text-yellow-600 mt-2">⚠️ Verify your email first to redeem a gift code.</p>
+        ) : (
+          <div className="mt-3 space-y-3">
+            <div className="flex gap-2">
+              <input
+                value={giftCode}
+                onChange={(e) => setGiftCode(e.target.value)}
+                placeholder="Enter gift code"
+                className="flex-1 px-3 py-2 rounded-lg border border-border-subtle bg-surface-1 text-text-main focus:outline-none focus:ring-2 focus:ring-primary/50"
+              />
+              <button
+                onClick={handleRedeemGiftCode}
+                disabled={giftRedeemLoading || !giftCode.trim()}
+                className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium disabled:opacity-60"
+              >
+                {giftRedeemLoading ? "Redeeming…" : "Redeem"}
+              </button>
+            </div>
+            {giftRedeemError && <p className="text-sm text-red-500">{giftRedeemError}</p>}
+            {giftRedeemSuccess && <p className="text-sm text-green-500">{giftRedeemSuccess}</p>}
+            {giftRedemptions.length > 0 && (
+              <div className="pt-2 border-t border-border-subtle space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wider text-text-muted">Recent redemptions</p>
+                {giftRedemptions.map((r) => (
+                  <div key={r.id} className="flex items-center justify-between text-sm">
+                    <span className="font-medium text-text-main">{r.code}</span>
+                    <span className="text-text-muted">+{r.creditsAwarded} • {new Date(r.redeemedAt).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </Card>
 
       {/* Crypto Topup Section */}
       <Card className="p-5">
