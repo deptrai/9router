@@ -73,6 +73,9 @@ export async function setQuotaState(keyId, state) {
  * @returns {Promise<number>} tổng tokens
  */
 export async function sumUsageTokens(apiKey, model, sinceISO) {
+  if (!sinceISO) {
+    throw new Error("sumUsageTokens: sinceISO is required (got falsy value)");
+  }
   const db = await getAdapter();
   let row;
   if (model && model !== "*") {
@@ -100,6 +103,52 @@ export async function sumUsageTokens(apiKey, model, sinceISO) {
          FROM usageHistory
         WHERE apiKey = ? AND timestamp >= ?`,
       [apiKey, sinceISO]
+    );
+  }
+  return row?.total ?? 0;
+}
+
+/**
+ * Tính tổng tokens (prompt + completion) từ usageHistory cho tất cả apiKeys
+ * thuộc một userId, trong một khoảng thời gian, tùy chọn lọc theo model.
+ *
+ * @param {string} userId
+ * @param {string | null} model - canonical model id, null = mọi model
+ * @param {string} sinceISO - ISO timestamp lower bound (inclusive)
+ * @returns {Promise<number>} tổng tokens
+ */
+export async function sumUsageTokensByUser(userId, model, sinceISO) {
+  if (!sinceISO) {
+    throw new Error("sumUsageTokensByUser: sinceISO is required (got falsy value)");
+  }
+  const db = await getAdapter();
+  let row;
+  if (model && model !== "*") {
+    const normalized = normalizeModelName(model);
+    if (normalized !== model) {
+      row = db.get(
+        `SELECT COALESCE(SUM(uh.promptTokens + uh.completionTokens), 0) AS total
+           FROM usageHistory uh
+           JOIN apiKeys ak ON ak.key = uh.apiKey
+          WHERE ak.userId = ? AND uh.timestamp >= ? AND (uh.model = ? OR uh.model = ?)`,
+        [userId, sinceISO, model, normalized]
+      );
+    } else {
+      row = db.get(
+        `SELECT COALESCE(SUM(uh.promptTokens + uh.completionTokens), 0) AS total
+           FROM usageHistory uh
+           JOIN apiKeys ak ON ak.key = uh.apiKey
+          WHERE ak.userId = ? AND uh.timestamp >= ? AND uh.model = ?`,
+        [userId, sinceISO, model]
+      );
+    }
+  } else {
+    row = db.get(
+      `SELECT COALESCE(SUM(uh.promptTokens + uh.completionTokens), 0) AS total
+         FROM usageHistory uh
+         JOIN apiKeys ak ON ak.key = uh.apiKey
+        WHERE ak.userId = ? AND uh.timestamp >= ?`,
+      [userId, sinceISO]
     );
   }
   return row?.total ?? 0;

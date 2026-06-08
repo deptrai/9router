@@ -177,6 +177,24 @@ for (const u of seedUsers) {
   seeded.push({ ...u, keyString });
 }
 
+// Assign planId to demo users (user1=pro, user2=free, user3=free)
+const planAssignments = [
+  { email: "user1@9router.dev", planName: "pro" },
+  { email: "user2@9router.dev", planName: "free" },
+  { email: "user3@9router.dev", planName: "free" },
+];
+for (const { email, planName } of planAssignments) {
+  const plan = db.prepare("SELECT id FROM plans WHERE name = ?").get(planName);
+  if (!plan) {
+    console.log(`   ⚠️  Plan '${planName}' not found — skipping planId for ${email}`);
+    continue;
+  }
+  const updated = db.prepare("UPDATE users SET planId = ?, updatedAt = ? WHERE email = ? AND (planId IS NULL OR planId != ?)").run(plan.id, now(), email, plan.id);
+  if (updated.changes > 0) {
+    console.log(`   ✓ Assigned plan '${planName}' to ${email}`);
+  }
+}
+
 // Admin legacy key (no userId)
 const existingAdminKey = db.prepare("SELECT id FROM apiKeys WHERE name = 'seed-admin-key'").get();
 if (!existingAdminKey) {

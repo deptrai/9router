@@ -43,6 +43,11 @@ export {
   createPayment, getPaymentById, getPaymentByGatewayId, updatePayment, listPayments, getPaymentsByUser,
 } from "./repos/paymentsRepo.js";
 
+// Plans
+export {
+  listPlans, getPlanById, getPlanByName, createPlan, updatePlan, deletePlan,
+} from "./repos/plansRepo.js";
+
 // Gift Codes
 export {
   createGiftCode, getGiftCodeByCode, getGiftCodeById, listGiftCodes, updateGiftCode, disableGiftCode, redeemGiftCode, listGiftCodeRedemptions,

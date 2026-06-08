@@ -11,7 +11,7 @@
 - Payment: **Casso** webhook (QR bank transfer VN)
 - Email verification: **Resend**
 - Max 10 API key/user
-- 6 subscription tiers (Lite→Elite) + PAYG
+- Subscription plans template (khởi điểm free/pro/max, admin thêm/sửa) — 5h/weekly window + RPM, KHÔNG daily reset; + PAYG. *(REVISED 2026-06-08 — xem `docs/epics-saas.md` Epic E)*
 - Zero migration khi có thể (syncSchemaFromTables)
 - Fail-open billing (không chết request vì bug)
 

@@ -14,6 +14,8 @@ function rowToUser(row, includePasswordHash = false) {
     isActive: row.isActive === 1 || row.isActive === true,
     isEmailVerified: row.isEmailVerified === 1 || row.isEmailVerified === true,
     creditsBalance: row.creditsBalance ?? 0,
+    planId: row.planId ?? null,
+    planExpiresAt: row.planExpiresAt ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -64,8 +66,8 @@ export async function updateUser(id, data) {
 
     const merged = { ...row, ...clean, updatedAt: now };
     db.run(
-      `UPDATE users SET email = ?, passwordHash = ?, displayName = ?, isActive = ?, isEmailVerified = ?, creditsBalance = ?, updatedAt = ? WHERE id = ?`,
-      [merged.email, merged.passwordHash, merged.displayName, merged.isActive ? 1 : 0, merged.isEmailVerified ? 1 : 0, merged.creditsBalance, merged.updatedAt, id]
+      `UPDATE users SET email = ?, passwordHash = ?, displayName = ?, isActive = ?, isEmailVerified = ?, creditsBalance = ?, planId = ?, planExpiresAt = ?, updatedAt = ? WHERE id = ?`,
+      [merged.email, merged.passwordHash, merged.displayName, merged.isActive ? 1 : 0, merged.isEmailVerified ? 1 : 0, merged.creditsBalance, merged.planId ?? null, merged.planExpiresAt ?? null, merged.updatedAt, id]
     );
     result = rowToUser({ ...merged, isActive: merged.isActive }, false);
   });

@@ -71,6 +71,24 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_pp_status ON proxyPools(testStatus)",
     ],
   },
+  plans: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      name: "TEXT UNIQUE NOT NULL",
+      displayName: "TEXT",
+      rpm: "INTEGER DEFAULT 0",
+      quota5h: "INTEGER DEFAULT 0",
+      quotaWeekly: "INTEGER DEFAULT 0",
+      perModelLimits: "TEXT",
+      isActive: "INTEGER DEFAULT 1",
+      sortOrder: "INTEGER DEFAULT 0",
+      createdAt: "TEXT NOT NULL",
+      updatedAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_plans_name ON plans(name)",
+    ],
+  },
   users: {
     columns: {
       id: "TEXT PRIMARY KEY",
@@ -80,6 +98,8 @@ export const TABLES = {
       isActive: "INTEGER DEFAULT 1",
       isEmailVerified: "INTEGER DEFAULT 0",
       creditsBalance: "REAL DEFAULT 0",
+      planId: "TEXT",
+      planExpiresAt: "TEXT",
       createdAt: "TEXT NOT NULL",
       updatedAt: "TEXT NOT NULL",
     },
