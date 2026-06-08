@@ -125,7 +125,6 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
 export function createDisconnectAwareStream(transformStream, streamController, clientFormat = null) {
   const reader = transformStream.readable.getReader();
   const writer = transformStream.writable.getWriter();
-  let sawData = false;
 
   return new ReadableStream({
     async pull(controller) {
@@ -142,7 +141,6 @@ export function createDisconnectAwareStream(transformStream, streamController, c
           controller.close();
           return;
         }
-        sawData = true;
         controller.enqueue(value);
       } catch (error) {
         const wasConnected = streamController.isConnected();
