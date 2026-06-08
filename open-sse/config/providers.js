@@ -194,7 +194,9 @@ export const PROVIDERS = {
   kiro: {
     baseUrl: "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse",
     format: "kiro",
-    retry: { 429: 2 },
+    // 429 = per-account quota; retry on same account will always 429 again.
+    // Let handleSingleModelChat rotate accounts instead of burning ~4s here.
+    retry: { 429: 0 },
     headers: {
       "Content-Type": "application/json",
       "Accept": "application/vnd.amazon.eventstream",

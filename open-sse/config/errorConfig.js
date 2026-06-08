@@ -29,9 +29,10 @@ export const DEFAULT_ERROR_MESSAGES = {
 };
 
 // Exponential backoff config for rate limits
+// Kiro recovery gaps observed locally: avg opus ~29s, max ~304s.
 export const BACKOFF_CONFIG = {
-  base: 2000,
-  max: 5 * 60 * 1000,
+  base: 8000,
+  max: 10 * 60 * 1000,
   maxLevel: 15
 };
 

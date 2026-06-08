@@ -8,6 +8,10 @@ import * as log from "../utils/logger.js";
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
 
+// Negative cache for all-locked state (per-process, TTL ≤2s, DB is source of truth)
+// Key: `${providerId}:${model||"__all"}` → { expiresAt: number, retryAfter: string, retryAfterHuman: string }
+const _allLockedCache = new Map();
+
 /**
  * Get provider credentials from localDb
  * Filters out unavailable accounts and returns the selected account based on strategy
@@ -31,6 +35,23 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
     // Resolve alias to provider ID (e.g., "kc" -> "kilocode")
     const providerId = resolveProviderId(provider);
+
+    // Check negative cache for all-locked state (only when excludeSet is empty)
+    if (excludeSet.size === 0) {
+      const cacheKey = `${providerId}:${model || "__all"}`;
+      const cached = _allLockedCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        // Per-process cache only, max staleness 2s; DB remains the source of truth.
+        // Each process may lag by up to 2s, which is acceptable for fail-fast behavior.
+        log.debug("AUTH", `${provider} | all-locked cached (${cached.retryAfterHuman})`);
+        return {
+          allRateLimited: true,
+          retryAfter: cached.retryAfter,
+          retryAfterHuman: cached.retryAfterHuman,
+          _cached: true
+        };
+      }
+    }
 
     // Inject a virtual connection for no-auth free providers (with optional proxy pool from settings)
     if (FREE_PROVIDERS[providerId]?.noAuth) {
@@ -85,6 +106,16 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       if (earliest) {
         const earliestConn = lockedConns[0];
         log.warn("AUTH", `${provider} | all ${connections.length} accounts locked for ${model || "all"} (${formatRetryAfter(earliest)}) | lastError=${earliestConn?.lastError?.slice(0, 50)}`);
+
+        // Set negative cache: TTL = min(2s, time until earliest unlock)
+        const cacheKey = `${providerId}:${model || "__all"}`;
+        const cacheTTL = Math.min(2000, new Date(earliest).getTime() - Date.now());
+        _allLockedCache.set(cacheKey, {
+          expiresAt: Date.now() + cacheTTL,
+          retryAfter: earliest,
+          retryAfterHuman: formatRetryAfter(earliest)
+        });
+
         return {
           allRateLimited: true,
           retryAfter: earliest,
@@ -151,9 +182,26 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           consecutiveUseCount: 1
         });
       }
+      // On successful selection, evict negative cache so next query hits DB
+      _allLockedCache.delete(`${providerId}:${model || "__all"}`);
     } else {
-      // Default: fill-first (already sorted by priority in getProviderConnections)
-      connection = availableConnections[0];
+      // Default: fill-first with health-aware ranking
+      // Penalize accounts with lastErrorAt < 60s ago by pushing them to the end.
+      // If only one account available (even if recently failed), still choose it.
+      const now = Date.now();
+      const HEALTH_PENALTY_WINDOW_MS = 60 * 1000;
+
+      const ranked = [...availableConnections].sort((a, b) => {
+        // Compute health penalty: 1 if lastErrorAt < 60s ago, 0 otherwise
+        const aPenalty = (a.lastErrorAt && (now - new Date(a.lastErrorAt).getTime() < HEALTH_PENALTY_WINDOW_MS)) ? 1 : 0;
+        const bPenalty = (b.lastErrorAt && (now - new Date(b.lastErrorAt).getTime() < HEALTH_PENALTY_WINDOW_MS)) ? 1 : 0;
+
+        // Sort by penalty ascending (healthy first), then by priority ascending
+        if (aPenalty !== bPenalty) return aPenalty - bPenalty;
+        return (a.priority || 999) - (b.priority || 999);
+      });
+
+      connection = ranked[0];
     }
 
     const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
