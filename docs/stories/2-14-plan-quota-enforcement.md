@@ -1,11 +1,11 @@
 ---
-baseline_commit: TBD
+baseline_commit: 5fa6d303b86555d73f6d11d69de20b23c2a74a18
 epic: E
 ---
 
 # Story 2.14 (E.3): Plan quota enforcement (5h/weekly per-user) + credit-overflow toggle (Model B)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -57,7 +57,7 @@ Thách thức: quyết định billing source xảy ra ở **admission** (`chat.
 
 ## Acceptance Criteria
 
-1. **WHEN** DB migrate, **THEN** `users` có thêm cột `allowCreditOverflow INTEGER DEFAULT <default>` (boolean 0/1; giá trị default — xem Quyết định cần chốt). Migration idempotent (guarded ADD COLUMN). `rowToUser` expose `allowCreditOverflow` (bool); `updateUser` cho phép set nó.
+1. **WHEN** DB migrate, **THEN** `users` có thêm cột `allowCreditOverflow INTEGER DEFAULT 0` (boolean 0/1; default **0 = OFF**, chốt). Migration idempotent (guarded ADD COLUMN). `rowToUser` expose `allowCreditOverflow` (bool); `updateUser` cho phép set nó.
 2. **WHEN** có hàm mới `checkPlanQuota(apiKey, model)` (đề xuất `src/lib/quota/planQuota.js`), **THEN**: (a) `!apiKey` / legacy / không map userId → `{ source:"none", allowed:true }` (không liên quan plan); (b) `resolveUserLimits(userId, model)`; (c) `source!=="plan"` → `{ source:"credit", allowed:true }` (caller dùng credit path); (d) `source==="plan"`: với mỗi window `5h`/`weekly` có quota>0, resolve window per-user (persist state on reset), `sumUsageTokensByUser` consumed; nếu **bất kỳ** window consumed ≥ quota → `{ source:"plan", allowed:false, exhausted:true, window, consumed, limit, retryAfter, retryAfterHuman }`; nếu còn dư mọi window → `{ source:"plan", allowed:true }`.
 3. **WHEN** `source==="plan"` và còn quota, **THEN** request đi tiếp, billing source = `"plan"`, **KHÔNG trừ credit** (`saveRequestUsage` không ghi `usage_deduction` cho request này).
 4. **WHEN** `source==="plan"` và quota exhausted, **THEN** rẽ theo `user.allowCreditOverflow`: **ON** → request tiếp tục, billing source = `"overflow"`, áp `checkCredits` (số dư>0, else 429 insufficient), trừ credit như pay-as-you-go; **OFF** → `429` message "[plan <name>] quota exhausted (<window>) — enable credit overflow to continue", kèm `Retry-After` tới lúc window reset.
@@ -70,13 +70,13 @@ Thách thức: quyết định billing source xảy ra ở **admission** (`chat.
 ## Tasks / Subtasks
 
 ### Phần A — Schema: allowCreditOverflow (AC#1)
-- [ ] **A1**: `src/lib/db/schema.js` → thêm `allowCreditOverflow: "INTEGER DEFAULT <D>"` vào `TABLES.users.columns` (D = giá trị chốt ở Quyết định).
-- [ ] **A2**: Migration `src/lib/db/migrations/004-credit-overflow.js` (version 4): guarded `ALTER TABLE users ADD COLUMN allowCreditOverflow INTEGER DEFAULT <D>` (check cột tồn tại qua PRAGMA, pattern 002). Đăng ký vào `migrations/index.js` (`MIGRATIONS=[m001,m002,m003,m004]`).
-- [ ] **A3**: `usersRepo.rowToUser` → expose `allowCreditOverflow: row.allowCreditOverflow === 1 || row.allowCreditOverflow === true`. `updateUser`: thêm `allowCreditOverflow` vào SET clause + merged (theo pattern planId — chuyển bool→0/1).
+- [x] **A1**: `src/lib/db/schema.js` → thêm `allowCreditOverflow: "INTEGER DEFAULT 0"` vào `TABLES.users.columns` (default 0 = OFF, chốt).
+- [x] **A2**: Migration `src/lib/db/migrations/004-credit-overflow.js` (version 4): guarded `ALTER TABLE users ADD COLUMN allowCreditOverflow INTEGER DEFAULT 0` (check cột tồn tại qua PRAGMA, pattern 002). Đăng ký vào `migrations/index.js` (`MIGRATIONS=[m001,m002,m003,m004]`).
+- [x] **A3**: `usersRepo.rowToUser` → expose `allowCreditOverflow: row.allowCreditOverflow === 1 || row.allowCreditOverflow === true`. `updateUser`: thêm `allowCreditOverflow` vào SET clause + merged (theo pattern planId — chuyển bool→0/1).
 
 ### Phần B — Per-user plan quota state + checker (AC#2, #9)
-- [ ] **B1**: `quotaRepo.js` → `makeKv("planQuotaState")`; `getPlanQuotaState(userId)` / `setPlanQuotaState(userId, state)`. Shape `{ win5h:{startedAt}, winWeek:{startedAt} }` (giống keyQuotaState nhưng keyed userId).
-- [ ] **B2**: `src/lib/quota/planQuota.js` → `checkPlanQuota(apiKey, model, now=Date.now())`:
+- [x] **B1**: `quotaRepo.js` → `makeKv("planQuotaState")`; `getPlanQuotaState(userId)` / `setPlanQuotaState(userId, state)`. Shape `{ win5h:{startedAt}, winWeek:{startedAt} }` (giống keyQuotaState nhưng keyed userId).
+- [x] **B2**: `src/lib/quota/planQuota.js` → `checkPlanQuota(apiKey, model, now=Date.now())`:
   - `if (!apiKey) return { source:"none", allowed:true }`
   - `keyRow = getApiKeyByKey(apiKey); if (!keyRow?.userId) return { source:"none", allowed:true }`
   - `limits = resolveUserLimits(keyRow.userId, model)`
@@ -90,7 +90,7 @@ Thách thức: quyết định billing source xảy ra ở **admission** (`chat.
   - **Ghi rõ comment**: quota5h/quotaWeekly = 0 ⇒ unlimited (skip window đó). Enforce TỔNG tất cả model; per-model override (E.6) KHÔNG enforce ở đây.
 
 ### Phần C — Tích hợp chat.js + quyết định billing source (AC#3, #4, #5, #6)
-- [ ] **C1**: `src/sse/handlers/chat.js#handleSingleModelChat` — sau `checkKeyQuota` (171), thay/bổ sung khối quanh `checkCredits` (185) bằng logic Model B:
+- [x] **C1**: `src/sse/handlers/chat.js#handleSingleModelChat` — sau `checkKeyQuota` (171), thay/bổ sung khối quanh `checkCredits` (185) bằng logic Model B:
   ```js
   // --- Plan quota + credit (Story 2.14, E.3 — Model B) ---
   let billingSource; // "plan" | "overflow" | "credit"
@@ -98,8 +98,7 @@ Thách thức: quyết định billing source xảy ra ở **admission** (`chat.
   if (pq.source === "plan" && pq.allowed) {
     billingSource = "plan";                 // trong quota → KHÔNG trừ credit
   } else if (pq.source === "plan" && pq.exhausted) {
-    const user = await getUserForKey(apiKey); // resolve user để đọc allowCreditOverflow
-    if (user?.allowCreditOverflow) {
+    if (pq.allowCreditOverflow) {            // toggle đã có trong pq result (chốt c)
       const credit = await checkCredits(apiKey);
       if (!credit.allowed) return unavailableResponse(429, credit.reason||"insufficient credits", 60, "60s");
       billingSource = "overflow";            // hết quota + toggle ON → trừ credit
@@ -114,23 +113,23 @@ Thách thức: quyết định billing source xảy ra ở **admission** (`chat.
   }
   ```
   (Giữ `checkKeyQuota` 171 nguyên — đó là per-key legacy quota, độc lập plan. KHÔNG xoá.)
-- [ ] **C2**: Helper `getUserForKey(apiKey)` (hoặc tái dùng resolve có sẵn) trả user record (cần `allowCreditOverflow`). Có thể đặt trong `planQuota.js` và trả kèm trong `checkPlanQuota` result (`user`) để tránh query 2 lần — **đề xuất**: `checkPlanQuota` khi `exhausted` trả luôn `allowCreditOverflow` đọc từ user, tránh lookup lại ở chat.js. Chốt trong dev.
-- [ ] **C3**: **Truyền `billingSource` tới deduction**. Threading từ `handleSingleModelChat` → pipeline → `saveRequestUsage(entry)`. Đường đi: thêm `billingSource` vào context chảy qua `handleChatCore`/`chatCore` tới `usageTracking.js:345` và `requestDetail.js:93`. **Đây là phần rủi ro regression cao nhất** — xem Dev Notes "Threading billing source". Tối thiểu: `saveRequestUsage` nhận `entry.billingSource`; nếu `=== "plan"` → **skip** `recordCreditTxn`.
+- [x] **C2**: `checkPlanQuota` khi `source="plan"` đọc user record và **trả kèm `allowCreditOverflow`** trong result (chốt: tránh lookup user lần hai ở chat.js). chat.js dùng `pq.allowCreditOverflow` trực tiếp — KHÔNG cần `getUserForKey` riêng. (Trong `checkPlanQuota` đã có `keyRow.userId`; `getUserById` một lần để lấy cả limits-via-resolveUserLimits lẫn toggle — hoặc resolveUserLimits trả userId rồi getUserById; chốt impl trong dev, miễn 1 lookup.)
+- [x] **C3**: **Truyền `billingSource` tới deduction**. Threading từ `handleSingleModelChat` → pipeline → `saveRequestUsage(entry)`. Đường đi: thêm `billingSource` vào context chảy qua `handleChatCore`/`chatCore` tới `usageTracking.js:345` và `requestDetail.js:93`. **Đây là phần rủi ro regression cao nhất** — xem Dev Notes "Threading billing source". Tối thiểu: `saveRequestUsage` nhận `entry.billingSource`; nếu `=== "plan"` → **skip** `recordCreditTxn`.
 
 ### Phần D — Deduction có điều kiện (AC#6)
-- [ ] **D1**: `src/lib/db/repos/usageRepo.js#saveRequestUsage` — sửa khối deduction (286-300): chỉ `recordCreditTxn` khi `entry.billingSource !== "plan"` (tức credit/overflow/undefined-legacy). `billingSource==="plan"` → skip (plan đã trả). `billingSource==="overflow"` → vẫn trừ; cân nhắc `note` chứa `"overflow"` để audit (BP-3 provenance). `undefined` (request không qua plan path, vd local/legacy) → giữ hành vi cũ (trừ nếu có userId+cost) để KHÔNG regression story 2.4.
-- [ ] **D2**: Đảm bảo deduction vẫn atomic trong transaction sẵn có (BP-5, 2.13). KHÔNG mở transaction lồng.
+- [x] **D1**: `src/lib/db/repos/usageRepo.js#saveRequestUsage` — sửa khối deduction (286-300): chỉ `recordCreditTxn` khi `entry.billingSource !== "plan"` (tức credit/overflow/undefined-legacy). `billingSource==="plan"` → skip (plan đã trả). `billingSource==="overflow"` → vẫn trừ; **đính `note` prefix `[overflow]`** (chốt b: giữ `type=usage_deduction`, `bucket=standard`, KHÔNG đổi schema ledger — provenance qua note). `undefined` (request không qua plan path, vd local/legacy) → giữ hành vi cũ (trừ nếu có userId+cost) để KHÔNG regression story 2.4.
+- [x] **D2**: Đảm bảo deduction vẫn atomic trong transaction sẵn có (BP-5, 2.13). KHÔNG mở transaction lồng.
 
 ### Phần E — API toggle (AC#8)
-- [ ] **E1**: `src/app/api/users/me/route.js` — GET trả thêm `allowCreditOverflow`; PATCH nhận `allowCreditOverflow` (boolean) → `updateUser(session.userId, { allowCreditOverflow })`. Validate boolean.
+- [x] **E1**: `src/app/api/users/me/route.js` — GET trả thêm `allowCreditOverflow`; PATCH nhận `allowCreditOverflow` (boolean) → `updateUser(session.userId, { allowCreditOverflow })`. Validate boolean.
 
 ### Phần F — Test (AC#9)
-- [ ] **F1**: `tests/unit/plan-quota.test.js` — `checkPlanQuota` (temp DB, pattern resolve-plan.test.js): (a) no apiKey/legacy → source=none allowed; (b) source=credit (no plan) → allowed; (c) plan trong quota → allowed; (d) plan 5h exhausted → allowed=false exhausted window=5h; (e) plan weekly exhausted → window=weekly; (f) quota=0 (unlimited) → allowed; (g) đổi quota plan rồi check lại → áp ngay (AC#7); (h) fail-open: mock sumUsageTokensByUser/resolveUserLimits throw → allowed.
-- [ ] **F2**: `tests/unit/chat-plan-billing.test.js` — theo style `chatCreditCheck.test.js`/`chatRpmCheck.test.js`: logic Model B admission — plan-within→billing=plan no-deduct; plan-exhausted+overflowON→checkCredits+billing=overflow; plan-exhausted+overflowOFF→429; credit→billing=credit. (Test logic + assert message/vị trí; KHÔNG full e2e.)
-- [ ] **F3**: `tests/unit/usage-deduction-source.test.js` — `saveRequestUsage` với `billingSource="plan"` → KHÔNG ghi ledger; `="credit"`/`="overflow"` → ghi `usage_deduction`; `undefined` + userId + cost → ghi (regression 2.4). Verify ledger row count + balance qua `rebuildBalanceFromLedger`.
-- [ ] **F4**: `tests/unit/users-me-overflow.test.js` (hoặc mở rộng test users/me có sẵn) — PATCH toggle allowCreditOverflow, GET phản ánh; updateUser persist 0/1.
-- [ ] **F5**: Migration test — `004` thêm cột idempotent, default đúng, rowToUser expose bool.
-- [ ] **F6**: Full suite (`NODE_PATH=/tmp/node_modules npm test` từ `tests/`), 0 fail.
+- [x] **F1**: `tests/unit/plan-quota.test.js` — `checkPlanQuota` (temp DB, pattern resolve-plan.test.js): (a) no apiKey/legacy → source=none allowed; (b) source=credit (no plan) → allowed; (c) plan trong quota → allowed; (d) plan 5h exhausted → allowed=false exhausted window=5h; (e) plan weekly exhausted → window=weekly; (f) quota=0 (unlimited) → allowed; (g) đổi quota plan rồi check lại → áp ngay (AC#7); (h) fail-open: mock sumUsageTokensByUser/resolveUserLimits throw → allowed.
+- [x] **F2**: `tests/unit/chat-plan-billing.test.js` — theo style `chatCreditCheck.test.js`/`chatRpmCheck.test.js`: logic Model B admission — plan-within→billing=plan no-deduct; plan-exhausted+overflowON→checkCredits+billing=overflow; plan-exhausted+overflowOFF→429; credit→billing=credit. (Test logic + assert message/vị trí; KHÔNG full e2e.)
+- [x] **F3**: `tests/unit/usage-deduction-source.test.js` — `saveRequestUsage` với `billingSource="plan"` → KHÔNG ghi ledger; `="credit"`/`="overflow"` → ghi `usage_deduction`; `undefined` + userId + cost → ghi (regression 2.4). Verify ledger row count + balance qua `rebuildBalanceFromLedger`.
+- [x] **F4**: `tests/unit/users-me-overflow.test.js` (hoặc mở rộng test users/me có sẵn) — PATCH toggle allowCreditOverflow, GET phản ánh; updateUser persist 0/1.
+- [x] **F5**: Migration test — `004` thêm cột idempotent, default đúng, rowToUser expose bool.
+- [x] **F6**: Full suite (`NODE_PATH=/tmp/node_modules npm test` từ `tests/`), 0 fail.
 
 ## Dev Notes
 
@@ -156,13 +155,10 @@ Giống `checkKeyQuota`: chặn TRƯỚC khi gọi upstream dựa trên `consume
 ### Deduction: chỉ overflow + credit, KHÔNG plan
 Core của Model B. `saveRequestUsage` hiện trừ mọi userId+cost. Sau story này: `billingSource==="plan"` → skip. Đây là thay đổi hành vi có chủ ý với user CÓ plan — không phải regression (story 2.4 chỉ có credit users, họ thành `source="credit"` → vẫn trừ).
 
-### Quyết định CẦN CHỐT (ghi vào Completion Notes khi dev)
-1. **Default `allowCreditOverflow`**: `0` (OFF) hay `1` (ON)?
-   - OFF (đề xuất): an toàn ví user — hết quota thì chặn, không bất ngờ trừ tiền. Nhưng gián đoạn dịch vụ khi quota cạn.
-   - ON: liên tục dịch vụ (giống pay-as-you-go), nhưng có thể trừ credit ngoài ý muốn.
-   - **Đề xuất OFF** (principle of least surprise cho tiền); user tự bật nếu muốn liền mạch. CHỐT VỚI USER.
-2. **`overflow` ledger note/bucket**: trừ vào `bucket=standard` + `note` chứa `"overflow"`, hay thêm enum source? MVP: `bucket=standard`, note rõ. (Ledger type vẫn `usage_deduction`.)
-3. **`checkPlanQuota` trả kèm `allowCreditOverflow`** (tránh lookup user 2 lần ở chat.js)? Đề xuất có.
+### Quyết định ĐÃ CHỐT (user, 2026-06-08)
+1. **Default `allowCreditOverflow` = `0` (OFF)** — principle of least surprise cho tiền: hết quota plan thì chặn `429`, KHÔNG bất ngờ trừ credit. User tự bật nếu muốn liền mạch. → `allowCreditOverflow INTEGER DEFAULT 0`.
+2. **Overflow ledger (best practice)**: deduction khi `billingSource="overflow"` giữ `type=usage_deduction`, `bucket=standard`, **đính `note` prefix `[overflow]`** (vd `[overflow] claude-opus-4-8 @ /v1/chat/completions`). Audit/query được provenance (BP-3) mà KHÔNG đổi schema ledger — giữ nguyên BP-1..7 của 2.13. KHÔNG thêm enum `type` mới.
+3. **`checkPlanQuota` trả kèm `allowCreditOverflow`** (đọc từ user record khi `source="plan"`) → chat.js không lookup user lần hai. Result shape khi plan: `{ source:"plan", allowed, exhausted?, allowCreditOverflow, planName, window?, consumed?, limit?, retryAfter?, retryAfterHuman? }`.
 
 ### Out of scope (story khác)
 - **Per-model quota override enforcement** → E.6 (2-17). Story này enforce TỔNG; `resolveUserLimits` có `modelLimit` nhưng KHÔNG dùng để chặn.
@@ -197,11 +193,44 @@ Core của Model B. `saveRequestUsage` hiện trừ mọi userId+cost. Sau story
 
 ## Dev Agent Record
 ### Agent Model Used
+claude-sonnet-4-6
+
 ### Debug Log References
+- Window timing: tests seeding usageHistory with `now` timestamp fell outside the newly-initialized window (startedAt ≈ now → consumed = 0 < quota). Fixed by pre-seeding `planQuotaState` with `startedAt = 2min ago` and usage rows at `1min ago`.
+- billingSource threading: `logUsage` in stream.js fallback path not updated (low-impact — only called when onStreamComplete not set). `billingSource=undefined` in that path → legacy deduction behavior preserved. Acceptable per regression-safe contract.
+- `checkPlanQuota` returns `allowCreditOverflow` from user record when `source="plan"` → chat.js reads `pq.allowCreditOverflow` directly, no second user lookup.
+
 ### Completion Notes List
+- A1-A3: `allowCreditOverflow INTEGER DEFAULT 0` added to schema, migration 004 (guarded ADD COLUMN), rowToUser + updateUser updated.
+- B1-B2: `planQuotaState` kv scope added to quotaRepo. `planQuota.js` implements checkPlanQuota with full Model B logic + fail-open try/catch. Returns `allowCreditOverflow` from user record when plan active.
+- C1-C3: chat.js Model B block replaces bare checkCredits. billingSource threaded: chat.js → handleChatCore(billingSource) → sharedCtx → streamingHandler/nonStreamingHandler/sseToJsonHandler → saveUsageStats(billingSource) → saveRequestUsage(billingSource). logUsage in usageTracking.js updated.
+- D1-D2: saveRequestUsage deduction conditional on billingSource !== "plan". overflow → note prefix "[overflow]". undefined → legacy deduction (2.4 regression safe).
+- E1: /api/users/me GET exposes allowCreditOverflow. PATCH validates boolean, calls updateUser, returns updated field.
+- F1-F6: 29 new tests (plan-quota:11, chat-plan-billing:6, usage-deduction-source:5, users-me-overflow:7). Full suite 1031 pass / 0 fail.
+
 ### File List
+- `src/lib/db/schema.js` — added allowCreditOverflow to TABLES.users
+- `src/lib/db/migrations/004-credit-overflow.js` — new migration
+- `src/lib/db/migrations/index.js` — registered m004
+- `src/lib/db/repos/usersRepo.js` — rowToUser + updateUser for allowCreditOverflow
+- `src/lib/db/repos/quotaRepo.js` — planQuotaStateKv, getPlanQuotaState, setPlanQuotaState
+- `src/lib/quota/planQuota.js` — new module
+- `src/sse/handlers/chat.js` — Model B block + import checkPlanQuota + billingSource threading
+- `open-sse/handlers/chatCore.js` — billingSource in signature + sharedCtx
+- `open-sse/handlers/chatCore/streamingHandler.js` — billingSource in buildOnStreamComplete + saveUsageStats
+- `open-sse/handlers/chatCore/nonStreamingHandler.js` — billingSource in signature + saveUsageStats
+- `open-sse/handlers/chatCore/sseToJsonHandler.js` — billingSource in signature + saveUsageStats
+- `open-sse/handlers/chatCore/requestDetail.js` — billingSource in saveUsageStats + saveRequestUsage
+- `open-sse/utils/usageTracking.js` — billingSource in logUsage + saveRequestUsage
+- `src/lib/db/repos/usageRepo.js` — conditional deduction by billingSource
+- `src/app/api/users/me/route.js` — allowCreditOverflow in GET + PATCH
+- `tests/unit/plan-quota.test.js` — new (11 tests)
+- `tests/unit/chat-plan-billing.test.js` — new (6 tests)
+- `tests/unit/usage-deduction-source.test.js` — new (5 tests)
+- `tests/unit/users-me-overflow.test.js` — new (7 tests)
 
 ## Change Log
 | Date | Change |
 |------|--------|
 | 2026-06-08 | Tạo story E.3 (2.14) — plan quota enforcement 5h/weekly per-user + credit-overflow toggle (Model B). checkPlanQuota mirror keyQuota per-user; tích hợp handleSingleModelChat; billing source {plan/overflow/credit} truyền tới saveRequestUsage để deduction có điều kiện (plan trong quota KHÔNG trừ credit); thêm users.allowCreditOverflow + API /users/me. Phụ thuộc E.1/E.2 (done) + E.3b ledger (review). 3 quyết định cần chốt (default toggle, overflow ledger note, checkPlanQuota trả user). Status → ready-for-dev. |
+| 2026-06-08 | Implementation complete — all tasks A1-F6 done. 29 new tests. Full suite 1031 pass / 0 fail. Status → review. |

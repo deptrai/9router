@@ -280,12 +280,15 @@ export async function saveRequestUsage(entry) {
       const next = (cur ? parseInt(cur.value, 10) : 0) + 1;
       db.run(`INSERT INTO _meta(key, value) VALUES('totalRequestsLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(next)]);
 
-      // Credit deduction (Story 2.4 + 2.13): atomic, inside same transaction
+      // Credit deduction (Story 2.4 + 2.13 + 2.14 Model B): atomic, inside same transaction
       // BP-3/5: write ledger row inline (adapter passed = no nested transaction)
-      // idempotencyKey=null: each request is naturally unique (no double-deduction risk at this layer)
-      if (entry.apiKey && typeof entry.apiKey === "string" && (entry.cost || 0) > 0) {
+      // billingSource="plan" → SKIP deduction (plan user within quota; plan already paid for).
+      // billingSource="overflow" → deduct (plan exhausted + overflow ON; note [overflow] for BP-3 provenance).
+      // billingSource="credit"/undefined → deduct (pay-as-you-go, preserves story 2.4 behaviour).
+      if (entry.apiKey && typeof entry.apiKey === "string" && (entry.cost || 0) > 0 && entry.billingSource !== "plan") {
         const keyRow = db.get(`SELECT userId FROM apiKeys WHERE key = ?`, [entry.apiKey]);
         if (keyRow?.userId) {
+          const isOverflow = entry.billingSource === "overflow";
           recordCreditTxn({
             userId: keyRow.userId,
             type: "usage_deduction",
@@ -293,7 +296,7 @@ export async function saveRequestUsage(entry) {
             amount: -(entry.cost),
             refId: entry.timestamp,
             idempotencyKey: null,
-            note: `${entry.model || "unknown"} @ ${entry.endpoint || "/v1/chat/completions"}`,
+            note: `${isOverflow ? "[overflow] " : ""}${entry.model || "unknown"} @ ${entry.endpoint || "/v1/chat/completions"}`,
           }, db);
         }
         // legacy key (userId=null) or key not found → skip (fail-open by design)

@@ -31,6 +31,7 @@ export async function GET() {
     displayName: user.displayName,
     creditsBalance: user.creditsBalance,
     isEmailVerified: user.isEmailVerified,
+    allowCreditOverflow: user.allowCreditOverflow ?? false,
     createdAt: user.createdAt,
   });
 }
@@ -43,7 +44,7 @@ export async function PATCH(request) {
 
   try {
     const body = await request.json();
-    const { displayName, currentPassword, newPassword } = body;
+    const { displayName, currentPassword, newPassword, allowCreditOverflow } = body;
 
     // Password change flow
     if (currentPassword || newPassword) {
@@ -76,6 +77,26 @@ export async function PATCH(request) {
       return NextResponse.json({ success: true, message: "Password updated" });
     }
 
+    // allowCreditOverflow toggle
+    if (allowCreditOverflow !== undefined) {
+      if (typeof allowCreditOverflow !== "boolean") {
+        return NextResponse.json({ error: "allowCreditOverflow must be a boolean" }, { status: 400 });
+      }
+      const updated = await updateUser(session.userId, { allowCreditOverflow });
+      if (!updated) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+      return NextResponse.json({
+        id: updated.id,
+        email: updated.email,
+        displayName: updated.displayName,
+        creditsBalance: updated.creditsBalance,
+        isEmailVerified: updated.isEmailVerified,
+        allowCreditOverflow: updated.allowCreditOverflow ?? false,
+        createdAt: updated.createdAt,
+      });
+    }
+
     // Display name update
     if (displayName !== undefined) {
       const updated = await updateUser(session.userId, { displayName });
@@ -88,6 +109,7 @@ export async function PATCH(request) {
         displayName: updated.displayName,
         creditsBalance: updated.creditsBalance,
         isEmailVerified: updated.isEmailVerified,
+        allowCreditOverflow: updated.allowCreditOverflow ?? false,
         createdAt: updated.createdAt,
       });
     }

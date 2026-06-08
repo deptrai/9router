@@ -22,6 +22,7 @@ import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { checkKeyQuota } from "@/lib/quota/keyQuota.js";
 import { checkCredits } from "@/lib/billing/checkCredits.js";
 import { checkRpmLimit } from "@/lib/quota/rpmLimit.js";
+import { checkPlanQuota } from "@/lib/quota/planQuota.js";
 
 /**
  * Handle chat completion request
@@ -179,18 +180,41 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     );
   }
 
-  // --- Credit admission check (Story 2.4, AC3) ---
-  // After quota check, before fetching provider credentials.
-  // Fail-open: if checkCredits throws, request proceeds.
-  const creditResult = await checkCredits(apiKey);
-  if (!creditResult.allowed) {
-    log.warn("BILLING", `[${provider}/${model}] key="${log.maskKey(apiKey || "")}" credit check failed: ${creditResult.reason}`);
-    return unavailableResponse(
-      HTTP_STATUS.RATE_LIMITED,
-      creditResult.reason || "insufficient credits",
-      60,
-      "60s"
-    );
+  // --- Plan quota + credit — Model B (Story 2.14, E.3) ---
+  // Replaces bare checkCredits. Determines billingSource: "plan" | "overflow" | "credit".
+  // checkKeyQuota (above, per-key legacy quota) is kept independent.
+  let billingSource;
+  const pq = await checkPlanQuota(apiKey, model);
+  if (pq.source === "plan" && pq.allowed) {
+    // Within plan quota — no credit deduction
+    billingSource = "plan";
+  } else if (pq.source === "plan" && pq.exhausted) {
+    if (pq.allowCreditOverflow) {
+      // Plan exhausted + overflow ON → fall through to credit billing
+      const creditResult = await checkCredits(apiKey);
+      if (!creditResult.allowed) {
+        log.warn("BILLING", `[${provider}/${model}] key="${log.maskKey(apiKey || "")}" overflow credit check failed: ${creditResult.reason}`);
+        return unavailableResponse(HTTP_STATUS.RATE_LIMITED, creditResult.reason || "insufficient credits", 60, "60s");
+      }
+      billingSource = "overflow";
+    } else {
+      // Plan exhausted + overflow OFF → 429
+      log.warn("QUOTA", `[${provider}/${model}] key="${log.maskKey(apiKey || "")}" plan quota exhausted (${pq.window}) ${pq.retryAfterHuman || ""}`);
+      return unavailableResponse(
+        HTTP_STATUS.RATE_LIMITED,
+        `[plan ${pq.planName}] quota exhausted (${pq.window}) — enable credit overflow to continue`,
+        pq.retryAfter,
+        pq.retryAfterHuman
+      );
+    }
+  } else {
+    // source=credit/none/error → pay-as-you-go (story 2.4 behaviour, no regression)
+    const creditResult = await checkCredits(apiKey);
+    if (!creditResult.allowed) {
+      log.warn("BILLING", `[${provider}/${model}] key="${log.maskKey(apiKey || "")}" credit check failed: ${creditResult.reason}`);
+      return unavailableResponse(HTTP_STATUS.RATE_LIMITED, creditResult.reason || "insufficient credits", 60, "60s");
+    }
+    billingSource = "credit";
   }
 
   // Extract userAgent from request
@@ -247,6 +271,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       connectionId: credentials.connectionId,
       userAgent,
       apiKey,
+      billingSource,
       ccFilterNaming: !!chatSettings.ccFilterNaming,
       rtkEnabled: !!chatSettings.rtkEnabled,
       cavemanEnabled: !!chatSettings.cavemanEnabled,

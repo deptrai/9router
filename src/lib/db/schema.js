@@ -100,6 +100,7 @@ export const TABLES = {
       creditsBalance: "REAL DEFAULT 0",
       planId: "TEXT",
       planExpiresAt: "TEXT",
+      allowCreditOverflow: "INTEGER DEFAULT 0",
       createdAt: "TEXT NOT NULL",
       updatedAt: "TEXT NOT NULL",
     },

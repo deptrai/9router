@@ -12,6 +12,7 @@ import { normalizeModelName } from "../../quota/normalize.js";
 const quotaConfigKv = makeKv("keyQuota");
 const quotaStateKv = makeKv("keyQuotaState");
 const rpmStateKv = makeKv("rpmState");
+const planQuotaStateKv = makeKv("planQuotaState");
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -81,6 +82,26 @@ export async function getRpmState(userId) {
  */
 export async function setRpmState(userId, state) {
   await rpmStateKv.set(userId, state);
+}
+
+// ── Plan Quota State (per-user, scope="planQuotaState") ───────────────────────
+
+/**
+ * Lấy plan quota window state cho một userId.
+ * State shape: { win5h: { startedAt: ISO }, winWeek: { startedAt: ISO } }
+ * @param {string} userId
+ */
+export async function getPlanQuotaState(userId) {
+  return await planQuotaStateKv.get(userId, {});
+}
+
+/**
+ * Lưu plan quota window state cho một userId.
+ * @param {string} userId
+ * @param {{ win5h?: { startedAt: string }, winWeek?: { startedAt: string } }} state
+ */
+export async function setPlanQuotaState(userId, state) {
+  await planQuotaStateKv.set(userId, state);
 }
 
 // ── Usage ────────────────────────────────────────────────────────────────────
