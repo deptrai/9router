@@ -3,6 +3,7 @@ import { BaseExecutor } from "./base.js";
 import { CODEX_DEFAULT_INSTRUCTIONS } from "../config/codexInstructions.js";
 import { PROVIDERS } from "../config/providers.js";
 import { normalizeResponsesInput } from "../translator/helpers/responsesApiHelper.js";
+import { sanitizeJsonSchemaForOpenAI } from "../translator/helpers/openaiSchemaHelper.js";
 import { fetchImageAsBase64 } from "../translator/helpers/imageHelper.js";
 import { getModelUpstreamId } from "../config/providerModels.js";
 import { getConsistentMachineId } from "../../src/shared/utils/machineId.js";
@@ -87,7 +88,12 @@ function normalizeCodexTools(body) {
     tool.type = "function";
     tool.name = name.slice(0, 128);
     if (description) tool.description = description;
-    tool.parameters = parameters;
+    // Sanitize the JSON Schema for OpenAI Responses API. Anthropic tolerates
+    // tuple-form `items` (array of per-position schemas, common in MCP tools
+    // like deepgrep_get's `ranges`), but codex rejects it with HTTP 400
+    // invalid_function_parameters. This collapses such constructs to a valid
+    // single-schema form so combo fallbacks (and direct codex calls) don't 400.
+    tool.parameters = sanitizeJsonSchemaForOpenAI(parameters);
     validNames.add(name);
     return true;
   });
