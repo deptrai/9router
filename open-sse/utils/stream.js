@@ -171,6 +171,7 @@ export function createSSEStream(options = {}) {
         // Translate mode
         if (!trimmed) continue;
 
+        try {
         const parsed = parseSSELine(trimmed, targetFormat);
         if (!parsed) continue;
 
@@ -259,6 +260,11 @@ export function createSSEStream(options = {}) {
             controller.enqueue(sharedEncoder.encode(output));
             sseEmittedCount++;
           }
+        }
+        } catch (err) {
+          // A single malformed/unexpected chunk must not kill the whole stream.
+          // Skip it and keep translating; flush() still emits the terminator.
+          dbg("SSE", `transform line error (skipped): ${err?.message}`);
         }
       }
     },
@@ -369,6 +375,14 @@ export function createSSEStream(options = {}) {
         }
       } catch (error) {
         console.log("Error in flush:", error);
+        // Even on failure we must terminate the SSE stream, otherwise the client
+        // sees a 200 whose body just stops ("empty or malformed response").
+        try {
+          const doneOutput = mode === STREAM_MODE.PASSTHROUGH || sourceFormat !== FORMATS.CLAUDE
+            ? "data: [DONE]\n\n"
+            : `event: error\ndata: ${JSON.stringify({ type: "error", error: { type: "api_error", message: "stream finalization failed" } })}\n\n`;
+          controller.enqueue(sharedEncoder.encode(doneOutput));
+        } catch (e) { /* controller already closed */ }
       }
     }
   });

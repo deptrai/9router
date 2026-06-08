@@ -1,6 +1,34 @@
 // Stream handler with disconnect detection - shared for all providers
-import { STREAM_STALL_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { STREAM_STALL_TIMEOUT_MS, STREAM_TTFT_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
+
+const sseEncoder = new TextEncoder();
+
+/**
+ * Build a terminal SSE payload to gracefully end a stream that was aborted
+ * mid-flight (stall timeout, upstream reset). Without a terminator the client
+ * (e.g. the Anthropic SDK in Claude Code) sees a 200 response whose body just
+ * stops, and reports "empty or malformed response (HTTP 200)".
+ *
+ * - Claude clients: emit a recognized `error` event so the SDK throws a clear
+ *   upstream error (retryable) instead of a confusing parse failure.
+ * - Other clients: emit the OpenAI `data: [DONE]` sentinel.
+ *
+ * @param {string|null} clientFormat - Client-facing format (sourceFormat)
+ * @param {string} reason - Short human-readable reason
+ * @returns {Uint8Array|null}
+ */
+function buildAbortTerminator(clientFormat, reason = "upstream stream ended unexpectedly") {
+  if (clientFormat === "claude") {
+    const payload = JSON.stringify({
+      type: "error",
+      error: { type: "overloaded_error", message: reason }
+    });
+    return sseEncoder.encode(`event: error\ndata: ${payload}\n\n`);
+  }
+  // OpenAI and OpenAI-compatible formats
+  return sseEncoder.encode("data: [DONE]\n\n");
+}
 
 // Get HH:MM:SS timestamp
 function getTimeString() {
@@ -94,7 +122,7 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
  * for long periods while raw bytes still flow (e.g. Kiro EventStream
  * binary frames buffering, Claude reasoning streams).
  */
-export function createDisconnectAwareStream(transformStream, streamController) {
+export function createDisconnectAwareStream(transformStream, streamController, clientFormat = null) {
   const reader = transformStream.readable.getReader();
   const writer = transformStream.writable.getWriter();
 
@@ -136,6 +164,15 @@ export function createDisconnectAwareStream(transformStream, streamController) {
           code === "UND_ERR_SOCKET";
 
         if (!wasConnected || isNetworkClose) {
+          // The upstream was aborted (stall timeout) or reset mid-stream. The
+          // downstream transform's flush() does NOT run on this error path, so
+          // no terminal SSE event (message_stop / [DONE]) was emitted. Inject a
+          // terminator here so the client doesn't see a 200 with a body that
+          // just stops ("empty or malformed response (HTTP 200)").
+          try {
+            const terminator = buildAbortTerminator(clientFormat, msg.includes("timeout") ? "upstream timed out" : "upstream stream ended unexpectedly");
+            if (terminator) controller.enqueue(terminator);
+          } catch (e) { /* controller may already be closing */ }
           try {
             controller.close();
           } catch (e) {
@@ -172,8 +209,9 @@ export function createDisconnectAwareStream(transformStream, streamController) {
  * @param {Response} providerResponse - Response from provider
  * @param {TransformStream} transformStream - Transform stream for SSE
  * @param {object} streamController - Stream controller from createStreamController
+ * @param {string} clientFormat - Client-facing format (sourceFormat) for abort terminator
  */
-export function pipeWithDisconnect(providerResponse, transformStream, streamController) {
+export function pipeWithDisconnect(providerResponse, transformStream, streamController, clientFormat = null) {
   let stallTimer = null;
   let chunkCount = 0;
   let totalBytes = 0;
@@ -185,12 +223,18 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
   };
   const armStall = () => {
     clearStall();
+    // First chunk (time-to-first-byte) gets a longer budget: slow upstreams like
+    // Kiro can take a long time to emit the first token when the request carries
+    // large MCP tool definitions / long contexts. Inter-chunk gaps use the
+    // shorter stall timeout once the stream is flowing.
+    const isFirst = chunkCount === 0;
+    const timeout = isFirst ? STREAM_TTFT_TIMEOUT_MS : STREAM_STALL_TIMEOUT_MS;
     stallTimer = setTimeout(() => {
       stallTimer = null;
-      dbg(tag, `STALL TIMEOUT ${STREAM_STALL_TIMEOUT_MS}ms | chunks=${chunkCount} | bytes=${totalBytes} | sinceLast=${Date.now() - lastChunkAt}ms`);
-      streamController.handleError?.(new Error("stream stall timeout"));
+      dbg(tag, `${isFirst ? "TTFT" : "STALL"} TIMEOUT ${timeout}ms | chunks=${chunkCount} | bytes=${totalBytes} | sinceLast=${Date.now() - lastChunkAt}ms`);
+      streamController.handleError?.(new Error(isFirst ? "stream ttft timeout" : "stream stall timeout"));
       streamController.abort?.();
-    }, STREAM_STALL_TIMEOUT_MS);
+    }, timeout);
   };
 
   // Wrap controller so every termination path clears the stall timer.

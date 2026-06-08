@@ -31,8 +31,19 @@ export const MEMORY_CONFIG = {
   proxyDispatchersMaxSize: 20,
 };
 
-// Stream stall timeout: abort if no chunk received within this duration
-export const STREAM_STALL_TIMEOUT_MS = 30 * 1000;
+// Stream stall timeout: abort if no chunk received between two chunks within
+// this duration. Tuned against production logs that showed Kiro thinking-mode
+// streams (claude-opus-4.8-thinking) silently pausing for 40–100s mid-stream
+// during reasoning bursts. AWS NAT/NLB hard-kills idle TCP connections at
+// 350s with an RST, so we sit comfortably below that.
+export const STREAM_STALL_TIMEOUT_MS = 300 * 1000;
+
+// Time-to-first-byte timeout: how long to wait for the FIRST upstream chunk.
+// Large requests (many MCP tool definitions, long contexts) make slow upstreams
+// like Kiro take much longer to emit the first token. A short stall timeout
+// here caused premature aborts that closed the stream without terminal SSE
+// events, surfacing to clients as "empty or malformed response (HTTP 200)".
+export const STREAM_TTFT_TIMEOUT_MS = 150 * 1000;
 
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
 export const FETCH_CONNECT_TIMEOUT_MS = 20 * 1000;
