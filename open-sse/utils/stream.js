@@ -273,6 +273,12 @@ export function createSSEStream(options = {}) {
       const evtSummary = Object.entries(eventTypeCounts).map(([k, v]) => `${k}=${v}`).join(",") || "none";
       dbg("SSE", `flush | provider=${provider} | model=${model} | recvLines=${sseLineCount} | emitted=${sseEmittedCount} | events=[${evtSummary}]`);
       trackPendingRequest(model, provider, connectionId, false);
+      // Track whether we already emitted a terminator to the client. If the
+      // try block emits [DONE] and then a LATER step (logUsage, appendRequestLog,
+      // onStreamComplete) throws, the catch must NOT emit a second terminator —
+      // a double [DONE] or a trailing error event after a successful end can
+      // confuse the client SDK.
+      let terminatorEmitted = false;
       try {
         const remaining = decoder.decode();
         if (remaining) buffer += remaining;
@@ -304,6 +310,7 @@ export function createSSEStream(options = {}) {
           const doneOutput = "data: [DONE]\n\n";
           reqLogger?.appendConvertedChunk?.(doneOutput);
           controller.enqueue(sharedEncoder.encode(doneOutput));
+          terminatorEmitted = true;
 
           if (onStreamComplete) {
             onStreamComplete({
@@ -356,6 +363,7 @@ export function createSSEStream(options = {}) {
         const doneOutput = "data: [DONE]\n\n";
         reqLogger?.appendConvertedChunk?.(doneOutput);
         controller.enqueue(sharedEncoder.encode(doneOutput));
+        terminatorEmitted = true;
 
         if (!hasValidUsage(state?.usage) && totalContentLength > 0) {
           state.usage = estimateUsage(body, totalContentLength, sourceFormat);
@@ -377,12 +385,17 @@ export function createSSEStream(options = {}) {
         console.log("Error in flush:", error);
         // Even on failure we must terminate the SSE stream, otherwise the client
         // sees a 200 whose body just stops ("empty or malformed response").
-        try {
-          const doneOutput = mode === STREAM_MODE.PASSTHROUGH || sourceFormat !== FORMATS.CLAUDE
-            ? "data: [DONE]\n\n"
-            : `event: error\ndata: ${JSON.stringify({ type: "error", error: { type: "api_error", message: "stream finalization failed" } })}\n\n`;
-          controller.enqueue(sharedEncoder.encode(doneOutput));
-        } catch (e) { /* controller already closed */ }
+        // Skip if a terminator was already emitted before the throw — emitting
+        // a second [DONE] or a trailing error event can corrupt the client SDK
+        // state machine after a successful end.
+        if (!terminatorEmitted) {
+          try {
+            const doneOutput = mode === STREAM_MODE.PASSTHROUGH || sourceFormat !== FORMATS.CLAUDE
+              ? "data: [DONE]\n\n"
+              : `event: error\ndata: ${JSON.stringify({ type: "error", error: { type: "api_error", message: "stream finalization failed" } })}\n\n`;
+            controller.enqueue(sharedEncoder.encode(doneOutput));
+          } catch (e) { /* controller already closed */ }
+        }
       }
     }
   });

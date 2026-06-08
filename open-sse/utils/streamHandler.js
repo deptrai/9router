@@ -1,5 +1,6 @@
 // Stream handler with disconnect detection - shared for all providers
 import { STREAM_STALL_TIMEOUT_MS, STREAM_TTFT_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { FORMATS } from "../translator/formats.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 const sseEncoder = new TextEncoder();
@@ -19,7 +20,7 @@ const sseEncoder = new TextEncoder();
  * @returns {Uint8Array|null}
  */
 function buildAbortTerminator(clientFormat, reason = "upstream stream ended unexpectedly") {
-  if (clientFormat === "claude") {
+  if (clientFormat === FORMATS.CLAUDE) {
     const payload = JSON.stringify({
       type: "error",
       error: { type: "overloaded_error", message: reason }
