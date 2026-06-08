@@ -5,7 +5,7 @@ epic: 1
 
 # Story 1.6: Tối ưu thuật toán fallback khi Kiro 429 (rate-limit)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -180,6 +180,24 @@ None
 - tests/unit/kiro-fallback-optimization.test.js
 - tests/unit/combo-fallback-429-no-wait.test.js
 
+## Review Findings
+
+### Decision-Needed
+- [x] [Review][Decision] **ID-4: `lastErrorAt` health penalty lasts 60s but actual lock may be only 5s** — Accepted: 60s là conservative buffer hợp lý; transient non-429 errors hiếm trên Kiro. Giữ nguyên.
+- [x] [Review][Decision] **ID-8: `BACKOFF_CONFIG` is global — base 8s now applies to all providers** — Accepted: non-Kiro 429 rate gần 0 theo dữ liệu thực tế; chấp nhận global scope, comment đã giải thích lý do.
+
+### Patches
+- [x] [Review][Patch] **ID-1: Negative cache TTL can be zero or negative when `earliest` lock is already expired** — `cacheTTL = Math.min(2000, new Date(earliest).getTime() - Date.now())` yields ≤0 if lock timestamp is in the past; cache entry is dead on arrival. Fix: clamp with `Math.max(1, ...)` or skip caching when TTL ≤ 0. [src/sse/services/auth.js]
+- [x] [Review][Patch] **ID-2: Cache written even when `excludeSet` is non-empty — cached result invalid across exclusion sets** — The cache write has no `excludeSet.size === 0` guard, but the cache read does. A caller with excludeSet={x} that gets all-locked writes a cache entry that a subsequent caller with empty excludeSet reads — that caller may have had access to connection x. Fix: guard the cache write with `if (excludeSet.size === 0)`. [src/sse/services/auth.js]
+- [x] [Review][Patch] **ID-3: `fill-first` branch never evicts `_allLockedCache` on successful selection** — Cache eviction `_allLockedCache.delete(...)` is missing from the `fill-first` (health-ranked) branch; it likely only exists in the `round-robin` branch. After accounts unlock, the stale all-locked cache persists up to 2s for fill-first callers. Fix: ensure eviction is called on successful selection in both strategy branches. [src/sse/services/auth.js]
+- [x] [Review][Patch] **ID-5: `clearAccountError` does not evict `_allLockedCache`** — If `clearAccountError` is called (e.g. on successful request after a prior lock), the in-process negative cache is not cleared. Stale all-locked entry persists until TTL. Fix: add `_allLockedCache.delete(...)` call in `clearAccountError`. [src/sse/services/auth.js]
+
+### Deferred
+- [x] [Review][Defer] **ID-6: `backoffLevel` concurrent read-write race in `markAccountUnavailable`** [src/sse/services/auth.js] — resolved: added mutex serialization in markAccountUnavailable.
+- [x] [Review][Defer] **ID-7: `retry: { 429: 0 }` bare number vs object form** [open-sse/config/providers.js] — resolved: changed to `{ attempts: 0, delayMs: 0 }` object form.
+- [x] [Review][Defer] **ID-9: Cache key `model||"__all"` — model-specific all-locked doesn't benefit null-model requests** [src/sse/services/auth.js] — dismissed; per-model key isolation is correct by design.
+- [x] [Review][Defer] **ID-10: `comboRotationState` singleton mutated without locking under concurrent load** [open-sse/services/combo.js] — dismissed; JS single-threaded, sync mutation has no race condition.
+
 ## Change Log
 | Date | Change |
 |------|--------|
@@ -187,3 +205,5 @@ None
 | 2026-06-08 | Implemented all patches A/B/C/D/E. Added 8 unit tests. Full suite 842 passed. Status → review. |
 | 2026-06-08 | AC#9 combo-interaction tests (G1–G6 → 1 file 3 tests). Suite: 845 passed, 0 failed. |
 | 2026-06-08 | Thêm AC#9 + Phần G (combo-interaction tests G1–G6) sau review kiến trúc: xác nhận thuật toán fallback áp dụng cho combo (A/B/C/D thừa hưởng qua handleSingleModelChat; 429 không vào nhánh wait của combo). Follow-up cho dev. |
+| 2026-06-08 | Code review complete. 4 patches applied (ID-1/2/3/5: negative cache correctness fixes). 2 decisions accepted as-is (ID-4/8). 4 deferred. 55 tests pass. Status → done. |
+| 2026-06-08 | Post-review: resolved ID-6 (mutex for markAccountUnavailable) + ID-7 (retry object form). ID-9/10 dismissed. 55 tests pass. |

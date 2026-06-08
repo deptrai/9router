@@ -196,7 +196,7 @@ export const PROVIDERS = {
     format: "kiro",
     // 429 = per-account quota; retry on same account will always 429 again.
     // Let handleSingleModelChat rotate accounts instead of burning ~4s here.
-    retry: { 429: 0 },
+    retry: { 429: { attempts: 0, delayMs: 0 } },
     headers: {
       "Content-Type": "application/json",
       "Accept": "application/vnd.amazon.eventstream",

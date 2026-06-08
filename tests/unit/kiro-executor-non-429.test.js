@@ -44,8 +44,12 @@ describe("Patch A isolation — non-429 retries still work", () => {
     executor = new KiroExecutor();
   });
 
-  it("KiroExecutor config has retry 429 = 0 (Patch A applied)", () => {
-    expect(executor.config.retry[429]).toBe(0);
+  it("KiroExecutor config has retry 429 = 0 attempts (Patch A applied)", () => {
+    const entry = executor.config.retry[429];
+    // Object form { attempts: 0, delayMs: 0 } — resolveRetryEntry must yield attempts=0
+    const { resolveRetryEntry } = require("../../open-sse/config/runtimeConfig.js");
+    expect(resolveRetryEntry(entry).attempts).toBe(0);
+    expect(resolveRetryEntry(entry).delayMs).toBe(0);
   });
 
   it("KiroExecutor config does NOT have retry for 500 (uses DEFAULT_RETRY_CONFIG)", async () => {

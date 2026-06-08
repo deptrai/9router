@@ -107,14 +107,16 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         const earliestConn = lockedConns[0];
         log.warn("AUTH", `${provider} | all ${connections.length} accounts locked for ${model || "all"} (${formatRetryAfter(earliest)}) | lastError=${earliestConn?.lastError?.slice(0, 50)}`);
 
-        // Set negative cache: TTL = min(2s, time until earliest unlock)
-        const cacheKey = `${providerId}:${model || "__all"}`;
-        const cacheTTL = Math.min(2000, new Date(earliest).getTime() - Date.now());
-        _allLockedCache.set(cacheKey, {
-          expiresAt: Date.now() + cacheTTL,
-          retryAfter: earliest,
-          retryAfterHuman: formatRetryAfter(earliest)
-        });
+        // Set negative cache only when excludeSet is empty (result is valid for all callers)
+        if (excludeSet.size === 0) {
+          const cacheKey = `${providerId}:${model || "__all"}`;
+          const cacheTTL = Math.max(1, Math.min(2000, new Date(earliest).getTime() - Date.now()));
+          _allLockedCache.set(cacheKey, {
+            expiresAt: Date.now() + cacheTTL,
+            retryAfter: earliest,
+            retryAfterHuman: formatRetryAfter(earliest)
+          });
+        }
 
         return {
           allRateLimited: true,
@@ -202,6 +204,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       });
 
       connection = ranked[0];
+      // On successful selection, evict negative cache so next query hits DB
+      _allLockedCache.delete(`${providerId}:${model || "__all"}`);
     }
 
     const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
@@ -246,6 +250,18 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
  */
 export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null) {
   if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
+
+  // Acquire mutex to prevent concurrent backoffLevel read-write race
+  const currentMutex = selectionMutex;
+  let resolveMutex;
+  selectionMutex = new Promise(resolve => { resolveMutex = resolve; });
+  try {
+    await currentMutex;
+  } finally {
+    // Release immediately after acquiring — we only need serialization of the read-modify-write below
+    if (resolveMutex) resolveMutex();
+  }
+
   const connections = await getProviderConnections({ provider });
   const conn = connections.find(c => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
@@ -326,6 +342,12 @@ export async function clearAccountError(connectionId, currentConnection, model =
   }
 
   await updateProviderConnection(connectionId, clearObj);
+
+  // Evict negative cache so next query hits DB (provider unknown here, so clear all matching model key)
+  for (const key of _allLockedCache.keys()) {
+    if (model && key.endsWith(`:${model}`)) _allLockedCache.delete(key);
+    else if (!model) _allLockedCache.delete(key);
+  }
 }
 
 /**
