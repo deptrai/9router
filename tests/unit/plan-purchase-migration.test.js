@@ -52,4 +52,15 @@ describe("plan purchase migration", () => {
       durationDays: 45,
     });
   });
+
+  it("preserves intentionally free default plans on rerun", async () => {
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const migration = (await import("@/lib/db/migrations/005-plan-purchase-fields.js")).default;
+    const db = await getAdapter();
+
+    db.run(`UPDATE plans SET priceCredits = ? WHERE name = 'max'`, [0]);
+    migration.up(db);
+
+    expect(db.get(`SELECT priceCredits FROM plans WHERE name = 'max'`).priceCredits).toBe(0);
+  });
 });

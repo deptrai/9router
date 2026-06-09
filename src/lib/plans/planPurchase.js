@@ -76,9 +76,9 @@ function addDays(baseMs, days) {
 
 function computeLifecycle(user, plan, nowMs) {
   const hasActivePlan = activeCurrentPlan(user, nowMs);
-  const samePlan = hasActivePlan && user.planId === plan.id && user.planExpiresAt;
+  const samePlan = hasActivePlan && user.planId === plan.id;
   if (samePlan) {
-    const currentExpiry = Date.parse(user.planExpiresAt);
+    const currentExpiry = user.planExpiresAt ? Date.parse(user.planExpiresAt) : NaN;
     const base = Number.isFinite(currentExpiry) ? Math.max(nowMs, currentExpiry) : nowMs;
     return { action: "renew", expiresAt: addDays(base, plan.durationDays), resetPlanQuotaState: false };
   }

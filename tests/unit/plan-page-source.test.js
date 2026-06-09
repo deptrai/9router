@@ -9,5 +9,7 @@ describe("dashboard plan page source", () => {
     expect(content).toContain("/api/users/me/plan/purchase");
     expect(content).toContain("/dashboard/credits");
     expect(content).toContain("Active catalog");
+    expect(content).toContain("purchaseBusyRef");
+    expect(content).toContain("disabled={!!purchaseBusy || !plan.canAfford}");
   });
 });

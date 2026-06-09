@@ -5,7 +5,7 @@ epic: E
 
 # Story 2.18 (E.7): Self-serve mua, gia hạn, đổi plan bằng credit
 
-Status: review
+Status: done
 
 <!-- Ghi chú: validation story là tùy chọn. Có thể chạy validate-create-story trước dev-story nếu cần quality check. -->
 
@@ -195,6 +195,12 @@ Không làm:
   - `NODE_PATH=/Users/luisphan/Documents/9router/tests/node_modules /Users/luisphan/Documents/9router/tests/node_modules/.bin/vitest run --config tests/vitest.config.js tests/unit/plans-admin-api.test.js tests/unit/user-plan-admin-api.test.js tests/unit/users-me-quota-api.test.js tests/unit/users-me-ledger-api.test.js tests/unit/plan-purchase.test.js tests/unit/users-me-plans-api.test.js tests/unit/users-me-plan-purchase-api.test.js --reporter=verbose`
 - [x] **E7**: Run lint/build for touched files and broader suite if feasible. Known historical xAI OAuth flake may be documented only if unrelated and reproduced.
 
+### Review Findings
+
+- [x] [Review][Patch] Migration rerun clobbers valid admin-edited zero pricing [src/lib/db/migrations/005-plan-purchase-fields.js:18] — AC#2 says seed/backfill must not overwrite existing custom plan pricing, and AC#3 allows `priceCredits=0`. The migration updates `pro`/`max` whenever `priceCredits = 0`, so if admin intentionally makes Pro/Max free after migration and `migration.up()` is rerun, pricing is reset to 10/30. Track whether the column was newly added and only apply seed defaults on first add, while reruns only fill NULLs.
+- [x] [Review][Patch] Purchase UI leaves other plan actions enabled while a purchase is pending [src/app/(dashboard)/dashboard/plan/page.js:310] — D3/AC#12 expect pending purchase/idempotency to prevent accidental duplicate charges. `purchaseBusy` disables only the clicked plan, so a user can click a different plan before the first request settles; the API receives a fresh idempotency key and legitimately charges again/change-plan. Disable all purchase buttons while any purchase is in flight and guard `handlePurchase` against re-entry.
+- [x] [Review][Patch] Same active indefinite plan is reported as buy instead of renew [src/lib/plans/planPurchase.js:79] — `activeCurrentPlan()` treats `planExpiresAt=null` as active, and `/api/users/me/plans` labels the same plan as `renew`, but `computeLifecycle()` requires `user.planExpiresAt` for `samePlan`, so POST returns `action:"buy"`. For an active same-plan purchase with null expiry, keep expiry behavior `now+durationDays` but return `renew` to match AC#9/catalog semantics.
+
 ## Dev Notes
 
 ### Code hiện có cần reuse
@@ -292,6 +298,10 @@ GPT-5 Codex
 - C: Thêm `/api/users/me/plans` và `/api/users/me/plan/purchase` với guard user-role, catalog affordability/action, mapping 400/402/404/403.
 - D: Mở rộng `/dashboard/plan` với catalog/action CTA, `plan_activation` label, top-up CTA, và refetch sau purchase.
 - Validation: targeted suite 31 pass; full suite 1080 pass / 24 skip / 2 unrelated xAI flake; xAI OAuth rerun riêng 5 pass; build pass.
+- Code review patches: fixed migration rerun zero-price preservation, purchase UI pending-button lock/re-entry guard, and active indefinite same-plan renew action.
+- Code review targeted suite: `NODE_PATH=/Users/luisphan/Documents/9router/tests/node_modules /Users/luisphan/Documents/9router/tests/node_modules/.bin/vitest run --config tests/vitest.config.js tests/unit/plans-admin-api.test.js tests/unit/user-plan-admin-api.test.js tests/unit/users-me-quota-api.test.js tests/unit/users-me-ledger-api.test.js tests/unit/plan-purchase.test.js tests/unit/users-me-plans-api.test.js tests/unit/users-me-plan-purchase-api.test.js tests/unit/plan-purchase-migration.test.js tests/unit/plan-page-source.test.js --reporter=verbose` -> 36 pass.
+- Code review lint: `npx eslint 'src/app/(dashboard)/dashboard/plan/page.js' src/lib/plans/planPurchase.js src/lib/db/migrations/005-plan-purchase-fields.js tests/unit/plan-page-source.test.js tests/unit/plan-purchase.test.js tests/unit/plan-purchase-migration.test.js` -> pass.
+- Code review build: `npm run build` -> pass (`EXIT:0`).
 
 ### Completion Notes List
 - Thêm `priceCredits`/`durationDays` vào schema, migration, repo, validator, và admin UI.
@@ -299,6 +309,7 @@ GPT-5 Codex
 - Mở user APIs để list purchasable plans và submit mua/gia hạn/đổi plan theo session user.
 - Cập nhật `/dashboard/plan` để hiển thị catalog plan active, action Buy/Renew/Change, và CTA top-up khi thiếu credit.
 - Test coverage thêm cho migration, helper purchase, user APIs, và source/UI contract.
+- Code review: 3 patch findings applied and verified; story ready for done.
 
 ### File List
 - docs/stories/2-18-plan-purchase-flow.md
@@ -326,3 +337,4 @@ GPT-5 Codex
 |------|--------|
 | 2026-06-10 | Created story E.7 (2.18) - self-serve plan purchase/renew/change bằng credit, `plan_activation` ledger, price/duration plan fields, idempotency, và reset quota windows khi đổi plan. Status -> ready-for-dev. |
 | 2026-06-10 | Implemented E.7 self-serve plan purchase, admin price/duration config, user plan catalog/purchase APIs, and dashboard plan purchase UI. Status -> review. |
+| 2026-06-10 | Code review complete. 3 patch findings applied and verified with targeted suite, lint, and build. Status -> done. |

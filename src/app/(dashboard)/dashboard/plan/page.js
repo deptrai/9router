@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card } from "@/shared/components";
@@ -87,6 +87,7 @@ export default function PlanPage() {
   const [plansLoading, setPlansLoading] = useState(true);
   const [plansError, setPlansError] = useState("");
   const [purchaseBusy, setPurchaseBusy] = useState("");
+  const purchaseBusyRef = useRef("");
   const [purchaseMessage, setPurchaseMessage] = useState("");
   const [overflowSaving, setOverflowSaving] = useState(false);
   const [error, setError] = useState("");
@@ -159,7 +160,9 @@ export default function PlanPage() {
   }, [role, loadQuota, loadLedger, loadPlans]);
 
   const handlePurchase = useCallback(async (planId) => {
+    if (purchaseBusyRef.current) return;
     const idempotencyKey = (globalThis.crypto?.randomUUID?.() || `plan-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    purchaseBusyRef.current = planId;
     setPurchaseBusy(planId);
     setPurchaseMessage("");
     try {
@@ -182,6 +185,7 @@ export default function PlanPage() {
     } catch {
       setPurchaseMessage("Mua plan thất bại.");
     } finally {
+      purchaseBusyRef.current = "";
       setPurchaseBusy("");
     }
   }, [loadLedger, loadPlans, loadQuota]);
@@ -307,7 +311,7 @@ export default function PlanPage() {
                   <button
                     type="button"
                     onClick={() => handlePurchase(plan.id)}
-                    disabled={purchaseBusy === plan.id || !plan.canAfford}
+                    disabled={!!purchaseBusy || !plan.canAfford}
                     className="inline-flex min-w-24 items-center justify-center rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
                   >
                     {purchaseBusy === plan.id ? "Working..." : plan.action === "renew" ? "Renew" : plan.action === "change" ? "Change" : "Buy"}

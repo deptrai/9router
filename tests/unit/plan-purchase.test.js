@@ -67,6 +67,17 @@ describe("purchasePlanForUser", () => {
     expect(JSON.parse(db.get(`SELECT value FROM kv WHERE scope='planQuotaState' AND key=?`, [user.id]).value)).toEqual({ win5h: { startedAt: "x" } });
   });
 
+  it("renews same active indefinite plan from now", async () => {
+    const plan = await createPricedPlan({ priceCredits: 5, durationDays: 10 });
+    const user = await setupUser({ credits: 20, planId: plan.id, planExpiresAt: null });
+    const { purchasePlanForUser } = await import("@/lib/plans/planPurchase.js");
+
+    const result = await purchasePlanForUser({ userId: user.id, planId: plan.id, idempotencyKey: "renew-null", now: Date.parse("2026-06-10T00:00:00Z") });
+
+    expect(result.action).toBe("renew");
+    expect(result.user.planExpiresAt).toBe("2026-06-20T00:00:00.000Z");
+  });
+
   it("changes active plan and clears plan quota state", async () => {
     const oldPlan = await createPricedPlan({ priceCredits: 1 });
     const newPlan = await createPricedPlan({ priceCredits: 7, durationDays: 15 });
