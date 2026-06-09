@@ -5,7 +5,7 @@ epic: E
 
 # Story 2.14 (E.3): Plan quota enforcement (5h/weekly per-user) + credit-overflow toggle (Model B)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -130,6 +130,21 @@ Thách thức: quyết định billing source xảy ra ở **admission** (`chat.
 - [x] **F4**: `tests/unit/users-me-overflow.test.js` (hoặc mở rộng test users/me có sẵn) — PATCH toggle allowCreditOverflow, GET phản ánh; updateUser persist 0/1.
 - [x] **F5**: Migration test — `004` thêm cột idempotent, default đúng, rowToUser expose bool.
 - [x] **F6**: Full suite (`NODE_PATH=/tmp/node_modules npm test` từ `tests/`), 0 fail.
+
+### Review Findings (code review 2026-06-08)
+
+Adversarial review: Blind Hunter + Edge Case Hunter + Acceptance Auditor. All 3 layers converged on one CRITICAL money bug (streaming path uncharged-skip drift). AC#1–#9 satisfied after patches; locked decisions a/b/c all implemented correctly. 0 decision-needed, 3 patch (applied+verified), 2 deferred, 7 dismissed. Full suite 1034 pass / 0 fail post-patch.
+
+**Patch (applied + verified):**
+- [x] [Review][Patch] **CRITICAL — streaming path charged plan users**: `open-sse/utils/stream.js` `logUsage()` (lines 301, 373 — the dominant streaming recorder) was NOT updated to forward `billingSource`, so `saveRequestUsage` saw `billingSource=undefined` → deducted credit even for plan-within-quota users (AC#3/#6 violation). The 2.14 threading only reached the `onStreamComplete`→`saveUsageStats` path. Fixed: threaded `billingSource` through `createSSEStream` opts + both factory fns (`createSSETransformStreamWithLogger`/`createPassthroughStreamWithLogger`) + both `logUsage` calls + `handleStreamingResponse`/`buildTransformStream` [open-sse/utils/stream.js, open-sse/handlers/chatCore/streamingHandler.js]. Added 2 regression tests via `logUsage` entry point [tests/unit/usage-deduction-source.test.js]
+- [x] [Review][Patch] **HIGH — fail-open charged plan users**: on `checkPlanQuota` infra error (`source="error"`), chat.js fell to the else branch → `billingSource="credit"` → deducted. An infra error became a charge — contradicts the story's "lỗi nội bộ KHÔNG biến thành phạt". Fixed: `billingSource = pq.source === "error" ? "plan" : "credit"` (no deduction on our own error) [src/sse/handlers/chat.js]. Added fail-open-no-charge test [tests/unit/chat-plan-billing.test.js]
+- [x] [Review][Patch] **MEDIUM (defensive) — exhausted-branch fragility**: `else if (pq.source === "plan" && pq.exhausted)` — a future `plan + !allowed` without `exhausted` would silently fall to the credit branch (serve+charge instead of block). Changed to `!pq.allowed` so any non-allowed plan result blocks/overflows correctly [src/sse/handlers/chat.js]
+
+**Deferred (real, low-impact / out-of-scope):**
+- [x] [Review][Defer] Combo/provider-fallback re-evaluates `checkPlanQuota` per attempt; tokens from a failed-delivery attempt count against the window and can block/mis-bill the retry [src/sse/handlers/chat.js] — deferred, requires mid-stream error at the exact quota boundary; fail-open direction is under-charge not over-charge. Revisit if combo billing precision becomes a requirement.
+- [x] [Review][Defer] Overflow-insufficient-credits 429 passes literal `60` (ms-epoch) to `unavailableResponse` → `Retry-After: 1` [src/sse/handlers/chat.js:197] — deferred, pre-existing pattern carried from the original 2.4 credit gate (not a 2.14 regression); the quota-exhausted path correctly uses `pq.retryAfter`.
+
+**Dismissed (false positive / by-design / out-of-scope):** `retryAfter` ISO string is correct (`unavailableResponse` converts ISO→integer seconds at error.js:117); `consumed >= quota` admit-then-record is by design (mirrors checkKeyQuota); negative quota=unlimited is unreachable (plans never store negative; createPlan coalesces `?? 0`); per-model `modelLimit` unused is explicitly E.6 out-of-scope (documented in planQuota.js); logUsage positional-arg style is not a bug; overflow operator-gate/payment-method is product design out-of-scope; `logUsage` double-record with onStreamComplete is pre-existing (predates 2.14, baseline confirmed).
 
 ## Dev Notes
 

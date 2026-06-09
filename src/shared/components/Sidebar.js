@@ -35,6 +35,7 @@ const userNavItems = [
   { href: "/dashboard/endpoint", label: "Endpoint", icon: "api" },
   { href: "/dashboard/usage", label: "Usage", icon: "bar_chart" },
   { href: "/dashboard/credits", label: "Credits", icon: "paid" },
+  { href: "/dashboard/plan", label: "Plan & Quota", icon: "verified" },
 ];
 
 const debugItems = [

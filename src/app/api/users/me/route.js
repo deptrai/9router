@@ -32,6 +32,8 @@ export async function GET() {
     creditsBalance: user.creditsBalance,
     isEmailVerified: user.isEmailVerified,
     allowCreditOverflow: user.allowCreditOverflow ?? false,
+    planId: user.planId ?? null,
+    planExpiresAt: user.planExpiresAt ?? null,
     createdAt: user.createdAt,
   });
 }

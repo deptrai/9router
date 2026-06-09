@@ -153,3 +153,36 @@ describe("saveRequestUsage — conditional deduction by billingSource (AC#6)", (
     expect(rebuilt).toBeCloseTo(20, 6); // no deduction happened
   });
 });
+
+// Regression: the streaming usage path goes through logUsage() (open-sse/utils/stream.js),
+// NOT saveRequestUsage() directly. logUsage must forward billingSource or plan users get
+// charged on streaming responses (the dominant path). These tests exercise that entry point.
+describe("logUsage — forwards billingSource to deduction (streaming path, AC#3/#6)", () => {
+  it("logUsage billingSource=plan → NO ledger deduction (plan user on streaming response)", async () => {
+    const { user, key } = await seedUserAndKey("logusage-plan@test.dev", 50);
+    const { logUsage } = await import("open-sse/utils/usageTracking.js");
+
+    logUsage("anthropic", { prompt_tokens: 1000, completion_tokens: 500 }, "claude-sonnet-4-6", "conn-1", key.key, "plan");
+    // logUsage fires saveRequestUsage().catch() async — await a tick for it to flush
+    await new Promise((r) => setTimeout(r, 50));
+
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const db = await getAdapter();
+    const ledgerRows = db.all(`SELECT * FROM creditTransactions WHERE userId = ? AND type = 'usage_deduction'`, [user.id]);
+    expect(ledgerRows.length).toBe(0);
+  });
+
+  it("logUsage billingSource=credit → ledger deduction occurs", async () => {
+    const { user, key } = await seedUserAndKey("logusage-credit@test.dev", 50);
+    const { logUsage } = await import("open-sse/utils/usageTracking.js");
+
+    logUsage("anthropic", { prompt_tokens: 1000, completion_tokens: 500 }, "claude-sonnet-4-6", "conn-1", key.key, "credit");
+    await new Promise((r) => setTimeout(r, 50));
+
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const db = await getAdapter();
+    const ledgerRows = db.all(`SELECT * FROM creditTransactions WHERE userId = ? AND type = 'usage_deduction'`, [user.id]);
+    expect(ledgerRows.length).toBe(1);
+    expect(ledgerRows[0].amount).toBeLessThan(0);
+  });
+});

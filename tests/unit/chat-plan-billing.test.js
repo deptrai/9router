@@ -104,21 +104,39 @@ describe("Model B admission — chat.js integration pattern", () => {
     expect(billingSource).toBeUndefined();
   });
 
-  it("source=credit/none/error → checkCredits gate + billingSource=credit", () => {
+  it("source=credit → checkCredits gate + billingSource=credit", () => {
     const pq = { source: "credit", allowed: true };
     const creditResult = { allowed: true };
 
     let billingSource;
     if (pq.source === "plan" && pq.allowed) {
       billingSource = "plan";
-    } else if (pq.source === "plan" && pq.exhausted) {
+    } else if (pq.source === "plan" && !pq.allowed) {
       billingSource = "overflow";
     } else {
       if (!creditResult.allowed) { /* block */ }
-      else billingSource = "credit";
+      else billingSource = pq.source === "error" ? "plan" : "credit";
     }
 
     expect(billingSource).toBe("credit");
+  });
+
+  it("source=error (fail-open infra error) → billingSource=plan (NO credit charge for our own error)", () => {
+    const pq = { source: "error", allowed: true };
+    const creditResult = { allowed: true };
+
+    let billingSource;
+    if (pq.source === "plan" && pq.allowed) {
+      billingSource = "plan";
+    } else if (pq.source === "plan" && !pq.allowed) {
+      billingSource = "overflow";
+    } else {
+      if (!creditResult.allowed) { /* block */ }
+      else billingSource = pq.source === "error" ? "plan" : "credit";
+    }
+
+    // Fail-open must not penalize the user: an infra error → treat as plan (no deduction).
+    expect(billingSource).toBe("plan");
   });
 
   it("chat.js source — checkPlanQuota imported and positioned AFTER checkKeyQuota, BEFORE handleChatCore", async () => {

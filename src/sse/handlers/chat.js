@@ -188,7 +188,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   if (pq.source === "plan" && pq.allowed) {
     // Within plan quota — no credit deduction
     billingSource = "plan";
-  } else if (pq.source === "plan" && pq.exhausted) {
+  } else if (pq.source === "plan" && !pq.allowed) {
+    // Plan exists but quota exhausted (plan+!allowed always implies exhausted)
     if (pq.allowCreditOverflow) {
       // Plan exhausted + overflow ON → fall through to credit billing
       const creditResult = await checkCredits(apiKey);
@@ -214,7 +215,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       log.warn("BILLING", `[${provider}/${model}] key="${log.maskKey(apiKey || "")}" credit check failed: ${creditResult.reason}`);
       return unavailableResponse(HTTP_STATUS.RATE_LIMITED, creditResult.reason || "insufficient credits", 60, "60s");
     }
-    billingSource = "credit";
+    // On infra error in plan resolution (source="error"), do NOT deduct credit:
+    // fail-open must not penalize the user for our own error (we couldn't confirm plan state).
+    billingSource = pq.source === "error" ? "plan" : "credit";
   }
 
   // Extract userAgent from request
