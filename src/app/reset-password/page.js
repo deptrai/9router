@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { Card, Button, Input } from "@/shared/components";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -12,6 +12,12 @@ function ResetPasswordContent() {
   const [loading, setLoading] = useState(false);
   const searchParams = useSearchParams();
   const router = useRouter();
+
+  useEffect(() => {
+    if (status !== "success") return;
+    const id = setTimeout(() => router.push("/login"), 1500);
+    return () => clearTimeout(id);
+  }, [router, status]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

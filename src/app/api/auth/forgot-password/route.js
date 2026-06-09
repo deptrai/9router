@@ -22,17 +22,9 @@ export async function POST(request) {
       return NextResponse.json({ error: "Email is required" }, { status: 400 });
     }
 
-    // Show user when email doesn't exist (UX over anti-enumeration for 9Router)
     const user = await getUserByEmail(email);
 
-    if (!user) {
-      return NextResponse.json(
-        { error: "Email không tồn tại trong hệ thống" },
-        { status: 404 }
-      );
-    }
-
-    if (user.isActive) {
+    if (user?.isActive) {
       try {
         const baseUrl = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:20128";
         const token = await createPasswordResetToken(user.id, user.email);
