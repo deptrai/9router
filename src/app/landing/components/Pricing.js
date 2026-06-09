@@ -5,17 +5,19 @@ import { useRouter } from "next/navigation";
 export default function Pricing() {
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
     fetch("/api/public/plans")
-      .then((r) => r.json())
+      .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
       .then((d) => setPlans(d.plans ?? []))
-      .catch(() => {})
+      .catch(() => setFetchError(true))
       .finally(() => setLoading(false));
   }, []);
 
   if (loading) return null;
+  if (fetchError || plans.length === 0) return null;
 
   return (
     <section id="pricing" className="relative py-24 px-6">

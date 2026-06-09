@@ -6,7 +6,9 @@ export const metadata = { title: "Supported Models — 9Router", description: "A
 
 function formatPrice(v) {
   if (!v || v === 0) return "—";
-  return `$${Number(v).toFixed(2)}`;
+  const n = Number(v);
+  if (n < 0.01) return `$${n.toPrecision(2)}`;
+  return `$${n.toFixed(2)}`;
 }
 
 export default async function ModelsPage() {

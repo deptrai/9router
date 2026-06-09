@@ -7,10 +7,12 @@ import { reloadTranslations } from "@/i18n/runtime";
 export default function Navigation() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [locale, setLocale] = useState("en");
+  const [mounted, setMounted] = useState(false);
   const router = useRouter();
   const { theme, toggleTheme } = useThemeStore();
 
   useEffect(() => {
+    setMounted(true);
     const cookie = document.cookie.split(";").find((c) => c.trim().startsWith("locale="));
     if (cookie) setLocale(cookie.split("=")[1]?.trim() || "en");
   }, []);
@@ -19,12 +21,12 @@ export default function Navigation() {
     const next = locale === "vi" ? "en" : "vi";
     try {
       await fetch("/api/locale", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ locale: next }) });
-      reloadTranslations();
+      await reloadTranslations();
+      setLocale(next);
     } catch {}
-    setLocale(next);
   }
 
-  const isDark = theme === "dark";
+  const isDark = mounted && theme === "dark";
 
   return (
     <nav className="fixed top-0 z-50 w-full bg-[#181411]/80 backdrop-blur-md border-b border-[#3a2f27]">
