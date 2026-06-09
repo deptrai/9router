@@ -21,6 +21,16 @@ function rowToUser(row, includePasswordHash = false) {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+  if (row.planName !== undefined || row.planDisplayName !== undefined || row.planIsActive !== undefined) {
+    user.plan = row.planId
+      ? {
+          id: row.planId,
+          name: row.planName ?? null,
+          displayName: row.planDisplayName ?? null,
+          isActive: row.planIsActive === 1 || row.planIsActive === true,
+        }
+      : null;
+  }
   if (includePasswordHash) {
     user.passwordHash = row.passwordHash;
   }
@@ -85,7 +95,10 @@ export async function addCredits(id, amount, db = null, { type = "admin_topup", 
 export async function listUsers({ offset = 0, limit = 50 } = {}) {
   const db = await getAdapter();
   const rows = db.all(
-    `SELECT * FROM users ORDER BY createdAt ASC LIMIT ? OFFSET ?`,
+    `SELECT users.*, plans.name AS planName, plans.displayName AS planDisplayName, plans.isActive AS planIsActive
+     FROM users
+     LEFT JOIN plans ON plans.id = users.planId
+     ORDER BY users.createdAt ASC LIMIT ? OFFSET ?`,
     [limit, offset]
   );
   return rows.map((row) => rowToUser(row, false));

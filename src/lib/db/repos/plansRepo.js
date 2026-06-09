@@ -27,6 +27,14 @@ export async function listPlans({ activeOnly = false } = {}) {
   return rows.map(rowToPlan);
 }
 
+export async function countUsersByPlan() {
+  const db = await getAdapter();
+  const rows = db.all(
+    `SELECT planId, COUNT(*) AS count FROM users WHERE planId IS NOT NULL GROUP BY planId`
+  );
+  return Object.fromEntries(rows.map((row) => [row.planId, row.count ?? 0]));
+}
+
 export async function getPlanById(id) {
   const db = await getAdapter();
   return rowToPlan(db.get(`SELECT * FROM plans WHERE id = ?`, [id]));

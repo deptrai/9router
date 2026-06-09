@@ -50,7 +50,7 @@ export {
 
 // Plans
 export {
-  listPlans, getPlanById, getPlanByName, createPlan, updatePlan, deletePlan,
+  listPlans, getPlanById, getPlanByName, createPlan, updatePlan, deletePlan, countUsersByPlan,
 } from "./repos/plansRepo.js";
 
 // Gift Codes

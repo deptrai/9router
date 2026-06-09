@@ -94,6 +94,33 @@ describe("PUT /api/users/[id]/credits — topup (AC3)", () => {
     expect(data.newBalance).toBeCloseTo(15.0, 5);
   });
 
+  it("admin topup writes ledger row with note and admin refId", async () => {
+    const user = await seedUser("ledger-note@test.com", 1.0);
+
+    vi.doMock("@/lib/auth/requireRole", () => ({
+      requireAdmin: vi.fn().mockResolvedValue({ userId: "admin-id", role: "admin" }),
+      getSessionRole: vi.fn().mockResolvedValue({ session: { userId: "admin-id", role: "admin" }, role: "admin" }),
+    }));
+
+    const { PUT } = await import("@/app/api/users/[id]/credits/route.js");
+    const { getLedgerByUser } = await import("@/lib/db/repos/creditLedgerRepo.js");
+    const req = {
+      cookies: { get: () => ({ value: "admin-token" }) },
+      json: async () => ({ amount: 4.0, note: "manual adjustment" }),
+    };
+    const res = await PUT(req, { params: { id: user.id } });
+    const rows = await getLedgerByUser(user.id);
+
+    expect(res.status).toBe(200);
+    expect(rows[0]).toMatchObject({
+      type: "admin_topup",
+      bucket: "standard",
+      amount: 4,
+      refId: "admin-id",
+      note: "manual adjustment",
+    });
+  });
+
   it("admin topup negative amount → balance decreases", async () => {
     const user = await seedUser("neg@test.com", 10.0);
 
