@@ -81,11 +81,12 @@ export async function getPlanQuotaStatus(userId, now = Date.now(), model = null)
       const resolved = resolveWindow(state[key] ?? null, type, now);
       const startedAt = resolved.startedAt;
       result[resultKey].resetAt = new Date(new Date(startedAt).getTime() + duration(type)).toISOString();
-      result[resultKey].consumed = await sumUsageTokensByUser(userId, null, new Date(startedAt).getTime());
+      result[resultKey].consumed = await sumUsageTokensByUser(userId, null, startedAt);
     }
 
     if (model && limits.modelLimit) {
-      result.perModelLimitsEnforced = true;
+      const anyModelCap = (limits.modelLimit.quota5h ?? 0) > 0 || (limits.modelLimit.quotaWeekly ?? 0) > 0;
+      result.perModelLimitsEnforced = anyModelCap;
       result.perModel = {
         quota5h: { limit: limits.modelLimit.quota5h ?? 0, consumed: 0, resetAt: result.quota5h.resetAt },
         quotaWeekly: { limit: limits.modelLimit.quotaWeekly ?? 0, consumed: 0, resetAt: result.quotaWeekly.resetAt },

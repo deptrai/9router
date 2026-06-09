@@ -164,7 +164,7 @@ function reverseTxnWithAdapter(originalId, note, adapter, wrapTransaction) {
 
     // Check not already reversed (idempotency)
     const alreadyReversed = adapter.get(
-      `SELECT id FROM creditTransactions WHERE type = 'reversal' AND refId = ?`, [originalId]
+      `SELECT * FROM creditTransactions WHERE type = 'reversal' AND refId = ?`, [originalId]
     );
     if (alreadyReversed) {
       result = alreadyReversed;

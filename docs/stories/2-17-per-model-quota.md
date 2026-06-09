@@ -5,7 +5,7 @@ epic: E
 
 # Story 2.17 (E.6): Thực thi per-model quota từ plan overrides
 
-Status: review
+Status: done
 
 <!-- Ghi chú: validation story là tùy chọn. Có thể chạy validate-create-story trước dev-story nếu cần quality check. -->
 
@@ -208,9 +208,16 @@ GPT-5 Codex
 - `tests/unit/plans-admin-api.test.js`
 - `tests/unit/users-me-quota-api.test.js`
 
+## Review Findings
+
+- [x] [Review][Patch] planQuotaStatus.js:84 passes epoch ms to sumUsageTokensByUser instead of ISO string — `new Date(startedAt).getTime()` produces a number like `1749499394000`; quotaRepo SQL `WHERE uh.timestamp >= ?` compares ISO text against integer; SQLite ranks TEXT > INTEGER unconditionally so every row matches → all-time token sum returned instead of window sum → total consumed in quota UI always shows all-time history. Per-model path (line 102) used the correct ISO string, creating contradictory consumed values in the same response. Fixed: pass `startedAt` directly.
+- [x] [Review][Patch] planQuotaStatus.js:88 sets `perModelLimitsEnforced = true` whenever `limits.modelLimit` is non-null, even when both resolved window quotas are 0 (unlimited) — e.g. plan with `quota5h=0` and a per-model entry omitting `q5h` resolves `modelLimit.quota5h = 0`; the per-model loop skips all windows but the flag signals enforcement to clients. Fixed: gate flag on `anyModelCap = quota5h > 0 || quotaWeekly > 0`.
+- [x] [Review][Patch] creditLedgerRepo.js:167 reverseTxnWithAdapter idempotency guard uses `SELECT id` — when an already-reversed transaction is detected, only `{ id }` is stored as `result`; callers expecting a full row (amount, balanceAfter, note, etc.) receive `undefined` for all other fields silently. Fixed: changed to `SELECT *`.
+
 ## Change Log
 
 | Date | Change |
 |------|--------|
 | 2026-06-10 | Created story E.6 (2.17) - enforce per-model quota từ `perModelLimits`; status -> ready-for-dev. |
 | 2026-06-10 | Implemented E.6 per-model quota enforcement, status/API/UI exposure, and targeted/full regression tests. Status -> review. |
+| 2026-06-10 | Code review complete. 3 patch findings applied and verified with targeted suite (56 pass). Status -> done. |
