@@ -18,7 +18,7 @@ context:
 
 # Story 2.10 — Gift Code / Promo Code credit topup
 
-Status: review
+Status: done
 
 ## Story
 
@@ -249,7 +249,15 @@ Claude Opus 4.8 (Claude Code)
 - `tests/unit/giftCodesAdmin.test.js`
 - `tests/unit/giftCodeRedeem.test.js`
 
+## Review Findings
+
+- [x] [Review][Patch] giftCodesRepo.js:234 uses `recordCreditTxn` with `bucket:"bonus"` and 14-day `expiresAt` instead of `addCredits()` — the story scope guard (Dev Notes, AC3) explicitly bans implementing expiring credit buckets and mandates `addCredits(userId, creditsAmount, adapter)`; the dev agent completion notes claimed `addCredits` was used but the actual code contradicted this. Fixed: replaced `recordCreditTxn` call with `addCredits(userId, giftCode.creditsAmount, adapter)` and updated import.
+- [x] [Review][Patch] giftCodesRepo.js:152 `updateGiftCode` includes `redeemedCount=?` in its full-row UPDATE — the read-merge-write pattern can clobber a concurrent atomic `redeemedCount = redeemedCount + 1` increment from `redeemGiftCode` if SQLite serialization is ever bypassed. Fixed: removed `redeemedCount` from the UPDATE column list so admin edits never touch the counter.
+- [x] [Review][Patch] [id]/route.js:29 PATCH handler passes `maxRedemptions` from request body to `updateGiftCode` with zero validation — AC2 requires a positive integer; `maxRedemptions=0` would permanently exhaust the code on every redeem attempt. Fixed: validate finite positive integer before calling `updateGiftCode`.
+- [x] [Review][Patch] redemptions/route.js:29 calls `requireAdmin(request)` which internally re-parses the same cookie and calls `getDashboardAuthSession` a second time, even though the session is already available at line 11. Fixed: removed `requireAdmin` import and replaced with direct `session.role !== "admin"` guard.
+
 ## Change Log
 
 - 2026-06-08: Story created (ready-for-dev) — Gift Code / Promo Code credit topup.
 - 2026-06-08: Implementation complete → status: review. Added giftCodes + giftCodeRedemptions schema, giftCodesRepo with atomic redeem, 4 API routes (list/create/disable/redeem/redemptions), Credits page redeem UI + history, admin Gift Codes page, sidebar item. 48 new tests, 834 total pass.
+- 2026-06-10: Code review complete. 4 patch findings applied and verified with targeted suite (48 pass). Status → done.

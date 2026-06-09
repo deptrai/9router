@@ -26,6 +26,12 @@ export async function PATCH(request, { params }) {
   }
 
   try {
+    if (body?.maxRedemptions !== undefined) {
+      const mr = body.maxRedemptions;
+      if (!Number.isInteger(mr) || mr < 1) {
+        return NextResponse.json({ error: "maxRedemptions must be a positive integer" }, { status: 400 });
+      }
+    }
     const updated = await updateGiftCode(id, {
       isActive: body?.isActive,
       note: body?.note,

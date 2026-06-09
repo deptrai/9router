@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
-import { requireAdmin } from "@/lib/auth/requireRole";
 import { listGiftCodeRedemptions } from "@/lib/db/repos/giftCodesRepo";
 
 export const dynamic = "force-dynamic";
@@ -25,9 +24,7 @@ export async function GET(request) {
     // Users always see only their own redemptions
     userId = session.userId;
   } else {
-    // Admin may filter
-    const adminSession = await requireAdmin(request);
-    if (!adminSession) {
+    if (session.role !== "admin") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     userId = searchParams.get("userId") || undefined;

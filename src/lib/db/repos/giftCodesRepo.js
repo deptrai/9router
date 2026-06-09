@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
-import { recordCreditTxn } from "./creditLedgerRepo.js";
+import { addCredits } from "./usersRepo.js";
 
 function rowToGiftCode(row) {
   if (!row) return null;
@@ -149,8 +149,8 @@ export async function updateGiftCode(id, data) {
 
     const merged = { ...rowToGiftCode(row), ...clean, updatedAt: now };
     db.run(
-      `UPDATE giftCodes SET code=?, creditsAmount=?, maxRedemptions=?, redeemedCount=?, expiresAt=?, isActive=?, note=?, createdBy=?, updatedAt=? WHERE id=?`,
-      [merged.code, merged.creditsAmount, merged.maxRedemptions, merged.redeemedCount, merged.expiresAt, merged.isActive ? 1 : 0, merged.note, merged.createdBy, merged.updatedAt, id]
+      `UPDATE giftCodes SET code=?, creditsAmount=?, maxRedemptions=?, expiresAt=?, isActive=?, note=?, createdBy=?, updatedAt=? WHERE id=?`,
+      [merged.code, merged.creditsAmount, merged.maxRedemptions, merged.expiresAt, merged.isActive ? 1 : 0, merged.note, merged.createdBy, merged.updatedAt, id]
     );
     result = merged;
   });
@@ -229,18 +229,8 @@ export async function redeemGiftCode({ code, userId, db = null }) {
       [redeemedAt, giftCode.id]
     );
 
-    // Award credits — BP-3/4/7: gift_code type, bonus bucket, 14d expiry, idempotent per giftCodeId+userId
-    const bonusExpiry = new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString();
-    recordCreditTxn({
-      userId,
-      type: "gift_code",
-      bucket: "bonus",
-      amount: giftCode.creditsAmount,
-      expiresAt: bonusExpiry,
-      refId: giftCode.id,
-      idempotencyKey: `gift:${giftCode.id}:${userId}`,
-      note: `Gift code redemption: ${giftCode.code}`,
-    }, adapter);
+    // Award credits via addCredits (simple creditsBalance increment, no expiring bucket)
+    addCredits(userId, giftCode.creditsAmount, adapter);
 
     // Read new balance
     const userRow = adapter.get(`SELECT creditsBalance FROM users WHERE id = ?`, [userId]);
