@@ -38,4 +38,18 @@ describe("plan purchase migration", () => {
       expect.objectContaining({ name: "max", priceCredits: 30, durationDays: 30 }),
     ]));
   });
+
+  it("does not clobber existing admin-edited plan pricing on rerun", async () => {
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const migration = (await import("@/lib/db/migrations/005-plan-purchase-fields.js")).default;
+    const db = await getAdapter();
+
+    db.run(`UPDATE plans SET priceCredits = ?, durationDays = ? WHERE name = 'pro'`, [12.5, 45]);
+    migration.up(db);
+
+    expect(db.get(`SELECT priceCredits, durationDays FROM plans WHERE name = 'pro'`)).toMatchObject({
+      priceCredits: 12.5,
+      durationDays: 45,
+    });
+  });
 });

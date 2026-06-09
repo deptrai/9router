@@ -58,6 +58,26 @@ describe("POST /api/users/me/plan/purchase", () => {
     expect(data.transaction.type).toBe("plan_activation");
   });
 
+  it("returns idempotent response on retry without double charge", async () => {
+    const { plan, user } = await seed();
+    const { POST } = await import("@/app/api/users/me/plan/purchase/route.js");
+
+    const first = await POST(req({ planId: plan.id, idempotencyKey: "retry-1" }));
+    const firstData = await first.json();
+    const second = await POST(req({ planId: plan.id, idempotencyKey: "retry-1" }));
+    const secondData = await second.json();
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(secondData.idempotent).toBe(true);
+    expect(secondData.user.creditsBalance).toBe(firstData.user.creditsBalance);
+    expect(secondData.user.planExpiresAt).toBe(firstData.user.planExpiresAt);
+    expect(secondData.transaction.idempotencyKey).toBe(firstData.transaction.idempotencyKey);
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const ledger = (await getAdapter()).all(`SELECT * FROM creditTransactions WHERE userId = ? AND type = 'plan_activation'`, [user.id]);
+    expect(ledger).toHaveLength(1);
+  });
+
   it("maps validation, missing plan, insufficient credits, and admin", async () => {
     const { plan } = await seed({ credits: 1, priceCredits: 10 });
     const { POST } = await import("@/app/api/users/me/plan/purchase/route.js");

@@ -52,6 +52,26 @@ describe("GET /api/users/me/plans", () => {
     expect(data.plans.find((p) => p.id === active.id).userCount).toBeUndefined();
   });
 
+  it("infers renew for same active plan and change for different active plan", async () => {
+    const { createUser } = await import("@/lib/db/repos/usersRepo.js");
+    const { createPlan } = await import("@/lib/db/repos/plansRepo.js");
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const user = await createUser("plans-renew@test.dev", await bcrypt.hash("pass1234", 10), "Plans");
+    const current = await createPlan({ name: "current", priceCredits: 10, durationDays: 30, sortOrder: 1 });
+    const other = await createPlan({ name: "other", priceCredits: 15, durationDays: 30, sortOrder: 2 });
+    (await getAdapter()).run(
+      `UPDATE users SET creditsBalance = ?, planId = ?, planExpiresAt = ? WHERE id = ?`,
+      [20, current.id, "2026-07-01T00:00:00.000Z", user.id]
+    );
+    mockSession = { role: "user", userId: user.id };
+
+    const { GET } = await import("@/app/api/users/me/plans/route.js");
+    const data = await (await GET()).json();
+
+    expect(data.plans.find((p) => p.id === current.id)).toMatchObject({ action: "renew", canAfford: true });
+    expect(data.plans.find((p) => p.id === other.id)).toMatchObject({ action: "change", canAfford: true });
+  });
+
   it("returns 403 for admin", async () => {
     mockSession = { role: "admin", userId: "admin" };
     const { GET } = await import("@/app/api/users/me/plans/route.js");
