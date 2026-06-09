@@ -16,6 +16,20 @@ function validateNonNegativeInteger(value, field) {
   return null;
 }
 
+function validateNonNegativeNumber(value, field) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return `${field} must be a finite non-negative number`;
+  }
+  return null;
+}
+
+function validatePositiveInteger(value, field) {
+  if (typeof value !== "number" || !Number.isFinite(value) || !Number.isInteger(value) || value < 1) {
+    return `${field} must be a finite positive integer`;
+  }
+  return null;
+}
+
 function hasValidCalendarDate(year, month, day) {
   const date = new Date(Date.UTC(year, month - 1, day));
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
@@ -63,6 +77,20 @@ export function validatePlanInput(body, { partial = false } = {}) {
       if (message) return invalid(message);
       out[field] = value;
     }
+  }
+
+  if (!partial || body.priceCredits !== undefined) {
+    const value = body.priceCredits === undefined ? 0 : body.priceCredits;
+    const message = validateNonNegativeNumber(value, "priceCredits");
+    if (message) return invalid(message);
+    out.priceCredits = value;
+  }
+
+  if (!partial || body.durationDays !== undefined) {
+    const value = body.durationDays === undefined ? 30 : body.durationDays;
+    const message = validatePositiveInteger(value, "durationDays");
+    if (message) return invalid(message);
+    out.durationDays = value;
   }
 
   if (!partial || body.perModelLimits !== undefined) {

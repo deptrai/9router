@@ -9,6 +9,8 @@ const EMPTY_FORM = {
   rpm: 0,
   quota5h: 0,
   quotaWeekly: 0,
+  priceCredits: 0,
+  durationDays: 30,
   sortOrder: 0,
   perModelLimitsText: "",
   isActive: true,
@@ -34,6 +36,8 @@ function PlanModal({ plan, onClose, onSaved }) {
     rpm: plan.rpm || 0,
     quota5h: plan.quota5h || 0,
     quotaWeekly: plan.quotaWeekly || 0,
+    priceCredits: plan.priceCredits ?? 0,
+    durationDays: plan.durationDays || 30,
     sortOrder: plan.sortOrder || 0,
     perModelLimitsText: plan.perModelLimits ? JSON.stringify(plan.perModelLimits, null, 2) : "",
     isActive: !!plan.isActive,
@@ -61,6 +65,8 @@ function PlanModal({ plan, onClose, onSaved }) {
       rpm: Number(form.rpm),
       quota5h: Number(form.quota5h),
       quotaWeekly: Number(form.quotaWeekly),
+      priceCredits: Number(form.priceCredits),
+      durationDays: Number(form.durationDays),
       sortOrder: Number(form.sortOrder),
       perModelLimits,
       isActive: !!form.isActive,
@@ -99,9 +105,9 @@ function PlanModal({ plan, onClose, onSaved }) {
             <label className="space-y-1 text-sm text-text-main">Display Name
               <input value={form.displayName} onChange={(e) => setField("displayName", e.target.value)} className="w-full px-3 py-2 rounded-lg border border-border-subtle bg-surface-1" />
             </label>
-            {[["rpm", "RPM"], ["quota5h", "5h quota"], ["quotaWeekly", "Weekly quota"], ["sortOrder", "Sort order"]].map(([field, label]) => (
+            {[["rpm", "RPM"], ["quota5h", "5h quota"], ["quotaWeekly", "Weekly quota"], ["priceCredits", "Price (credits)"], ["durationDays", "Duration (days)"], ["sortOrder", "Sort order"]].map(([field, label]) => (
               <label key={field} className="space-y-1 text-sm text-text-main">{label}
-                <input type="number" min="0" step="1" value={form[field]} onChange={(e) => setField(field, e.target.value)} className="w-full px-3 py-2 rounded-lg border border-border-subtle bg-surface-1" />
+                <input type="number" min={field === "durationDays" ? "1" : "0"} step={field === "priceCredits" ? "0.01" : "1"} value={form[field]} onChange={(e) => setField(field, e.target.value)} className="w-full px-3 py-2 rounded-lg border border-border-subtle bg-surface-1" />
               </label>
             ))}
           </div>
@@ -181,6 +187,7 @@ export default function PlansPage() {
                 <tr className="text-left text-text-muted text-xs uppercase tracking-wider">
                   <th className="px-4 py-3">Plan</th>
                   <th className="px-4 py-3">Limits</th>
+                  <th className="px-4 py-3">Price</th>
                   <th className="px-4 py-3 text-center">Users</th>
                   <th className="px-4 py-3 text-center">Status</th>
                   <th className="px-4 py-3 text-right">Actions</th>
@@ -194,6 +201,7 @@ export default function PlansPage() {
                       <p className="text-xs text-text-muted">{plan.name} • sort {plan.sortOrder || 0}{plan.perModelLimits ? " • per-model stored" : ""}</p>
                     </td>
                     <td className="px-4 py-3 text-text-muted">RPM {formatLimit(plan.rpm)} • 5h {formatLimit(plan.quota5h)} • weekly {formatLimit(plan.quotaWeekly)}</td>
+                    <td className="px-4 py-3 text-text-muted">{Number(plan.priceCredits ?? 0).toLocaleString()} credits / {plan.durationDays || 30}d</td>
                     <td className="px-4 py-3 text-center text-text-main">{plan.userCount ?? 0}</td>
                     <td className="px-4 py-3 text-center"><StatusBadge active={plan.isActive} /></td>
                     <td className="px-4 py-3 text-right">

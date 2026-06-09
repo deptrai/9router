@@ -1,5 +1,5 @@
 // Latest schema version — bumped when a migration is added in ./migrations/
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 5;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -79,6 +79,8 @@ export const TABLES = {
       rpm: "INTEGER DEFAULT 0",
       quota5h: "INTEGER DEFAULT 0",
       quotaWeekly: "INTEGER DEFAULT 0",
+      priceCredits: "REAL DEFAULT 0",
+      durationDays: "INTEGER DEFAULT 30",
       perModelLimits: "TEXT",
       isActive: "INTEGER DEFAULT 1",
       sortOrder: "INTEGER DEFAULT 0",

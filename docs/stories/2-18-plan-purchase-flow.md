@@ -5,7 +5,7 @@ epic: E
 
 # Story 2.18 (E.7): Self-serve mua, gia hạn, đổi plan bằng credit
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ghi chú: validation story là tùy chọn. Có thể chạy validate-create-story trước dev-story nếu cần quality check. -->
 
@@ -82,35 +82,35 @@ Không làm:
 
 ### Part A - Schema, migration, plan repo/admin fields (AC#1-3, #16)
 
-- [ ] **A1**: Update `src/lib/db/schema.js` `TABLES.plans` thêm:
+- [x] **A1**: Update `src/lib/db/schema.js` `TABLES.plans` thêm:
   - `priceCredits: "REAL DEFAULT 0"`
   - `durationDays: "INTEGER DEFAULT 30"`
-- [ ] **A2**: Add migration `src/lib/db/migrations/005-plan-purchase-fields.js`, register in `src/lib/db/migrations/index.js` after m004.
+- [x] **A2**: Add migration `src/lib/db/migrations/005-plan-purchase-fields.js`, register in `src/lib/db/migrations/index.js` after m004.
   - Guarded `ALTER TABLE plans ADD COLUMN` cho cả hai field.
   - Backfill rows where null: `priceCredits=0`, `durationDays=30`.
   - For seeded names: `free=0`, `pro=10`, `max=30` only if field is null/missing/default from migration; do not clobber admin-edited values on rerun.
-- [ ] **A3**: Update `src/lib/db/repos/plansRepo.js`:
+- [x] **A3**: Update `src/lib/db/repos/plansRepo.js`:
   - `rowToPlan` includes `priceCredits` and `durationDays`.
   - `createPlan` INSERT includes fields with defaults.
   - `updatePlan` SET/merge includes fields.
   - `listPlans({activeOnly:true})` remains usable for user-facing catalog.
-- [ ] **A4**: Update `src/lib/plans/validatePlanInput.js`:
+- [x] **A4**: Update `src/lib/plans/validatePlanInput.js`:
   - `priceCredits`: `typeof number`, finite, `>=0`, allow decimal.
   - `durationDays`: finite positive integer (`>=1`).
   - Keep existing strict no-coercion for `rpm`, `quota5h`, `quotaWeekly`, `sortOrder`, `perModelLimits`, `isActive`.
-- [ ] **A5**: Update admin APIs `src/app/api/plans/route.js` and `src/app/api/plans/[id]/route.js` through validator/repo only; no direct SQL in routes.
-- [ ] **A6**: Update admin UI `src/app/(dashboard)/dashboard/plans/page.js`:
+- [x] **A5**: Update admin APIs `src/app/api/plans/route.js` and `src/app/api/plans/[id]/route.js` through validator/repo only; no direct SQL in routes.
+- [x] **A6**: Update admin UI `src/app/(dashboard)/dashboard/plans/page.js`:
   - Add form fields for price/duration.
   - Show price/duration in table.
   - Maintain live-template warning and per-model enforced copy.
 
 ### Part B - Atomic purchase domain helper (AC#6-13, #16)
 
-- [ ] **B1**: Create a reusable helper, recommended `src/lib/plans/planPurchase.js` or `src/lib/db/repos/planPurchaseRepo.js`, exported for tests. Do not put purchase transaction logic directly in route.
-- [ ] **B2**: Helper signature recommended:
+- [x] **B1**: Create a reusable helper, recommended `src/lib/plans/planPurchase.js` or `src/lib/db/repos/planPurchaseRepo.js`, exported for tests. Do not put purchase transaction logic directly in route.
+- [x] **B2**: Helper signature recommended:
   - `purchasePlanForUser({ userId, planId, idempotencyKey, now = Date.now() })`
   - Returns `{ action, plan, user, transaction, idempotent, resetPlanQuotaState }`.
-- [ ] **B3**: Inside one `db.transaction()`:
+- [x] **B3**: Inside one `db.transaction()`:
   - Pre-check `creditTransactions` by internal idempotency key. If exists, return current user/plan without charge/extend/reset.
   - Fetch user row and active plan row.
   - Validate user exists and plan active.
@@ -120,45 +120,45 @@ Không làm:
   - Call `recordCreditTxn({ type:"plan_activation", bucket:"standard", amount:-priceCredits, refId:plan.id, idempotencyKey:internalKey, note }, db)` synchronously inside transaction.
   - `UPDATE users SET planId=?, planExpiresAt=?, updatedAt=? WHERE id=?` in same transaction. If using `updateUser`, it must accept the same adapter or be replaced by a repo helper; do not perform a second transaction after ledger write.
   - If `action === "change"`, clear `planQuotaState` inside the same transaction. Either add an adapter-aware quota helper or write the existing kv row directly: `scope="planQuotaState"`, `key=userId`, `value="{}"`. Do not leave reset as after-commit best-effort.
-- [ ] **B4**: Error mapping:
+- [x] **B4**: Error mapping:
   - `PLAN_NOT_FOUND` -> 404.
   - `INSUFFICIENT_CREDITS` -> 402.
   - `INVALID_IDEMPOTENCY_KEY`/invalid body -> 400.
   - Unknown DB error -> 500 and rollback.
-- [ ] **B5**: Ensure no partial state via tests that force `recordCreditTxn`/update failure. If mocking is hard, use invalid constraint or adapter spy in focused unit test.
+- [x] **B5**: Ensure no partial state via tests that force `recordCreditTxn`/update failure. If mocking is hard, use invalid constraint or adapter spy in focused unit test.
 
 ### Part C - User-facing APIs (AC#4-13, #16)
 
-- [ ] **C1**: Create `src/app/api/users/me/plans/route.js` user-only.
+- [x] **C1**: Create `src/app/api/users/me/plans/route.js` user-only.
   - Use `cookies()` + `getDashboardAuthSession` pattern from `src/app/api/users/me/quota/route.js`.
   - Require `session.role === "user"`.
   - Load current user + `listPlans({ activeOnly:true })`.
   - Response includes catalog fields, `canAfford`, current plan state, inferred `action`.
-- [ ] **C2**: Create `src/app/api/users/me/plan/purchase/route.js` user-only POST.
+- [x] **C2**: Create `src/app/api/users/me/plan/purchase/route.js` user-only POST.
   - Parse JSON `{ planId, idempotencyKey }`.
   - Trim/validate non-empty strings; recommended max length 128 for `idempotencyKey`.
   - Call purchase helper and map typed errors to status codes.
   - Do not accept `userId`, `priceCredits`, `durationDays`, `action`, or `planExpiresAt` from client as authority.
-- [ ] **C3**: Decide response shape and keep it stable for UI/tests, recommended:
+- [x] **C3**: Decide response shape and keep it stable for UI/tests, recommended:
   - success: `{ action, plan, user:{ id, creditsBalance, planId, planExpiresAt }, transaction, idempotent }`
   - insufficient: `{ error, requiredCredits, creditsBalance, topupHref }`
-- [ ] **C4**: Add `plan_activation` to `typeLabel` in `src/app/(dashboard)/dashboard/plan/page.js` so ledger history is readable.
+- [x] **C4**: Add `plan_activation` to `typeLabel` in `src/app/(dashboard)/dashboard/plan/page.js` so ledger history is readable.
 
 ### Part D - User dashboard flow (AC#14-15, #16)
 
-- [ ] **D1**: Extend `src/app/(dashboard)/dashboard/plan/page.js`, not a new landing page.
+- [x] **D1**: Extend `src/app/(dashboard)/dashboard/plan/page.js`, not a new landing page.
   - Keep existing quota, overflow toggle, ledger sections.
   - Add active plan catalog section with compact cards/table.
   - Show price (`priceCredits`) and duration (`durationDays`).
   - Action button label by inferred action: Buy, Renew, Change.
-- [ ] **D2**: Load `/api/users/me/plans` alongside quota/ledger. Handle loading/error independently so quota still works if catalog fails.
-- [ ] **D3**: On click:
+- [x] **D2**: Load `/api/users/me/plans` alongside quota/ledger. Handle loading/error independently so quota still works if catalog fails.
+- [x] **D3**: On click:
   - Generate idempotency key per click.
   - Disable button while request pending.
   - POST purchase route.
   - On success refetch quota, catalog, ledger; show concise success state.
   - On 402 show required/current credit and link/button to `/dashboard/credits`.
-- [ ] **D4**: UI guardrails:
+- [x] **D4**: UI guardrails:
   - Do not show admin-only data or user counts.
   - Do not put page-level sections inside nested cards; follow existing utilitarian dashboard style.
   - Text must fit on mobile; plan action buttons use stable dimensions.
@@ -166,14 +166,14 @@ Không làm:
 
 ### Part E - Tests and verification (AC#1-16)
 
-- [ ] **E1**: Migration/schema tests, e.g. `tests/unit/plan-purchase-migration.test.js`:
+- [x] **E1**: Migration/schema tests, e.g. `tests/unit/plan-purchase-migration.test.js`:
   - New columns exist after migration.
   - Seed/backfill defaults correct and idempotent.
-- [ ] **E2**: Plan repo/validation tests, likely extend `tests/unit/plans-admin-api.test.js`:
+- [x] **E2**: Plan repo/validation tests, likely extend `tests/unit/plans-admin-api.test.js`:
   - POST/PATCH accepts valid `priceCredits` decimal and `durationDays` positive int.
   - Reject string/null/NaN/negative price; reject `durationDays=0`, negative, decimal, string.
   - Admin API response includes fields.
-- [ ] **E3**: Purchase helper tests, e.g. `tests/unit/plan-purchase.test.js`:
+- [x] **E3**: Purchase helper tests, e.g. `tests/unit/plan-purchase.test.js`:
   - buy no-plan -> ledger + user update + balance.
   - renew same plan -> expiry extends from current future expiry, no quota reset.
   - expired same plan -> expiry from now.
@@ -182,18 +182,18 @@ Không làm:
   - idempotent retry -> one ledger row, no second expiry extension.
   - free plan -> amount `0` ledger row, user updated.
   - inactive/missing plan rejected.
-- [ ] **E4**: User API tests, e.g. `tests/unit/users-me-plans-api.test.js` and `tests/unit/users-me-plan-purchase-api.test.js`:
+- [x] **E4**: User API tests, e.g. `tests/unit/users-me-plans-api.test.js` and `tests/unit/users-me-plan-purchase-api.test.js`:
   - user role allowed; admin/non-user 403.
   - catalog returns active plans only and no `userCount`.
   - POST maps 400/402/404/success.
-- [ ] **E5**: UI/source tests:
+- [x] **E5**: UI/source tests:
   - `/dashboard/plan` contains `plan_activation` label.
   - Uses `/api/users/me/plans` and `/api/users/me/plan/purchase`.
   - Contains `/dashboard/credits` insufficient-credit CTA.
   - Admin `/dashboard/plans` includes price/duration controls.
-- [ ] **E6**: Run targeted suite:
+- [x] **E6**: Run targeted suite:
   - `NODE_PATH=/Users/luisphan/Documents/9router/tests/node_modules /Users/luisphan/Documents/9router/tests/node_modules/.bin/vitest run --config tests/vitest.config.js tests/unit/plans-admin-api.test.js tests/unit/user-plan-admin-api.test.js tests/unit/users-me-quota-api.test.js tests/unit/users-me-ledger-api.test.js tests/unit/plan-purchase.test.js tests/unit/users-me-plans-api.test.js tests/unit/users-me-plan-purchase-api.test.js --reporter=verbose`
-- [ ] **E7**: Run lint/build for touched files and broader suite if feasible. Known historical xAI OAuth flake may be documented only if unrelated and reproduced.
+- [x] **E7**: Run lint/build for touched files and broader suite if feasible. Known historical xAI OAuth flake may be documented only if unrelated and reproduced.
 
 ## Dev Notes
 
@@ -287,13 +287,42 @@ Không làm:
 GPT-5 Codex
 
 ### Debug Log References
+- A: Thêm migration `005-plan-purchase-fields`, extend `plansRepo`, `validatePlanInput`, admin plans UI/API, và thêm test migration/validation.
+- B: Tạo `src/lib/plans/planPurchase.js` với transaction atomic, idempotency, lifecycle buy/renew/change, free plan, insufficient credit, rollback trigger test.
+- C: Thêm `/api/users/me/plans` và `/api/users/me/plan/purchase` với guard user-role, catalog affordability/action, mapping 400/402/404/403.
+- D: Mở rộng `/dashboard/plan` với catalog/action CTA, `plan_activation` label, top-up CTA, và refetch sau purchase.
+- Validation: targeted suite 31 pass; full suite 1080 pass / 24 skip / 2 unrelated xAI flake; xAI OAuth rerun riêng 5 pass; build pass.
 
 ### Completion Notes List
+- Thêm `priceCredits`/`durationDays` vào schema, migration, repo, validator, và admin UI.
+- Implement self-serve plan purchase atomic bằng credit ledger + user plan update + planQuotaState reset khi đổi plan.
+- Mở user APIs để list purchasable plans và submit mua/gia hạn/đổi plan theo session user.
+- Cập nhật `/dashboard/plan` để hiển thị catalog plan active, action Buy/Renew/Change, và CTA top-up khi thiếu credit.
+- Test coverage thêm cho migration, helper purchase, user APIs, và source/UI contract.
 
 ### File List
+- docs/stories/2-18-plan-purchase-flow.md
+- _bmad-output/implementation-artifacts/sprint-status.yaml
+- src/lib/db/schema.js
+- src/lib/db/migrations/index.js
+- src/lib/db/migrations/005-plan-purchase-fields.js
+- src/lib/db/repos/plansRepo.js
+- src/lib/plans/validatePlanInput.js
+- src/lib/plans/planPurchase.js
+- src/app/api/users/me/plans/route.js
+- src/app/api/users/me/plan/purchase/route.js
+- src/app/(dashboard)/dashboard/plans/page.js
+- src/app/(dashboard)/dashboard/plan/page.js
+- tests/unit/plan-purchase-migration.test.js
+- tests/unit/plan-purchase.test.js
+- tests/unit/plans-admin-api.test.js
+- tests/unit/plan-page-source.test.js
+- tests/unit/users-me-plans-api.test.js
+- tests/unit/users-me-plan-purchase-api.test.js
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
 | 2026-06-10 | Created story E.7 (2.18) - self-serve plan purchase/renew/change bằng credit, `plan_activation` ledger, price/duration plan fields, idempotency, và reset quota windows khi đổi plan. Status -> ready-for-dev. |
+| 2026-06-10 | Implemented E.7 self-serve plan purchase, admin price/duration config, user plan catalog/purchase APIs, and dashboard plan purchase UI. Status -> review. |

@@ -69,6 +69,7 @@ function typeLabel(type) {
   if (type === "admin_topup") return "Top-up";
   if (type === "gift_code") return "Gift";
   if (type === "user_payment") return "Payment";
+  if (type === "plan_activation") return "Plan activation";
   if (type === "reversal") return "Reversal";
   return type?.replaceAll("_", " ") || "Transaction";
 }
@@ -82,6 +83,11 @@ export default function PlanPage() {
   const [ledgerHasMore, setLedgerHasMore] = useState(true);
   const [loading, setLoading] = useState(true);
   const [ledgerLoading, setLedgerLoading] = useState(true);
+  const [plans, setPlans] = useState([]);
+  const [plansLoading, setPlansLoading] = useState(true);
+  const [plansError, setPlansError] = useState("");
+  const [purchaseBusy, setPurchaseBusy] = useState("");
+  const [purchaseMessage, setPurchaseMessage] = useState("");
   const [overflowSaving, setOverflowSaving] = useState(false);
   const [error, setError] = useState("");
   const [ledgerError, setLedgerError] = useState("");
@@ -126,14 +132,59 @@ export default function PlanPage() {
     }
   }, []);
 
+  const loadPlans = useCallback(async () => {
+    setPlansLoading(true);
+    setPlansError("");
+    try {
+      const res = await fetch("/api/users/me/plans");
+      if (!res.ok) throw new Error("plans load failed");
+      const data = await res.json();
+      setPlans(data.plans || []);
+      if (data.creditsBalance !== undefined) setQuota((prev) => prev ? { ...prev, creditsBalance: data.creditsBalance } : prev);
+    } catch {
+      setPlansError("Không tải được danh sách plan.");
+    } finally {
+      setPlansLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (role !== "user") return;
     const timer = setTimeout(() => {
       loadQuota();
       loadLedger(0, false);
+      loadPlans();
     }, 0);
     return () => clearTimeout(timer);
-  }, [role, loadQuota, loadLedger]);
+  }, [role, loadQuota, loadLedger, loadPlans]);
+
+  const handlePurchase = useCallback(async (planId) => {
+    const idempotencyKey = (globalThis.crypto?.randomUUID?.() || `plan-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    setPurchaseBusy(planId);
+    setPurchaseMessage("");
+    try {
+      const res = await fetch("/api/users/me/plan/purchase", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planId, idempotencyKey }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 402) {
+          setPurchaseMessage(`Cần ${formatMoney(data.requiredCredits)} để mua plan này.`);
+        } else {
+          setPurchaseMessage(data.error || "Mua plan thất bại.");
+        }
+        return;
+      }
+      setPurchaseMessage(`Đã ${data.action === "change" ? "đổi" : data.action === "renew" ? "gia hạn" : "mua"} plan thành công.`);
+      await Promise.all([loadQuota(), loadLedger(0, false), loadPlans()]);
+    } catch {
+      setPurchaseMessage("Mua plan thất bại.");
+    } finally {
+      setPurchaseBusy("");
+    }
+  }, [loadLedger, loadPlans, loadQuota]);
 
   const handleToggle = useCallback(async () => {
     if (!quota || quota.source !== "plan") return;
@@ -221,6 +272,49 @@ export default function PlanPage() {
         ) : (
           <div className="rounded-lg bg-surface-2 p-4 text-sm text-text-muted">
             Pay-as-you-go (credit). No quota bars for this account.
+          </div>
+        )}
+      </Card>
+
+      <Card className="p-5 space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-text-muted">Plans</p>
+            <h3 className="text-lg font-semibold text-text-main">Active catalog</h3>
+          </div>
+          <Link href="/dashboard/credits" className="text-sm text-primary hover:underline">Top up credits</Link>
+        </div>
+        {plansError ? <p className="text-sm text-red-500">{plansError}</p> : null}
+        {purchaseMessage ? <p className="text-sm text-text-muted">{purchaseMessage}</p> : null}
+        {plansLoading ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {[1, 2].map((i) => <div key={i} className="h-28 rounded-lg bg-surface-2 animate-pulse" />)}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {plans.map((plan) => (
+              <div key={plan.id} className="rounded-lg border border-border-subtle bg-surface-1 p-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-text-main">{plan.displayName || plan.name}</p>
+                    <p className="text-xs text-text-muted">{plan.name}</p>
+                  </div>
+                  <p className="text-sm font-semibold text-text-main">{Number(plan.priceCredits || 0).toLocaleString()} credits</p>
+                </div>
+                <p className="text-sm text-text-muted">{plan.durationDays || 30} days • RPM {formatTokens(plan.rpm)} • 5h {formatTokens(plan.quota5h)} • weekly {formatTokens(plan.quotaWeekly)}</p>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs text-text-muted">{plan.canAfford ? "Affordable" : "Needs top-up"} • {plan.action}</span>
+                  <button
+                    type="button"
+                    onClick={() => handlePurchase(plan.id)}
+                    disabled={purchaseBusy === plan.id || !plan.canAfford}
+                    className="inline-flex min-w-24 items-center justify-center rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+                  >
+                    {purchaseBusy === plan.id ? "Working..." : plan.action === "renew" ? "Renew" : plan.action === "change" ? "Change" : "Buy"}
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </Card>

@@ -11,6 +11,8 @@ function rowToPlan(row) {
     rpm: row.rpm ?? 0,
     quota5h: row.quota5h ?? 0,
     quotaWeekly: row.quotaWeekly ?? 0,
+    priceCredits: row.priceCredits ?? 0,
+    durationDays: row.durationDays ?? 30,
     perModelLimits: parseJson(row.perModelLimits, null),
     isActive: row.isActive === 1 || row.isActive === true,
     sortOrder: row.sortOrder ?? 0,
@@ -53,8 +55,8 @@ export async function createPlan(data) {
   const id = uuidv4();
   const now = new Date().toISOString();
   db.run(
-    `INSERT INTO plans(id, name, displayName, rpm, quota5h, quotaWeekly, perModelLimits, isActive, sortOrder, createdAt, updatedAt)
-     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO plans(id, name, displayName, rpm, quota5h, quotaWeekly, priceCredits, durationDays, perModelLimits, isActive, sortOrder, createdAt, updatedAt)
+     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       data.name,
@@ -62,6 +64,8 @@ export async function createPlan(data) {
       data.rpm ?? 0,
       data.quota5h ?? 0,
       data.quotaWeekly ?? 0,
+      data.priceCredits ?? 0,
+      data.durationDays ?? 30,
       stringifyJson(data.perModelLimits ?? null),
       data.isActive === false ? 0 : 1,
       data.sortOrder ?? 0,
@@ -86,6 +90,8 @@ export async function updatePlan(id, data) {
     rpm: data.rpm !== undefined ? data.rpm : row.rpm,
     quota5h: data.quota5h !== undefined ? data.quota5h : row.quota5h,
     quotaWeekly: data.quotaWeekly !== undefined ? data.quotaWeekly : row.quotaWeekly,
+    priceCredits: data.priceCredits !== undefined ? data.priceCredits : row.priceCredits,
+    durationDays: data.durationDays !== undefined ? data.durationDays : row.durationDays,
     perModelLimits:
       data.perModelLimits !== undefined
         ? stringifyJson(data.perModelLimits)
@@ -94,8 +100,8 @@ export async function updatePlan(id, data) {
     sortOrder: data.sortOrder !== undefined ? data.sortOrder : row.sortOrder,
   };
   db.run(
-    `UPDATE plans SET name=?, displayName=?, rpm=?, quota5h=?, quotaWeekly=?, perModelLimits=?, isActive=?, sortOrder=?, updatedAt=? WHERE id=?`,
-    [merged.name, merged.displayName, merged.rpm, merged.quota5h, merged.quotaWeekly, merged.perModelLimits, merged.isActive, merged.sortOrder, now, id]
+    `UPDATE plans SET name=?, displayName=?, rpm=?, quota5h=?, quotaWeekly=?, priceCredits=?, durationDays=?, perModelLimits=?, isActive=?, sortOrder=?, updatedAt=? WHERE id=?`,
+    [merged.name, merged.displayName, merged.rpm, merged.quota5h, merged.quotaWeekly, merged.priceCredits, merged.durationDays, merged.perModelLimits, merged.isActive, merged.sortOrder, now, id]
   );
   return getPlanById(id);
 }

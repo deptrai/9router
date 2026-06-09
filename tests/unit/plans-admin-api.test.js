@@ -63,6 +63,8 @@ describe("/api/plans admin CRUD", () => {
       rpm: 10,
       quota5h: 0,
       quotaWeekly: 1000,
+      priceCredits: 12.5,
+      durationDays: 45,
       perModelLimits: { "gpt-test": { q5h: 10, qWeekly: 20 } },
       isActive: true,
       sortOrder: 9,
@@ -72,6 +74,36 @@ describe("/api/plans admin CRUD", () => {
     expect(res.status).toBe(201);
     expect(data.plan.name).toBe("team_pro");
     expect(data.plan.quota5h).toBe(0);
+    expect(data.plan.priceCredits).toBe(12.5);
+    expect(data.plan.durationDays).toBe(45);
+  });
+
+  it("POST/PATCH validates priceCredits and durationDays", async () => {
+    mockAdmin();
+    const { POST } = await import("@/app/api/plans/route.js");
+    const route = await import("@/app/api/plans/[id]/route.js");
+
+    const created = await POST(req({ name: "priced", priceCredits: 1.25, durationDays: 7 }));
+    expect(created.status).toBe(201);
+    const plan = (await created.json()).plan;
+    expect(plan.priceCredits).toBe(1.25);
+    expect(plan.durationDays).toBe(7);
+
+    const patched = await route.PATCH(req({ priceCredits: 2.5, durationDays: 30 }), { params: { id: plan.id } });
+    expect(patched.status).toBe(200);
+    expect((await patched.json()).plan).toMatchObject({ priceCredits: 2.5, durationDays: 30 });
+
+    for (const bad of [
+      { priceCredits: -1 },
+      { priceCredits: "1" },
+      { priceCredits: null },
+      { durationDays: 0 },
+      { durationDays: -1 },
+      { durationDays: 1.5 },
+      { durationDays: "30" },
+    ]) {
+      expect((await route.PATCH(req(bad), { params: { id: plan.id } })).status).toBe(400);
+    }
   });
 
   it("POST rejects empty/duplicate/negative/non-object perModelLimits", async () => {
@@ -121,5 +153,7 @@ describe("/api/plans admin CRUD", () => {
     expect(content).not.toContain("not enforced yet");
     expect(content).toContain("canonical model");
     expect(content).toContain("enforced");
+    expect(content).toContain("priceCredits");
+    expect(content).toContain("durationDays");
   });
 });
