@@ -5,7 +5,7 @@ epic: H
 
 # Story 2.19 (H.1): Landing page hoàn chỉnh và Models/Pricing page public
 
-Status: review
+Status: done
 
 ## Story
 
@@ -200,9 +200,18 @@ claude-sonnet-4-6
 - tests/unit/public-models-api.test.js
 - tests/unit/landing-page-source.test.js
 
+## Review Findings
+
+- [x] [Review][Patch] Navigation.js:22 `reloadTranslations()` called without `await` — async DOM mutation races with `setLocale(next)` re-render; translations could apply to stale or overwritten nodes. Fixed: added `await`.
+- [x] [Review][Patch] Navigation.js:24 `setLocale(next)` was outside the try/catch and executed even when the `/api/locale` POST failed — locale toggle button appeared to switch but cookie was never written, reverting on next load (ghost-toggle). Fixed: moved `setLocale(next)` inside try block after `await reloadTranslations()`.
+- [x] [Review][Patch] Navigation.js:11 Zustand `persist` store causes SSR/client hydration mismatch — server renders with default theme, client rehydrates from localStorage, React flags mismatch and icon flickers. Fixed: added `mounted` guard; `isDark` is `false` until after client mount.
+- [x] [Review][Patch] Pricing.js:12 no `r.ok` check — HTTP 500 from `/api/public/plans` returned valid JSON `{ error: ... }` which silently produced `plans = []` and rendered a blank pricing grid. Fixed: throw on `!r.ok`, catch sets `fetchError = true`, component returns `null` on error or empty.
+- [x] [Review][Patch] models/page.js:8 `formatPrice` used `.toFixed(2)` for all non-zero values — sub-cent prices (e.g. `0.001`) rounded to `$0.00`, falsely implying free. Fixed: use `toPrecision(2)` for values `< 0.01`.
+
 ## Change Log
 
 | Date | Change |
 |------|--------|
 | 2026-06-10 | Created story H.1 (2.19) — landing page completion + models page. Status → ready-for-dev. |
 | 2026-06-10 | Implemented H.1: public models API, /models SSR page, public plans API, Navigation dark/light + EN/VI toggles, Pricing/FAQ/EndpointHighlights components, Discord CTA. 14 tests pass, build pass. Status → review. |
+| 2026-06-10 | Code review complete. 5 patch findings applied and verified (14 tests pass). Status → done. |
