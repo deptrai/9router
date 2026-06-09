@@ -75,6 +75,46 @@ describe("getPlanQuotaStatus", () => {
     expect(creditStatus.creditsBalance).toBe(0);
   });
 
+  it("exposes per-model status when requested model has an override", async () => {
+    const { createUser, updateUser } = await import("@/lib/db/repos/usersRepo.js");
+    const { createPlan } = await import("@/lib/db/repos/plansRepo.js");
+    const { createApiKey } = await import("@/lib/db/repos/apiKeysRepo.js");
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const { setPlanQuotaState } = await import("@/lib/db/repos/quotaRepo.js");
+    const { getPlanQuotaStatus } = await import("@/lib/quota/planQuotaStatus.js");
+
+    const plan = await createPlan({ name: "model-status", quota5h: 1000, quotaWeekly: 2000, rpm: 5, perModelLimits: { "gpt-4o": { q5h: 100, qWeekly: 300 } } });
+    const user = await createUser("model-status@test.dev", await bcrypt.hash("pass1234", 10), "Model Status");
+    await updateUser(user.id, { planId: plan.id });
+    const key = await createApiKey("model-status-key", "m1", user.id);
+    const startedAt = new Date(Date.now() - 60_000).toISOString();
+    await setPlanQuotaState(user.id, { win5h: { startedAt }, winWeek: { startedAt } });
+
+    const db = await getAdapter();
+    db.run(`INSERT INTO usageHistory(timestamp,provider,model,connectionId,apiKey,endpoint,promptTokens,completionTokens,cost,status)
+            VALUES(?,?,?,?,?,?,?,?,0,'done')`, [new Date(Date.now() - 30_000).toISOString(), "p", "gpt-4o", "c", key.key, "/v1/chat", 3, 2]);
+
+    const status = await getPlanQuotaStatus(user.id, Date.now(), "gpt-4o");
+    expect(status.model).toBe("gpt-4o");
+    expect(status.perModelLimitsEnforced).toBe(true);
+    expect(status.perModel.quota5h.limit).toBe(100);
+    expect(status.perModel.quota5h.consumed).toBe(5);
+    expect(status.perModel.quotaWeekly.limit).toBe(300);
+  });
+
+  it("returns perModel=null when requested model has no matching override", async () => {
+    const { createUser, updateUser } = await import("@/lib/db/repos/usersRepo.js");
+    const { createPlan } = await import("@/lib/db/repos/plansRepo.js");
+    const { getPlanQuotaStatus } = await import("@/lib/quota/planQuotaStatus.js");
+    const plan = await createPlan({ name: "no-model-status", quota5h: 1000, quotaWeekly: 2000, perModelLimits: { "gpt-4o": { q5h: 100, qWeekly: 300 } } });
+    const user = await createUser("no-model-status@test.dev", "hash", "No Model Status");
+    await updateUser(user.id, { planId: plan.id });
+    const status = await getPlanQuotaStatus(user.id, Date.now(), "claude-sonnet");
+    expect(status.model).toBe("claude-sonnet");
+    expect(status.perModelLimitsEnforced).toBe(false);
+    expect(status.perModel).toBeNull();
+  });
+
   it("fails soft on resolver errors", async () => {
     const { createUser } = await import("@/lib/db/repos/usersRepo.js");
     const { getPlanQuotaStatus } = await import("@/lib/quota/planQuotaStatus.js");

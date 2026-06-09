@@ -40,10 +40,10 @@ describe("rebuildBalanceFromLedger — BP-2", () => {
     const user = await makeUser("rb2@test.dev");
     const { recordCreditTxn, rebuildBalanceFromLedger } = await import("@/lib/db/repos/creditLedgerRepo.js");
     const { getUserById } = await import("@/lib/db/repos/usersRepo.js");
-    await recordCreditTxn({ userId: user.id, type: "admin_topup", amount: 50 });
-    await recordCreditTxn({ userId: user.id, type: "user_payment", amount: 20 });
-    await recordCreditTxn({ userId: user.id, type: "usage_deduction", amount: -15 });
-    await recordCreditTxn({ userId: user.id, type: "gift_code", bucket: "bonus", amount: 10 });
+    await recordCreditTxn({ userId: user.id, type: "admin_topup", refId: "test:rb2-topup", amount: 50 });
+    await recordCreditTxn({ userId: user.id, type: "user_payment", refId: "pay:rb2", amount: 20 });
+    await recordCreditTxn({ userId: user.id, type: "usage_deduction", refId: "usage:rb2", amount: -15 });
+    await recordCreditTxn({ userId: user.id, type: "gift_code", bucket: "bonus", refId: "gift:rb2", amount: 10 });
     const rebuilt = await rebuildBalanceFromLedger(user.id);
     const cached = (await getUserById(user.id)).creditsBalance;
     expect(rebuilt).toBeCloseTo(cached, 6);
@@ -54,7 +54,7 @@ describe("rebuildBalanceFromLedger — BP-2", () => {
     const user = await makeUser("rb3@test.dev");
     const { recordCreditTxn, reverseTxn, rebuildBalanceFromLedger } = await import("@/lib/db/repos/creditLedgerRepo.js");
     const { getUserById } = await import("@/lib/db/repos/usersRepo.js");
-    const txn = await recordCreditTxn({ userId: user.id, type: "admin_topup", amount: 30 });
+    const txn = await recordCreditTxn({ userId: user.id, type: "admin_topup", refId: "test:rb3-topup", amount: 30 });
     await reverseTxn(txn.id, "refund");
     const rebuilt = await rebuildBalanceFromLedger(user.id);
     const cached = (await getUserById(user.id)).creditsBalance;
@@ -66,10 +66,10 @@ describe("rebuildBalanceFromLedger — BP-2", () => {
     const user = await makeUser("rb4@test.dev");
     const { recordCreditTxn, rebuildBalanceFromLedger } = await import("@/lib/db/repos/creditLedgerRepo.js");
     // standard credit (permanent)
-    await recordCreditTxn({ userId: user.id, type: "admin_topup", bucket: "standard", amount: 20 });
+    await recordCreditTxn({ userId: user.id, type: "admin_topup", bucket: "standard", refId: "test:rb4-topup", amount: 20 });
     // expired bonus (past expiry)
     const pastExpiry = new Date(Date.now() - 1000).toISOString();
-    await recordCreditTxn({ userId: user.id, type: "gift_code", bucket: "bonus", amount: 10, expiresAt: pastExpiry });
+    await recordCreditTxn({ userId: user.id, type: "gift_code", bucket: "bonus", refId: "gift:rb4", amount: 10, expiresAt: pastExpiry });
     const rebuilt = await rebuildBalanceFromLedger(user.id);
     // Only the standard 20 counts — expired bonus excluded
     expect(rebuilt).toBeCloseTo(20, 6);
@@ -78,9 +78,9 @@ describe("rebuildBalanceFromLedger — BP-2", () => {
   it("non-expired bonus IS included in rebuild balance", async () => {
     const user = await makeUser("rb5@test.dev");
     const { recordCreditTxn, rebuildBalanceFromLedger } = await import("@/lib/db/repos/creditLedgerRepo.js");
-    await recordCreditTxn({ userId: user.id, type: "admin_topup", bucket: "standard", amount: 10 });
+    await recordCreditTxn({ userId: user.id, type: "admin_topup", bucket: "standard", refId: "test:rb5-topup", amount: 10 });
     const futureExpiry = new Date(Date.now() + 86400_000).toISOString();
-    await recordCreditTxn({ userId: user.id, type: "gift_code", bucket: "bonus", amount: 5, expiresAt: futureExpiry });
+    await recordCreditTxn({ userId: user.id, type: "gift_code", bucket: "bonus", refId: "gift:rb5", amount: 5, expiresAt: futureExpiry });
     const rebuilt = await rebuildBalanceFromLedger(user.id);
     expect(rebuilt).toBeCloseTo(15, 6);
   });
@@ -92,7 +92,7 @@ describe("rebuildBalanceFromLedger — BP-2", () => {
     // Simulate random topup/deduction sequence
     const amounts = [100, -10, 25, -5, 50, -30, 15];
     for (const amt of amounts) {
-      await recordCreditTxn({ userId: user.id, type: amt > 0 ? "admin_topup" : "usage_deduction", amount: amt });
+      await recordCreditTxn({ userId: user.id, type: amt > 0 ? "admin_topup" : "usage_deduction", refId: `random:${amt}:${Math.random()}`, amount: amt });
     }
     const rebuilt = await rebuildBalanceFromLedger(user.id);
     const cached = (await getUserById(user.id)).creditsBalance;

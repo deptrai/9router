@@ -114,4 +114,12 @@ describe("/api/plans admin CRUD", () => {
     expect((await GET(req())).status).toBe(403);
     expect((await POST(req({ name: "x" }))).status).toBe(403);
   });
+
+  it("dashboard plans page labels per-model limits as enforced", async () => {
+    const fs = await import("node:fs");
+    const content = fs.readFileSync("/Users/luisphan/Documents/9router/src/app/(dashboard)/dashboard/plans/page.js", "utf8");
+    expect(content).not.toContain("not enforced yet");
+    expect(content).toContain("canonical model");
+    expect(content).toContain("enforced");
+  });
 });

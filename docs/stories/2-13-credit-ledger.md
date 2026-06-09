@@ -5,7 +5,7 @@ epic: E
 
 # Story 2.13 (E.3b): Credit Ledger thống nhất — immutable append-only transaction log
 
-Status: review
+Status: done
 
 ## Story
 
@@ -112,6 +112,11 @@ so that **mọi giao dịch có audit trail bất biến, balance reconcile đư
 - [x] **D4**: `tests/unit/credit-ledger-migration.test.js` — seed migration row, idempotent, no updatedAt column.
 - [x] **D5**: Full suite 1002 pass / 0 fail. cryptoWebhook.test.js updated (mock addCredits → recordCreditTxn).
 
+### Review Findings
+
+- [x] [Review][Patch] Nested transaction call-sites invoke async `recordCreditTxn` without awaiting/catching it [`src/lib/payment/settle.js:30`] — AC#2/AC#5/BP-5 require ledger row + balance cache to be atomic with payment/gift/usage mutations. `settlePayment`, `redeemGiftCode`, and `saveRequestUsage` call `recordCreditTxn(..., adapter)` inside synchronous `adapter.transaction()` callbacks without `await`. Because `recordCreditTxn` is `async`, any thrown DB/constraint error becomes a rejected Promise rather than aborting the outer transaction, so the business mutation can commit while the ledger write silently fails.
+- [x] [Review][Patch] `recordCreditTxn` does not enforce required provenance fields [`src/lib/db/repos/creditLedgerRepo.js:34`] — BP-3/AC#2 say every non-migration row must have clear `type` + `refId`, but the repo accepts missing/blank `type`, non-finite `amount`, and null `refId`; existing tests also create `admin_topup`, `usage_deduction`, and `gift_code` rows without `refId`, so the provenance guarantee is not actually enforced.
+
 ## Dev Notes
 
 ### Ràng buộc CRITICAL
@@ -192,3 +197,4 @@ claude-sonnet-4-6
 |------|--------|
 | 2026-06-08 | Tạo story E.3b (2.13) — credit ledger immutable append-only. Nhúng 7 billing best-practice (BP-1..7) thành nguyên tắc bắt buộc. Ledger-first giải conflict #1 (3-credit × ledger): money refactor một lần, bucket/expiry/multiplier-aware schema. Baseline `4ffbea5`. Status → ready-for-dev. |
 | 2026-06-08 | Implementation complete — all tasks A1-D5 done. 31 new tests + cryptoWebhook updated. Full suite 1002 pass / 0 fail. Payment bonus split into 2 ledger rows (standard + bonus bucket, 14d expiry). kv creditTopup removed. Status → review. |
+| 2026-06-10 | Code review complete. 2 patch findings applied and verified with targeted ledger/cryptoWebhook suite. Status → done. |

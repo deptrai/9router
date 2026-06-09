@@ -10,7 +10,7 @@
  * overflow toggle is OFF. Mirrors checkKeyQuota / checkRpmLimit philosophy.
  *
  * quota=0 means unlimited for that window (skip enforcement).
- * Enforces TOTAL tokens across all models. Per-model override (E.6) is out of scope.
+ * Enforces TOTAL tokens across all models plus optional per-model override caps.
  *
  * @module planQuota
  */
@@ -34,7 +34,7 @@ import { duration, resolveWindow, formatResetCountdown } from "@/lib/quota/windo
  *   { source:"error",   allowed:true }                                   — infrastructure error (fail-open)
  *
  * @param {string|null} apiKey
- * @param {string|null} model  — canonical model id (unused for total enforcement; reserved for E.6)
+ * @param {string|null} model  — canonical model id for optional per-model override checks
  * @param {number} [now]       — epoch ms, default Date.now()
  */
 export async function checkPlanQuota(apiKey, model = null, now = Date.now()) {
@@ -58,15 +58,34 @@ export async function checkPlanQuota(apiKey, model = null, now = Date.now()) {
     const newState = { ...state };
     let stateChanged = false;
 
-    // Check each window that has a non-zero quota
+    const exhaustedResult = ({ type, quota, consumed, startedAt, scope = "total" }) => {
+      const resetAt = new Date(new Date(startedAt).getTime() + duration(type)).toISOString();
+      const retryAfterHuman = formatResetCountdown(resetAt, now);
+      return {
+        source: "plan",
+        allowed: false,
+        exhausted: true,
+        scope,
+        ...(scope === "model" ? { model } : {}),
+        window: type,
+        consumed,
+        limit: quota,
+        planName: limits.planName,
+        allowCreditOverflow,
+        retryAfter: resetAt,
+        retryAfterHuman,
+      };
+    };
+
+    // Check each total window first; total behavior wins over per-model overrides.
     const windows = [
-      { key: "win5h",   type: "5h",     quota: limits.quota5h },
-      { key: "winWeek", type: "weekly",  quota: limits.quotaWeekly },
+      { key: "win5h", type: "5h", quota: limits.quota5h, modelQuota: limits.modelLimit?.quota5h },
+      { key: "winWeek", type: "weekly", quota: limits.quotaWeekly, modelQuota: limits.modelLimit?.quotaWeekly },
     ];
 
-    for (const { key, type, quota } of windows) {
-      if (!quota || quota <= 0) continue; // 0 = unlimited, skip
+    const resolvedWindows = [];
 
+    for (const { key, type, quota, modelQuota } of windows) {
       const resolved = resolveWindow(state[key] ?? null, type, now);
       if (resolved.reset) {
         newState[key] = { startedAt: resolved.startedAt };
@@ -74,26 +93,26 @@ export async function checkPlanQuota(apiKey, model = null, now = Date.now()) {
       }
 
       const startedAt = newState[key]?.startedAt ?? resolved.startedAt;
-      // Enforce TOTAL across all models (model=null)
+      resolvedWindows.push({ type, quota, modelQuota, startedAt });
+      if (!quota || quota <= 0) continue; // 0 = unlimited, skip total check
+
       const consumed = await sumUsageTokensByUser(keyRow.userId, null, startedAt);
 
       if (consumed >= quota) {
-        // Persist state (window may have reset)
         if (stateChanged) await setPlanQuotaState(keyRow.userId, newState);
-        const resetAt = new Date(new Date(startedAt).getTime() + duration(type)).toISOString();
-        const retryAfterHuman = formatResetCountdown(resetAt, now);
-        return {
-          source: "plan",
-          allowed: false,
-          exhausted: true,
-          window: type,
-          consumed,
-          limit: quota,
-          planName: limits.planName,
-          allowCreditOverflow,
-          retryAfter: resetAt,
-          retryAfterHuman,
-        };
+        return exhaustedResult({ type, quota, consumed, startedAt, scope: "total" });
+      }
+    }
+
+    // Then apply matching per-model caps, if resolveUserLimits exposed one.
+    if (model && limits.modelLimit) {
+      for (const { type, modelQuota, startedAt } of resolvedWindows) {
+        if (!modelQuota || modelQuota <= 0) continue; // 0 = unlimited for this model window only
+        const consumed = await sumUsageTokensByUser(keyRow.userId, model, startedAt);
+        if (consumed >= modelQuota) {
+          if (stateChanged) await setPlanQuotaState(keyRow.userId, newState);
+          return exhaustedResult({ type, quota: modelQuota, consumed, startedAt, scope: "model" });
+        }
       }
     }
 

@@ -128,8 +128,11 @@ export default function PlanPage() {
 
   useEffect(() => {
     if (role !== "user") return;
-    loadQuota();
-    loadLedger(0, false);
+    const timer = setTimeout(() => {
+      loadQuota();
+      loadLedger(0, false);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [role, loadQuota, loadLedger]);
 
   const handleToggle = useCallback(async () => {
@@ -152,7 +155,7 @@ export default function PlanPage() {
     } finally {
       setOverflowSaving(false);
     }
-  }, [quota]);
+  }, [quota, loadQuota]);
 
   const ledgerRows = useMemo(() => ledger.map((row) => ({
     ...row,
@@ -194,6 +197,16 @@ export default function PlanPage() {
           <div className="space-y-4">
             <WindowBar label="5h quota" limit={quota.quota5h?.limit || 0} consumed={quota.quota5h?.consumed || 0} resetAt={quota.quota5h?.resetAt} />
             <WindowBar label="Weekly quota" limit={quota.quotaWeekly?.limit || 0} consumed={quota.quotaWeekly?.consumed || 0} resetAt={quota.quotaWeekly?.resetAt} />
+            {quota.perModel ? (
+              <div className="rounded-lg border border-border-subtle bg-surface-1 p-4 space-y-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-text-muted">Per-model override</p>
+                  <p className="text-sm font-medium text-text-main">{quota.model}</p>
+                </div>
+                <WindowBar label="Model 5h quota" limit={quota.perModel.quota5h?.limit || 0} consumed={quota.perModel.quota5h?.consumed || 0} resetAt={quota.perModel.quota5h?.resetAt} />
+                <WindowBar label="Model weekly quota" limit={quota.perModel.quotaWeekly?.limit || 0} consumed={quota.perModel.quotaWeekly?.consumed || 0} resetAt={quota.perModel.quotaWeekly?.resetAt} />
+              </div>
+            ) : null}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
               <div className="rounded-lg bg-surface-2 p-4">
                 <p className="text-xs uppercase tracking-wider text-text-muted mb-1">RPM</p>

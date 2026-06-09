@@ -109,7 +109,7 @@ function PlanModal({ plan, onClose, onSaved }) {
             <input type="checkbox" checked={form.isActive} onChange={(e) => setField("isActive", e.target.checked)} />
             Active
           </label>
-          <label className="space-y-1 text-sm text-text-main block">perModelLimits JSON <span className="text-text-muted">(stored for Phase 2; not enforced yet)</span>
+          <label className="space-y-1 text-sm text-text-main block">perModelLimits JSON <span className="text-text-muted">(enforced for matching canonical model ids)</span>
             <textarea rows={5} value={form.perModelLimitsText} onChange={(e) => setField("perModelLimitsText", e.target.value)} className="w-full px-3 py-2 rounded-lg border border-border-subtle bg-surface-1 font-mono text-xs" placeholder='{"model": {"q5h": 1000, "qWeekly": 5000}}' />
           </label>
           {error && <p className="text-sm text-red-500">{error}</p>}

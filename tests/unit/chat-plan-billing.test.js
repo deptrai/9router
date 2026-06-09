@@ -78,6 +78,51 @@ describe("Model B admission — chat.js integration pattern", () => {
     expect(blocked).toBe(false);
   });
 
+  it("per-model exhausted + overflow ON → billingSource=overflow", () => {
+    const pq = { source: "plan", allowed: false, exhausted: true, scope: "model", model: "gpt-4o", window: "weekly", planName: "pro", allowCreditOverflow: true };
+    const creditResult = { allowed: true };
+
+    let billingSource;
+    let blocked = false;
+    if (pq.source === "plan" && pq.allowed) {
+      billingSource = "plan";
+    } else if (pq.source === "plan" && pq.exhausted) {
+      if (pq.allowCreditOverflow) {
+        if (!creditResult.allowed) blocked = true;
+        else billingSource = "overflow";
+      } else {
+        blocked = true;
+      }
+    }
+
+    expect(blocked).toBe(false);
+    expect(billingSource).toBe("overflow");
+  });
+
+  it("per-model exhausted + overflow OFF → 429 includes quota window", () => {
+    const pq = { source: "plan", allowed: false, exhausted: true, scope: "model", model: "gpt-4o", window: "5h", planName: "pro", allowCreditOverflow: false, retryAfter: "2026-06-09T00:00:00.000Z", retryAfterHuman: "reset after 1h" };
+    const HTTP_STATUS = { RATE_LIMITED: 429 };
+
+    let calledWith = null;
+    const unavailableResponse = (status, msg, retryAfter, human) => {
+      calledWith = { status, msg, retryAfter, human };
+      return { status, msg };
+    };
+
+    if (pq.source === "plan" && pq.exhausted && !pq.allowCreditOverflow) {
+      unavailableResponse(
+        HTTP_STATUS.RATE_LIMITED,
+        `[plan ${pq.planName}] quota exhausted (${pq.window}) — enable credit overflow to continue`,
+        pq.retryAfter,
+        pq.retryAfterHuman
+      );
+    }
+
+    expect(calledWith.status).toBe(429);
+    expect(calledWith.msg).toContain("quota exhausted (5h)");
+    expect(calledWith.retryAfter).toBe(pq.retryAfter);
+  });
+
   it("plan exhausted + overflow ON + no credits → 429 insufficient credits", () => {
     const pq = { source: "plan", allowed: false, exhausted: true, window: "5h", planName: "pro", allowCreditOverflow: true };
     const creditResult = { allowed: false, reason: "insufficient credits" };

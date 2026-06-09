@@ -28,13 +28,14 @@ import { duration, resolveWindow } from "@/lib/quota/window.js";
  *
  * @param {string} userId
  * @param {number} [now] - epoch ms, default Date.now()
+ * @param {string|null} [model] - canonical model id for optional per-model status
  */
-export async function getPlanQuotaStatus(userId, now = Date.now()) {
+export async function getPlanQuotaStatus(userId, now = Date.now(), model = null) {
   try {
     const user = await getUserById(userId);
     if (!user) return { source: "none" };
 
-    const limits = await resolveUserLimits(userId, null);
+    const limits = await resolveUserLimits(userId, model);
     const creditsBalance = user.creditsBalance ?? 0;
     const allowCreditOverflow = user.allowCreditOverflow ?? false;
 
@@ -51,6 +52,9 @@ export async function getPlanQuotaStatus(userId, now = Date.now()) {
       rpmUsed: 0,
       quota5h: { limit: 0, consumed: 0, resetAt: null },
       quotaWeekly: { limit: 0, consumed: 0, resetAt: null },
+      model,
+      perModel: null,
+      perModelLimitsEnforced: false,
       creditsBalance,
       allowCreditOverflow,
     };
@@ -78,6 +82,25 @@ export async function getPlanQuotaStatus(userId, now = Date.now()) {
       const startedAt = resolved.startedAt;
       result[resultKey].resetAt = new Date(new Date(startedAt).getTime() + duration(type)).toISOString();
       result[resultKey].consumed = await sumUsageTokensByUser(userId, null, new Date(startedAt).getTime());
+    }
+
+    if (model && limits.modelLimit) {
+      result.perModelLimitsEnforced = true;
+      result.perModel = {
+        quota5h: { limit: limits.modelLimit.quota5h ?? 0, consumed: 0, resetAt: result.quota5h.resetAt },
+        quotaWeekly: { limit: limits.modelLimit.quotaWeekly ?? 0, consumed: 0, resetAt: result.quotaWeekly.resetAt },
+      };
+
+      for (const { key, type, quotaLimit, resultKey } of [
+        { key: "win5h", type: "5h", quotaLimit: result.perModel.quota5h.limit, resultKey: "quota5h" },
+        { key: "winWeek", type: "weekly", quotaLimit: result.perModel.quotaWeekly.limit, resultKey: "quotaWeekly" },
+      ]) {
+        if (!quotaLimit || quotaLimit <= 0) continue;
+        const resolved = resolveWindow(state[key] ?? null, type, now);
+        const startedAt = resolved.startedAt;
+        result.perModel[resultKey].resetAt = new Date(new Date(startedAt).getTime() + duration(type)).toISOString();
+        result.perModel[resultKey].consumed = await sumUsageTokensByUser(userId, model, startedAt);
+      }
     }
 
     return result;

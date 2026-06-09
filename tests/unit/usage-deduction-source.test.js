@@ -131,7 +131,7 @@ describe("saveRequestUsage — conditional deduction by billingSource (AC#6)", (
     const { user, key } = await seedUserAndKey("planrebuild@test.dev", 0);
     const { recordCreditTxn } = await import("@/lib/db/repos/creditLedgerRepo.js");
     // Give user 20 credits via ledger
-    await recordCreditTxn({ userId: user.id, type: "admin_topup", amount: 20 });
+    await recordCreditTxn({ userId: user.id, type: "admin_topup", refId: "admin:planrebuild", amount: 20 });
 
     const { saveRequestUsage } = await import("@/lib/db/repos/usageRepo.js");
     await saveRequestUsage({

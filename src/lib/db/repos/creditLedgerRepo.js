@@ -31,11 +31,29 @@ import { getAdapter } from "../driver.js";
  *   Pass null to open a new transaction.
  * @returns {{ id, userId, type, bucket, amount, multiplier, expiresAt, refId, idempotencyKey, balanceAfter, note, createdAt }}
  */
-export async function recordCreditTxn(
+function requireNonEmptyString(value, field) {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`recordCreditTxn: ${field} is required`);
+  }
+}
+
+function validateTxn({ userId, type, amount, refId }) {
+  requireNonEmptyString(userId, "userId");
+  requireNonEmptyString(type, "type");
+  if (!Number.isFinite(amount)) {
+    throw new Error("recordCreditTxn: amount must be a finite number");
+  }
+  if (type !== "migration") {
+    requireNonEmptyString(refId, "refId");
+  }
+}
+
+function recordCreditTxnWithAdapter(
   { userId, type, bucket = "standard", amount, multiplier = 1, expiresAt = null, refId = null, idempotencyKey = null, note = null },
-  db = null
+  adapter,
+  wrapTransaction
 ) {
-  const adapter = db || await getAdapter();
+  validateTxn({ userId, type, amount, refId });
   let result = null;
 
   const doWork = () => {
@@ -72,14 +90,25 @@ export async function recordCreditTxn(
     result = { id, userId, type, bucket, amount, multiplier, expiresAt, refId, idempotencyKey, balanceAfter, note, createdAt };
   };
 
-  if (db) {
-    // Caller already owns a transaction — run inline without nesting
-    doWork();
-  } else {
+  if (wrapTransaction) {
     adapter.transaction(doWork);
+  } else {
+    // Caller already owns a transaction — run inline without nesting.
+    // This branch is intentionally synchronous so DB errors abort the outer transaction.
+    doWork();
   }
 
   return result;
+}
+
+export function recordCreditTxn(txn, db = null) {
+  if (db) {
+    return recordCreditTxnWithAdapter(txn, db, false);
+  }
+  return (async () => {
+    const adapter = await getAdapter();
+    return recordCreditTxnWithAdapter(txn, adapter, true);
+  })();
 }
 
 // ─── Read ─────────────────────────────────────────────────────────────────────
@@ -125,8 +154,7 @@ export async function rebuildBalanceFromLedger(userId) {
  * @param {string} note - reason for reversal
  * @param {object|null} db - optional adapter for nesting
  */
-export async function reverseTxn(originalId, note, db = null) {
-  const adapter = db || await getAdapter();
+function reverseTxnWithAdapter(originalId, note, adapter, wrapTransaction) {
   let result = null;
 
   const doWork = () => {
@@ -168,11 +196,21 @@ export async function reverseTxn(originalId, note, db = null) {
     result = { id, userId: orig.userId, type: "reversal", bucket: orig.bucket, amount: reversalAmount, refId: originalId, idempotencyKey: reversalIdempotency, balanceAfter, note, createdAt };
   };
 
-  if (db) {
-    doWork();
-  } else {
+  if (wrapTransaction) {
     adapter.transaction(doWork);
+  } else {
+    doWork();
   }
 
   return result;
+}
+
+export function reverseTxn(originalId, note, db = null) {
+  if (db) {
+    return reverseTxnWithAdapter(originalId, note, db, false);
+  }
+  return (async () => {
+    const adapter = await getAdapter();
+    return reverseTxnWithAdapter(originalId, note, adapter, true);
+  })();
 }

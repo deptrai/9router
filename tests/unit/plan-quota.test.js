@@ -24,15 +24,25 @@ afterEach(() => {
   else process.env.DATA_DIR = originalDataDir;
 });
 
-async function setupUserWithPlan({ rpm = 20, quota5h = 1000000, quotaWeekly = 10000000, allowCreditOverflow = false } = {}) {
+async function setupUserWithPlan({ rpm = 20, quota5h = 1000000, quotaWeekly = 10000000, allowCreditOverflow = false, perModelLimits = null } = {}) {
   const { createUser, updateUser } = await import("@/lib/db/repos/usersRepo.js");
   const { createApiKey } = await import("@/lib/db/repos/apiKeysRepo.js");
   const { createPlan } = await import("@/lib/db/repos/plansRepo.js");
-  const plan = await createPlan({ name: "test-plan", rpm, quota5h, quotaWeekly });
+  const plan = await createPlan({ name: "test-plan", rpm, quota5h, quotaWeekly, perModelLimits });
   const user = await createUser("quota@test.dev", "hash", "Quota User");
   await updateUser(user.id, { planId: plan.id, allowCreditOverflow });
   const key = await createApiKey("quota-key", "machine-1", user.id);
   return { user, plan, key };
+}
+
+async function insertUsage({ apiKey, model = "gpt-4o", promptTokens = 60, completionTokens = 50, ageMs = 60_000 }) {
+  const { getAdapter } = await import("@/lib/db/driver.js");
+  const db = await getAdapter();
+  db.run(
+    `INSERT INTO usageHistory(timestamp,provider,model,connectionId,apiKey,endpoint,promptTokens,completionTokens,cost,status)
+     VALUES(?,?,?,?,?,?,?,?,0,'done')`,
+    [new Date(Date.now() - ageMs).toISOString(), "test", model, "conn", apiKey, "/v1/chat", promptTokens, completionTokens]
+  );
 }
 
 describe("checkPlanQuota", () => {
@@ -126,6 +136,114 @@ describe("checkPlanQuota", () => {
     expect(result.source).toBe("plan");
     expect(result.allowed).toBe(false);
     expect(result.window).toBe("weekly");
+  });
+
+  it("matching model below total and per-model quotas → allowed", async () => {
+    const { user, key } = await setupUserWithPlan({
+      quota5h: 1000,
+      quotaWeekly: 2000,
+      perModelLimits: { "gpt-4o": { q5h: 200, qWeekly: 300 } },
+    });
+    const { setPlanQuotaState } = await import("@/lib/db/repos/quotaRepo.js");
+    const twoMinAgo = Date.now() - 120_000;
+    await setPlanQuotaState(user.id, { win5h: { startedAt: new Date(twoMinAgo).toISOString() }, winWeek: { startedAt: new Date(twoMinAgo).toISOString() } });
+    await insertUsage({ apiKey: key.key, model: "gpt-4o", promptTokens: 40, completionTokens: 30 });
+
+    const { checkPlanQuota } = await import("@/lib/quota/planQuota.js");
+    const result = await checkPlanQuota(key.key, "gpt-4o", Date.now());
+    expect(result.source).toBe("plan");
+    expect(result.allowed).toBe(true);
+  });
+
+  it("matching model total remains but per-model 5h exhausted → blocked with model scope", async () => {
+    const { user, key } = await setupUserWithPlan({
+      quota5h: 1000,
+      quotaWeekly: 2000,
+      perModelLimits: { "gpt-4o": { q5h: 100, qWeekly: 1000 } },
+    });
+    const { setPlanQuotaState } = await import("@/lib/db/repos/quotaRepo.js");
+    const twoMinAgo = Date.now() - 120_000;
+    await setPlanQuotaState(user.id, { win5h: { startedAt: new Date(twoMinAgo).toISOString() }, winWeek: { startedAt: new Date(twoMinAgo).toISOString() } });
+    await insertUsage({ apiKey: key.key, model: "gpt-4o", promptTokens: 60, completionTokens: 50 });
+
+    const { checkPlanQuota } = await import("@/lib/quota/planQuota.js");
+    const result = await checkPlanQuota(key.key, "gpt-4o", Date.now());
+    expect(result.allowed).toBe(false);
+    expect(result.window).toBe("5h");
+    expect(result.scope).toBe("model");
+    expect(result.model).toBe("gpt-4o");
+    expect(result.limit).toBe(100);
+  });
+
+  it("matching model total remains but per-model weekly exhausted → blocked with model scope", async () => {
+    const { user, key } = await setupUserWithPlan({
+      quota5h: 0,
+      quotaWeekly: 1000,
+      perModelLimits: { "gpt-4o": { q5h: 0, qWeekly: 100 } },
+    });
+    const { setPlanQuotaState } = await import("@/lib/db/repos/quotaRepo.js");
+    const twoMinAgo = Date.now() - 120_000;
+    await setPlanQuotaState(user.id, { winWeek: { startedAt: new Date(twoMinAgo).toISOString() } });
+    await insertUsage({ apiKey: key.key, model: "gpt-4o", promptTokens: 60, completionTokens: 50 });
+
+    const { checkPlanQuota } = await import("@/lib/quota/planQuota.js");
+    const result = await checkPlanQuota(key.key, "gpt-4o", Date.now());
+    expect(result.allowed).toBe(false);
+    expect(result.window).toBe("weekly");
+    expect(result.scope).toBe("model");
+  });
+
+  it("total exhausted before per-model → total scope wins", async () => {
+    const { user, key } = await setupUserWithPlan({
+      quota5h: 100,
+      quotaWeekly: 1000,
+      perModelLimits: { "gpt-4o": { q5h: 500, qWeekly: 800 } },
+    });
+    const { setPlanQuotaState } = await import("@/lib/db/repos/quotaRepo.js");
+    const twoMinAgo = Date.now() - 120_000;
+    await setPlanQuotaState(user.id, { win5h: { startedAt: new Date(twoMinAgo).toISOString() }, winWeek: { startedAt: new Date(twoMinAgo).toISOString() } });
+    await insertUsage({ apiKey: key.key, model: "gpt-4o", promptTokens: 60, completionTokens: 50 });
+
+    const { checkPlanQuota } = await import("@/lib/quota/planQuota.js");
+    const result = await checkPlanQuota(key.key, "gpt-4o", Date.now());
+    expect(result.allowed).toBe(false);
+    expect(result.window).toBe("5h");
+    expect(result.scope ?? "total").toBe("total");
+    expect(result.limit).toBe(100);
+  });
+
+  it("non-matching model override → total-only behavior remains", async () => {
+    const { user, key } = await setupUserWithPlan({
+      quota5h: 1000,
+      quotaWeekly: 2000,
+      perModelLimits: { "gpt-4o": { q5h: 100, qWeekly: 100 } },
+    });
+    const { setPlanQuotaState } = await import("@/lib/db/repos/quotaRepo.js");
+    const twoMinAgo = Date.now() - 120_000;
+    await setPlanQuotaState(user.id, { win5h: { startedAt: new Date(twoMinAgo).toISOString() }, winWeek: { startedAt: new Date(twoMinAgo).toISOString() } });
+    await insertUsage({ apiKey: key.key, model: "claude-sonnet", promptTokens: 60, completionTokens: 50 });
+
+    const { checkPlanQuota } = await import("@/lib/quota/planQuota.js");
+    const result = await checkPlanQuota(key.key, "claude-sonnet", Date.now());
+    expect(result.allowed).toBe(true);
+  });
+
+  it("per-model zero window is unlimited but total quota still enforces", async () => {
+    const { user, key } = await setupUserWithPlan({
+      quota5h: 120,
+      quotaWeekly: 2000,
+      perModelLimits: { "gpt-4o": { q5h: 0, qWeekly: 0 } },
+    });
+    const { setPlanQuotaState } = await import("@/lib/db/repos/quotaRepo.js");
+    const twoMinAgo = Date.now() - 120_000;
+    await setPlanQuotaState(user.id, { win5h: { startedAt: new Date(twoMinAgo).toISOString() }, winWeek: { startedAt: new Date(twoMinAgo).toISOString() } });
+    await insertUsage({ apiKey: key.key, model: "gpt-4o", promptTokens: 60, completionTokens: 50 });
+    const { checkPlanQuota } = await import("@/lib/quota/planQuota.js");
+    expect((await checkPlanQuota(key.key, "gpt-4o", Date.now())).allowed).toBe(true);
+    await insertUsage({ apiKey: key.key, model: "gpt-4o", promptTokens: 20, completionTokens: 0, ageMs: 30_000 });
+    const result = await checkPlanQuota(key.key, "gpt-4o", Date.now());
+    expect(result.allowed).toBe(false);
+    expect(result.scope ?? "total").toBe("total");
   });
 
   it("update plan quota → next check uses new value (AC#7)", async () => {

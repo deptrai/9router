@@ -40,9 +40,9 @@ describe("GET /api/users/me/ledger", () => {
     const u2 = await createUser("ledger2@test.dev", await bcrypt.hash("pass1234", 10), "L2");
     mockSession = { role: "user", userId: u1.id };
 
-    await recordCreditTxn({ userId: u1.id, type: "admin_topup", amount: 10, note: "top" });
-    await recordCreditTxn({ userId: u1.id, type: "usage_deduction", amount: -3, note: "use" });
-    await recordCreditTxn({ userId: u2.id, type: "admin_topup", amount: 99, note: "other" });
+    await recordCreditTxn({ userId: u1.id, type: "admin_topup", refId: "admin:test-u1", amount: 10, note: "top" });
+    await recordCreditTxn({ userId: u1.id, type: "usage_deduction", refId: "usage:test-u1", amount: -3, note: "use" });
+    await recordCreditTxn({ userId: u2.id, type: "admin_topup", refId: "admin:test-u2", amount: 99, note: "other" });
 
     const { GET } = await import("@/app/api/users/me/ledger/route.js");
     const res = await GET({ url: "http://localhost/api/users/me/ledger?limit=1&offset=0&type=usage_deduction" });

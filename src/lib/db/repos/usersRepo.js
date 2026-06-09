@@ -86,7 +86,7 @@ export async function updateUser(id, data) {
   return result;
 }
 
-export async function addCredits(id, amount, db = null, { type = "admin_topup", refId = null, idempotencyKey = null, note = null } = {}) {
+export async function addCredits(id, amount, db = null, { type = "admin_topup", refId = `legacy:addCredits:${id}`, idempotencyKey = null, note = null } = {}) {
   // Thin wrapper — delegates to ledger for audit trail (Story 2.13, BP-5).
   // Callers that already own a db.transaction() pass their adapter as `db`.
   await recordCreditTxn({ userId: id, type, bucket: "standard", amount, refId, idempotencyKey, note }, db);

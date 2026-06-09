@@ -12,14 +12,21 @@ async function getSessionUser() {
   return session;
 }
 
-export async function GET() {
+export async function GET(request) {
   const session = await getSessionUser();
   if (!session) {
     return NextResponse.json({ error: "Forbidden — user role required" }, { status: 403 });
   }
 
+  const url = request?.url ? new URL(request.url) : null;
+  const hasModelParam = url?.searchParams?.has("model") ?? false;
+  const model = hasModelParam ? url.searchParams.get("model") : null;
+  if (hasModelParam && (!model || !model.trim())) {
+    return NextResponse.json({ error: "model must be a non-empty canonical model id" }, { status: 400 });
+  }
+
   const [quota, user] = await Promise.all([
-    getPlanQuotaStatus(session.userId),
+    getPlanQuotaStatus(session.userId, Date.now(), model?.trim() || null),
     getUserById(session.userId),
   ]);
 
@@ -35,6 +42,9 @@ export async function GET() {
     rpmUsed: quota.rpmUsed ?? 0,
     quota5h: quota.quota5h ?? { limit: 0, consumed: 0, resetAt: null },
     quotaWeekly: quota.quotaWeekly ?? { limit: 0, consumed: 0, resetAt: null },
+    model: quota.model ?? (model?.trim() || null),
+    perModel: quota.perModel ?? null,
+    perModelLimitsEnforced: quota.perModelLimitsEnforced ?? false,
     creditsBalance: user.creditsBalance ?? 0,
     allowCreditOverflow: quota.allowCreditOverflow ?? user.allowCreditOverflow ?? false,
   });
