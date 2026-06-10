@@ -21,8 +21,31 @@ export default function LoginPage() {
   const [telegramBotId, setTelegramBotId] = useState(null);
   const router = useRouter();
 
-  // Telegram popup callback — called by oauth.telegram.org after user authenticates
+  // Telegram popup callback — oauth.telegram.org uses postMessage (cross-origin)
   useEffect(() => {
+    const handleTelegramMessage = async (event) => {
+      if (event.origin !== "https://oauth.telegram.org") return;
+      const data = event.data;
+      if (!data || !data.id || !data.hash) return;
+      try {
+        const res = await fetch("/api/auth/telegram/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        });
+        if (res.ok) {
+          router.push("/dashboard");
+          router.refresh();
+        } else {
+          const body = await res.json().catch(() => ({}));
+          setError(body.error || "Telegram login failed");
+        }
+      } catch {
+        setError("Telegram login failed");
+      }
+    };
+
+    // Also set window.TelegramLoginWidget.dataOnauth as fallback
     window.TelegramLoginWidget = {
       dataOnauth: async (user) => {
         try {
@@ -43,7 +66,12 @@ export default function LoginPage() {
         }
       },
     };
-    return () => { delete window.TelegramLoginWidget; };
+
+    window.addEventListener("message", handleTelegramMessage);
+    return () => {
+      window.removeEventListener("message", handleTelegramMessage);
+      delete window.TelegramLoginWidget;
+    };
   }, [router]);
 
   // Countdown for rate-limit
