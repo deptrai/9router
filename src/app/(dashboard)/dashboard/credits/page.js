@@ -192,9 +192,10 @@ export default function CreditsPage() {
         Object.values(stats.byApiKey || {}).reduce((acc, entry) => {
           const key = `${entry.rawModel}|${entry.provider || ""}`;
           if (!acc[key]) {
-            acc[key] = { model: entry.rawModel, provider: entry.provider || "", requests: 0, cost: 0 };
+            acc[key] = { model: entry.rawModel, provider: entry.provider || "", requests: 0, tokens: 0, cost: 0 };
           }
           acc[key].requests += entry.requests || 0;
+          acc[key].tokens += (entry.promptTokens || 0) + (entry.completionTokens || 0);
           acc[key].cost += entry.cost || 0;
           return acc;
         }, {})
@@ -505,6 +506,7 @@ export default function CreditsPage() {
                 <th className="pb-2 pr-4">Model</th>
                 <th className="pb-2 pr-4">Provider</th>
                 <th className="pb-2 pr-4 text-right">Requests</th>
+                <th className="pb-2 pr-4 text-right">Tokens</th>
                 <th className="pb-2 text-right">Cost (USD)</th>
               </tr>
             </thead>
@@ -514,6 +516,7 @@ export default function CreditsPage() {
                   <td className="py-2 pr-4 font-mono text-xs text-text-main">{row.model || "—"}</td>
                   <td className="py-2 pr-4 text-text-muted">{row.provider || "—"}</td>
                   <td className="py-2 pr-4 text-right text-text-muted">{row.requests}</td>
+                  <td className="py-2 pr-4 text-right text-text-muted">{(row.tokens ?? 0).toLocaleString()}</td>
                   <td className="py-2 text-right font-medium text-text-main">${row.cost.toFixed(6)}</td>
                 </tr>
               ))}

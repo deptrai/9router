@@ -47,10 +47,13 @@ export async function PUT(request, { params }) {
     if (description !== undefined) updateData.description = description;
     if (name !== undefined) updateData.name = name;
     if (rawLimit !== undefined) {
-      if (rawLimit === null || rawLimit === "") {
+      // Review patch (P1): trim strings so whitespace-only is treated as blank (clear → unlimited),
+      // not Number("  ")===0 which would create a permanently-blocked key.
+      const trimmedLimit = typeof rawLimit === "string" ? rawLimit.trim() : rawLimit;
+      if (trimmedLimit === null || trimmedLimit === "") {
         updateData.creditLimit = null;
       } else {
-        const parsed = Number(rawLimit);
+        const parsed = Number(trimmedLimit);
         if (!Number.isFinite(parsed) || parsed < 0) {
           return NextResponse.json({ error: "creditLimit must be >= 0" }, { status: 400 });
         }

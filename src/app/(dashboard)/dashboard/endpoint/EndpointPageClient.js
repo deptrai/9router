@@ -1265,14 +1265,16 @@ export default function APIPageClient({ machineId }) {
                       {formatCost(usageByKey[key.key]) && (
                         <span className="text-xs bg-surface-2 text-text-muted px-1.5 py-0.5 rounded">
                           {formatCost(usageByKey[key.key])}
-                          {key.creditLimit != null && (
-                            <span> / ${key.creditLimit.toFixed(2)}</span>
-                          )}
+                          {key.creditLimit != null
+                            ? <span> / ${key.creditLimit.toFixed(2)}</span>
+                            : <span> / Unlimited</span>}
                         </span>
                       )}
-                      {key.creditLimit != null && !formatCost(usageByKey[key.key]) && (
+                      {!formatCost(usageByKey[key.key]) && (
                         <span className="text-xs bg-surface-2 text-text-muted px-1.5 py-0.5 rounded">
-                          $0.00 / ${key.creditLimit.toFixed(2)}
+                          {key.creditLimit != null
+                            ? `$0.00 / $${key.creditLimit.toFixed(2)}`
+                            : "$0.00 / Unlimited"}
                         </span>
                       )}
                     </div>

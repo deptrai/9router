@@ -90,15 +90,15 @@ describe("updateApiKey — creditLimit", () => {
 
 // ─── B1: checkCredits per-key limit ──────────────────────────────────────────
 
-describe("checkCredits — per-key credit limit", () => {
+describe("checkPerKeyLimit — per-key credit limit", () => {
   it("key usage < limit → allowed", async () => {
     const user = await seedUser("f@test.com", 10);
     const { createApiKey } = await import("@/lib/db/repos/apiKeysRepo.js");
     const key = await createApiKey("test-key", "machine-1", user.id, null, 5.0);
     await seedUsageHistory(key.key, 2.0); // $2 used out of $5 limit
 
-    const { checkCredits } = await import("@/lib/billing/checkCredits.js");
-    const result = await checkCredits(key.key);
+    const { checkPerKeyLimit } = await import("@/lib/billing/checkCredits.js");
+    const result = await checkPerKeyLimit(key.key);
     expect(result.allowed).toBe(true);
   });
 
@@ -108,8 +108,8 @@ describe("checkCredits — per-key credit limit", () => {
     const key = await createApiKey("test-key", "machine-1", user.id, null, 3.0);
     await seedUsageHistory(key.key, 3.5); // $3.5 used, exceeds $3 limit
 
-    const { checkCredits } = await import("@/lib/billing/checkCredits.js");
-    const result = await checkCredits(key.key);
+    const { checkPerKeyLimit } = await import("@/lib/billing/checkCredits.js");
+    const result = await checkPerKeyLimit(key.key);
     expect(result.allowed).toBe(false);
     expect(result.reason).toBe("key credit limit reached");
   });
@@ -120,8 +120,8 @@ describe("checkCredits — per-key credit limit", () => {
     const key = await createApiKey("test-key", "machine-1", user.id, null, 2.0);
     await seedUsageHistory(key.key, 2.0); // exactly at limit
 
-    const { checkCredits } = await import("@/lib/billing/checkCredits.js");
-    const result = await checkCredits(key.key);
+    const { checkPerKeyLimit } = await import("@/lib/billing/checkCredits.js");
+    const result = await checkPerKeyLimit(key.key);
     expect(result.allowed).toBe(false);
     expect(result.reason).toBe("key credit limit reached");
   });
@@ -132,8 +132,8 @@ describe("checkCredits — per-key credit limit", () => {
     const key = await createApiKey("test-key", "machine-1", user.id, null, null);
     await seedUsageHistory(key.key, 999.0); // huge usage, but no limit
 
-    const { checkCredits } = await import("@/lib/billing/checkCredits.js");
-    const result = await checkCredits(key.key);
+    const { checkPerKeyLimit } = await import("@/lib/billing/checkCredits.js");
+    const result = await checkPerKeyLimit(key.key);
     expect(result.allowed).toBe(true);
   });
 
@@ -142,8 +142,8 @@ describe("checkCredits — per-key credit limit", () => {
     const key = await createApiKey("legacy-key", "machine-1", null, null, 1.0);
     await seedUsageHistory(key.key, 100.0);
 
-    const { checkCredits } = await import("@/lib/billing/checkCredits.js");
-    const result = await checkCredits(key.key);
+    const { checkPerKeyLimit } = await import("@/lib/billing/checkCredits.js");
+    const result = await checkPerKeyLimit(key.key);
     expect(result.allowed).toBe(true);
   });
 
@@ -153,8 +153,8 @@ describe("checkCredits — per-key credit limit", () => {
     const key = await createApiKey("test-key", "machine-1", user.id, null, 1.0);
     await seedUsageHistory(key.key, 2.0); // key exceeded, user balance fine
 
-    const { checkCredits } = await import("@/lib/billing/checkCredits.js");
-    const result = await checkCredits(key.key);
+    const { checkPerKeyLimit } = await import("@/lib/billing/checkCredits.js");
+    const result = await checkPerKeyLimit(key.key);
     expect(result.allowed).toBe(false);
     expect(result.reason).toBe("key credit limit reached");
   });

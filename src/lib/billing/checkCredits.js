@@ -11,7 +11,10 @@
  * Returns { allowed: false, reason } when:
  *   - user.isActive = false → "account disabled"
  *   - user.creditsBalance <= 0 → "insufficient credits"
- *   - key.creditLimit set AND keyUsage >= limit → "key credit limit reached" [story 2.23]
+ *
+ * Per-key credit limit (Story 2.23) is exported separately as `checkPerKeyLimit`
+ * so admission can call it independently of billing source (Story 2.23 D1=Option 2:
+ * blast-radius guardrail applies regardless of plan/credit/overflow path).
  */
 import { getApiKeyByKey } from "@/lib/db/repos/apiKeysRepo.js";
 import { getUserById } from "@/lib/db/repos/usersRepo.js";
@@ -34,22 +37,41 @@ export async function checkCredits(apiKey) {
       return { allowed: false, reason: "insufficient credits" };
     }
 
-    // Story 2.23: per-key credit limit (cumulative lifetime usage, D1=A)
-    if (typeof keyRow.creditLimit === "number") {
-      const adapter = await getAdapter();
-      const usageRow = adapter.get(
-        `SELECT COALESCE(SUM(cost), 0) AS used FROM usageHistory WHERE apiKey = ?`,
-        [keyRow.key]
-      );
-      if ((usageRow?.used ?? 0) >= keyRow.creditLimit) {
-        return { allowed: false, reason: "key credit limit reached" };
-      }
-    }
-
     return { allowed: true };
   } catch (e) {
     // Fail-open: billing errors MUST NOT block requests
     console.warn("[checkCredits] billing check failed (fail-open):", e?.message || e);
+    return { allowed: true };
+  }
+}
+
+/**
+ * checkPerKeyLimit — Per-key credit-limit guardrail (Story 2.23, D1=A cumulative).
+ *
+ * Independent of billing source (plan / overflow / credit) — runs as a blast-radius
+ * control on every request that reaches admission. Skips legacy keys (userId=null)
+ * and keys with creditLimit=null (unlimited). Fail-open on any DB error.
+ */
+export async function checkPerKeyLimit(apiKey) {
+  try {
+    if (!apiKey) return { allowed: true };
+
+    const keyRow = await getApiKeyByKey(apiKey);
+    if (!keyRow || !keyRow.userId) return { allowed: true }; // legacy / not found
+    if (typeof keyRow.creditLimit !== "number") return { allowed: true }; // null = unlimited
+
+    const adapter = await getAdapter();
+    const usageRow = adapter.get(
+      `SELECT COALESCE(SUM(cost), 0) AS used FROM usageHistory WHERE apiKey = ?`,
+      [keyRow.key]
+    );
+    if ((usageRow?.used ?? 0) >= keyRow.creditLimit) {
+      return { allowed: false, reason: "key credit limit reached" };
+    }
+    return { allowed: true };
+  } catch (e) {
+    // Fail-open: per story 2.4 principle, billing errors MUST NOT block requests
+    console.warn("[checkPerKeyLimit] check failed (fail-open):", e?.message || e);
     return { allowed: true };
   }
 }

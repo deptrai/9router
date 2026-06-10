@@ -18,6 +18,10 @@ function rowToUser(row, includePasswordHash = false) {
     planId: row.planId ?? null,
     planExpiresAt: row.planExpiresAt ?? null,
     allowCreditOverflow: row.allowCreditOverflow === 1 || row.allowCreditOverflow === true,
+    // Review fix (story 2.24 P2): derive hasPassword so auth/status authProviders is correct.
+    // "!" sentinel = social-only account (no real bcrypt hash). Without this, auth/status
+    // checked user.hasPassword !== false (undefined) → always pushed "password".
+    hasPassword: !!(row.passwordHash && row.passwordHash !== "!"),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

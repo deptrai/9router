@@ -215,4 +215,20 @@ All 11 tasks completed (A1-A3, B1-B2, C1-C3, D1). 1111 tests pass / 3 pre-existi
 
 ## Change Log
 - 2026-06-11: Story created (ready-for-dev)
+- 2026-06-11: Implemented + code review. D1=Option 2 (extracted checkPerKeyLimit, enforce all billing paths). 3 patches: whitespace→0 trim fix (both routes), AC5 "Unlimited" table label, AC6 negative-validation tests. 3 deferred (TOCTOU overshoot/fail-open = accepted soft-limit from 2.4; REAL float precision = BP-6). Edge Case Hunter layer malfunctioned (empty). 40 tests pass. Status → done.
 - 2026-06-11: Implemented all tasks (A1-A3, B1-B2, C1-C3, D1); D1=A cumulative, D2=A live SUM+index; 1111 tests pass
+
+## Review Findings — 2026-06-11
+
+> Layer note: Edge Case Hunter layer returned empty (malfunction); coverage from Blind Hunter + Acceptance Auditor. Edge cases captured by Acceptance Auditor.
+
+- [x] [Review][Decision] (RESOLVED: Option 2 — per-key limit là blast-radius guardrail, enforce mọi billing source. Extract `checkPerKeyLimit` riêng, gọi ở chat.js TRƯỚC billing-source branching. usageHistory.cost ghi cho mọi request nên data sẵn có.) AC3 plan-quota path bypasses per-key limit — `chat.js` chỉ gọi `checkCredits` ở overflow + pay-as-you-go path. Khi `pq.source==="plan" && pq.allowed` (user trong quota gói), `checkCredits` KHÔNG được gọi → per-key credit limit bị bỏ qua cho plan user còn quota. Spec AC3 "enforce per-key limit in admission" không carve-out plan user. Options: (A) chấp nhận — plan billing là model riêng, per-key limit chỉ áp credit/overflow (document limitation); (B) gọi per-key limit check cả trong plan path (di chuyển check ra ngoài checkCredits hoặc gọi thêm). Đề xuất (A) cho MVP — plan user trả bằng quota gói, không tiêu credit balance, per-key USD limit ít ý nghĩa; nhưng cần chốt.
+
+- [x] [Review][Patch] MEDIUM — `Number("  ")=0` tạo key bị block vĩnh viễn [src/app/api/keys/route.js, [id]/route.js] — guard `rawLimit !== ""` cho qua chuỗi whitespace; `Number("  ")===0` → creditLimit=0 → check `used >= 0` luôn true → key chết ngay. Fix: trim rawLimit trước check, hoặc reject `creditLimit===0` với message rõ (hoặc coi 0 = unlimited). Cần định nghĩa rõ semantics của 0.
+- [x] [Review][Patch] AC5 FAIL — table không hiển thị "Unlimited" cho key creditLimit=null [src/app/dashboard/endpoint/EndpointPageClient.js] — cell chỉ render `$used / $limit` khi creditLimit set; khi null chỉ hiện usage hoặc trống. Spec AC5 yêu cầu hiện "Unlimited". Fix: thêm `{key.creditLimit == null && <span>Unlimited</span>}`.
+- [x] [Review][Patch] AC6 FAIL — thiếu test validation số âm [tests/unit/perKeyCreditLimit.test.js] — route reject creditLimit âm (400) nhưng không có test. Spec AC6 liệt kê "validation negative" là case bắt buộc. Fix: thêm test route POST/PUT với creditLimit âm → 400.
+
+- [x] [Review][Defer] HIGH — TOCTOU overshoot: concurrent requests đọc cùng SUM pre-deduction → vượt limit. Cùng class với accepted soft-limit (story 2.4: "balance âm nhẹ chấp nhận, không lock pessimistic"; story 2.20 cùng tradeoff). Không phải regression mới của 2.23. — deferred, accepted soft-limit (per-key thừa hưởng tradeoff hiện có)
+- [x] [Review][Defer] HIGH — per-key check nằm trong fail-open try/catch → DB error bỏ qua limit. Đây là NGUYÊN TẮC fail-open billing đã chốt từ story 2.4 ("billing errors MUST NOT block requests"). Per-key check đặt trong cùng try/catch là nhất quán. — deferred, by-design fail-open principle
+- [x] [Review][Defer] LOW — float accumulation trong SUM(REAL) cho phép overshoot 1 request ở rìa limit. Migrate sang integer micro-credits là thay đổi lớn xuyên suốt billing. — deferred, known REAL-precision limitation (BP-6 story 2.13)
+

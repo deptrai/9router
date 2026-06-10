@@ -10,7 +10,7 @@ context:
 
 # Story 2.24 — Dashboard Credit Breakdown (FR-30/31 full)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -89,16 +89,16 @@ Status: review
 
 ### Part A — Credit summary API (nếu D1=C)
 
-- [x] **A1**: `GET /api/users/me/credit-summary?period=7d` — auth required (role user); query `creditTransactions` WHERE userId AND type='usage_deduction' AND createdAt >= since; GROUP BY bucket → `{ standard: X, bonus: Y, resource: Z }` (absolute values, vì deduction amount âm). Fail-soft.
+- [ ] **A1**: `GET /api/users/me/credit-summary?period=7d` — auth required (role user); query `creditTransactions` WHERE userId AND type='usage_deduction' AND createdAt >= since; GROUP BY bucket → `{ standard: X, bonus: Y, resource: Z }` (absolute values, vì deduction amount âm). Fail-soft.
 
 ### Part B — Credits page UI upgrade
 
-- [x] **B1**: Fetch `/api/users/me/balance` → render 3 bucket cards (Standard/Bonus/Resource) + Total. Bucket=0 ẩn/mờ. (AC1)
-- [x] **B2**: Render validity dates: `bonusExpiresAt`/`standardExpiresAt` cạnh bucket (format relative/absolute). (AC2)
-- [x] **B3**: Deduction priority label "Resource → Bonus → Standard". (AC3)
-- [x] **B4**: Linked providers section: fetch `/api/auth/status` → hiển thị Password/Google/Telegram status. (AC4)
-- [x] **B5**: "Spent by credit type" summary card từ credit-summary API (D1=C). (AC5)
-- [x] **B6**: Request History table giữ period filter + model breakdown (reuse story 2.5 usage stats). (AC5)
+- [ ] **B1**: Fetch `/api/users/me/balance` → render 3 bucket cards (Standard/Bonus/Resource) + Total. Bucket=0 ẩn/mờ. (AC1)
+- [ ] **B2**: Render validity dates: `bonusExpiresAt`/`standardExpiresAt` cạnh bucket (format relative/absolute). (AC2)
+- [ ] **B3**: Deduction priority label "Resource → Bonus → Standard". (AC3)
+- [ ] **B4**: Linked providers section: fetch `/api/auth/status` → hiển thị Password/Google/Telegram status. (AC4)
+- [ ] **B5**: "Spent by credit type" summary card từ credit-summary API (D1=C). (AC5)
+- [ ] **B6**: Request History table giữ period filter + model breakdown (reuse story 2.5 usage stats). (AC5)
 
 ### Part C — Live toggle (nếu D2=A)
 
@@ -106,8 +106,8 @@ Status: review
 
 ### Part D — Tests
 
-- [x] **D1**: `tests/unit/creditSummary-api.test.js` (nếu A1 làm): GROUP BY bucket đúng, period filter, fail-soft.
-- [x] **D2**: `tests/unit/credits-page-source.test.js`: source page import balance API, render bucket cards, providers section, deduction priority label.
+- [ ] **D1**: `tests/unit/creditSummary-api.test.js` (nếu A1 làm): GROUP BY bucket đúng, period filter, fail-soft.
+- [ ] **D2**: `tests/unit/credits-page-source.test.js`: source page import balance API, render bucket cards, providers section, deduction priority label.
 
 ## Dev Notes
 
@@ -193,26 +193,23 @@ Test deps tại `tests/node_modules`. Source test (credits-page-source) string-m
 
 ## Dev Agent Record
 
-### Implementation Plan
-- A1: `GET /api/users/me/credit-summary?period=` — queries `creditTransactions` GROUP BY bucket for `usage_deduction` in period window. ABS(amount) for positive spent values. Fail-soft (returns zeros on error).
-- `/api/users/me/balance/route.js` — new route: queries creditTransactions by bucket (filtered non-expired), returns {standard, bonus, resource, total, bonusExpiresAt, standardExpiresAt}.
-- B1-B3: Credits page upgraded with 3-bucket card breakdown (Standard/Bonus/Resource), validity dates, deduction priority label "Resource → Bonus → Standard".
-- B4: Linked providers section in credits page; `authProviders` derived in auth/status from user.hasPassword/googleSub/telegramId.
-- B5: "Chi tiêu theo loại credit" card using credit-summary API, hidden when all zeros.
-- B6: Request History table kept intact (existing story 2.5 implementation preserved).
-- D1=C, D2=B (defer live toggle).
-
-### Completion Notes
-All 7 tasks completed (A1, B1-B6, D1-D2). 23 new tests, 1139 total pass / 3 pre-existing failures.
-
-## File List
-- `src/app/api/users/me/balance/route.js` — created (bucket balance + expiry)
-- `src/app/api/users/me/credit-summary/route.js` — created (spent-by-bucket per period)
-- `src/app/api/auth/status/route.js` — added authProviders derivation
-- `src/app/(dashboard)/dashboard/credits/page.js` — upgraded: bucket cards, validity, priority, providers, spent-by-type
-- `tests/unit/creditSummary-api.test.js` — 5 tests (created)
-- `tests/unit/credits-page-source.test.js` — 18 tests (created)
-
-## Change Log
+### Change Log
 - 2026-06-11: Story created (ready-for-dev)
-- 2026-06-11: Implemented all tasks (A1, B1-B6, D1-D2); D1=C, D2=B; 23 new tests, 1139 pass
+- 2026-06-11: Implemented + code review. 4 patches: P1 restore balance/route.js (working-tree deletion), P2 rowToUser hasPassword (authProviders fix), P3 Tokens column in Usage by Model, P4 catch logging + authProviders fallback + test path fix. 5 deferred. 23 tests pass. Status → done.
+
+## Review Findings — 2026-06-11
+
+> Review target = commit d8084fd. Reviewers initially read a DIRTY working tree (leftover 2.23 patches + accidental deletion of balance/route.js). Findings re-verified against the committed code.
+> Layer note: all 3 layers ran; several findings re-classified after disk verification.
+
+- [x] [Review][Patch] BLOCKER (working-tree hygiene) — `src/app/api/users/me/balance/route.js` exists in commit d8084fd nhưng đang bị `D` (deleted) trong working tree chưa commit. Nếu commit working tree hiện tại → 2.24 vỡ (Credits page mất bucket balance, source test ENOENT). Fix: `git checkout HEAD -- src/app/api/users/me/balance/route.js` (hoặc xác nhận deletion có chủ đích — khả năng thấp).
+- [x] [Review][Patch] MEDIUM — `rowToUser` không set `hasPassword` → authProviders luôn có "password" [src/lib/db/repos/usersRepo.js rowToUser; src/app/api/auth/status/route.js:34] — `getUserById` trả user KHÔNG có field `hasPassword`; check `user.hasPassword !== false` → `undefined !== false` = true → "password" push cho MỌI user kể cả social-only (Google/Telegram-only → ["password","google"] thay vì ["google"]). Fallback `length===0` thành dead code. Fix: thêm `hasPassword: !!(row.passwordHash && row.passwordHash !== "!")` vào rowToUser (cả 2 path).
+- [x] [Review][Patch] MEDIUM — AC5: Usage by Model thiếu cột Tokens [src/app/(dashboard)/dashboard/credits/page.js modelRows] — spec AC5 "per-model Requests/Tokens/Cost"; bảng chỉ aggregate requests + cost, không có tokens. Fix: thêm promptTokens+completionTokens vào modelRows aggregation + cột Tokens.
+- [x] [Review][Patch] LOW — silent catch nuốt lỗi [balance/route.js + credit-summary/route.js catch blocks] — trả zeros không log → DB error giống hệt zero-balance thật. Fix: `console.error` trong catch. Thêm `authProviders: []` vào auth/status outer-catch fallback (status/route.js:65-83) để client không crash khi destructure.
+
+- [x] [Review][Defer] MEDIUM — 401 vs 403 cho unauthenticated [balance + credit-summary] — trả 403 khi không có session (nên 401). Nhất quán với pattern story 2.20/2.21 balance route hiện có. — deferred, consistent existing pattern
+- [x] [Review][Defer] LOW — negative total floor — bucket âm (TOCTOU overshoot 2.20) ẩn ở card nhưng total có thể âm. — deferred, low-probability (cùng TOCTOU đã defer 2.20)
+- [x] [Review][Defer] LOW — expiry hiển thị cho grant đã depleted [balance route MIN(expiresAt) WHERE amount>0] — grant còn hạn nhưng đã bị trừ hết net vẫn show expiry. — deferred, edge-case UX
+- [x] [Review][Defer] LOW — hai nguồn balance (auth/status creditsBalance cache vs balance route live SUM) — có thể lệch nếu cache drift; story 2.21 sweep reconcile giảm thiểu. — deferred, mitigated by 2.21
+- [x] [Review][Defer] LOW — credit-summary inline SQL nên ở repo function — maintainability, không có canonical để duplicate hiện tại. — deferred, refactor sau
+
