@@ -11,9 +11,11 @@
  * Returns { allowed: false, reason } when:
  *   - user.isActive = false → "account disabled"
  *   - user.creditsBalance <= 0 → "insufficient credits"
+ *   - key.creditLimit set AND keyUsage >= limit → "key credit limit reached" [story 2.23]
  */
 import { getApiKeyByKey } from "@/lib/db/repos/apiKeysRepo.js";
 import { getUserById } from "@/lib/db/repos/usersRepo.js";
+import { getAdapter } from "@/lib/db/driver.js";
 
 export async function checkCredits(apiKey) {
   try {
@@ -30,6 +32,18 @@ export async function checkCredits(apiKey) {
     }
     if (user.creditsBalance <= 0) {
       return { allowed: false, reason: "insufficient credits" };
+    }
+
+    // Story 2.23: per-key credit limit (cumulative lifetime usage, D1=A)
+    if (typeof keyRow.creditLimit === "number") {
+      const adapter = await getAdapter();
+      const usageRow = adapter.get(
+        `SELECT COALESCE(SUM(cost), 0) AS used FROM usageHistory WHERE apiKey = ?`,
+        [keyRow.key]
+      );
+      if ((usageRow?.used ?? 0) >= keyRow.creditLimit) {
+        return { allowed: false, reason: "key credit limit reached" };
+      }
     }
 
     return { allowed: true };
