@@ -28,7 +28,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive, description, name } = body;
+    const { isActive, description, name, creditLimit: rawLimit } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -46,6 +46,17 @@ export async function PUT(request, { params }) {
     if (isActive !== undefined) updateData.isActive = isActive;
     if (description !== undefined) updateData.description = description;
     if (name !== undefined) updateData.name = name;
+    if (rawLimit !== undefined) {
+      if (rawLimit === null || rawLimit === "") {
+        updateData.creditLimit = null;
+      } else {
+        const parsed = Number(rawLimit);
+        if (!Number.isFinite(parsed) || parsed < 0) {
+          return NextResponse.json({ error: "creditLimit must be >= 0" }, { status: 400 });
+        }
+        updateData.creditLimit = parsed;
+      }
+    }
 
     const updated = await updateApiKey(id, updateData);
 

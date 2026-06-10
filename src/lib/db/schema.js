@@ -126,6 +126,7 @@ export const TABLES = {
       userId: "TEXT",
       description: "TEXT",
       lastUsedAt: "TEXT",
+      creditLimit: "REAL",
     },
     indexes: [
       "CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)",

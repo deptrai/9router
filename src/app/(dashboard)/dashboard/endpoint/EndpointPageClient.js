@@ -61,11 +61,13 @@ export default function APIPageClient({ machineId }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyDescription, setNewKeyDescription] = useState("");
+  const [newKeyCreditLimit, setNewKeyCreditLimit] = useState("");
   const [createError, setCreateError] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
   const [editKey, setEditKey] = useState(null); // key object being edited
   const [editDescription, setEditDescription] = useState("");
+  const [editCreditLimit, setEditCreditLimit] = useState("");
   const [editError, setEditError] = useState("");
   const [usageByKey, setUsageByKey] = useState({}); // keyString → total cost
 
@@ -706,7 +708,11 @@ export default function APIPageClient({ machineId }) {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName, description: newKeyDescription || undefined }),
+        body: JSON.stringify({
+            name: newKeyName,
+            description: newKeyDescription || undefined,
+            creditLimit: newKeyCreditLimit !== "" ? Number(newKeyCreditLimit) : undefined,
+          }),
       });
       const data = await res.json();
 
@@ -715,6 +721,7 @@ export default function APIPageClient({ machineId }) {
         await fetchData();
         setNewKeyName("");
         setNewKeyDescription("");
+        setNewKeyCreditLimit("");
         setShowAddModal(false);
       } else {
         setCreateError(data.error || "Failed to create key");
@@ -766,6 +773,7 @@ export default function APIPageClient({ machineId }) {
   const handleOpenEdit = (key) => {
     setEditKey(key);
     setEditDescription(key.description || "");
+    setEditCreditLimit(key.creditLimit != null ? String(key.creditLimit) : "");
     setEditError("");
   };
 
@@ -776,10 +784,17 @@ export default function APIPageClient({ machineId }) {
       const res = await fetch(`/api/keys/${editKey.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description: editDescription }),
+        body: JSON.stringify({
+            description: editDescription,
+            creditLimit: editCreditLimit !== "" ? Number(editCreditLimit) : null,
+          }),
       });
       if (res.ok) {
-        setKeys(prev => prev.map(k => k.id === editKey.id ? { ...k, description: editDescription } : k));
+        setKeys(prev => prev.map(k => k.id === editKey.id ? {
+            ...k,
+            description: editDescription,
+            creditLimit: editCreditLimit !== "" ? Number(editCreditLimit) : null,
+          } : k));
         setEditKey(null);
       } else {
         const data = await res.json().catch(() => ({}));
@@ -1250,6 +1265,14 @@ export default function APIPageClient({ machineId }) {
                       {formatCost(usageByKey[key.key]) && (
                         <span className="text-xs bg-surface-2 text-text-muted px-1.5 py-0.5 rounded">
                           {formatCost(usageByKey[key.key])}
+                          {key.creditLimit != null && (
+                            <span> / ${key.creditLimit.toFixed(2)}</span>
+                          )}
+                        </span>
+                      )}
+                      {key.creditLimit != null && !formatCost(usageByKey[key.key]) && (
+                        <span className="text-xs bg-surface-2 text-text-muted px-1.5 py-0.5 rounded">
+                          $0.00 / ${key.creditLimit.toFixed(2)}
                         </span>
                       )}
                     </div>
@@ -1305,6 +1328,7 @@ export default function APIPageClient({ machineId }) {
           setShowAddModal(false);
           setNewKeyName("");
           setNewKeyDescription("");
+          setNewKeyCreditLimit("");
           setCreateError("");
         }}
       >
@@ -1325,6 +1349,18 @@ export default function APIPageClient({ machineId }) {
               placeholder="What is this key for?"
             />
           </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium">Credit Limit USD (optional)</label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={newKeyCreditLimit}
+              onChange={(e) => setNewKeyCreditLimit(e.target.value)}
+              placeholder="Unlimited"
+            />
+            <p className="text-xs text-text-muted">Leave empty for unlimited. Requests blocked once this key's total spend reaches the limit.</p>
+          </div>
           {createError && (
             <p className="text-xs text-red-500">{createError}</p>
           )}
@@ -1337,6 +1373,7 @@ export default function APIPageClient({ machineId }) {
                 setShowAddModal(false);
                 setNewKeyName("");
                 setNewKeyDescription("");
+                setNewKeyCreditLimit("");
                 setCreateError("");
               }}
               variant="ghost"
@@ -1559,6 +1596,18 @@ export default function APIPageClient({ machineId }) {
               onChange={(e) => setEditDescription(e.target.value)}
               placeholder="Describe what this key is for..."
             />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium">Credit Limit USD</label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={editCreditLimit}
+              onChange={(e) => setEditCreditLimit(e.target.value)}
+              placeholder="Unlimited"
+            />
+            <p className="text-xs text-text-muted">Leave empty for unlimited. Requests blocked once this key's total spend reaches the limit.</p>
           </div>
           {editError && (
             <p className="text-xs text-red-500">{editError}</p>

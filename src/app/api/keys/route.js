@@ -33,10 +33,20 @@ export async function GET() {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { name, description } = body;
+    const { name, description, creditLimit: rawLimit } = body;
 
     if (!name) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
+    }
+
+    // Validate creditLimit: null/undefined = unlimited, number >= 0 = capped
+    let creditLimit = null;
+    if (rawLimit !== undefined && rawLimit !== null && rawLimit !== "") {
+      const parsed = Number(rawLimit);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        return NextResponse.json({ error: "creditLimit must be >= 0" }, { status: 400 });
+      }
+      creditLimit = parsed;
     }
 
     const session = await getSession();
@@ -50,7 +60,7 @@ export async function POST(request) {
 
     let apiKey;
     try {
-      apiKey = await createApiKey(name, machineId, userId, description ?? null);
+      apiKey = await createApiKey(name, machineId, userId, description ?? null, creditLimit);
     } catch (err) {
       if (err.code === "KEY_LIMIT") {
         return NextResponse.json(
@@ -68,6 +78,7 @@ export async function POST(request) {
       machineId: apiKey.machineId,
       userId: apiKey.userId,
       description: apiKey.description,
+      creditLimit: apiKey.creditLimit,
     }, { status: 201 });
   } catch (error) {
     console.log("Error creating key:", error);

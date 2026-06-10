@@ -18,6 +18,9 @@ const NETWORK_LABELS = { tron: "TRC-20", polygon: "Polygon", ethereum: "ERC-20",
 
 export default function CreditsPage() {
   const [balance, setBalance] = useState(null);
+  const [bucketBalance, setBucketBalance] = useState(null); // {standard,bonus,resource,total,bonusExpiresAt,standardExpiresAt}
+  const [creditSummary, setCreditSummary] = useState(null); // {standard,bonus,resource} spent in period
+  const [authProviders, setAuthProviders] = useState([]);   // ['password','google','telegram']
   const [stats, setStats] = useState(null);
   const [period, setPeriod] = useState("30d");
   const [loading, setLoading] = useState(true);
@@ -49,7 +52,13 @@ export default function CreditsPage() {
           const status = await statusRes.json();
           setBalance(status.creditsBalance ?? null);
           setIsEmailVerified(!!status.isEmailVerified);
+          setAuthProviders(status.authProviders || (status.email ? ["password"] : []));
         }
+      } catch {}
+      // Bucket balance breakdown
+      try {
+        const balRes = await fetch("/api/users/me/balance");
+        if (balRes.ok) setBucketBalance(await balRes.json());
       } catch {}
       // Load payment history
       try {
@@ -169,6 +178,14 @@ export default function CreditsPage() {
     loadStats();
   }, [period]);
 
+  // Fetch credit-summary when period changes (spent by bucket type)
+  useEffect(() => {
+    fetch(`/api/users/me/credit-summary?period=${period}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setCreditSummary(d); })
+      .catch(() => {});
+  }, [period]);
+
   // Aggregate by model from byApiKey entries
   const modelRows = stats
     ? Object.values(
@@ -190,37 +207,86 @@ export default function CreditsPage() {
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       <h1 className="text-2xl font-semibold text-text-main">Credits</h1>
 
-      {/* Balance card */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Card className="p-5">
-          <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-1">Current Balance</p>
-          {balance === null ? (
-            <div className="h-8 w-24 bg-surface-2 animate-pulse rounded" />
-          ) : (
-            <>
-              <p className={`text-3xl font-bold ${balance <= 0 ? "text-red-500" : "text-green-500"}`}>
-                ${typeof balance === "number" ? balance.toFixed(4) : "0.0000"}
-              </p>
-              {balance <= 0 && (
-                <p className="mt-2 text-sm text-red-500 font-medium">
-                  ⚠️ Insufficient credits — contact admin to top up.
-                </p>
+      {/* Balance Overview — bucket breakdown (B1, B2, B3) */}
+      <div className="space-y-3">
+        {bucketBalance ? (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {[
+                { key: "standard", label: "Standard", expires: bucketBalance.standardExpiresAt, colorClass: "text-blue-500" },
+                { key: "bonus", label: "Bonus", expires: bucketBalance.bonusExpiresAt, colorClass: "text-green-500" },
+                { key: "resource", label: "Resource", expires: null, colorClass: "text-purple-500" },
+              ].filter(b => (bucketBalance[b.key] ?? 0) > 0.000001).map(b => (
+                <Card key={b.key} className="p-4">
+                  <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-1">{b.label}</p>
+                  <p className={`text-2xl font-bold ${b.colorClass}`}>${(bucketBalance[b.key] ?? 0).toFixed(4)}</p>
+                  {b.expires ? (
+                    <p className="text-xs text-text-muted mt-1">Hết hạn {new Date(b.expires).toLocaleDateString()}</p>
+                  ) : (
+                    <p className="text-xs text-text-muted mt-1">Không hết hạn</p>
+                  )}
+                </Card>
+              ))}
+              {(bucketBalance.total ?? 0) <= 0.000001 && (
+                <Card className="p-4 sm:col-span-3">
+                  <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-1">Balance</p>
+                  <p className="text-2xl font-bold text-red-500">$0.0000</p>
+                  <p className="text-sm text-red-500 mt-1">⚠️ Insufficient credits — contact admin to top up.</p>
+                </Card>
               )}
-            </>
-          )}
-        </Card>
-
-        <Card className="p-5">
-          <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-1">
-            Spent ({PERIODS.find(p => p.value === period)?.label})
-          </p>
-          {loading ? (
-            <div className="h-8 w-24 bg-surface-2 animate-pulse rounded" />
-          ) : (
-            <p className="text-3xl font-bold text-text-main">${totalCost.toFixed(4)}</p>
-          )}
-        </Card>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-text-muted">Ưu tiên trừ: <span className="font-medium text-text-main">Resource → Bonus → Standard</span></span>
+              <span className="font-semibold text-text-main">Tổng: <span className="text-primary">${(bucketBalance.total ?? 0).toFixed(4)}</span></span>
+            </div>
+          </>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Card className="p-5">
+              <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-1">Current Balance</p>
+              {balance === null ? (
+                <div className="h-8 w-24 bg-surface-2 animate-pulse rounded" />
+              ) : (
+                <>
+                  <p className={`text-3xl font-bold ${balance <= 0 ? "text-red-500" : "text-green-500"}`}>
+                    ${typeof balance === "number" ? balance.toFixed(4) : "0.0000"}
+                  </p>
+                  {balance <= 0 && <p className="mt-2 text-sm text-red-500 font-medium">⚠️ Insufficient credits</p>}
+                </>
+              )}
+            </Card>
+            <Card className="p-5">
+              <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-1">
+                Spent ({PERIODS.find(p => p.value === period)?.label})
+              </p>
+              {loading ? <div className="h-8 w-24 bg-surface-2 animate-pulse rounded" /> :
+                <p className="text-3xl font-bold text-text-main">${totalCost.toFixed(4)}</p>}
+            </Card>
+          </div>
+        )}
       </div>
+
+      {/* Linked Auth Providers (B4) */}
+      {authProviders.length > 0 && (
+        <Card className="p-5">
+          <p className="text-sm font-semibold text-text-main mb-3">Phương thức đăng nhập</p>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { key: "password", label: "Password", icon: "🔑" },
+              { key: "google", label: "Google", icon: "G" },
+              { key: "telegram", label: "Telegram", icon: "✈" },
+            ].map(pv => {
+              const linked = authProviders.includes(pv.key);
+              return (
+                <span key={pv.key} className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border ${linked ? "bg-green-500/10 text-green-600 border-green-500/30 dark:text-green-400" : "bg-surface-2 text-text-muted border-border"}`}>
+                  <span>{pv.icon}</span>{pv.label} {linked ? "✓" : "—"}
+                </span>
+              );
+            })}
+          </div>
+          <p className="text-xs text-text-muted mt-2">Quản lý tại <a href="/dashboard/profile" className="text-primary hover:underline">Profile</a></p>
+        </Card>
+      )}
 
       {/* Gift Code Redeem Section */}
       <Card className="p-5">
@@ -399,6 +465,27 @@ export default function CreditsPage() {
           ))}
         </div>
       </div>
+
+      {/* Spent by credit type (B5, D1=C) */}
+      {creditSummary && (creditSummary.standard > 0 || creditSummary.bonus > 0 || creditSummary.resource > 0) && (
+        <Card className="p-5">
+          <p className="text-sm font-semibold text-text-main mb-3">
+            Chi tiêu theo loại credit ({PERIODS.find(p => p.value === period)?.label})
+          </p>
+          <div className="flex flex-wrap gap-4">
+            {[
+              { key: "standard", label: "Standard", color: "text-blue-500" },
+              { key: "bonus", label: "Bonus", color: "text-green-500" },
+              { key: "resource", label: "Resource", color: "text-purple-500" },
+            ].filter(b => (creditSummary[b.key] ?? 0) > 0).map(b => (
+              <div key={b.key} className="text-sm">
+                <span className="text-text-muted">{b.label}: </span>
+                <span className={`font-semibold ${b.color}`}>${(creditSummary[b.key] ?? 0).toFixed(4)}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Usage by model */}
       <Card className="p-5">
