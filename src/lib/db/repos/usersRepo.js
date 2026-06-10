@@ -20,8 +20,6 @@ function rowToUser(row, includePasswordHash = false) {
     allowCreditOverflow: row.allowCreditOverflow === 1 || row.allowCreditOverflow === true,
     googleSub: row.googleSub ?? null,
     telegramId: row.telegramId ?? null,
-    // Review fix (P4): derive authProviders from actual identity fields instead of the
-    // stored column, which no link/unlink path updates (would otherwise go stale).
     authProviders: [
       (row.passwordHash && row.passwordHash !== "!") ? "password" : null,
       row.googleSub ? "google" : null,

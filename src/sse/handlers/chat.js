@@ -20,7 +20,7 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { checkKeyQuota } from "@/lib/quota/keyQuota.js";
-import { checkCredits } from "@/lib/billing/checkCredits.js";
+import { checkCredits, checkPerKeyLimit } from "@/lib/billing/checkCredits.js";
 import { checkRpmLimit } from "@/lib/quota/rpmLimit.js";
 import { checkPlanQuota } from "@/lib/quota/planQuota.js";
 
@@ -183,6 +183,16 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   // --- Plan quota + credit — Model B (Story 2.14, E.3) ---
   // Replaces bare checkCredits. Determines billingSource: "plan" | "overflow" | "credit".
   // checkKeyQuota (above, per-key legacy quota) is kept independent.
+  // Story 2.23 (D1=Option 2): per-key credit limit is a blast-radius guardrail —
+  // enforce on EVERY admission regardless of billing source (plan/overflow/credit).
+  // usageHistory.cost is recorded for all requests incl. plan-billed, so the cap
+  // applies uniformly. Fail-open inside checkPerKeyLimit.
+  const keyLimitResult = await checkPerKeyLimit(apiKey);
+  if (!keyLimitResult.allowed) {
+    log.warn("BILLING", `[${provider}/${model}] key="${log.maskKey(apiKey || "")}" per-key limit: ${keyLimitResult.reason}`);
+    return unavailableResponse(HTTP_STATUS.RATE_LIMITED, keyLimitResult.reason || "key credit limit reached", 60, "60s");
+  }
+
   let billingSource;
   const pq = await checkPlanQuota(apiKey, model);
   if (pq.source === "plan" && pq.allowed) {

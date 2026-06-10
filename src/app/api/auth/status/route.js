@@ -76,6 +76,7 @@ export async function GET() {
       // New fields — null in fallback
       role: "admin",
       userId: null,
+      authProviders: [],
       email: null,
       creditsBalance: null,
       isEmailVerified: false,

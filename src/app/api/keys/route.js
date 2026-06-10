@@ -39,10 +39,13 @@ export async function POST(request) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
     }
 
-    // Validate creditLimit: null/undefined = unlimited, number >= 0 = capped
+    // Validate creditLimit: null/undefined/blank = unlimited, number >= 0 = capped.
+    // Review patch (P1): trim strings first so whitespace-only ("  ") is treated as
+    // blank (unlimited), not Number("  ")===0 which would create a permanently-blocked key.
     let creditLimit = null;
-    if (rawLimit !== undefined && rawLimit !== null && rawLimit !== "") {
-      const parsed = Number(rawLimit);
+    const trimmedLimit = typeof rawLimit === "string" ? rawLimit.trim() : rawLimit;
+    if (trimmedLimit !== undefined && trimmedLimit !== null && trimmedLimit !== "") {
+      const parsed = Number(trimmedLimit);
       if (!Number.isFinite(parsed) || parsed < 0) {
         return NextResponse.json({ error: "creditLimit must be >= 0" }, { status: 400 });
       }

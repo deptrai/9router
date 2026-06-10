@@ -6,9 +6,11 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 
-const PAGE_PATH = path.resolve("src/app/(dashboard)/dashboard/credits/page.js");
-const BALANCE_API_PATH = path.resolve("src/app/api/users/me/balance/route.js");
-const CREDIT_SUMMARY_API_PATH = path.resolve("src/app/api/users/me/credit-summary/route.js");
+// Resolve against repo root (tests/ is cwd; sources live one level up)
+const ROOT = path.resolve(__dirname, "../..");
+const PAGE_PATH = path.resolve(ROOT, "src/app/(dashboard)/dashboard/credits/page.js");
+const BALANCE_API_PATH = path.resolve(ROOT, "src/app/api/users/me/balance/route.js");
+const CREDIT_SUMMARY_API_PATH = path.resolve(ROOT, "src/app/api/users/me/credit-summary/route.js");
 
 const pageSource = fs.readFileSync(PAGE_PATH, "utf8");
 const balanceSource = fs.readFileSync(BALANCE_API_PATH, "utf8");

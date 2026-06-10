@@ -45,7 +45,8 @@ export async function GET(request) {
     }
 
     return NextResponse.json({ ...summary, period, since });
-  } catch {
+  } catch (e) {
+    console.error("[users/me/credit-summary] query failed (returning zeros):", e?.message || e);
     return NextResponse.json({ standard: 0, bonus: 0, resource: 0, period, since });
   }
 }

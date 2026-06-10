@@ -255,3 +255,58 @@ describe("DELETE /api/keys/[id]", () => {
     expect(res.status).toBe(404);
   });
 });
+
+// Story 2.23 — per-key creditLimit validation (AC6)
+describe("POST /api/keys — creditLimit validation", () => {
+  it("rejects negative creditLimit with 400", async () => {
+    mockSession = { role: "user", userId: "user-A", email: "a@example.com" };
+    const { POST } = await import("@/app/api/keys/route.js");
+    const req = { json: async () => ({ name: "k", creditLimit: -5 }) };
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toMatch(/creditLimit/i);
+  });
+
+  it("rejects non-numeric creditLimit with 400", async () => {
+    mockSession = { role: "user", userId: "user-A", email: "a@example.com" };
+    const { POST } = await import("@/app/api/keys/route.js");
+    const req = { json: async () => ({ name: "k", creditLimit: "abc" }) };
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+  });
+
+  it("whitespace-only creditLimit → treated as unlimited (null), not 0", async () => {
+    mockSession = { role: "user", userId: "user-A", email: "a@example.com" };
+    const { POST } = await import("@/app/api/keys/route.js");
+    const req = { json: async () => ({ name: "k", creditLimit: "   " }) };
+    const res = await POST(req);
+    expect(res.status).toBe(201);
+    const data = await res.json();
+    expect(data.creditLimit ?? null).toBeNull();
+  });
+
+  it("valid creditLimit → 201 with creditLimit set", async () => {
+    mockSession = { role: "user", userId: "user-A", email: "a@example.com" };
+    const { POST } = await import("@/app/api/keys/route.js");
+    const req = { json: async () => ({ name: "k", creditLimit: 5 }) };
+    const res = await POST(req);
+    expect(res.status).toBe(201);
+    const data = await res.json();
+    expect(data.creditLimit).toBe(5);
+  });
+});
+
+describe("PUT /api/keys/[id] — creditLimit validation", () => {
+  function makeParams(id) { return { params: Promise.resolve({ id }) }; }
+
+  it("rejects negative creditLimit with 400", async () => {
+    mockSession = { role: "user", userId: "user-A", email: "a@example.com" };
+    const { createApiKey } = await import("@/lib/db/repos/apiKeysRepo.js");
+    const key = await createApiKey("k", "test-machine-id", "user-A");
+    const { PUT } = await import("@/app/api/keys/[id]/route.js");
+    const req = { json: async () => ({ creditLimit: -1 }) };
+    const res = await PUT(req, makeParams(key.id));
+    expect(res.status).toBe(400);
+  });
+});
