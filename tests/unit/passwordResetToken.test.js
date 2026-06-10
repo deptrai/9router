@@ -55,4 +55,20 @@ describe("passwordResetToken", () => {
 
     expect(await consumePasswordResetToken(token)).toBeNull();
   });
+  it("createPasswordResetToken invalidates previous tokens for same user", async () => {
+    const { createPasswordResetToken, peekPasswordResetToken } = await import("@/lib/auth/passwordResetToken.js");
+    const token1 = await createPasswordResetToken("user-3", "inv@example.com");
+    const token2 = await createPasswordResetToken("user-3", "inv@example.com");
+    expect(await peekPasswordResetToken(token1)).toBeNull();
+    expect(await peekPasswordResetToken(token2)).toEqual({ userId: "user-3", email: "inv@example.com" });
+  });
+
+  it("peekPasswordResetToken validates without consuming; removePasswordResetToken removes", async () => {
+    const { createPasswordResetToken, peekPasswordResetToken, removePasswordResetToken } = await import("@/lib/auth/passwordResetToken.js");
+    const token = await createPasswordResetToken("user-4", "peek@example.com");
+    expect(await peekPasswordResetToken(token)).toEqual({ userId: "user-4", email: "peek@example.com" });
+    expect(await peekPasswordResetToken(token)).toEqual({ userId: "user-4", email: "peek@example.com" });
+    await removePasswordResetToken(token);
+    expect(await peekPasswordResetToken(token)).toBeNull();
+  });
 });

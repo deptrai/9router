@@ -28,7 +28,7 @@ const client = new Anthropic({
 });
 
 const res = await client.messages.create({
-  model: "gpt-5",
+  model: "claude-opus-4-6",
   max_tokens: 1024,
   messages: [{ role: "user", content: "Hello!" }],
 });`,

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { consumePasswordResetToken } from "@/lib/auth/passwordResetToken.js";
+import { peekPasswordResetToken, removePasswordResetToken } from "@/lib/auth/passwordResetToken.js";
 import { updateUser } from "@/lib/db/index.js";
 
 export async function POST(request) {
@@ -22,7 +22,8 @@ export async function POST(request) {
       );
     }
 
-    const data = await consumePasswordResetToken(token);
+    // Peek without consuming — token survives if updateUser fails
+    const data = await peekPasswordResetToken(token);
     if (!data) {
       return NextResponse.json(
         { error: "Invalid or expired reset link" },
@@ -32,6 +33,9 @@ export async function POST(request) {
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
     await updateUser(data.userId, { passwordHash });
+
+    // Remove token only after successful DB write
+    await removePasswordResetToken(token);
 
     return NextResponse.json({ success: true });
   } catch (error) {

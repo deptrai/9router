@@ -50,7 +50,7 @@ Không làm:
 2. **WHEN** visitor click dark/light toggle, **THEN** theme switch ngay lập tức; reload trang vẫn giữ preference (localStorage); không flash khi load.
 3. **WHEN** visitor click EN/VI toggle, **THEN** text trên landing chuyển ngôn ngữ; không reload trang; preference được nhớ trong session.
 4. **WHEN** visitor truy cập `/models`, **THEN** trang hiển thị bảng models: tên model, provider (group header hoặc column), input price, output price, cached price ($/1M tokens); không yêu cầu đăng nhập; data từ `getPricing()` server-side.
-5. **WHEN** client gọi `GET /api/public/models`, **THEN** response trả array `[{model, provider, input, output, cached, reasoning, cacheCreation}]`; no auth required; status 200.
+5. **WHEN** client gọi `GET /api/public/models`, **THEN** response trả `{ models: [{model, provider, input, output, cached, reasoning, cacheCreation}] }`; no auth required; status 200. *(Wrapped shape — easier to extend with pagination/metadata. Decided in code review 2026-06-10.)*
 6. **WHEN** Pricing section load, **THEN** hiển thị active plans từ `/api/plans`; mỗi card có: tên plan, priceCredits/month, quota 5h/weekly, RPM, action button "Get Started" link tới `/register`.
 7. **WHEN** visitor trên mobile (≤768px), **THEN** landing page responsive; plan cards hiển thị dạng column; models table có horizontal scroll.
 8. **WHEN** dev hoàn tất, **THEN** build pass; `/models` render đúng server-side; tests cover public models API và pricing section source.
@@ -207,6 +207,26 @@ claude-sonnet-4-6
 - [x] [Review][Patch] Navigation.js:11 Zustand `persist` store causes SSR/client hydration mismatch — server renders with default theme, client rehydrates from localStorage, React flags mismatch and icon flickers. Fixed: added `mounted` guard; `isDark` is `false` until after client mount.
 - [x] [Review][Patch] Pricing.js:12 no `r.ok` check — HTTP 500 from `/api/public/plans` returned valid JSON `{ error: ... }` which silently produced `plans = []` and rendered a blank pricing grid. Fixed: throw on `!r.ok`, catch sets `fetchError = true`, component returns `null` on error or empty.
 - [x] [Review][Patch] models/page.js:8 `formatPrice` used `.toFixed(2)` for all non-zero values — sub-cent prices (e.g. `0.001`) rounded to `$0.00`, falsely implying free. Fixed: use `toPrecision(2)` for values `< 0.01`.
+
+### Review Findings — 2026-06-10 (round 2)
+
+- [x] [Review][Decision] Public models API response shape — keeping `{ models: [...] }` wrapped shape; AC5 updated accordingly. (2026-06-10)
+
+- [x] [Review][Patch] Wrong model name in Anthropic SDK snippet [src/app/landing/components/EndpointHighlights.js:100] — Anthropic-compatible example uses `model: "gpt-5"` (an OpenAI model); Anthropic API will reject this. Fix: change to `claude-opus-4-6` or similar Claude model.
+- [x] [Review][Patch] Locale desync + reloadTranslations not awaited [src/app/landing/components/Navigation.js:242] — `setLocale(next)` is outside the try/catch and always runs even when POST /api/locale fails, causing ghost-toggle (UI shows new locale, cookie never written, reverts on reload). Also `reloadTranslations()` is not awaited, so translation DOM mutation races with re-render. Fix: move `setLocale(next)` inside try after `await reloadTranslations()`.
+- [x] [Review][Patch] Pricing.js silently renders blank section on fetch error [src/app/landing/components/Pricing.js:351] — `.catch(() => {})` drops all errors; missing `r.ok` check means HTTP 500 from plans API also silently yields `plans = []`. Fix: check `r.ok`, catch sets error state, render null (or error message) instead of blank grid.
+- [x] [Review][Patch] Dead useTheme.js hook with Zustand key collision [src/app/landing/hooks/useTheme.js] — hook is never imported anywhere; if ever used it reads `localStorage.getItem("theme")` expecting a string but Zustand persist stores a JSON envelope under the same key, causing classList.toggle to always force light mode. Fix: delete the file.
+- [x] [Review][Patch] formatPrice hides sub-cent prices as "$0.00" [src/app/models/page.js:618] — `.toFixed(2)` rounds e.g. `0.001` to `$0.00`, falsely implying free. Fix: use `toPrecision(2)` (or similar) for values below `0.01`.
+- [x] [Review][Patch] Missing error log in /api/public/plans catch [src/app/api/public/plans/route.js:20] — unlike the models route, the plans catch block has no `console.error`. Fix: add `console.error("[API] /api/public/plans error:", err)`.
+- [x] [Review][Patch] No anti-flash inline script for theme (AC2) — AC2 requires no flash on reload; Zustand persist hydrates client-side so server always renders default theme first, causing visible flash. Fix: add `<script dangerouslySetInnerHTML>` in layout that reads localStorage and applies dark class synchronously before paint.
+- [x] [Review][Patch] Unused index variable `i` [src/app/models/page.js:664] — `grouped[provider].map((row, i) =>` declares `i` but uses `row.model` as key. Fix: remove `i`.
+
+- [x] [Review][Defer] Locale JSON files absent from src/app/landing/locales/ — spec requires en.json + vi.json under landing/locales; directory does not exist; vi.json found at project root (prior story). Investigate whether existing i18n system satisfies the locale toggle; create landing/locales/ if not. — deferred, needs investigation
+- [x] [Review][Defer] Cache-Control max-age=60 races admin pricing/plan updates — CDN/browser caches serve stale data up to 60s after admin changes; pre-existing arch decision. — deferred, pre-existing
+- [x] [Review][Defer] ModelsPage no error boundary — getPricing() throw renders full Next.js 500 page; add error.js sibling or try/catch. — deferred, pre-existing pattern
+- [x] [Review][Defer] Plans with all-zero quotas render empty ul — no "Unlimited" fallback text when quota5h/quotaWeekly/rpm are all 0. — deferred, UX improvement
+- [x] [Review][Defer] Pricing.js returns null while loading causes CLS — layout shift when plans arrive; no skeleton placeholder. — deferred, UX improvement
+- [x] [Review][Defer] Hardcoded `"max"` plan name in Pricing.js — `plan.name?.toLowerCase() === "max"` breaks if plan is renamed. — deferred, fragile but functional
 
 ## Change Log
 

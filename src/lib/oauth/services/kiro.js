@@ -232,7 +232,7 @@ export class KiroService {
   /**
    * Validate and import refresh token
    */
-  async validateImportToken(refreshToken) {
+  async validateImportToken(refreshToken, providerSpecificData = {}) {
     // Validate token format
     if (!refreshToken.startsWith("aorAAAAAG")) {
       throw new Error("Invalid token format. Token should start with aorAAAAAG...");
@@ -240,13 +240,13 @@ export class KiroService {
 
     // Try to refresh to validate
     try {
-      const result = await this.refreshToken(refreshToken);
+      const result = await this.refreshToken(refreshToken, providerSpecificData);
       return {
         accessToken: result.accessToken,
         refreshToken: result.refreshToken || refreshToken,
         profileArn: result.profileArn,
         expiresIn: result.expiresIn,
-        authMethod: "imported",
+        authMethod: providerSpecificData.authMethod || "imported",
       };
     } catch (error) {
       throw new Error(`Token validation failed: ${error.message}`);

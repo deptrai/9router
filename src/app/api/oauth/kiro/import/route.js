@@ -8,7 +8,15 @@ import { createProviderConnection } from "@/models";
  */
 export async function POST(request) {
   try {
-    const { refreshToken } = await request.json();
+    const body = await request.json();
+    const refreshToken = body.refreshToken || body.refresh_token;
+    const providerSpecificData = {
+      profileArn: body.profileArn || body.profile_arn,
+      region: body.region || "us-east-1",
+      authMethod: body.authMethod || body.auth_method || "imported",
+      clientId: body.clientId || body.client_id,
+      clientSecret: body.clientSecret || body.client_secret,
+    };
 
     if (!refreshToken || typeof refreshToken !== "string") {
       return NextResponse.json(
@@ -20,7 +28,7 @@ export async function POST(request) {
     const kiroService = new KiroService();
 
     // Validate and refresh token
-    const tokenData = await kiroService.validateImportToken(refreshToken.trim());
+    const tokenData = await kiroService.validateImportToken(refreshToken.trim(), providerSpecificData);
 
     // Extract email from JWT if available
     const email = kiroService.extractEmailFromJWT(tokenData.accessToken);
@@ -34,9 +42,12 @@ export async function POST(request) {
       expiresAt: new Date(Date.now() + tokenData.expiresIn * 1000).toISOString(),
       email: email || null,
       providerSpecificData: {
-        profileArn: tokenData.profileArn,
-        authMethod: "imported",
-        provider: "Imported",
+        profileArn: tokenData.profileArn || providerSpecificData.profileArn,
+        region: providerSpecificData.region,
+        authMethod: providerSpecificData.authMethod,
+        clientId: providerSpecificData.clientId,
+        clientSecret: providerSpecificData.clientSecret,
+        provider: providerSpecificData.authMethod === "idc" ? "IDC" : "Imported",
       },
       testStatus: "active",
     });

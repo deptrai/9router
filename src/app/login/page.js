@@ -221,7 +221,7 @@ export default function LoginPage() {
 
                   {loginTab === "admin" && (
                     <p className="text-xs text-center text-text-muted mt-2">
-                      Default password is <code className="bg-sidebar px-1 rounded">Test1234!</code>
+                      Default password is <code className="bg-sidebar px-1 rounded">123456</code>
                     </p>
                   )}
                   {loginTab === "admin" && hasPassword === false && (
