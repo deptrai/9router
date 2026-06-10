@@ -218,9 +218,10 @@ async function safeRestartTailscale(reason) {
 
 function startCreditSweep() {
   if (g.creditSweepInterval) return;
-  runExpirySweep().catch(() => {});
+  // Review patch (P4): log startup/interval sweep failures instead of swallowing silently.
+  runExpirySweep().catch((e) => console.error("[creditSweep] startup sweep failed:", e?.message || e));
   g.creditSweepInterval = setInterval(() => {
-    runExpirySweep().catch(() => {});
+    runExpirySweep().catch((e) => console.error("[creditSweep] sweep failed:", e?.message || e));
   }, CREDIT_SWEEP_INTERVAL_MS);
   if (g.creditSweepInterval.unref) g.creditSweepInterval.unref();
 }

@@ -301,13 +301,20 @@ export function deductFromPriorityBuckets(userId, cost, refId, note, adapter) {
 export async function reconcileUserBalance(userId, db = null) {
   const adapter = db || (await getAdapter());
   const now = new Date().toISOString();
-  const row = adapter.get(
-    `SELECT COALESCE(SUM(amount), 0) AS total FROM creditTransactions
-     WHERE userId = ? AND (expiresAt IS NULL OR expiresAt > ?)`,
-    [userId, now]
-  );
-  const fresh = row?.total ?? 0;
-  adapter.run(`UPDATE users SET creditsBalance = ?, updatedAt = ? WHERE id = ?`, [fresh, now, userId]);
+  // Review patch (P1): wrap SELECT SUM + UPDATE atomically. Without a transaction a
+  // concurrent recordCreditTxn (creditsBalance += amount) committing between the two
+  // statements is silently overwritten by the stale SUM snapshot → lost update.
+  // Callers pass a non-transactional adapter (sweep loop); do not nest inside an open txn.
+  let fresh = 0;
+  adapter.transaction(() => {
+    const row = adapter.get(
+      `SELECT COALESCE(SUM(amount), 0) AS total FROM creditTransactions
+       WHERE userId = ? AND (expiresAt IS NULL OR expiresAt > ?)`,
+      [userId, now]
+    );
+    fresh = row?.total ?? 0;
+    adapter.run(`UPDATE users SET creditsBalance = ?, updatedAt = ? WHERE id = ?`, [fresh, now, userId]);
+  });
   return fresh;
 }
 

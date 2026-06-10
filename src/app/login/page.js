@@ -16,7 +16,35 @@ export default function LoginPage() {
   const [authMode, setAuthMode] = useState("password");
   const [oidcConfigured, setOidcConfigured] = useState(false);
   const [oidcLoginLabel, setOidcLoginLabel] = useState("Sign in with OIDC");
+  const [googleEnabled, setGoogleEnabled] = useState(false);
+  const [telegramBotUsername, setTelegramBotUsername] = useState(null);
+  const [telegramBotId, setTelegramBotId] = useState(null);
   const router = useRouter();
+
+  // Telegram popup callback — called by oauth.telegram.org after user authenticates
+  useEffect(() => {
+    window.TelegramLoginWidget = {
+      dataOnauth: async (user) => {
+        try {
+          const res = await fetch("/api/auth/telegram/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(user),
+          });
+          if (res.ok) {
+            router.push("/dashboard");
+            router.refresh();
+          } else {
+            const data = await res.json().catch(() => ({}));
+            setError(data.error || "Telegram login failed");
+          }
+        } catch {
+          setError("Telegram login failed");
+        }
+      },
+    };
+    return () => { delete window.TelegramLoginWidget; };
+  }, [router]);
 
   // Countdown for rate-limit
   useEffect(() => {
@@ -48,6 +76,16 @@ export default function LoginPage() {
           setAuthMode(data.authMode || "password");
           setOidcConfigured(data.oidcConfigured === true);
           setOidcLoginLabel(data.oidcLoginLabel || "Sign in with OIDC");
+          // Fetch social providers config
+          try {
+            const socialRes = await fetch(`${baseUrl}/api/auth/social-providers`);
+            if (socialRes.ok) {
+              const social = await socialRes.json();
+              setGoogleEnabled(!!social.googleEnabled);
+              setTelegramBotUsername(social.telegramBotUsername || null);
+              setTelegramBotId(social.telegramBotId || null);
+            }
+          } catch {}
         } else {
           setHasPassword(true);
         }
@@ -242,6 +280,26 @@ export default function LoginPage() {
                     </p>
                   )}
                 </form>
+
+                {loginTab === "user" && (googleEnabled || telegramBotId) && (
+                  <div className="flex flex-col gap-3 mt-4">
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-px bg-border/60" />
+                      <span className="text-xs text-text-muted px-2">hoặc</span>
+                      <div className="flex-1 h-px bg-border/60" />
+                    </div>
+                    {googleEnabled && (
+                      <Button type="button" variant="secondary" className="w-full" onClick={() => { window.location.href = "/api/auth/google/start"; }}>
+                        Đăng nhập bằng Google
+                      </Button>
+                    )}
+                    {telegramBotId && (
+                      <Button type="button" variant="secondary" className="w-full" onClick={() => { window.open(`https://oauth.telegram.org/auth?bot_id=${telegramBotId}&origin=${window.location.origin}&request_access=write`, "_blank", "width=550,height=450"); }}>
+                        Đăng nhập bằng Telegram
+                      </Button>
+                    )}
+                  </div>
+                )}
               </>
             )}
 

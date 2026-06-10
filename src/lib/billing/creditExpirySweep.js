@@ -3,12 +3,14 @@ import { reconcileUserBalance } from "@/lib/db/repos/creditLedgerRepo.js";
 import { getMetaSync, setMetaSync } from "@/lib/db/helpers/metaStore.js";
 
 const META_LAST_SWEEP_AT = "creditSweep:lastSweepAt";
-const DEFAULT_LOOKBACK_MS = 25 * 60 * 60 * 1000;
+const EPOCH_ISO = new Date(0).toISOString();
 
 export async function runExpirySweep() {
   const adapter = await getAdapter();
   const now = new Date().toISOString();
-  const since = getMetaSync(adapter, META_LAST_SWEEP_AT, new Date(Date.now() - DEFAULT_LOOKBACK_MS).toISOString());
+  // Review patch (P3): cold-start (no stored cursor) must full-scan from epoch — a 25h
+  // lookback silently drops every credit that expired >25h before this process started.
+  const since = getMetaSync(adapter, META_LAST_SWEEP_AT, EPOCH_ISO);
   const rows = adapter.all(
     `SELECT DISTINCT userId FROM creditTransactions
      WHERE expiresAt IS NOT NULL AND expiresAt > ? AND expiresAt <= ?`,
@@ -25,6 +27,11 @@ export async function runExpirySweep() {
       console.warn("[creditSweep] reconcile failed for", row.userId, e?.message || e);
     }
   }
-  setMetaSync(adapter, META_LAST_SWEEP_AT, now);
+  // Review patch (P2): only advance the cursor when every user reconciled. Advancing past
+  // a failed user moves `since` beyond their expiry timestamp → they are never re-swept
+  // (lost forever). On partial failure, leave the cursor so the next sweep retries the window.
+  if (result.failed === 0) {
+    setMetaSync(adapter, META_LAST_SWEEP_AT, now);
+  }
   return result;
 }

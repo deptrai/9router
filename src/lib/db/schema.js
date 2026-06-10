@@ -1,5 +1,5 @@
 // Latest schema version — bumped when a migration is added in ./migrations/
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -103,11 +103,16 @@ export const TABLES = {
       planId: "TEXT",
       planExpiresAt: "TEXT",
       allowCreditOverflow: "INTEGER DEFAULT 0",
+      googleSub: "TEXT",
+      telegramId: "TEXT",
+      authProviders: "TEXT",
       createdAt: "TEXT NOT NULL",
       updatedAt: "TEXT NOT NULL",
     },
     indexes: [
       "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)",
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_googleSub ON users(googleSub) WHERE googleSub IS NOT NULL",
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_telegramId ON users(telegramId) WHERE telegramId IS NOT NULL",
     ],
   },
   apiKeys: {

@@ -35,6 +35,8 @@ const PUBLIC_API_PATHS = [
   "/api/settings/require-login",
   "/api/webhooks/crypto",
   "/api/webhooks/bitcart",
+  "/api/auth/google",
+  "/api/auth/telegram",
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).

@@ -18,6 +18,10 @@ function rowToUser(row, includePasswordHash = false) {
     planId: row.planId ?? null,
     planExpiresAt: row.planExpiresAt ?? null,
     allowCreditOverflow: row.allowCreditOverflow === 1 || row.allowCreditOverflow === true,
+    googleSub: row.googleSub ?? null,
+    telegramId: row.telegramId ?? null,
+    authProviders: row.authProviders ?? null,
+    hasPassword: !!(row.passwordHash && row.passwordHash !== "!"),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -41,12 +45,13 @@ export async function createUser(email, passwordHash, displayName) {
   const db = await getAdapter();
   const id = uuidv4();
   const now = new Date().toISOString();
+  const effectiveHash = passwordHash || "!"; // "!" = social-only sentinel (not a valid bcrypt hash)
   db.run(
     `INSERT INTO users(id, email, passwordHash, displayName, isActive, isEmailVerified, creditsBalance, createdAt, updatedAt)
      VALUES(?, ?, ?, ?, 1, 0, 0, ?, ?)`,
-    [id, email, passwordHash, displayName || null, now, now]
+    [id, email, effectiveHash, displayName || null, now, now]
   );
-  return { id, email, displayName: displayName || null, isActive: true, isEmailVerified: false, creditsBalance: 0, createdAt: now, updatedAt: now };
+  return { id, email, displayName: displayName || null, isActive: true, isEmailVerified: false, creditsBalance: 0, hasPassword: !!passwordHash, createdAt: now, updatedAt: now };
 }
 
 export async function getUserByEmail(email) {
@@ -78,8 +83,8 @@ export async function updateUser(id, data) {
 
     const merged = { ...row, ...clean, updatedAt: now };
     db.run(
-      `UPDATE users SET email = ?, passwordHash = ?, displayName = ?, isActive = ?, isEmailVerified = ?, creditsBalance = ?, planId = ?, planExpiresAt = ?, allowCreditOverflow = ?, updatedAt = ? WHERE id = ?`,
-      [merged.email, merged.passwordHash, merged.displayName, merged.isActive ? 1 : 0, merged.isEmailVerified ? 1 : 0, merged.creditsBalance, merged.planId ?? null, merged.planExpiresAt ?? null, merged.allowCreditOverflow ? 1 : 0, merged.updatedAt, id]
+      `UPDATE users SET email = ?, passwordHash = ?, displayName = ?, isActive = ?, isEmailVerified = ?, creditsBalance = ?, planId = ?, planExpiresAt = ?, allowCreditOverflow = ?, googleSub = ?, telegramId = ?, authProviders = ?, updatedAt = ? WHERE id = ?`,
+      [merged.email, merged.passwordHash, merged.displayName, merged.isActive ? 1 : 0, merged.isEmailVerified ? 1 : 0, merged.creditsBalance, merged.planId ?? null, merged.planExpiresAt ?? null, merged.allowCreditOverflow ? 1 : 0, merged.googleSub ?? null, merged.telegramId ?? null, merged.authProviders ?? null, merged.updatedAt, id]
     );
     result = rowToUser({ ...merged, isActive: merged.isActive }, false);
   });
@@ -108,4 +113,16 @@ export async function deactivateUser(id) {
   const db = await getAdapter();
   const now = new Date().toISOString();
   db.run(`UPDATE users SET isActive = 0, updatedAt = ? WHERE id = ?`, [now, id]);
+}
+
+export async function getUserByGoogleSub(googleSub) {
+  const db = await getAdapter();
+  const row = db.get(`SELECT * FROM users WHERE googleSub = ?`, [googleSub]);
+  return rowToUser(row, true);
+}
+
+export async function getUserByTelegramId(telegramId) {
+  const db = await getAdapter();
+  const row = db.get(`SELECT * FROM users WHERE telegramId = ?`, [telegramId]);
+  return rowToUser(row, true);
 }

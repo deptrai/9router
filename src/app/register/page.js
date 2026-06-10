@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, Button, Input } from "@/shared/components";
 import { useRouter } from "next/navigation";
 
@@ -11,7 +11,16 @@ export default function RegisterPage() {
   const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleEnabled, setGoogleEnabled] = useState(false);
+  const [telegramBotId, setTelegramBotId] = useState(null);
   const router = useRouter();
+
+  useEffect(() => {
+    fetch("/api/auth/social-providers")
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) { setGoogleEnabled(!!d.googleEnabled); setTelegramBotId(d.telegramBotId || null); } })
+      .catch(() => {});
+  }, []);
 
   const handleRegister = async (e) => {
     e.preventDefault();
@@ -120,6 +129,26 @@ export default function RegisterPage() {
                 Sign in
               </a>
             </p>
+
+            {(googleEnabled || telegramBotId) && (
+              <div className="flex flex-col gap-3 mt-2">
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 h-px bg-border/60" />
+                  <span className="text-xs text-text-muted px-2">hoặc</span>
+                  <div className="flex-1 h-px bg-border/60" />
+                </div>
+                {googleEnabled && (
+                  <Button type="button" variant="secondary" className="w-full" onClick={() => { window.location.href = "/api/auth/google/start"; }}>
+                    Đăng ký bằng Google
+                  </Button>
+                )}
+                {telegramBotId && (
+                  <Button type="button" variant="secondary" className="w-full" onClick={() => { window.open(`https://oauth.telegram.org/auth?bot_id=${telegramBotId}&origin=${window.location.origin}&request_access=write`, "_blank", "width=550,height=450"); }}>
+                    Đăng ký bằng Telegram
+                  </Button>
+                )}
+              </div>
+            )}
           </form>
         </Card>
       </div>

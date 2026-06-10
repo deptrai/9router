@@ -5,7 +5,7 @@ epic: C
 
 # Story 2.21 — Credit Expiry + Validity Cleanup
 
-Status: in-progress
+Status: done
 
 ## Story
 
@@ -219,3 +219,17 @@ Setup pattern: temp DATA_DIR, `delete global._dbAdapter`, `vi.resetModules()` (g
 
 ### Change Log
 - 2026-06-10: Story created (ready-for-dev)
+- 2026-06-10: Implemented + code review. 5 patches applied (P1 reconcile transaction-wrap race fix, P2 setMetaSync only-on-success, P3 cold-start epoch full-scan, P4 sweep error logging, P5 created creditExpirySweep.test.js). D1 resolved = standard credits never expire. 7 new sweep tests + 43 affected tests pass. Status → done.
+
+## Review Findings — 2026-06-10
+
+- [x] [Review][Decision] D1 standard validity policy — RESOLVED: chốt D1=A. Standard credit KHÔNG hết hạn (`expiresAt=null`), khớp landing FAQ "Credits never expire". AC1 = no-op (intentional). Part C (C1/C2) bỏ qua. `standardExpiresAt` trong API luôn null trừ khi tương lai có policy expiry. (2026-06-10)
+
+- [x] [Review][Patch] CRITICAL — reconcileUserBalance SELECT-then-UPDATE không trong transaction [src/lib/db/repos/creditLedgerRepo.js reconcileUserBalance] — `adapter.get(SELECT SUM)` rồi `adapter.run(UPDATE creditsBalance=fresh)` là 2 statement rời. Một deduction (recordCreditTxn dùng `creditsBalance + amount`) chen vào giữa sẽ bị overwrite bằng stale SUM → lost update, cache sai. Fix: bọc cả SELECT+UPDATE trong `adapter.transaction(() => {...})` (better-sqlite3 BEGIN IMMEDIATE). Lưu ý giữ signature nhận `db` adapter để nest được vào caller transaction.
+- [x] [Review][Patch] HIGH — setMetaSync advance window kể cả khi reconcile fail [src/lib/billing/creditExpirySweep.js:28] — `setMetaSync(lastSweepAt, now)` gọi vô điều kiện sau loop. User reconcile fail → expiry event của họ rơi trước `since` ở sweep sau → không bao giờ retry (lost forever). Fix: chỉ advance khi `result.failed === 0`, hoặc track failed userIds để retry riêng.
+- [x] [Review][Patch] MEDIUM — cold-start 25h lookback bỏ sót expiry sau downtime dài [src/lib/billing/creditExpirySweep.js:6,11] — khi không có meta lastSweepAt, fallback chỉ lookback 25h. Credit hết hạn > 25h trước restart không bao giờ được reconcile. Fix: cold-start (meta chưa có) dùng `since = epoch` (full scan) thay vì 25h.
+- [x] [Review][Patch] LOW — startup sweep error bị nuốt im lặng [src/shared/services/initializeApp.js startCreditSweep] — `runExpirySweep().catch(() => {})` không log gì. Fix: `console.error` trong catch (đồng bộ với warn-level logging trong loop body).
+- [x] [Review][Patch] AC6 — Thiếu toàn bộ test [tests/unit/creditExpirySweep.test.js] — AC6 yêu cầu test: reconcile cache sau expiry, sweep job logic (fail-soft), validity dates trong API, AC5 regression (expired không deduct). Không có test file nào. Fix: tạo test file theo task E1.
+
+- [x] [Review][Defer] MEDIUM — multi-process duplicate sweeps — `global.__appSingleton` là process-local; main + mitm process mỗi cái chạy sweep riêng. Sau khi fix CRITICAL (transaction wrap), reconcile idempotent nên chỉ lãng phí, không sai. Advisory lock là feature lớn hơn. — deferred, idempotent sau khi fix transaction
+- [x] [Review][Defer] LOW — reconcileUserBalance duplicate SUM query của rebuildBalanceFromLedger (DRY) — `rebuildBalanceFromLedger` không nhận `db` adapter param (tự `getAdapter()`, chỉ return number) nên không reuse được trong transaction. Có thể refactor để nhận optional adapter rồi reconcile gọi lại. — deferred, minor cleanup
