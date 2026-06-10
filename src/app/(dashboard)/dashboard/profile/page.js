@@ -238,6 +238,136 @@ function UserProfileCard() {
   );
 }
 
+function SocialProvidersCard() {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [unlinking, setUnlinking] = useState(null);
+  const [telegramBotId, setTelegramBotId] = useState(null);
+  const [role, setRole] = useState(null);
+
+  useEffect(() => {
+    fetch("/api/auth/status")
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setRole(d.role); })
+      .catch(() => {});
+    fetch("/api/auth/social-providers")
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setTelegramBotId(d.telegramBotId || null); })
+      .catch(() => {});
+    fetch("/api/users/me")
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(d => setUser(d))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (role !== "user" || loading || !user) return null;
+
+  const handleLinkGoogle = () => {
+    window.location.href = "/api/auth/google/start?link=true";
+  };
+
+  const handleLinkTelegram = () => {
+    if (!telegramBotId) return;
+    window.TelegramLoginWidget = {
+      dataOnauth: async (tgUser) => {
+        delete window.TelegramLoginWidget;
+        const res = await fetch("/api/auth/telegram/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...tgUser, link: true }),
+        });
+        if (res.ok) {
+          setUser(prev => ({ ...prev, telegramId: String(tgUser.id) }));
+        } else {
+          const data = await res.json().catch(() => ({}));
+          setError(data.error || "Telegram link failed");
+        }
+      },
+    };
+    window.open(
+      `https://oauth.telegram.org/auth?bot_id=${telegramBotId}&origin=${window.location.origin}&request_access=write`,
+      "_blank", "width=550,height=450"
+    );
+  };
+
+  const handleUnlink = async (provider) => {
+    setUnlinking(provider);
+    try {
+      const res = await fetch("/api/auth/unlink-provider", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider }),
+      });
+      if (res.ok) {
+        setUser(prev => ({
+          ...prev,
+          googleSub: provider === "google" ? null : prev.googleSub,
+          telegramId: provider === "telegram" ? null : prev.telegramId,
+        }));
+      } else {
+        const data = await res.json();
+        setError(data.error || "Unlink failed");
+      }
+    } catch {
+      setError("An error occurred");
+    } finally {
+      setUnlinking(null);
+    }
+  };
+
+  return (
+    <Card>
+      <div className="flex items-center gap-3 mb-4">
+        <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500 shrink-0">
+          <span className="material-symbols-outlined text-[20px]">link</span>
+        </div>
+        <h3 className="text-base sm:text-lg font-semibold">Phương thức đăng nhập</h3>
+      </div>
+      {error && <p className="text-xs text-red-500 mb-3">{error}</p>}
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between py-2 border-b border-border/40">
+          <div>
+            <span className="font-medium text-sm">Password</span>
+            <span className="ml-2 text-xs text-text-muted">{user?.hasPassword ? "Đã thiết lập" : "Chưa có"}</span>
+          </div>
+        </div>
+        <div className="flex items-center justify-between py-2 border-b border-border/40">
+          <div>
+            <span className="font-medium text-sm">Google</span>
+            <span className="ml-2 text-xs text-text-muted">{user?.googleSub ? "Đã liên kết" : "Chưa liên kết"}</span>
+          </div>
+          {user?.googleSub ? (
+            <Button type="button" variant="ghost" size="sm" loading={unlinking === "google"} onClick={() => handleUnlink("google")}>
+              Hủy liên kết
+            </Button>
+          ) : (
+            <Button type="button" variant="secondary" size="sm" onClick={handleLinkGoogle}>
+              Liên kết
+            </Button>
+          )}
+        </div>
+        <div className="flex items-center justify-between py-2">
+          <div>
+            <span className="font-medium text-sm">Telegram</span>
+            <span className="ml-2 text-xs text-text-muted">{user?.telegramId ? "Đã liên kết" : "Chưa liên kết"}</span>
+          </div>
+          {user?.telegramId ? (
+            <Button type="button" variant="ghost" size="sm" loading={unlinking === "telegram"} onClick={() => handleUnlink("telegram")}>
+              Hủy liên kết
+            </Button>
+          ) : (
+            <Button type="button" variant="secondary" size="sm" onClick={handleLinkTelegram}>
+              Liên kết
+            </Button>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export default function ProfilePage() {
   const { theme, setTheme, isDark } = useTheme();
   const [settings, setSettings] = useState({ fallbackStrategy: "fill-first" });
@@ -837,6 +967,7 @@ export default function ProfilePage() {
 
         {/* User Profile (shown for user role) */}
         <UserProfileCard />
+        <SocialProvidersCard />
 
         {/* Security — admin only */}
         {role !== "user" && (
