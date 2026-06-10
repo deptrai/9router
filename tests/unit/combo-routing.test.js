@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 
-import { getRotatedModels, resetComboRotation } from "../../open-sse/services/combo.js";
+import { getModelContextFit, getRotatedModels, handleComboChat, resetComboRotation } from "../../open-sse/services/combo.js";
 
 describe("combo round-robin routing", () => {
   beforeEach(() => {
@@ -54,5 +54,98 @@ describe("combo round-robin routing", () => {
 
     expect(getRotatedModels(models, "code-xhigh", "fallback", 2)).toEqual(models);
     expect(getRotatedModels(models, "code-xhigh", "fallback", 2)).toEqual(models);
+  });
+
+  it("detects when a fallback model cannot fit the estimated context window", () => {
+    const fit = getModelContextFit(
+      { messages: [{ role: "user", content: "large" }], max_tokens: 1024 },
+      "cx/gpt-5.5",
+      () => 1_100_000,
+    );
+
+    expect(fit.fits).toBe(false);
+    expect(fit.contextWindow).toBe(1_050_000);
+  });
+
+  it("uses context metadata for provider-id model strings too", () => {
+    const fit = getModelContextFit(
+      { messages: [{ role: "user", content: "large" }] },
+      "codex/gpt-5.5",
+      () => 1_100_000,
+    );
+
+    expect(fit.fits).toBe(false);
+    expect(fit.contextWindow).toBe(1_050_000);
+  });
+
+  it("does not treat GPT 5.5 xhigh as a larger-context fallback", () => {
+    const body = { messages: [{ role: "user", content: "large" }] };
+    const estimateInputTokens = () => 1_000_000;
+
+    const xhigh = getModelContextFit(body, "cx/gpt-5.5-xhigh", estimateInputTokens);
+    const low = getModelContextFit(body, "cx/gpt-5.5-low", estimateInputTokens);
+
+    expect(xhigh.contextWindow).toBe(1_050_000);
+    expect(low.contextWindow).toBe(1_050_000);
+    expect(xhigh.fits).toBe(false);
+    expect(low.fits).toBe(false);
+  });
+
+  it("counts requested output tokens against the context window", () => {
+    const body = {
+      messages: [{ role: "user", content: "large" }],
+      max_tokens: 10_000,
+    };
+
+    const fit = getModelContextFit(body, "cx/gpt-5.5", () => 950_000);
+
+    expect(fit.contextWindow).toBe(1_050_000);
+    expect(fit.requiredTokens - fit.estimatedTokens).toBe(10_000);
+    expect(fit.requiredTokens).toBeGreaterThan(fit.contextWindow);
+    expect(fit.fits).toBe(false);
+  });
+
+  it("skips combo fallback models whose context window is too small", async () => {
+    const calls = [];
+    const log = { info: () => {}, warn: () => {} };
+
+    const response = await handleComboChat({
+      body: { messages: [{ role: "user", content: "large" }], max_tokens: 1024 },
+      models: ["provider/model-a", "cx/gpt-5.5"],
+      estimateInputTokens: () => 1_100_000,
+      log,
+      handleSingleModel: async (_body, model) => {
+        calls.push(model);
+        return new Response(JSON.stringify({ error: { message: "rate limit" } }), {
+          status: 429,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    });
+
+    expect(calls).toEqual(["provider/model-a"]);
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { message: expect.stringContaining("exceeds context window") },
+    });
+  });
+
+  it("does not call upstream when every known combo member is too large", async () => {
+    const handleSingleModel = vi.fn();
+    const log = { info: () => {}, warn: () => {} };
+
+    const response = await handleComboChat({
+      body: { messages: [{ role: "user", content: "large" }] },
+      models: ["claude/claude-opus-4-8", "codex/gpt-5.5-xhigh"],
+      estimateInputTokens: () => 1_000_000,
+      log,
+      handleSingleModel,
+    });
+
+    expect(handleSingleModel).not.toHaveBeenCalled();
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { message: expect.stringContaining("codex/gpt-5.5-xhigh") },
+    });
   });
 });

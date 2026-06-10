@@ -1,4 +1,4 @@
-import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
+import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS, getModelContextWindow } from "@/shared/constants/models";
 import {
   AI_PROVIDERS,
   getProviderAlias,
@@ -147,6 +147,45 @@ function comboMatchesKinds(combo, kindFilter) {
   return kindFilter.includes(kind);
 }
 
+function addContextMetadata(entry, contextWindow) {
+  if (!Number.isFinite(contextWindow)) return entry;
+  entry.context_window = contextWindow;
+  entry.contextWindow = contextWindow;
+  entry.max_context_length = contextWindow;
+  return entry;
+}
+
+function parseComboModels(combo) {
+  if (Array.isArray(combo?.models)) return combo.models;
+  if (typeof combo?.models !== "string") return [];
+  try {
+    const parsed = JSON.parse(combo.models);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function resolveFullModelContextWindow(fullModel) {
+  if (typeof fullModel !== "string" || !fullModel.includes("/")) return null;
+  const slash = fullModel.indexOf("/");
+  const alias = fullModel.slice(0, slash);
+  const modelId = fullModel.slice(slash + 1);
+  const providerId = Object.entries(PROVIDER_ID_TO_ALIAS).find(([, a]) => a === alias)?.[0] || alias;
+  const staticAlias = PROVIDER_ID_TO_ALIAS[providerId] || alias;
+  return getModelContextWindow(alias, modelId)
+    || getModelContextWindow(staticAlias, modelId)
+    || getModelContextWindow(providerId, modelId);
+}
+
+function resolveComboContextWindow(combo) {
+  const comboModels = parseComboModels(combo);
+  if (comboModels.length === 0) return null;
+  const windows = comboModels.map(resolveFullModelContextWindow);
+  if (windows.some((value) => !Number.isFinite(value))) return null;
+  return Math.min(...windows);
+}
+
 /**
  * Build OpenAI-format models list filtered by service kinds.
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
@@ -209,7 +248,7 @@ export async function buildModelsList(kindFilter) {
     if (combo.kind === "webSearch" || combo.kind === "webFetch") {
       entry.kind = combo.kind;
     }
-    models.push(entry);
+    models.push(addContextMetadata(entry, resolveComboContextWindow(combo)));
   }
 
   if (connections.length === 0) {
@@ -223,11 +262,11 @@ export async function buildModelsList(kindFilter) {
       for (const model of providerModels) {
         if (!kindFilter.includes(modelKind(model))) continue;
         if (isDisabled(alias, model.id)) continue;
-        models.push({
+        models.push(addContextMetadata({
           id: `${alias}/${model.id}`,
           object: "model",
           owned_by: alias,
-        });
+        }, model.contextWindow));
       }
     }
 
@@ -353,11 +392,15 @@ export async function buildModelsList(kindFilter) {
         if (!kindFilter.includes(kind)) continue;
         if (isDisabled(outputAlias, modelId) || isDisabled(staticAlias, modelId)) continue;
 
-        models.push({
+        const contextWindow = getModelContextWindow(outputAlias, modelId)
+          || getModelContextWindow(staticAlias, modelId)
+          || getModelContextWindow(providerId, modelId);
+
+        models.push(addContextMetadata({
           id: `${outputAlias}/${modelId}`,
           object: "model",
           owned_by: outputAlias,
-        });
+        }, contextWindow));
       }
 
       // Merge sub-config models (TTS / embedding) that live on AI_PROVIDERS, not PROVIDER_MODELS

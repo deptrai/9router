@@ -6,6 +6,8 @@ import { buildTtsProviderModels } from "./ttsModels.js";
 // Field "provider" for special cases (e.g. AntiGravity models that call different backends)
 
 const CODEX_REVIEW_SUFFIX = "-review";
+const GPT_5_5_CONTEXT_WINDOW = 1_050_000;
+const CLAUDE_OPUS_4_8_CONTEXT_WINDOW = 1_000_000;
 
 function withCodexReviewModels(models) {
   return models.flatMap((model) => {
@@ -29,7 +31,7 @@ function withCodexReviewModels(models) {
 export const PROVIDER_MODELS = {
   // OAuth Providers (using alias)
   cc: [  // Claude Code
-    { id: "claude-opus-4-8", name: "Claude Opus 4.8" },
+    { id: "claude-opus-4-8", name: "Claude Opus 4.8", contextWindow: CLAUDE_OPUS_4_8_CONTEXT_WINDOW },
     { id: "claude-opus-4-7", name: "Claude Opus 4.7" },
     { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
     { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
@@ -38,11 +40,11 @@ export const PROVIDER_MODELS = {
     { id: "claude-haiku-4-5-20251001", name: "Claude 4.5 Haiku" },
   ],
   cx: withCodexReviewModels([  // OpenAI Codex
-    { id: "gpt-5.5", name: "GPT 5.5" },
-    { id: "gpt-5.5-xhigh", name: "GPT 5.5 (xHigh)" },
-    { id: "gpt-5.5-high", name: "GPT 5.5 (High)" },
-    { id: "gpt-5.5-low", name: "GPT 5.5 (Low)" },
-    { id: "gpt-5.5-none", name: "GPT 5.5 (None)" },
+    { id: "gpt-5.5", name: "GPT 5.5", contextWindow: GPT_5_5_CONTEXT_WINDOW },
+    { id: "gpt-5.5-xhigh", name: "GPT 5.5 (xHigh)", contextWindow: GPT_5_5_CONTEXT_WINDOW },
+    { id: "gpt-5.5-high", name: "GPT 5.5 (High)", contextWindow: GPT_5_5_CONTEXT_WINDOW },
+    { id: "gpt-5.5-low", name: "GPT 5.5 (Low)", contextWindow: GPT_5_5_CONTEXT_WINDOW },
+    { id: "gpt-5.5-none", name: "GPT 5.5 (None)", contextWindow: GPT_5_5_CONTEXT_WINDOW },
     { id: "gpt-5.4", name: "GPT 5.4" },
     { id: "gpt-5.4-mini", name: "GPT 5.4 Mini" },
     // GPT 5.3 Codex - all thinking levels
@@ -133,7 +135,7 @@ export const PROVIDER_MODELS = {
     { id: "auto", name: "Auto" },
     { id: "auto-thinking", name: "Auto (Thinking)" },
     // --- Claude base variants ---
-    { id: "claude-opus-4.8", name: "Claude Opus 4.8" },
+    { id: "claude-opus-4.8", name: "Claude Opus 4.8", contextWindow: CLAUDE_OPUS_4_8_CONTEXT_WINDOW },
     { id: "claude-opus-4.7", name: "Claude Opus 4.7" },
     { id: "claude-opus-4.6", name: "Claude Opus 4.6" },
     { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
@@ -148,7 +150,7 @@ export const PROVIDER_MODELS = {
     { id: "minimax-m2.5", name: "MiniMax M2.5" },
     { id: "minimax-m2.1", name: "MiniMax M2.1" },
     // --- Thinking variants ---
-    { id: "claude-opus-4.8-thinking", name: "Claude Opus 4.8 (Thinking)" },
+    { id: "claude-opus-4.8-thinking", name: "Claude Opus 4.8 (Thinking)", contextWindow: CLAUDE_OPUS_4_8_CONTEXT_WINDOW },
     { id: "claude-opus-4.7-thinking", name: "Claude Opus 4.7 (Thinking)" },
     { id: "claude-opus-4.6-thinking", name: "Claude Opus 4.6 (Thinking)" },
     { id: "claude-opus-4.5-thinking", name: "Claude Opus 4.5 (Thinking)" },
@@ -162,7 +164,7 @@ export const PROVIDER_MODELS = {
     { id: "minimax-m2.5-thinking", name: "MiniMax M2.5 (Thinking)" },
     { id: "minimax-m2.1-thinking", name: "MiniMax M2.1 (Thinking)" },
     // --- Agentic variants ---
-    { id: "claude-opus-4.8-agentic", name: "Claude Opus 4.8 (Agentic)" },
+    { id: "claude-opus-4.8-agentic", name: "Claude Opus 4.8 (Agentic)", contextWindow: CLAUDE_OPUS_4_8_CONTEXT_WINDOW },
     { id: "claude-opus-4.7-agentic", name: "Claude Opus 4.7 (Agentic)" },
     { id: "claude-opus-4.6-agentic", name: "Claude Opus 4.6 (Agentic)" },
     { id: "claude-opus-4.5-agentic", name: "Claude Opus 4.5 (Agentic)" },
@@ -176,7 +178,7 @@ export const PROVIDER_MODELS = {
     { id: "minimax-m2.5-agentic", name: "MiniMax M2.5 (Agentic)" },
     { id: "minimax-m2.1-agentic", name: "MiniMax M2.1 (Agentic)" },
     // --- Thinking + Agentic variants ---
-    { id: "claude-opus-4.8-thinking-agentic", name: "Claude Opus 4.8 (Thinking + Agentic)" },
+    { id: "claude-opus-4.8-thinking-agentic", name: "Claude Opus 4.8 (Thinking + Agentic)", contextWindow: CLAUDE_OPUS_4_8_CONTEXT_WINDOW },
     { id: "claude-opus-4.7-thinking-agentic", name: "Claude Opus 4.7 (Thinking + Agentic)" },
     { id: "claude-opus-4.6-thinking-agentic", name: "Claude Opus 4.6 (Thinking + Agentic)" },
     { id: "claude-opus-4.5-thinking-agentic", name: "Claude Opus 4.5 (Thinking + Agentic)" },
@@ -914,6 +916,14 @@ export function getModelQuotaFamily(aliasOrId, modelId) {
   const models = PROVIDER_MODELS[aliasOrId];
   const found = models?.find(m => m.id === modelId);
   return found?.quotaFamily || "normal";
+}
+
+export function getModelContextWindow(aliasOrId, modelId) {
+  const models = PROVIDER_MODELS[aliasOrId];
+  const found = models?.find(m => m.id === modelId);
+  if (Number.isFinite(found?.contextWindow)) return found.contextWindow;
+  if (Number.isFinite(found?.contextLength)) return found.contextLength;
+  return null;
 }
 
 // OAuth providers that use short aliases (everything else: alias = id)

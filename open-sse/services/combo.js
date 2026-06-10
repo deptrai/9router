@@ -3,7 +3,13 @@
  */
 
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
+import { parseModel } from "./model.js";
+import { getModelContextWindow, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { unavailableResponse } from "../utils/error.js";
+
+const DEFAULT_CONTEXT_RESERVE_TOKENS = 4096;
+const CONTEXT_ESTIMATE_SAFETY_RATIO = 1.1;
+const CHARS_PER_TOKEN_ESTIMATE = 4;
 
 /**
  * Track rotation state per combo (for round-robin strategy)
@@ -73,6 +79,49 @@ export function resetComboRotation(comboName) {
   else comboRotationState.clear();
 }
 
+export function estimateRequestInputTokens(body) {
+  try {
+    return Math.ceil(JSON.stringify(body || {}).length / CHARS_PER_TOKEN_ESTIMATE);
+  } catch {
+    return 0;
+  }
+}
+
+function getRequestedOutputReserve(body) {
+  const raw = body?.max_tokens ?? body?.max_completion_tokens ?? body?.max_output_tokens ?? 0;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function resolveModelContextWindow(modelStr) {
+  const parsed = parseModel(modelStr);
+  if (!parsed?.model) return null;
+  const aliases = [parsed.providerAlias, PROVIDER_ID_TO_ALIAS[parsed.provider], parsed.provider]
+    .filter(Boolean);
+  for (const alias of aliases) {
+    const contextWindow = getModelContextWindow(alias, parsed.model);
+    if (contextWindow) return contextWindow;
+  }
+  return null;
+}
+
+export function getModelContextFit(body, modelStr, estimateInputTokens = estimateRequestInputTokens, reserveTokens = DEFAULT_CONTEXT_RESERVE_TOKENS) {
+  const contextWindow = resolveModelContextWindow(modelStr);
+  if (!contextWindow) return { fits: true, contextWindow: null, estimatedTokens: 0, requiredTokens: 0 };
+
+  const estimatedTokens = Math.ceil((estimateInputTokens(body) || 0) * CONTEXT_ESTIMATE_SAFETY_RATIO);
+  const requestedReserve = getRequestedOutputReserve(body);
+  const outputReserve = Math.max(reserveTokens, requestedReserve);
+  const requiredTokens = estimatedTokens + outputReserve;
+
+  return {
+    fits: requiredTokens <= contextWindow,
+    contextWindow,
+    estimatedTokens,
+    requiredTokens,
+  };
+}
+
 /**
  * Get combo models from combos data
  * @param {string} modelStr - Model string to check
@@ -105,7 +154,7 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1 }) {
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, estimateInputTokens = estimateRequestInputTokens }) {
   // Apply rotation strategy if enabled
   const rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
   
@@ -116,6 +165,14 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
+
+    const contextFit = getModelContextFit(body, modelStr, estimateInputTokens);
+    if (!contextFit.fits) {
+      lastStatus = 400;
+      lastError = `[${modelStr}] estimated input ${contextFit.estimatedTokens} tokens (+reserve ${contextFit.requiredTokens - contextFit.estimatedTokens}) exceeds context window ${contextFit.contextWindow}; compact the conversation or use a larger-context fallback`;
+      log.warn("COMBO", `Skipping ${modelStr}: context window too small`, contextFit);
+      continue;
+    }
 
     try {
       const result = await handleSingleModel(body, modelStr);

@@ -12,6 +12,11 @@ import { dbg } from "../utils/debugLog.js";
 
 // SSE error patterns inside 200-OK body that should trigger retry as if 503
 const CODEX_SSE_OVERLOADED_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
+const CODEX_SSE_CONTEXT_ERROR_PATTERNS = [
+  "exceeds the context window",
+  "context_length_exceeded",
+  "too many input tokens",
+];
 const CODEX_SSE_PEEK_BYTES = 4096;
 
 // In-memory map: hash(machineId + first assistant content) → { sessionId, lastUsed }
@@ -260,6 +265,22 @@ export class CodexExecutor extends BaseExecutor {
     while (true) {
       const result = await super.execute(args);
       const peek = await this._peekSseOverloaded(result.response);
+      if (peek.matchType === "context") {
+        args.log?.warn?.("CODEX", `SSE context error "${peek.matched}" → HTTP 400`);
+        return {
+          ...result,
+          response: new Response(
+            JSON.stringify({
+              error: {
+                message: "Your input exceeds the context window of this model. Please adjust your input and try again.",
+                type: "invalid_request_error",
+                code: "context_window_exceeded",
+              },
+            }),
+            { status: 400, headers: { "Content-Type": "application/json" } },
+          ),
+        };
+      }
       if (!peek.matched) {
         // Replace body with re-assembled stream (prefix bytes already read + rest)
         if (peek.replacementBody) {
@@ -291,24 +312,27 @@ export class CodexExecutor extends BaseExecutor {
     }
   }
 
-  // Peek first N bytes of SSE body to detect upstream "overloaded" errors.
-  // Returns { matched: string|null, replacementBody: ReadableStream|null }.
+  // Peek first N bytes of SSE body to detect upstream errors hidden in 200-OK SSE.
+  // Returns { matched: string|null, matchType: string|null, replacementBody: ReadableStream|null }.
   // Caller MUST use replacementBody (original body has been read).
   async _peekSseOverloaded(response) {
-    if (!response || !response.ok || !response.body) return { matched: null, replacementBody: null };
+    if (!response || !response.ok || !response.body) return { matched: null, matchType: null, replacementBody: null };
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     const chunks = [];
     let text = "";
     let matched = null;
+    let matchType = null;
     try {
       while (text.length < CODEX_SSE_PEEK_BYTES) {
         const { done, value } = await reader.read();
         if (done) break;
         chunks.push(value);
         text += decoder.decode(value, { stream: true });
+        const contextHit = CODEX_SSE_CONTEXT_ERROR_PATTERNS.find(p => text.toLowerCase().includes(p));
+        if (contextHit) { matched = contextHit; matchType = "context"; break; }
         const hit = CODEX_SSE_OVERLOADED_PATTERNS.find(p => text.includes(p));
-        if (hit) { matched = hit; break; }
+        if (hit) { matched = hit; matchType = "overloaded"; break; }
       }
     } catch (e) {
       dbg("CODEX", `peek read error: ${e.message}`);
@@ -334,7 +358,7 @@ export class CodexExecutor extends BaseExecutor {
         try { upstreamReader?.cancel(reason); } catch { /* noop */ }
       },
     });
-    return { matched, replacementBody };
+    return { matched, matchType, replacementBody };
   }
 
   // Parse Codex usage_limit_reached to extract precise resetsAtMs; fallback to default otherwise

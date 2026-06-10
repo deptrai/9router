@@ -142,4 +142,44 @@ describe("CodexExecutor image handling", () => {
     const imgBlock = parsed.input[0].content.find((c) => c.type === "input_image");
     expect(imgBlock.image_url.startsWith("data:image/jpeg;base64,")).toBe(true);
   });
+
+  it("detects context-window errors hidden inside 200 OK SSE", async () => {
+    const executor = new CodexExecutor();
+    const sse = `event: response.failed\ndata: {"response":{"error":{"message":"Your input exceeds the context window of this model."}}}\n\n`;
+
+    const peek = await executor._peekSseOverloaded(new Response(sse, {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    }));
+
+    expect(peek.matchType).toBe("context");
+    expect(peek.matched).toBe("exceeds the context window");
+    await expect(new Response(peek.replacementBody).text()).resolves.toContain("context window");
+  });
+
+  it("execute() converts hidden context-window SSE failures to HTTP 400 JSON", async () => {
+    const sse = `event: response.failed\ndata: {"response":{"error":{"message":"Your input exceeds the context window of this model."}}}\n\n`;
+    vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockResolvedValue(new Response(sse, {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    }));
+
+    const executor = new CodexExecutor();
+    const result = await executor.execute({
+      model: "gpt-5.5-xhigh",
+      body: { input: [{ role: "user", content: "huge request" }] },
+      stream: true,
+      credentials: { accessToken: "test" },
+      log: { warn: vi.fn(), debug: vi.fn() },
+    });
+
+    expect(proxyFetchModule.proxyAwareFetch).toHaveBeenCalledTimes(1);
+    expect(result.response.status).toBe(400);
+    await expect(result.response.json()).resolves.toMatchObject({
+      error: {
+        code: "context_window_exceeded",
+        message: expect.stringContaining("context window"),
+      },
+    });
+  });
 });
