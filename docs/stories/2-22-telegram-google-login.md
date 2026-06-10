@@ -290,3 +290,18 @@ All 17 tasks completed. 1146 tests pass / 0 fail (1170 total, 24 skipped — pre
 ## Change Log
 - 2026-06-10: Story created (ready-for-dev)
 - 2026-06-11: Implemented all tasks (A1-A4, B1-B3, C1-C2, D1-D4, E1-E3); D1=A placeholder email, D2=env vars; 1146 tests pass
+
+## Review Findings — 2026-06-11
+
+- [ ] [Review][Decision] Google callback — existing UNVERIFIED email account: code path `getUserByEmail(email)` → `if (emailUser?.isEmailVerified) link else createUser(email,...)`. Khi `emailUser` tồn tại nhưng CHƯA verify, else-branch gọi `createUser` với email đã tồn tại → UNIQUE constraint crash → `google_failed` (user bị chặn login vĩnh viễn). Google đã xác thực `email_verified=true` nên người sở hữu Google account = chủ thật sự của email. Options: (A) link googleSub vào account unverified đó + set isEmailVerified=true (Recommended — Google đã prove ownership, an toàn, fix crash); (B) reject với error rõ ràng. [src/app/api/auth/google/callback/route.js]
+
+- [ ] [Review][Patch] BLOCKER — `/api/auth/social-providers` không có trong PUBLIC_API_PATHS [src/dashboardGuard.js:38-39] — login/register page (unauthenticated) fetch endpoint này → 401 → catch nuốt lỗi → googleEnabled=false, telegramBotId=null → social buttons KHÔNG BAO GIỜ hiện. Fix: thêm `"/api/auth/social-providers"` vào PUBLIC_API_PATHS.
+- [ ] [Review][Patch] HIGH — Google callback crash khi email account chưa verify [src/app/api/auth/google/callback/route.js] — fix theo Decision D1 (link + set verified thay vì createUser trùng email). Đây vừa là crash fix vừa là semantics đúng.
+- [ ] [Review][Patch] MEDIUM — `authProviders` field không bao giờ được update khi link/unlink [google/callback, telegram/login, unlink-provider] — column tồn tại nhưng không route nào ghi → stale data. Fix: update authProviders JSON khi link/unlink (hoặc bỏ field nếu không dùng, derive từ googleSub/telegramId/hasPassword).
+- [ ] [Review][Patch] MEDIUM — password login không chặn tường minh "!" sentinel [src/app/api/auth/login/route.js] — social-only user có passwordHash="!"; bcrypt.compare(x, "!") trả false (an toàn ngầm) nhưng không có guard rõ ràng. Fix: `if (!user.hasPassword) return 401` trước bcrypt.compare (defense-in-depth).
+- [ ] [Review][Patch] AC7 — Thiếu route-level tests [tests/] — chỉ có unit test cho googleOidc + telegramAuth helpers. AC7 yêu cầu test: Google callback (link/email-match/new-user/state-mismatch), Telegram login (create/link/HMAC-fail 401), unlink last-method guard, takeover prevention. Fix: thêm route handler tests.
+
+- [x] [Review][Defer] HIGH — Open redirect qua x-forwarded-host trong getPublicOrigin — khi BASE_URL không set, origin build từ x-forwarded-host (client-controllable ở một số deploy). Pre-existing pattern dùng chung với oidc.js (admin OIDC). — deferred, pre-existing, nên set BASE_URL ở production
+- [x] [Review][Defer] MEDIUM — TOCTOU trong unlink-provider — 2 concurrent unlink cùng pass authMethodCount>1 → strip hết auth methods. Low-probability, cần transaction wrap (giống các TOCTOU đã defer). — deferred
+- [x] [Review][Defer] LOW — Telegram placeholder email collision — user thật pre-register `telegram_<id>@placeholder.local` rồi Telegram user đó login → UNIQUE crash. Xác suất rất thấp (cần biết scheme + đoán id). — deferred
+

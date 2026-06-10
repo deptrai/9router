@@ -64,9 +64,14 @@ export async function GET(request) {
 
     let user = await getUserByGoogleSub(profile.sub);
     if (!user) {
+      // Review fix (D1): Google has already proven email ownership (email_verified=true
+      // enforced in verifyGoogleIdToken). If ANY account exists with this email — verified
+      // or not — link googleSub to it and mark verified. The previous `isEmailVerified`
+      // gate fell through to createUser() on an existing-but-unverified email, hitting the
+      // UNIQUE(email) constraint and permanently blocking login.
       const emailUser = await getUserByEmail(profile.email);
-      if (emailUser?.isEmailVerified) {
-        await updateUser(emailUser.id, { googleSub: profile.sub });
+      if (emailUser) {
+        await updateUser(emailUser.id, { googleSub: profile.sub, isEmailVerified: true });
         user = await getUserById(emailUser.id);
       } else {
         user = await createUser(profile.email, null, profile.name || "Google user");

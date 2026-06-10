@@ -53,6 +53,14 @@ export async function POST(request) {
         return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
       }
 
+      // Review fix (P5): social-only accounts store passwordHash="!" (not a valid bcrypt
+      // hash). bcrypt.compare returns false for it, but guard explicitly to avoid relying
+      // on bcrypt's behaviour with malformed hashes (defense-in-depth).
+      if (!user.passwordHash || user.passwordHash === "!") {
+        recordFail(userLockKey);
+        return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
+      }
+
       const isValid = await bcrypt.compare(body.password || "", user.passwordHash);
       if (!isValid) {
         recordFail(userLockKey);
