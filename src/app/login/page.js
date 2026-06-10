@@ -23,15 +23,18 @@ export default function LoginPage() {
 
   // Telegram popup callback — oauth.telegram.org uses postMessage (cross-origin)
   useEffect(() => {
-    const handleTelegramMessage = async (event) => {
-      if (event.origin !== "https://oauth.telegram.org") return;
-      const data = event.data;
-      if (!data || !data.id || !data.hash) return;
+    if (!telegramBotUsername || loginTab !== "user") return;
+
+    const container = document.getElementById("telegram-widget-container");
+    if (!container) return;
+
+    // Use official Telegram Login Widget script — handles cross-origin communication internally
+    window.onTelegramAuth = async (user) => {
       try {
         const res = await fetch("/api/auth/telegram/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data),
+          body: JSON.stringify(user),
         });
         if (res.ok) {
           router.push("/dashboard");
@@ -45,34 +48,21 @@ export default function LoginPage() {
       }
     };
 
-    // Also set window.TelegramLoginWidget.dataOnauth as fallback
-    window.TelegramLoginWidget = {
-      dataOnauth: async (user) => {
-        try {
-          const res = await fetch("/api/auth/telegram/login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(user),
-          });
-          if (res.ok) {
-            router.push("/dashboard");
-            router.refresh();
-          } else {
-            const data = await res.json().catch(() => ({}));
-            setError(data.error || "Telegram login failed");
-          }
-        } catch {
-          setError("Telegram login failed");
-        }
-      },
-    };
+    container.innerHTML = "";
+    const script = document.createElement("script");
+    script.src = "https://telegram.org/js/telegram-widget.js?22";
+    script.setAttribute("data-telegram-login", telegramBotUsername);
+    script.setAttribute("data-size", "medium");
+    script.setAttribute("data-onauth", "onTelegramAuth(user)");
+    script.setAttribute("data-request-access", "write");
+    script.async = true;
+    container.appendChild(script);
 
-    window.addEventListener("message", handleTelegramMessage);
     return () => {
-      window.removeEventListener("message", handleTelegramMessage);
-      delete window.TelegramLoginWidget;
+      container.innerHTML = "";
+      delete window.onTelegramAuth;
     };
-  }, [router]);
+  }, [telegramBotUsername, loginTab, router]);
 
   // Countdown for rate-limit
   useEffect(() => {
@@ -309,7 +299,7 @@ export default function LoginPage() {
                   )}
                 </form>
 
-                {loginTab === "user" && (googleEnabled || telegramBotId) && (
+                {loginTab === "user" && (googleEnabled || telegramBotUsername) && (
                   <div className="flex flex-col gap-3 mt-4">
                     <div className="flex items-center gap-2">
                       <div className="flex-1 h-px bg-border/60" />
@@ -321,10 +311,8 @@ export default function LoginPage() {
                         Đăng nhập bằng Google
                       </Button>
                     )}
-                    {telegramBotId && (
-                      <Button type="button" variant="secondary" className="w-full" onClick={() => { window.open(`https://oauth.telegram.org/auth?bot_id=${telegramBotId}&origin=${window.location.origin}&request_access=write`, "_blank", "width=550,height=450"); }}>
-                        Đăng nhập bằng Telegram
-                      </Button>
+                    {telegramBotUsername && (
+                      <div id="telegram-widget-container" className="flex justify-center" />
                     )}
                   </div>
                 )}
