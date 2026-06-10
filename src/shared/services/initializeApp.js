@@ -17,6 +17,7 @@ import {
 } from "@/lib/tunnel";
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreToolDNS, removeAllDNSEntriesSync } from "@/mitm/manager";
 import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
+import { runExpirySweep } from "@/lib/billing/creditExpirySweep.js";
 
 // Inject correct paths and DB hooks into manager.js (CJS) from ESM context
 (function bootstrapMitm() {
@@ -33,6 +34,8 @@ import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
 
 process.setMaxListeners(20);
 
+const CREDIT_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+
 // Survive Next.js hot reload
 const g = global.__appSingleton ??= {
   signalHandlersRegistered: false,
@@ -44,6 +47,7 @@ const g = global.__appSingleton ??= {
   mitmStartInProgress: false,
   tunnelAutoResumed: false,
   tailscaleAutoResumed: false,
+  creditSweepInterval: null,
 };
 
 export async function initializeApp() {
@@ -78,6 +82,7 @@ export async function initializeApp() {
     }
 
     ensureCloudflared().catch(() => {});
+    startCreditSweep();
 
     // Sync mitmAlias DB → JSON cache so standalone MITM server can read it
     syncMitmAliasCache().catch(() => {});
@@ -207,6 +212,17 @@ async function safeRestartTailscale(reason) {
   } catch (err) {
     console.log("[Tailscale] restart failed:", err.message);
   }
+}
+
+// ─── Credit expiry sweep: keep creditsBalance cache close to effective ledger ─
+
+function startCreditSweep() {
+  if (g.creditSweepInterval) return;
+  runExpirySweep().catch(() => {});
+  g.creditSweepInterval = setInterval(() => {
+    runExpirySweep().catch(() => {});
+  }, CREDIT_SWEEP_INTERVAL_MS);
+  if (g.creditSweepInterval.unref) g.creditSweepInterval.unref();
 }
 
 // ─── Watchdog: 60s tick check both services ──────────────────────────────────

@@ -298,6 +298,19 @@ export function deductFromPriorityBuckets(userId, cost, refId, note, adapter) {
   }
 }
 
+export async function reconcileUserBalance(userId, db = null) {
+  const adapter = db || (await getAdapter());
+  const now = new Date().toISOString();
+  const row = adapter.get(
+    `SELECT COALESCE(SUM(amount), 0) AS total FROM creditTransactions
+     WHERE userId = ? AND (expiresAt IS NULL OR expiresAt > ?)`,
+    [userId, now]
+  );
+  const fresh = row?.total ?? 0;
+  adapter.run(`UPDATE users SET creditsBalance = ?, updatedAt = ? WHERE id = ?`, [fresh, now, userId]);
+  return fresh;
+}
+
 export function reverseTxn(originalId, note, db = null) {
   if (db) {
     return reverseTxnWithAdapter(originalId, note, db, false);

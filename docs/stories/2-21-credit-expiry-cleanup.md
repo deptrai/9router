@@ -5,7 +5,7 @@ epic: C
 
 # Story 2.21 — Credit Expiry + Validity Cleanup
 
-Status: ready-for-dev
+Status: in-progress
 
 ## Story
 

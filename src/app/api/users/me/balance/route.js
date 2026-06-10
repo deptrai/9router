@@ -27,15 +27,21 @@ export async function GET() {
   const balances = await getBalanceByBucket(session.userId);
   const adapter = await getAdapter();
   const now = new Date().toISOString();
-  const expiryRow = adapter.get(
+  const bonusExpiryRow = adapter.get(
     `SELECT MIN(expiresAt) as nextExpiry FROM creditTransactions
      WHERE userId = ? AND bucket = 'bonus' AND amount > 0 AND expiresAt > ?`,
+    [session.userId, now]
+  );
+  const standardExpiryRow = adapter.get(
+    `SELECT MIN(expiresAt) as nextExpiry FROM creditTransactions
+     WHERE userId = ? AND bucket = 'standard' AND amount > 0 AND expiresAt > ?`,
     [session.userId, now]
   );
 
   return NextResponse.json({
     ...balances,
     total: balances.standard + balances.bonus + balances.resource,
-    bonusExpiresAt: expiryRow?.nextExpiry ?? null,
+    bonusExpiresAt: bonusExpiryRow?.nextExpiry ?? null,
+    standardExpiresAt: standardExpiryRow?.nextExpiry ?? null,
   });
 }
