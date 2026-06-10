@@ -23,11 +23,19 @@ export async function GET() {
     const email = session?.email ?? null;
     let creditsBalance = null;
     let isEmailVerified = false;
+    const authProviders = [];
     if (userId) {
       try {
         const user = await getUserById(userId);
         creditsBalance = user?.creditsBalance ?? null;
         isEmailVerified = !!user?.isEmailVerified;
+        // Derive auth providers (Story 2.24 / 2.22)
+        if (user) {
+          if (user.hasPassword !== false) authProviders.push("password");
+          if (user.googleSub) authProviders.push("google");
+          if (user.telegramId) authProviders.push("telegram");
+          if (authProviders.length === 0) authProviders.push("password");
+        }
       } catch {
         creditsBalance = null;
         isEmailVerified = false;
@@ -51,6 +59,7 @@ export async function GET() {
       email,
       creditsBalance,
       isEmailVerified,
+      authProviders,
     });
   } catch {
     return NextResponse.json({
