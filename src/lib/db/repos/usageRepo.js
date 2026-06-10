@@ -3,7 +3,7 @@ import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
 import { updateLastUsed } from "./apiKeysRepo.js";
-import { recordCreditTxn } from "./creditLedgerRepo.js";
+import { deductFromPriorityBuckets } from "./creditLedgerRepo.js";
 
 const PENDING_TIMEOUT_MS = 60 * 1000;
 const RING_CAP = 50;
@@ -289,15 +289,8 @@ export async function saveRequestUsage(entry) {
         const keyRow = db.get(`SELECT userId FROM apiKeys WHERE key = ?`, [entry.apiKey]);
         if (keyRow?.userId) {
           const isOverflow = entry.billingSource === "overflow";
-          recordCreditTxn({
-            userId: keyRow.userId,
-            type: "usage_deduction",
-            bucket: "standard",
-            amount: -(entry.cost),
-            refId: entry.timestamp,
-            idempotencyKey: null,
-            note: `${isOverflow ? "[overflow] " : ""}${entry.model || "unknown"} @ ${entry.endpoint || "/v1/chat/completions"}`,
-          }, db);
+          const note = `${isOverflow ? "[overflow] " : ""}${entry.model || "unknown"} @ ${entry.endpoint || "/v1/chat/completions"}`;
+          deductFromPriorityBuckets(keyRow.userId, entry.cost, entry.timestamp, note, db);
         }
         // legacy key (userId=null) or key not found → skip (fail-open by design)
       }

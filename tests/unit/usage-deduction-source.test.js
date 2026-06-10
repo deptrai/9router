@@ -25,10 +25,14 @@ afterEach(() => {
 });
 
 async function seedUserAndKey(email = "deduct@test.dev", balance = 50) {
-  const { createUser, updateUser } = await import("@/lib/db/repos/usersRepo.js");
+  const { createUser } = await import("@/lib/db/repos/usersRepo.js");
   const { createApiKey } = await import("@/lib/db/repos/apiKeysRepo.js");
+  const { recordCreditTxn } = await import("@/lib/db/repos/creditLedgerRepo.js");
   const user = await createUser(email, "hash", "Deduct");
-  await updateUser(user.id, { creditsBalance: balance });
+  if (balance > 0) {
+    // Seed via ledger so deductFromPriorityBuckets sees the available balance
+    await recordCreditTxn({ userId: user.id, type: "admin_topup", bucket: "standard", amount: balance, refId: `seed:${email}` }, null);
+  }
   const key = await createApiKey("deduct-key", "m1", user.id);
   return { user, key };
 }

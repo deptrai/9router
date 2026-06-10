@@ -27,13 +27,21 @@ async function seedUserKey(email, balance, isActive = true) {
   const { createUser } = await import("@/lib/db/repos/usersRepo.js");
   const { createApiKey } = await import("@/lib/db/repos/apiKeysRepo.js");
   const { getAdapter } = await import("@/lib/db/driver.js");
+  const { recordCreditTxn } = await import("@/lib/db/repos/creditLedgerRepo.js");
 
   const hash = await bcrypt.hash("pass12345", 4);
   const user = await createUser(email, hash, "User");
 
   const db = await getAdapter();
-  db.run(`UPDATE users SET creditsBalance = ?, isActive = ? WHERE id = ?`,
-    [balance, isActive ? 1 : 0, user.id]);
+  if (balance > 0) {
+    // Seed via ledger so getBalanceByBucket (used by checkCredits) sees the balance
+    await recordCreditTxn({ userId: user.id, type: "admin_topup", bucket: "standard", amount: balance, refId: `seed:${email}` }, null);
+  } else {
+    db.run(`UPDATE users SET creditsBalance = ? WHERE id = ?`, [balance, user.id]);
+  }
+  if (!isActive) {
+    db.run(`UPDATE users SET isActive = 0 WHERE id = ?`, [user.id]);
+  }
 
   const key = await createApiKey("key", "machine-1", user.id);
   return { user, key };

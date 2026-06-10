@@ -205,6 +205,99 @@ function reverseTxnWithAdapter(originalId, note, adapter, wrapTransaction) {
   return result;
 }
 
+// ─── Bucket balance & priority deduction (Story 2.20, FR-13/14/15) ──────────
+
+const BUCKET_PRIORITY = ["resource", "bonus", "standard"];
+
+export async function getBalanceByBucket(userId) {
+  const adapter = await getAdapter();
+  const now = new Date().toISOString();
+  const rows = adapter.all(
+    `SELECT bucket, COALESCE(SUM(amount), 0) as balance
+     FROM creditTransactions
+     WHERE userId = ? AND (expiresAt IS NULL OR expiresAt > ?)
+     GROUP BY bucket`,
+    [userId, now]
+  );
+  const result = { standard: 0, bonus: 0, resource: 0 };
+  for (const r of rows) {
+    if (r.bucket in result) result[r.bucket] = r.balance;
+  }
+  return result;
+}
+
+// Sync — must be called inside the caller's db.transaction() (BP-5).
+export function deductFromPriorityBuckets(userId, cost, refId, note, adapter) {
+  const now = new Date().toISOString();
+  const rows = adapter.all(
+    `SELECT bucket, COALESCE(SUM(amount), 0) as balance
+     FROM creditTransactions
+     WHERE userId = ? AND (expiresAt IS NULL OR expiresAt > ?)
+     GROUP BY bucket`,
+    [userId, now]
+  );
+  const balances = { standard: 0, bonus: 0, resource: 0 };
+  for (const r of rows) {
+    if (r.bucket in balances) balances[r.bucket] = r.balance;
+  }
+
+  let remaining = cost;
+  for (const bucket of BUCKET_PRIORITY) {
+    if (remaining <= 0) break;
+    const avail = balances[bucket] ?? 0;
+    if (avail <= 0) continue;
+
+    let multiplier = 1;
+    if (bucket === "bonus") {
+      // Review patch (P3): filter expired bonus grants out of multiplier lookup.
+      // Review patch (P2): validate multiplier is finite and > 0; default to 1 otherwise.
+      const mRow = adapter.get(
+        `SELECT multiplier FROM creditTransactions
+         WHERE userId = ? AND bucket = 'bonus' AND amount > 0
+           AND (expiresAt IS NULL OR expiresAt > ?)
+         ORDER BY createdAt DESC LIMIT 1`,
+        [userId, now]
+      );
+      const m = mRow?.multiplier;
+      multiplier = (Number.isFinite(m) && m > 0) ? m : 1;
+    }
+
+    // Review patch (P1): cap by cost units this bucket can cover (avail / multiplier),
+    // not raw credit units. effectiveDeduct = credit units consumed (= cost * multiplier).
+    // Old formula `Math.min(remaining, avail)` over-drew the bucket when multiplier > 1.
+    const coverable = avail / multiplier;
+    const toDeductCost = Math.min(remaining, coverable);
+    const effectiveDeduct = toDeductCost * multiplier;
+
+    recordCreditTxnWithAdapter(
+      {
+        userId,
+        type: "usage_deduction",
+        bucket,
+        amount: -effectiveDeduct,
+        multiplier,
+        refId,
+        // Review patch (P4): timestamp-based key (`usage:${refId}:${bucket}`) collided
+        // under concurrent load — usage deductions are terminal/non-replayed, so disable
+        // idempotency dedup here. Restores pre-2.20 behavior for deductions.
+        idempotencyKey: null,
+        note,
+      },
+      adapter,
+      false
+    );
+    remaining -= toDeductCost;
+  }
+
+  // Review patch (P5): surface shortfall for observability. With admission gate +
+  // soft-limit accepted (story 2.4), this should be rare; the warn flags any wide gap.
+  if (remaining > 0) {
+    console.warn(
+      `[deductFromPriorityBuckets] shortfall for user ${userId}: ${remaining.toFixed(6)} of ${cost} not covered`
+    );
+  }
+}
+
 export function reverseTxn(originalId, note, db = null) {
   if (db) {
     return reverseTxnWithAdapter(originalId, note, db, false);

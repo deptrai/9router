@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
-import { addCredits } from "./usersRepo.js";
+import { recordCreditTxn } from "./creditLedgerRepo.js";
 
 function rowToGiftCode(row) {
   if (!row) return null;
@@ -229,8 +229,17 @@ export async function redeemGiftCode({ code, userId, db = null }) {
       [redeemedAt, giftCode.id]
     );
 
-    // Award credits via addCredits (simple creditsBalance increment, no expiring bucket)
-    addCredits(userId, giftCode.creditsAmount, adapter);
+    // Award credits as bonus bucket with 14-day expiry (gift_code type per ledger contract)
+    const bonusExpiry = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+    recordCreditTxn({
+      userId,
+      type: "gift_code",
+      bucket: "bonus",
+      amount: giftCode.creditsAmount,
+      refId: giftCode.id,
+      idempotencyKey: `gift:${giftCode.id}:${userId}`,
+      expiresAt: bonusExpiry,
+    }, adapter);
 
     // Read new balance
     const userRow = adapter.get(`SELECT creditsBalance FROM users WHERE id = ?`, [userId]);

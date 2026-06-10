@@ -14,6 +14,7 @@
  */
 import { getApiKeyByKey } from "@/lib/db/repos/apiKeysRepo.js";
 import { getUserById } from "@/lib/db/repos/usersRepo.js";
+import { getBalanceByBucket } from "@/lib/db/repos/creditLedgerRepo.js";
 
 export async function checkCredits(apiKey) {
   try {
@@ -28,7 +29,9 @@ export async function checkCredits(apiKey) {
     if (!user.isActive) {
       return { allowed: false, reason: "account disabled" };
     }
-    if (user.creditsBalance <= 0) {
+    const balances = await getBalanceByBucket(user.id);
+    const totalAvailable = (balances.standard ?? 0) + (balances.bonus ?? 0) + (balances.resource ?? 0);
+    if (totalAvailable <= 0) {
       return { allowed: false, reason: "insufficient credits" };
     }
 

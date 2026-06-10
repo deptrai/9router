@@ -25,9 +25,13 @@ afterEach(() => {
 });
 
 async function makeUser(email = "cs@test.dev", credits = 0) {
-  const { createUser, updateUser } = await import("@/lib/db/repos/usersRepo.js");
+  const { createUser } = await import("@/lib/db/repos/usersRepo.js");
+  const { recordCreditTxn } = await import("@/lib/db/repos/creditLedgerRepo.js");
   const user = await createUser(email, "hash", "CS Test");
-  if (credits > 0) await updateUser(user.id, { creditsBalance: credits });
+  if (credits > 0) {
+    // Seed via ledger so deductFromPriorityBuckets sees the available balance
+    await recordCreditTxn({ userId: user.id, type: "admin_topup", bucket: "standard", amount: credits, refId: `seed:${email}` }, null);
+  }
   return user;
 }
 
