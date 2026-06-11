@@ -1,4 +1,5 @@
 import { PROVIDER_MODELS } from "open-sse/config/providerModels.js";
+import { getProviderAutoCompactLimit } from "open-sse/utils/autoCompact.js";
 import { AI_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
 
 const KIND_ENDPOINT = {
@@ -14,6 +15,23 @@ const KIND_ENDPOINT = {
 
 const TTS_VOICES_API = new Set(["elevenlabs", "edge-tts", "deepgram", "inworld", "local-device"]);
 
+function resolveModelContextWindow(model) {
+  if (Number.isFinite(model?.contextWindow)) return model.contextWindow;
+  if (Number.isFinite(model?.contextLength)) return model.contextLength;
+  return null;
+}
+
+function resolveEffectiveContextWindow(model, providerId) {
+  const contextWindow = resolveModelContextWindow(model);
+  const providerInputLimit = getProviderAutoCompactLimit(providerId);
+  if (Number.isFinite(contextWindow) && Number.isFinite(providerInputLimit)) {
+    return Math.min(contextWindow, providerInputLimit);
+  }
+  if (Number.isFinite(providerInputLimit)) return providerInputLimit;
+  if (Number.isFinite(contextWindow)) return contextWindow;
+  return null;
+}
+
 function buildInfo({ alias, providerId, model, kind, providerInfo }) {
   const out = {
     id: `${alias}/${model.id}`,
@@ -26,10 +44,11 @@ function buildInfo({ alias, providerId, model, kind, providerInfo }) {
   if (model.capabilities) out.capabilities = model.capabilities;
   if (model.options) out.options = model.options;
   if (model.dimensions) out.dimensions = model.dimensions;
-  if (model.contextWindow) {
-    out.contextWindow = model.contextWindow;
-    out.context_window = model.contextWindow;
-    out.max_context_length = model.contextWindow;
+  const contextWindow = resolveEffectiveContextWindow(model, providerId);
+  if (Number.isFinite(contextWindow)) {
+    out.contextWindow = contextWindow;
+    out.context_window = contextWindow;
+    out.max_context_length = contextWindow;
   }
   if (kind === "tts" && TTS_VOICES_API.has(providerId)) {
     out.voicesUrl = `/v1/audio/voices?provider=${providerId}`;

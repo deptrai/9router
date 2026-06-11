@@ -42,6 +42,24 @@ describe("/v1/models context metadata", () => {
     });
   });
 
+  it("publishes the effective Kiro input limit for direct Kiro models", async () => {
+    const models = await buildModelsList(["llm"]);
+
+    const kiroOpus = models.find((model) => model.id === "kr/claude-opus-4.8-thinking-agentic");
+    const kiroSonnet = models.find((model) => model.id === "kr/claude-sonnet-4.6");
+
+    expect(kiroOpus).toMatchObject({
+      context_window: 150_000,
+      contextWindow: 150_000,
+      max_context_length: 150_000,
+    });
+    expect(kiroSonnet).toMatchObject({
+      context_window: 150_000,
+      contextWindow: 150_000,
+      max_context_length: 150_000,
+    });
+  });
+
   it("publishes the minimum known context window for combo models", async () => {
     mockModelSources({
       combos: [
@@ -60,6 +78,27 @@ describe("/v1/models context metadata", () => {
       context_window: 1_000_000,
       contextWindow: 1_000_000,
       max_context_length: 1_000_000,
+    });
+  });
+
+  it("publishes the effective Kiro input limit for combo models", async () => {
+    mockModelSources({
+      combos: [
+        {
+          name: "kiro-then-gpt55",
+          models: JSON.stringify(["kr/claude-opus-4.8-thinking-agentic", "cx/gpt-5.5-xhigh"]),
+        },
+      ],
+    });
+
+    const models = await buildModelsList(["llm"]);
+    const combo = models.find((model) => model.id === "kiro-then-gpt55");
+
+    expect(combo).toMatchObject({
+      owned_by: "combo",
+      context_window: 150_000,
+      contextWindow: 150_000,
+      max_context_length: 150_000,
     });
   });
 
@@ -107,6 +146,19 @@ describe("/v1/models context metadata", () => {
       context_window: 1_050_000,
       contextWindow: 1_050_000,
       max_context_length: 1_050_000,
+    });
+  });
+
+  it("returns the effective Kiro input limit from /v1/models/info", async () => {
+    const response = await getModelInfo(new Request("https://router.local/v1/models/info?id=kr/claude-opus-4.8-thinking-agentic"));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      id: "kr/claude-opus-4.8-thinking-agentic",
+      context_window: 150_000,
+      contextWindow: 150_000,
+      max_context_length: 150_000,
     });
   });
 });

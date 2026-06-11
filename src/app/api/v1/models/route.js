@@ -9,6 +9,7 @@ import { getProviderConnections, getCombos, getCustomModels, getModelAliases } f
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
+import { getProviderAutoCompactLimit } from "open-sse/utils/autoCompact.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -155,6 +156,16 @@ function addContextMetadata(entry, contextWindow) {
   return entry;
 }
 
+function resolveEffectiveContextWindow(contextWindow, providerId) {
+  const providerInputLimit = getProviderAutoCompactLimit(providerId);
+  if (Number.isFinite(contextWindow) && Number.isFinite(providerInputLimit)) {
+    return Math.min(contextWindow, providerInputLimit);
+  }
+  if (Number.isFinite(providerInputLimit)) return providerInputLimit;
+  if (Number.isFinite(contextWindow)) return contextWindow;
+  return null;
+}
+
 function parseComboModels(combo) {
   if (Array.isArray(combo?.models)) return combo.models;
   if (typeof combo?.models !== "string") return [];
@@ -173,9 +184,10 @@ function resolveFullModelContextWindow(fullModel) {
   const modelId = fullModel.slice(slash + 1);
   const providerId = Object.entries(PROVIDER_ID_TO_ALIAS).find(([, a]) => a === alias)?.[0] || alias;
   const staticAlias = PROVIDER_ID_TO_ALIAS[providerId] || alias;
-  return getModelContextWindow(alias, modelId)
+  const contextWindow = getModelContextWindow(alias, modelId)
     || getModelContextWindow(staticAlias, modelId)
     || getModelContextWindow(providerId, modelId);
+  return resolveEffectiveContextWindow(contextWindow, providerId);
 }
 
 function resolveComboContextWindow(combo) {
@@ -266,7 +278,7 @@ export async function buildModelsList(kindFilter) {
           id: `${alias}/${model.id}`,
           object: "model",
           owned_by: alias,
-        }, model.contextWindow));
+        }, resolveEffectiveContextWindow(model.contextWindow, providerId)));
       }
     }
 
@@ -400,7 +412,7 @@ export async function buildModelsList(kindFilter) {
           id: `${outputAlias}/${modelId}`,
           object: "model",
           owned_by: outputAlias,
-        }, contextWindow));
+        }, resolveEffectiveContextWindow(contextWindow, providerId)));
       }
 
       // Merge sub-config models (TTS / embedding) that live on AI_PROVIDERS, not PROVIDER_MODELS
