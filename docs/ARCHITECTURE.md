@@ -1,6 +1,6 @@
 # Kiến trúc 9Router
 
-_Cập nhật lần cuối: 2026-02-06_
+_Cập nhật lần cuối: 2026-06-12_
 
 ## Tóm tắt điều hành (Executive Summary)
 
@@ -128,7 +128,9 @@ Các module luồng chính:
 - Provider execution adapters: `open-sse/executors/*`
 - Format detection/provider config: `open-sse/services/provider.js`
 - Model parse/resolve: `src/sse/services/model.js`, `open-sse/services/model.js`
+- Combo fallback logic: `open-sse/services/combo.js`
 - Account fallback logic: `open-sse/services/accountFallback.js`
+- Provider input-limit / Kiro auto-compact helper: `open-sse/utils/autoCompact.js`
 - Translation registry: `open-sse/translator/index.js`
 - Stream transformations: `open-sse/utils/stream.js`, `open-sse/utils/streamHandler.js`
 - Usage extraction/normalization: `open-sse/utils/usageTracking.js`
@@ -216,7 +218,10 @@ flowchart TD
     B -- No --> D[Single model path]
 
     C --> E[Try model N]
-    E --> F[Resolve provider/model]
+    E --> E0[Context preflight]
+    E0 --> E1{Fits effectiveLimit<br/>or should try auto-compact?}
+    E1 -- Yes --> F[Resolve provider/model]
+    E1 -- No --> Q
     D --> F
 
     F --> G[Select account credentials]
@@ -237,7 +242,38 @@ flowchart TD
     Q -- No --> R[Return all unavailable]
 ```
 
-Các quyết định fallback được điều khiển bởi `open-sse/services/accountFallback.js`, dựa trên status codes và error-message heuristics.
+Các quyết định fallback cấp account được điều khiển bởi `open-sse/services/accountFallback.js`, dựa trên status codes và error-message heuristics. Fallback cấp combo nằm ở `open-sse/services/combo.js` và chạy trước khi dispatch từng model.
+
+### Context-aware combo fallback
+
+Combo fallback không được dùng `contextWindow` quảng cáo của model làm giới hạn duy nhất. Router phải tính giới hạn hiệu dụng (effective limit) cho từng combo member:
+
+```text
+effectiveLimit = min(model contextWindow, provider inputLimit) nếu cả hai đều biết
+effectiveLimit = provider inputLimit hoặc model contextWindow nếu chỉ biết một giá trị
+```
+
+Ví dụ: `kr/claude-opus-4.8` có metadata `contextWindow=1_000_000`, nhưng Kiro có provider input limit mặc định `150_000`, nên effective limit của request qua Kiro là `150_000`, không phải `1M`.
+
+Preflight của `handleComboChat` ước lượng:
+
+- `estimatedTokens`: input payload estimate, có safety ratio
+- `requiredTokens`: `estimatedTokens + max(defaultReserve, requestedMaxTokens)`
+- `effectiveLimit`: context limit thực tế của combo member
+
+Rule chọn fallback:
+
+- Nếu model hiện tại fit `effectiveLimit`, gọi model đó bình thường.
+- Nếu model hiện tại không fit và có combo member phía sau với `effectiveLimit` lớn hơn và đủ chứa `requiredTokens`, skip model hiện tại để route sang fallback lớn hơn.
+- Nếu model hiện tại có provider `inputLimit` nhưng không có fallback lớn hơn đủ fit, vẫn gọi model hiện tại để provider-specific auto-compact có cơ hội giảm payload. Trường hợp chính hiện nay là Kiro.
+- Nếu model không có provider `inputLimit` và không fit context, không gọi upstream; trả context error hoặc tiếp tục sang combo member đủ điều kiện.
+- Khi upstream trả context-window error sau dispatch, combo chỉ fallback sang model phía sau có `effectiveLimit` lớn hơn. Không fallback sang model cùng hoặc nhỏ hơn context tier.
+
+Hệ quả vận hành:
+
+- Combo dùng cho session dài nên gom các model cùng effective context tier, hoặc phải có fallback lớn hơn thật sự ở phía sau.
+- Không trộn Kiro `150k effective` với model `1M` theo kiểu tuần tự nếu không muốn Kiro bị skip trên session dài; nếu trộn, router sẽ chỉ gọi Kiro khi request fit hoặc khi fallback lớn hơn cũng không fit và auto-compact là đường cứu còn lại.
+- Combo tên theo model mạnh, ví dụ `opus-4.8`, không nên chứa fallback âm thầm xuống lower-quality tier như `claude-opus-4.6`, trừ khi đó là chủ ý sản phẩm rõ ràng.
 
 ## Vòng đời OAuth Onboarding và Token Refresh
 

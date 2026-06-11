@@ -98,6 +98,19 @@ describe("combo round-robin routing", () => {
     expect(low.fits).toBe(false);
   });
 
+  it("uses Kiro provider input limit as the effective context for Opus 4.8", () => {
+    const fit = getModelContextFit(
+      { messages: [{ role: "user", content: "large Kiro session" }] },
+      "kr/claude-opus-4.8-thinking-agentic",
+      () => 170_000,
+    );
+
+    expect(fit.contextWindow).toBe(1_000_000);
+    expect(fit.inputLimit).toBe(150_000);
+    expect(fit.effectiveLimit).toBe(150_000);
+    expect(fit.fits).toBe(false);
+  });
+
   it("counts requested output tokens against the context window", () => {
     const body = {
       messages: [{ role: "user", content: "large" }],
@@ -458,6 +471,59 @@ describe("combo round-robin routing", () => {
     await expect(response.json()).resolves.toMatchObject({
       error: { message: expect.stringContaining("provider unavailable") },
     });
+  });
+
+  it("does not skip Kiro auto-compact when the larger-context fallback cannot fit the request", async () => {
+    const calls = [];
+    const log = { info: () => {}, warn: () => {} };
+
+    const response = await handleComboChat({
+      body: { messages: [{ role: "user", content: "huge session" }] },
+      models: ["kiro/claude-opus-4.8", "codex/gpt-5.5-xhigh"],
+      estimateInputTokens: () => 1_200_000,
+      log,
+      handleSingleModel: async (_body, model) => {
+        calls.push(model);
+        return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    });
+
+    expect(calls).toEqual(["kiro/claude-opus-4.8"]);
+    expect(response.status).toBe(200);
+  });
+
+  it("does not skip Kiro Opus 4.8 variants down to lower Opus models with the same effective limit", async () => {
+    const calls = [];
+    const log = { info: () => {}, warn: () => {} };
+
+    const response = await handleComboChat({
+      body: { messages: [{ role: "user", content: "large session" }] },
+      models: [
+        "kr/claude-opus-4.8-thinking-agentic",
+        "kr/claude-opus-4.8-thinking",
+        "kr/claude-opus-4.8",
+        "kr/claude-opus-4.8-agentic",
+        "kr/claude-opus-4.7-thinking",
+        "kr/claude-opus-4.7",
+        "kr/claude-opus-4.6-thinking",
+        "kr/claude-opus-4.6",
+      ],
+      estimateInputTokens: () => 170_000,
+      log,
+      handleSingleModel: async (_body, model) => {
+        calls.push(model);
+        return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    });
+
+    expect(calls).toEqual(["kr/claude-opus-4.8-thinking-agentic"]);
+    expect(response.status).toBe(200);
   });
 
   it("still tries Kiro input-limit overflow when no larger-context fallback exists", async () => {

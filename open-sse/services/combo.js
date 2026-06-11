@@ -121,10 +121,30 @@ function resolveModelInputLimit(modelStr) {
   return null;
 }
 
-function hasPotentialLargerContextCandidate(models, startIndex, currentContextWindow) {
+function resolveModelContextLimits(modelStr) {
+  const contextWindow = resolveModelContextWindow(modelStr);
+  const inputLimit = resolveModelInputLimit(modelStr);
+  const effectiveLimit = inputLimit && contextWindow ? Math.min(inputLimit, contextWindow) : (inputLimit || contextWindow);
+  return { contextWindow, inputLimit, effectiveLimit };
+}
+
+function hasPotentialLargerContextCandidate(models, startIndex, currentEffectiveLimit, requiredTokens = null) {
+  const currentLimit = Number.isFinite(currentEffectiveLimit) && currentEffectiveLimit > 0
+    ? currentEffectiveLimit
+    : null;
+  const requiredLimit = Number.isFinite(requiredTokens) && requiredTokens > 0
+    ? requiredTokens
+    : null;
+
   for (let i = startIndex; i < models.length; i++) {
-    const nextContextWindow = resolveModelContextWindow(models[i]);
-    if (!currentContextWindow || !nextContextWindow || nextContextWindow > currentContextWindow) {
+    const { effectiveLimit: nextEffectiveLimit } = resolveModelContextLimits(models[i]);
+    if (!Number.isFinite(nextEffectiveLimit) || nextEffectiveLimit <= 0) {
+      continue;
+    }
+    if (requiredLimit && nextEffectiveLimit < requiredLimit) {
+      continue;
+    }
+    if (!currentLimit || nextEffectiveLimit > currentLimit) {
       return true;
     }
   }
@@ -193,9 +213,7 @@ function extractComboErrorInfo(errorBody, fallbackText = "") {
 }
 
 export function getModelContextFit(body, modelStr, estimateInputTokens = estimateRequestInputTokens, reserveTokens = DEFAULT_CONTEXT_RESERVE_TOKENS) {
-  const contextWindow = resolveModelContextWindow(modelStr);
-  const inputLimit = resolveModelInputLimit(modelStr);
-  const effectiveLimit = inputLimit && contextWindow ? Math.min(inputLimit, contextWindow) : (inputLimit || contextWindow);
+  const { contextWindow, inputLimit, effectiveLimit } = resolveModelContextLimits(modelStr);
   if (!effectiveLimit) return { fits: true, contextWindow: null, inputLimit: null, effectiveLimit: null, estimatedTokens: 0, requiredTokens: 0 };
 
   const estimatedTokens = Math.ceil((estimateInputTokens(body) || 0) * CONTEXT_ESTIMATE_SAFETY_RATIO);
@@ -269,7 +287,12 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
     const contextFit = getModelContextFit(body, modelStr, estimateInputTokens);
     if (!contextFit.fits) {
-      const hasLargerFallback = hasPotentialLargerContextCandidate(rotatedModels, i + 1, contextFit.effectiveLimit || contextFit.contextWindow);
+      const hasLargerFallback = hasPotentialLargerContextCandidate(
+        rotatedModels,
+        i + 1,
+        contextFit.effectiveLimit || contextFit.contextWindow,
+        contextFit.requiredTokens,
+      );
       if (!contextFit.inputLimit || hasLargerFallback) {
         lastContextStatus = 400;
         lastContextError = `[${modelStr}] estimated input ${contextFit.estimatedTokens} tokens (+reserve ${contextFit.requiredTokens - contextFit.estimatedTokens}) exceeds ${describeContextLimit(contextFit)}; compact the conversation or use a larger-context fallback`;
@@ -311,7 +334,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       }
 
       if (result.status === 400 && isContextWindowError(errorText)) {
-        const currentContextWindow = resolveModelInputLimit(modelStr) || resolveModelContextWindow(modelStr);
+        const { effectiveLimit: currentContextWindow } = resolveModelContextLimits(modelStr);
         lastContextStatus = 400;
         lastContextError = `[${modelStr}] input exceeds context window${currentContextWindow ? ` ${currentContextWindow}` : ""}; compact the conversation or use a larger-context fallback`;
         lastOutcome = "context";
