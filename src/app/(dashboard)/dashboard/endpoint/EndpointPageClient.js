@@ -76,6 +76,7 @@ export default function APIPageClient({ machineId }) {
   const [hasPassword, setHasPassword] = useState(true);
   const [tunnelDashboardAccess, setTunnelDashboardAccess] = useState(false);
   const [rtkEnabled, setRtkEnabledState] = useState(true);
+  const [kiroAutoCompactEnabled, setKiroAutoCompactEnabled] = useState(false);
   const [cavemanEnabled, setCavemanEnabled] = useState(false);
   const [cavemanLevel, setCavemanLevel] = useState("full");
 
@@ -247,6 +248,7 @@ export default function APIPageClient({ machineId }) {
         setHasPassword(data.hasPassword || false);
         setTunnelDashboardAccess(data.tunnelDashboardAccess || false);
         setRtkEnabledState(data.rtkEnabled !== false);
+        setKiroAutoCompactEnabled(!!data.kiroAutoCompactEnabled);
         setCavemanEnabled(!!data.cavemanEnabled);
         setCavemanLevel(data.cavemanLevel || "full");
       }
@@ -308,6 +310,19 @@ export default function APIPageClient({ machineId }) {
       if (res.ok) setRtkEnabledState(value);
     } catch (error) {
       console.log("Error updating rtkEnabled:", error);
+    }
+  };
+
+  const handleKiroAutoCompactEnabled = async (value) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kiroAutoCompactEnabled: value }),
+      });
+      if (res.ok) setKiroAutoCompactEnabled(value);
+    } catch (error) {
+      console.log("Error updating kiroAutoCompactEnabled:", error);
     }
   };
 
@@ -1104,7 +1119,7 @@ export default function APIPageClient({ machineId }) {
         )}
       </Card>
 
-      {/* Token Saver (RTK + Caveman) */}
+      {/* Token Saver (RTK + Caveman + Kiro auto-compact) */}
       <Card id="rtk">
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -1132,6 +1147,21 @@ export default function APIPageClient({ machineId }) {
           <Toggle
             checked={rtkEnabled}
             onChange={() => handleRtkEnabled(!rtkEnabled)}
+          />
+        </div>
+        <div className="flex items-center justify-between py-4 border-b border-border gap-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <p className="font-medium">Kiro auto-compact history</p>
+              <Tooltip text="When enabled, 9router may shorten older Kiro history before upstream dispatch if the provider payload is too large. Explicit client compact requests still work separately." />
+            </div>
+            <p className="text-sm text-text-muted">
+              Off by default to avoid silently changing long Claude Code sessions
+            </p>
+          </div>
+          <Toggle
+            checked={kiroAutoCompactEnabled}
+            onChange={() => handleKiroAutoCompactEnabled(!kiroAutoCompactEnabled)}
           />
         </div>
         <div className="flex items-center justify-between pt-4 gap-4 flex-wrap">

@@ -28,7 +28,7 @@ import { compressMessages, formatRtkLog } from "../rtk/index.js";
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, billingSource, ccFilterNaming, rtkEnabled, cavemanEnabled, cavemanLevel, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, billingSource, ccFilterNaming, rtkEnabled, kiroAutoCompactEnabled, cavemanEnabled, cavemanLevel, sourceFormatOverride, providerThinking }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
 
@@ -126,7 +126,17 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     log?.debug?.("CAVEMAN", `${cavemanLevel} | ${finalFormat}`);
   }
 
-  const compactStats = applyAutoCompact({ provider, body: translatedBody });
+  const compactStats = applyAutoCompact({ provider, body: translatedBody, options: { enabled: !!kiroAutoCompactEnabled } });
+  if (compactStats?.disabled && compactStats.tooLarge) {
+    const line = `provider=${provider} model=${model} estimated=${compactStats.beforeTokens}t limit=${compactStats.limitTokens}t autoCompact=disabled`;
+    log?.warn?.("AUTOCOMPACT", line);
+    return createErrorResult(
+      HTTP_STATUS.BAD_REQUEST,
+      `[${provider}/${model}] input exceeds provider input limit (${compactStats.beforeTokens}/${compactStats.limitTokens} estimated tokens); Kiro auto-compact is disabled, compact the conversation or use a larger-context model`,
+      undefined,
+      { code: "context_window_exceeded", reason: "AUTO_COMPACT_DISABLED" }
+    );
+  }
   if (compactStats?.applied) {
     const line = `provider=${provider} model=${model} before=${compactStats.beforeTokens}t after=${compactStats.afterTokens}t limit=${compactStats.limitTokens}t omitted=${compactStats.omittedCount}`;
     log?.warn?.("AUTOCOMPACT", line);

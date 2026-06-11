@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { compactKiroPayload, estimatePayloadTokens } from "../../open-sse/utils/autoCompact.js";
+import { applyAutoCompact, compactKiroPayload, estimatePayloadTokens } from "../../open-sse/utils/autoCompact.js";
 
 function kiroUser(content, context) {
   return {
@@ -33,6 +33,54 @@ function messageKinds(history) {
 }
 
 describe("auto-compact — Kiro payload", () => {
+  it("does not mutate Kiro payloads when auto-compact is disabled", () => {
+    const body = {
+      conversationState: {
+        chatTriggerType: "MANUAL",
+        conversationId: "test",
+        currentMessage: kiroUser("continue"),
+        history: Array.from({ length: 12 }, (_, i) => (
+          i % 2 === 0 ? kiroUser(`old user ${i} ${"x".repeat(1000)}`) : kiroAssistant(`old assistant ${i} ${"y".repeat(1000)}`)
+        )),
+      },
+    };
+    const before = JSON.stringify(body);
+
+    const result = applyAutoCompact({
+      provider: "kiro",
+      body,
+      options: { enabled: false, limitTokens: 100 },
+    });
+
+    expect(result.applied).toBe(false);
+    expect(result.disabled).toBe(true);
+    expect(result.tooLarge).toBe(true);
+    expect(JSON.stringify(body)).toBe(before);
+  });
+
+  it("requires an explicit enabled policy before applying Kiro auto-compact", () => {
+    const body = {
+      conversationState: {
+        chatTriggerType: "MANUAL",
+        conversationId: "test",
+        currentMessage: kiroUser("continue"),
+        history: Array.from({ length: 12 }, (_, i) => (
+          i % 2 === 0 ? kiroUser(`old user ${i} ${"x".repeat(1000)}`) : kiroAssistant(`old assistant ${i} ${"y".repeat(1000)}`)
+        )),
+      },
+    };
+
+    const result = applyAutoCompact({
+      provider: "kiro",
+      body,
+      options: { enabled: true, limitTokens: 3_000, keepTail: 4, minTail: 4 },
+    });
+
+    expect(result.applied).toBe(true);
+    expect(result.disabled).not.toBe(true);
+    expect(body.conversationState.currentMessage.userInputMessage.content).toContain("[9router auto-compact]");
+  });
+
   it("shortens old Kiro history and annotates the current message", () => {
     const history = Array.from({ length: 40 }, (_, i) => (
       i % 2 === 0 ? kiroUser(`old user ${i} ${"x".repeat(1000)}`) : kiroAssistant(`old assistant ${i} ${"y".repeat(1000)}`)
@@ -62,6 +110,36 @@ describe("auto-compact — Kiro payload", () => {
     expect(result.omittedCount).toBeGreaterThan(0);
     expect(body.conversationState.history.length).toBeLessThan(history.length);
     expect(body.conversationState.currentMessage.userInputMessage.content).toContain("[9router auto-compact]");
+  });
+
+  it("pins URLs and file paths from omitted Kiro history into the compact notice", () => {
+    const filePath = "/var/folders/mw/8g23_4f55wsgvdssbqw40wjm0000gn/T/codex-clipboard-6b9b41e2-020f-4220-a4ac-143586f21ae6.png";
+    const url = "https://router.chainlens.net/v1";
+    const history = Array.from({ length: 16 }, (_, i) => {
+      if (i === 0) return kiroUser(`old user ${i} see ${url} and ${filePath} ${"x".repeat(1000)}`);
+      return i % 2 === 0 ? kiroUser(`old user ${i} ${"x".repeat(1000)}`) : kiroAssistant(`old assistant ${i} ${"y".repeat(1000)}`);
+    });
+    const body = {
+      conversationState: {
+        chatTriggerType: "MANUAL",
+        conversationId: "test",
+        currentMessage: kiroUser("please continue"),
+        history,
+      },
+    };
+
+    const result = compactKiroPayload(body, {
+      limitTokens: 4_000,
+      keepTail: 4,
+      minTail: 4,
+    });
+
+    const currentContent = body.conversationState.currentMessage.userInputMessage.content;
+    expect(result.applied).toBe(true);
+    expect(JSON.stringify(body.conversationState.history)).not.toContain("old user 0");
+    expect(currentContent).toContain("Preserved references from omitted history");
+    expect(currentContent).toContain(url);
+    expect(currentContent).toContain(filePath);
   });
 
   it("reports tooLarge when current payload cannot fit after dropping history", () => {
