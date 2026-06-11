@@ -22,6 +22,36 @@ import fs from "fs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// ─── Load .env files ─────────────────────────────────────────────────────────
+// seed.js chạy ngoài Next runtime nên không tự load .env. Ta parse thủ công
+// .env rồi .env.local (local override) để DATA_DIR khớp với dev server.
+// Lưu ý: KHÔNG ghi đè biến đã export sẵn ở shell → `DATA_DIR=... node seed.js` vẫn ưu tiên.
+function loadEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) return;
+  const content = fs.readFileSync(filePath, "utf8");
+  for (const rawLine of content.split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    if (eq === -1) continue;
+    const key = line.slice(0, eq).trim();
+    if (!key || key in process.env) continue; // không override env đã có
+    let value = line.slice(eq + 1).trim();
+    // bỏ quote bao quanh nếu có
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    process.env[key] = value;
+  }
+}
+
+const projectRoot = path.resolve(__dirname, "..");
+loadEnvFile(path.join(projectRoot, ".env"));
+loadEnvFile(path.join(projectRoot, ".env.local"));
+
 // ─── Setup DATA_DIR ──────────────────────────────────────────────────────────
 if (!process.env.DATA_DIR) {
   process.env.DATA_DIR = path.join(process.env.HOME || "~", ".9router");
