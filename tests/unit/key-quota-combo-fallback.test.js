@@ -44,10 +44,10 @@ describe("D3: combo fallback khi quota block (AC#4)", () => {
     expect(retryAfterSec).toBeLessThanOrEqual(5 * 3600 + 1);
   });
 
-  it("không phải quota error → shouldFallback:true nhưng vì text mismatch fallback về default transient", () => {
-    // Lỗi khác như 400 bad request → default: shouldFallback:true (transient)
-    const { shouldFallback } = checkFallbackError(400, "invalid request body");
-    // Không phải quota text → không match text rule nhưng vẫn fallback (default behavior)
-    expect(typeof shouldFallback).toBe("boolean");
+  it("request-shape 400 không bị hiểu nhầm thành quota/account fallback", () => {
+    const { shouldFallback, cooldownMs, reason } = checkFallbackError(400, "invalid request body");
+    expect(shouldFallback).toBe(false);
+    expect(cooldownMs).toBe(0);
+    expect(reason).toBe("request_shape_error");
   });
 });
