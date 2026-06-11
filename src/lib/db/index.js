@@ -47,8 +47,8 @@ export {
 
 // Orders (Story 2.26 — Telegram Store checkout)
 export {
-  insertOrderWithItems, transitionOrder, getOrderById,
-  getOrderByIdempotencyKey, listOrdersByUser, canTransition,
+  insertOrderWithItems, transitionOrder, transitionOrderSync, getOrderById,
+  getOrderByIdempotencyKey, getOrderByIdempotencyKeySync, listOrdersByUser, canTransition,
   ORDER_STATUSES,
 } from "./repos/ordersRepo.js";
 

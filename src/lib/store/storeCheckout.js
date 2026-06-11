@@ -14,7 +14,12 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../db/driver.js";
 import { recordCreditTxn } from "../db/repos/creditLedgerRepo.js";
-import { insertOrderWithItems, transitionOrder, getOrderByIdempotencyKey } from "../db/repos/ordersRepo.js";
+import {
+  insertOrderWithItems,
+  transitionOrderSync,
+  getOrderByIdempotencyKey,
+  getOrderByIdempotencyKeySync,
+} from "../db/repos/ordersRepo.js";
 
 export class CheckoutError extends Error {
   constructor(code, message) {
@@ -52,11 +57,9 @@ export async function storeCheckout(userId, productId, { quantity = 1, idempoten
   adapter.transaction(() => {
     // ── In-txn idempotency recheck (closes the race the outer pre-check leaves open) ──
     if (idempotencyKey) {
-      const dup = adapter.get(`SELECT id FROM orders WHERE idempotencyKey = ?`, [idempotencyKey]);
+      const dup = getOrderByIdempotencyKeySync(adapter, idempotencyKey);
       if (dup) {
-        const order = adapter.get(`SELECT * FROM orders WHERE id = ?`, [dup.id]);
-        const items = adapter.all(`SELECT * FROM orderItems WHERE orderId = ?`, [dup.id]);
-        result = { order, items, ledgerTxnId: order.ledgerTxnId, alreadyProcessed: true };
+        result = { order: dup, items: dup.items, ledgerTxnId: dup.ledgerTxnId, alreadyProcessed: true };
         return;
       }
     }
@@ -133,7 +136,7 @@ export async function storeCheckout(userId, productId, { quantity = 1, idempoten
     // ── Instant delivery → fulfill now; admin_fulfill / self_connect stay `paid`. ──
     let finalOrder = order;
     if (product.deliveryMode === "instant") {
-      finalOrder = transitionOrder(orderId, "fulfilled", { db: adapter, note: "Giao tự động" });
+      finalOrder = transitionOrderSync(adapter, orderId, "fulfilled", { note: "Giao tự động" });
     }
 
     result = { order: finalOrder, items, ledgerTxnId: txn.id, alreadyProcessed: false };

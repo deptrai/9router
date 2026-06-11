@@ -128,28 +128,53 @@ export function insertOrderWithItems(adapter, order, items) {
 }
 
 /**
- * Transition an order's status with state-machine validation.
+ * Transition an order's status with state-machine validation (sync).
+ * Use this inside a caller-owned db.transaction(); pass that same adapter.
+ * @param {object} adapter - db adapter (typically inside an open transaction)
  * @param {string} orderId
  * @param {string} toStatus
- * @param {object|null} db - optional adapter to nest inside caller's transaction
+ * @returns {object} the updated order (mapped)
  */
-export function transitionOrder(orderId, toStatus, { note = null, db = null } = {}) {
-  const run = (adapter) => {
-    const row = adapter.get(`SELECT * FROM orders WHERE id = ?`, [orderId]);
-    if (!row) throw new Error(`transitionOrder: order ${orderId} not found`);
-    if (row.status === toStatus) return rowToOrder(row); // idempotent no-op
-    if (!canTransition(row.status, toStatus)) {
-      throw new Error(`transitionOrder: illegal ${row.status} → ${toStatus}`);
-    }
-    const now = new Date().toISOString();
-    adapter.run(
-      `UPDATE orders SET status = ?, note = COALESCE(?, note), updatedAt = ? WHERE id = ?`,
-      [toStatus, note, now, orderId]
-    );
-    return rowToOrder({ ...row, status: toStatus, note: note ?? row.note, updatedAt: now });
-  };
-  if (db) return run(db);
-  return (async () => run(await getAdapter()))();
+export function transitionOrderSync(adapter, orderId, toStatus, { note = null } = {}) {
+  const row = adapter.get(`SELECT * FROM orders WHERE id = ?`, [orderId]);
+  if (!row) throw new Error(`transitionOrder: order ${orderId} not found`);
+  if (row.status === toStatus) return rowToOrder(row); // idempotent no-op
+  if (!canTransition(row.status, toStatus)) {
+    throw new Error(`transitionOrder: illegal ${row.status} → ${toStatus}`);
+  }
+  const now = new Date().toISOString();
+  adapter.run(
+    `UPDATE orders SET status = ?, note = COALESCE(?, note), updatedAt = ? WHERE id = ?`,
+    [toStatus, note, now, orderId]
+  );
+  return rowToOrder({ ...row, status: toStatus, note: note ?? row.note, updatedAt: now });
+}
+
+/**
+ * Transition an order's status with its own adapter. Always async — awaitable
+ * with a consistent return type (Promise<order>).
+ * @param {string} orderId
+ * @param {string} toStatus
+ * @returns {Promise<object>} the updated order (mapped)
+ */
+export async function transitionOrder(orderId, toStatus, { note = null } = {}) {
+  const adapter = await getAdapter();
+  return transitionOrderSync(adapter, orderId, toStatus, { note });
+}
+
+/**
+ * Sync lookup by idempotencyKey, mapped. Use inside a caller-owned transaction;
+ * pass that same adapter so the read sees uncommitted in-txn writes.
+ * @param {object} adapter
+ * @param {string} idempotencyKey
+ * @returns {{...order, items}|null}
+ */
+export function getOrderByIdempotencyKeySync(adapter, idempotencyKey) {
+  if (!idempotencyKey) return null;
+  const order = rowToOrder(adapter.get(`SELECT * FROM orders WHERE idempotencyKey = ?`, [idempotencyKey]));
+  if (!order) return null;
+  const items = adapter.all(`SELECT * FROM orderItems WHERE orderId = ?`, [order.id]).map(rowToItem);
+  return { ...order, items };
 }
 
 export async function getOrderById(id) {

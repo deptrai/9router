@@ -34,6 +34,7 @@ const DEFAULT_SETTINGS = {
   mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
   dnsToolEnabled: {},
   rtkEnabled: true,
+  kiroAutoCompactEnabled: false,
   cavemanEnabled: false,
   cavemanLevel: "full",
 };

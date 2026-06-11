@@ -287,6 +287,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       billingSource,
       ccFilterNaming: !!chatSettings.ccFilterNaming,
       rtkEnabled: !!chatSettings.rtkEnabled,
+      kiroAutoCompactEnabled: !!chatSettings.kiroAutoCompactEnabled,
       cavemanEnabled: !!chatSettings.cavemanEnabled,
       cavemanLevel: chatSettings.cavemanLevel || "full",
       providerThinking,
