@@ -272,7 +272,7 @@ export class CodexExecutor extends BaseExecutor {
           response: new Response(
             JSON.stringify({
               error: {
-                message: "Your input exceeds the context window of this model. Please adjust your input and try again.",
+                message: "Input exceeds the context window for this model; compact the conversation or choose a larger-context model.",
                 type: "invalid_request_error",
                 code: "context_window_exceeded",
               },

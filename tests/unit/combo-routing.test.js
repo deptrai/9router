@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-import { getModelContextFit, getRotatedModels, handleComboChat, resetComboRotation } from "../../open-sse/services/combo.js";
+import { getModelContextFit, getRotatedModels, handleComboChat, isContextWindowError, resetComboRotation } from "../../open-sse/services/combo.js";
 
 describe("combo round-robin routing", () => {
   beforeEach(() => {
@@ -78,6 +78,12 @@ describe("combo round-robin routing", () => {
     expect(fit.contextWindow).toBe(1_050_000);
   });
 
+  it("recognizes provider context-window error messages", () => {
+    expect(isContextWindowError("Your input exceeds the context window of this model")).toBe(true);
+    expect(isContextWindowError({ code: "context_window_exceeded" })).toBe(true);
+    expect(isContextWindowError("invalid request body")).toBe(false);
+  });
+
   it("does not treat GPT 5.5 xhigh as a larger-context fallback", () => {
     const body = { messages: [{ role: "user", content: "large" }] };
     const estimateInputTokens = () => 1_000_000;
@@ -147,5 +153,66 @@ describe("combo round-robin routing", () => {
     await expect(response.json()).resolves.toMatchObject({
       error: { message: expect.stringContaining("codex/gpt-5.5-xhigh") },
     });
+  });
+
+  it("does not fallback from an upstream context error to same-size context variants", async () => {
+    const calls = [];
+    const log = { info: () => {}, warn: () => {} };
+
+    const response = await handleComboChat({
+      body: { messages: [{ role: "user", content: "large" }] },
+      models: ["cx/gpt-5.5-xhigh", "cx/gpt-5.5-low"],
+      estimateInputTokens: () => 100,
+      log,
+      handleSingleModel: async (_body, model) => {
+        calls.push(model);
+        return new Response(JSON.stringify({
+          error: {
+            message: "Input exceeds the context window for this model",
+            code: "context_window_exceeded",
+          },
+        }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    });
+
+    expect(calls).toEqual(["cx/gpt-5.5-xhigh"]);
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: "context_window_exceeded",
+        message: expect.stringContaining("larger-context fallback"),
+      },
+    });
+  });
+
+  it("can fallback from an upstream context error to a known larger-context model", async () => {
+    const calls = [];
+    const log = { info: () => {}, warn: () => {} };
+
+    const response = await handleComboChat({
+      body: { messages: [{ role: "user", content: "large" }] },
+      models: ["claude/claude-opus-4-8", "codex/gpt-5.5-xhigh"],
+      estimateInputTokens: () => 100,
+      log,
+      handleSingleModel: async (_body, model) => {
+        calls.push(model);
+        if (model === "claude/claude-opus-4-8") {
+          return new Response(JSON.stringify({ error: { message: "context_length_exceeded" } }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    });
+
+    expect(calls).toEqual(["claude/claude-opus-4-8", "codex/gpt-5.5-xhigh"]);
+    expect(response.status).toBe(200);
   });
 });
