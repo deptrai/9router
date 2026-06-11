@@ -6,18 +6,14 @@ import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { parseModel } from "./model.js";
 import { getModelContextWindow, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { unavailableResponse } from "../utils/error.js";
+import { isContextWindowError } from "../utils/contextWindowError.js";
+import { getProviderAutoCompactLimit } from "../utils/autoCompact.js";
+
+export { isContextWindowError } from "../utils/contextWindowError.js";
 
 const DEFAULT_CONTEXT_RESERVE_TOKENS = 4096;
 const CONTEXT_ESTIMATE_SAFETY_RATIO = 1.1;
 const CHARS_PER_TOKEN_ESTIMATE = 4;
-const CONTEXT_WINDOW_ERROR_PATTERNS = [
-  "context window",
-  "context_window_exceeded",
-  "context length",
-  "context_length_exceeded",
-  "too many input tokens",
-  "maximum context length",
-];
 
 /**
  * Track rotation state per combo (for round-robin strategy)
@@ -113,11 +109,16 @@ function resolveModelContextWindow(modelStr) {
   return null;
 }
 
-export function isContextWindowError(errorText) {
-  if (!errorText) return false;
-  const text = typeof errorText === "string" ? errorText : JSON.stringify(errorText);
-  const lower = text.toLowerCase();
-  return CONTEXT_WINDOW_ERROR_PATTERNS.some(pattern => lower.includes(pattern));
+function resolveModelInputLimit(modelStr) {
+  const parsed = parseModel(modelStr);
+  if (!parsed?.model) return null;
+  const providers = [parsed.providerAlias, PROVIDER_ID_TO_ALIAS[parsed.provider], parsed.provider]
+    .filter(Boolean);
+  for (const provider of providers) {
+    const limit = getProviderAutoCompactLimit(provider, parsed.model);
+    if (limit) return limit;
+  }
+  return null;
 }
 
 function hasPotentialLargerContextCandidate(models, startIndex, currentContextWindow) {
@@ -143,9 +144,43 @@ function contextWindowErrorResponse(message) {
   );
 }
 
+function appendErrorPart(parts, value) {
+  if (value == null || value === "") return;
+  if (typeof value === "string") {
+    parts.push(value);
+    return;
+  }
+  try { parts.push(JSON.stringify(value)); } catch { parts.push(String(value)); }
+}
+
+function extractComboErrorInfo(errorBody, fallbackText = "") {
+  const parts = [];
+  const err = errorBody?.error;
+  if (err && typeof err === "object") {
+    appendErrorPart(parts, err.message);
+    appendErrorPart(parts, err.code);
+    appendErrorPart(parts, err.provider_code);
+    appendErrorPart(parts, err.reason);
+    appendErrorPart(parts, err.type);
+    appendErrorPart(parts, err.provider_type);
+  } else {
+    appendErrorPart(parts, err);
+  }
+  appendErrorPart(parts, errorBody?.message);
+  appendErrorPart(parts, errorBody?.code);
+  appendErrorPart(parts, errorBody?.reason);
+
+  return {
+    errorText: parts.join(" ") || fallbackText,
+    retryAfter: errorBody?.retryAfter || (err && typeof err === "object" ? err.retryAfter : null) || null,
+  };
+}
+
 export function getModelContextFit(body, modelStr, estimateInputTokens = estimateRequestInputTokens, reserveTokens = DEFAULT_CONTEXT_RESERVE_TOKENS) {
   const contextWindow = resolveModelContextWindow(modelStr);
-  if (!contextWindow) return { fits: true, contextWindow: null, estimatedTokens: 0, requiredTokens: 0 };
+  const inputLimit = resolveModelInputLimit(modelStr);
+  const effectiveLimit = inputLimit && contextWindow ? Math.min(inputLimit, contextWindow) : (inputLimit || contextWindow);
+  if (!effectiveLimit) return { fits: true, contextWindow: null, inputLimit: null, effectiveLimit: null, estimatedTokens: 0, requiredTokens: 0 };
 
   const estimatedTokens = Math.ceil((estimateInputTokens(body) || 0) * CONTEXT_ESTIMATE_SAFETY_RATIO);
   const requestedReserve = getRequestedOutputReserve(body);
@@ -153,11 +188,20 @@ export function getModelContextFit(body, modelStr, estimateInputTokens = estimat
   const requiredTokens = estimatedTokens + outputReserve;
 
   return {
-    fits: requiredTokens <= contextWindow,
+    fits: requiredTokens <= effectiveLimit,
     contextWindow,
+    inputLimit,
+    effectiveLimit,
     estimatedTokens,
     requiredTokens,
   };
+}
+
+function describeContextLimit(contextFit) {
+  if (contextFit.inputLimit && (!contextFit.contextWindow || contextFit.inputLimit < contextFit.contextWindow)) {
+    return `provider input limit ${contextFit.inputLimit}`;
+  }
+  return `context window ${contextFit.contextWindow || contextFit.effectiveLimit}`;
 }
 
 /**
@@ -206,10 +250,14 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
     const contextFit = getModelContextFit(body, modelStr, estimateInputTokens);
     if (!contextFit.fits) {
-      lastStatus = 400;
-      lastError = `[${modelStr}] estimated input ${contextFit.estimatedTokens} tokens (+reserve ${contextFit.requiredTokens - contextFit.estimatedTokens}) exceeds context window ${contextFit.contextWindow}; compact the conversation or use a larger-context fallback`;
-      log.warn("COMBO", `Skipping ${modelStr}: context window too small`, contextFit);
-      continue;
+      const hasLargerFallback = hasPotentialLargerContextCandidate(rotatedModels, i + 1, contextFit.effectiveLimit || contextFit.contextWindow);
+      if (!contextFit.inputLimit || hasLargerFallback) {
+        lastStatus = 400;
+        lastError = `[${modelStr}] estimated input ${contextFit.estimatedTokens} tokens (+reserve ${contextFit.requiredTokens - contextFit.estimatedTokens}) exceeds ${describeContextLimit(contextFit)}; compact the conversation or use a larger-context fallback`;
+        log.warn("COMBO", `Skipping ${modelStr}: context window too small`, { ...contextFit, hasLargerFallback });
+        continue;
+      }
+      log.warn("COMBO", `Trying ${modelStr} with auto-compact because no larger fallback is available`, contextFit);
     }
 
     try {
@@ -226,8 +274,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       let retryAfter = null;
       try {
         const errorBody = await result.clone().json();
-        errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
-        retryAfter = errorBody?.retryAfter || null;
+        ({ errorText, retryAfter } = extractComboErrorInfo(errorBody, errorText));
       } catch {
         // Ignore JSON parse errors
       }
@@ -243,7 +290,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       }
 
       if (result.status === 400 && isContextWindowError(errorText)) {
-        const currentContextWindow = resolveModelContextWindow(modelStr);
+        const currentContextWindow = resolveModelInputLimit(modelStr) || resolveModelContextWindow(modelStr);
         lastStatus = 400;
         lastError = `[${modelStr}] input exceeds context window${currentContextWindow ? ` ${currentContextWindow}` : ""}; compact the conversation or use a larger-context fallback`;
         const hasLargerFallback = hasPotentialLargerContextCandidate(rotatedModels, i + 1, currentContextWindow);

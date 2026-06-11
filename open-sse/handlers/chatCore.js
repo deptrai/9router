@@ -17,6 +17,7 @@ import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/streamingHandler.js";
 import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
 import { dedupeTools } from "../utils/toolDeduper.js";
+import { applyAutoCompact } from "../utils/autoCompact.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 
@@ -125,6 +126,20 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     log?.debug?.("CAVEMAN", `${cavemanLevel} | ${finalFormat}`);
   }
 
+  const compactStats = applyAutoCompact({ provider, body: translatedBody });
+  if (compactStats?.applied) {
+    const line = `provider=${provider} model=${model} before=${compactStats.beforeTokens}t after=${compactStats.afterTokens}t limit=${compactStats.limitTokens}t omitted=${compactStats.omittedCount}`;
+    log?.warn?.("AUTOCOMPACT", line);
+    if (compactStats.tooLarge) {
+      return createErrorResult(
+        HTTP_STATUS.BAD_REQUEST,
+        `[${provider}/${model}] input exceeds context window after auto-compact (${compactStats.afterTokens}/${compactStats.limitTokens} estimated tokens); compact the conversation or use a larger-context model`,
+        undefined,
+        { code: "context_window_exceeded", reason: "AUTO_COMPACT_STILL_TOO_LARGE" }
+      );
+    }
+  }
+
   const executor = getExecutor(provider);
   trackPendingRequest(model, provider, connectionId, true);
   appendRequestLog({ model, provider, connectionId, status: "PENDING" }).catch(() => { });
@@ -230,7 +245,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Provider returned error
   if (!providerResponse.ok) {
     trackPendingRequest(model, provider, connectionId, false, true);
-    const { statusCode, message, resetsAtMs } = await parseUpstreamError(providerResponse, executor);
+    const { statusCode, message, resetsAtMs, reason, code, type } = await parseUpstreamError(providerResponse, executor);
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(() => { });
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
@@ -245,7 +260,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
     console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
     reqLogger.logError(new Error(message), finalBody || translatedBody);
-    return createErrorResult(statusCode, errMsg, resetsAtMs);
+    return createErrorResult(statusCode, errMsg, resetsAtMs, { reason, code, type });
   }
 
   const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, billingSource, clientRawRequest, onRequestSuccess };

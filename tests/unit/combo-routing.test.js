@@ -81,6 +81,7 @@ describe("combo round-robin routing", () => {
   it("recognizes provider context-window error messages", () => {
     expect(isContextWindowError("Your input exceeds the context window of this model")).toBe(true);
     expect(isContextWindowError({ code: "context_window_exceeded" })).toBe(true);
+    expect(isContextWindowError({ message: "Input is too long.", reason: "CONTENT_LENGTH_EXCEEDS_THRESHOLD" })).toBe(true);
     expect(isContextWindowError("invalid request body")).toBe(false);
   });
 
@@ -213,6 +214,93 @@ describe("combo round-robin routing", () => {
     });
 
     expect(calls).toEqual(["claude/claude-opus-4-8", "codex/gpt-5.5-xhigh"]);
+    expect(response.status).toBe(200);
+  });
+
+  it("can fallback from Kiro content-length 400 to a known larger-context model", async () => {
+    const calls = [];
+    const log = { info: () => {}, warn: () => {} };
+
+    const response = await handleComboChat({
+      body: { messages: [{ role: "user", content: "large" }] },
+      models: ["kiro/claude-opus-4.8", "codex/gpt-5.5-xhigh"],
+      estimateInputTokens: () => 100,
+      log,
+      handleSingleModel: async (_body, model) => {
+        calls.push(model);
+        if (model === "kiro/claude-opus-4.8") {
+          return new Response(JSON.stringify({
+            error: {
+              message: "[400]: Input is too long.",
+              reason: "CONTENT_LENGTH_EXCEEDS_THRESHOLD",
+            },
+          }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    });
+
+    expect(calls).toEqual(["kiro/claude-opus-4.8", "codex/gpt-5.5-xhigh"]);
+    expect(response.status).toBe(200);
+  });
+
+  it("falls back from Kiro temporary unavailable 400 cooldown to the next combo model", async () => {
+    const calls = [];
+    const log = { info: () => {}, warn: () => {} };
+
+    const response = await handleComboChat({
+      body: { messages: [{ role: "user", content: "continue" }] },
+      models: ["kiro/claude-opus-4.8", "codex/gpt-5.5-xhigh"],
+      estimateInputTokens: () => 100,
+      log,
+      handleSingleModel: async (_body, model) => {
+        calls.push(model);
+        if (model === "kiro/claude-opus-4.8") {
+          return new Response(JSON.stringify({
+            error: {
+              message: "[kiro/claude-opus-4.8] Unavailable (reset after 27s)",
+            },
+          }), {
+            status: 400,
+            headers: { "Content-Type": "application/json", "Retry-After": "27" },
+          });
+        }
+        return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    });
+
+    expect(calls).toEqual(["kiro/claude-opus-4.8", "codex/gpt-5.5-xhigh"]);
+    expect(response.status).toBe(200);
+  });
+
+  it("skips Kiro input-limit overflow when a larger-context combo fallback exists", async () => {
+    const calls = [];
+    const log = { info: () => {}, warn: () => {} };
+
+    const response = await handleComboChat({
+      body: { messages: [{ role: "user", content: "large session" }] },
+      models: ["kiro/claude-opus-4.8", "codex/gpt-5.5-xhigh"],
+      estimateInputTokens: () => 170_000,
+      log,
+      handleSingleModel: async (_body, model) => {
+        calls.push(model);
+        return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    });
+
+    expect(calls).toEqual(["codex/gpt-5.5-xhigh"]);
     expect(response.status).toBe(200);
   });
 });
