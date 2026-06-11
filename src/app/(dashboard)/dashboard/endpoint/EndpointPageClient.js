@@ -76,7 +76,7 @@ export default function APIPageClient({ machineId }) {
   const [hasPassword, setHasPassword] = useState(true);
   const [tunnelDashboardAccess, setTunnelDashboardAccess] = useState(false);
   const [rtkEnabled, setRtkEnabledState] = useState(true);
-  const [kiroAutoCompactEnabled, setKiroAutoCompactEnabled] = useState(false);
+  const [kiroAutoCompactEnabled, setKiroAutoCompactEnabled] = useState(true);
   const [cavemanEnabled, setCavemanEnabled] = useState(false);
   const [cavemanLevel, setCavemanLevel] = useState("full");
 
@@ -1156,7 +1156,7 @@ export default function APIPageClient({ machineId }) {
               <Tooltip text="When enabled, 9router may shorten older Kiro history before upstream dispatch if the provider payload is too large. Explicit client compact requests still work separately." />
             </div>
             <p className="text-sm text-text-muted">
-              Off by default to avoid silently changing long Claude Code sessions
+              Keeps long Kiro sessions moving when the provider payload is too large
             </p>
           </div>
           <Toggle
