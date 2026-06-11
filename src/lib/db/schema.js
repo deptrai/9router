@@ -1,5 +1,5 @@
 // Latest schema version — bumped when a migration is added in ./migrations/
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -266,6 +266,27 @@ export const TABLES = {
       "CREATE UNIQUE INDEX IF NOT EXISTS idx_gcr_unique ON giftCodeRedemptions(giftCodeId, userId)",
     ],
   },
+  // Story 2.25: Telegram Store product catalog
+  products: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      kind: "TEXT NOT NULL",            // plan|credential|account|service|api_package
+      name: "TEXT NOT NULL",
+      description: "TEXT",
+      priceCredits: "REAL NOT NULL",
+      deliveryMode: "TEXT NOT NULL",    // instant|admin_fulfill|user_self_connect
+      targetType: "TEXT",               // 9router_plan|... (null cho non-plan)
+      targetId: "TEXT",                 // planId nếu targetType=9router_plan
+      stock: "INTEGER",                 // null = unlimited
+      isActive: "INTEGER DEFAULT 1",
+      createdAt: "TEXT NOT NULL",
+      updatedAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_products_active ON products(isActive)",
+    ],
+  },
+
   // BP-1: immutable — NO updatedAt column. Append-only. Corrections via reversal rows.
   // BP-6: amount/balanceAfter kept as REAL (float) — known-limitation, see Dev Notes 2.13.
   creditTransactions: {

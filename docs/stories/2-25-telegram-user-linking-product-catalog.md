@@ -9,7 +9,7 @@ context:
 
 # Story 2.25 — Telegram User Linking & Product Catalog
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -98,30 +98,30 @@ KHÔNG làm (để story sau):
 
 ### Part A — Products schema + repo (AC5)
 
-- [ ] **A1**: Thêm `products` table vào `src/lib/db/schema.js` TABLES: `id TEXT PK, kind TEXT NOT NULL, name TEXT NOT NULL, description TEXT, priceCredits REAL NOT NULL, deliveryMode TEXT NOT NULL, targetType TEXT, targetId TEXT, stock INTEGER, isActive INTEGER DEFAULT 1, createdAt TEXT, updatedAt TEXT`. Bump `SCHEMA_VERSION`. Index `idx_products_active ON products(isActive)`.
-- [ ] **A2**: Tạo `src/lib/db/repos/productsRepo.js`: `listActiveProducts()`, `getProductById(id)`, `createProduct(data)` (cho 2.28), `rowToProduct` mapper. Export qua `src/lib/db/index.js`.
-- [ ] **A3**: Validation: `kind` ∈ enum, `deliveryMode` ∈ enum, `priceCredits >= 0`, `stock` null=unlimited hoặc >= 0.
+- [x] **A1**: Thêm `products` table vào `src/lib/db/schema.js` TABLES: `id TEXT PK, kind TEXT NOT NULL, name TEXT NOT NULL, description TEXT, priceCredits REAL NOT NULL, deliveryMode TEXT NOT NULL, targetType TEXT, targetId TEXT, stock INTEGER, isActive INTEGER DEFAULT 1, createdAt TEXT, updatedAt TEXT`. Bump `SCHEMA_VERSION`. Index `idx_products_active ON products(isActive)`.
+- [x] **A2**: Tạo `src/lib/db/repos/productsRepo.js`: `listActiveProducts()`, `getProductById(id)`, `createProduct(data)` (cho 2.28), `rowToProduct` mapper. Export qua `src/lib/db/index.js`.
+- [x] **A3**: Validation: `kind` ∈ enum, `deliveryMode` ∈ enum, `priceCredits >= 0`, `stock` null=unlimited hoặc >= 0.
 
 ### Part B — Telegram bot infra (D1, D2, AC4)
 
-- [ ] **B1**: Tạo `src/lib/telegram/botClient.js`: pure-fetch wrapper — `sendMessage(chatId, text, opts)`, `answerCallbackQuery(id, opts)`, `setWebhook(url, secret)`. Dùng `TELEGRAM_BOT_TOKEN`. Fail-soft + timeout (giống sendEmail).
-- [ ] **B2**: Tạo `src/lib/telegram/router.js`: `handleUpdate(update)` — parse `message.text` command (`/start`, `/products`, ...) + `callback_query`, dispatch tới handler. Unknown command → help.
-- [ ] **B3**: Route `POST /api/telegram/webhook`: verify header `X-Telegram-Bot-Api-Secret-Token === TELEGRAM_WEBHOOK_SECRET` (AC4, 401 nếu sai) → `handleUpdate(body)` → 200. Thêm `/api/telegram` vào `PUBLIC_API_PATHS`.
-- [ ] **B4**: Setup script/route `setWebhook` (admin-only hoặc CLI) để đăng ký webhook URL với Telegram.
+- [x] **B1**: Tạo `src/lib/telegram/botClient.js`: pure-fetch wrapper — `sendMessage(chatId, text, opts)`, `answerCallbackQuery(id, opts)`, `setWebhook(url, secret)`. Dùng `TELEGRAM_BOT_TOKEN`. Fail-soft + timeout (giống sendEmail).
+- [x] **B2**: Tạo `src/lib/telegram/router.js`: `handleUpdate(update)` — parse `message.text` command (`/start`, `/products`, ...) + `callback_query`, dispatch tới handler. Unknown command → help.
+- [x] **B3**: Route `POST /api/telegram/webhook`: verify header `X-Telegram-Bot-Api-Secret-Token === TELEGRAM_WEBHOOK_SECRET` (AC4, 401 nếu sai) → `handleUpdate(body)` → 200. Thêm `/api/telegram` vào `PUBLIC_API_PATHS`.
+- [x] **B4**: Setup script/route `setWebhook` (admin-only hoặc CLI) để đăng ký webhook URL với Telegram.
 
 ### Part C — `/start` + `/products` handlers (AC1, AC2, AC3)
 
-- [ ] **C1**: `/start` handler: `getUserByTelegramId(from.id)` → nếu null, `createUser(placeholderEmail, null, displayName)` + set telegramId (reuse 2.22 pattern). Trả menu chính (inline keyboard: Products/Wallet/Orders/API/Support).
-- [ ] **C2**: `/products` handler: gọi `listActiveProducts()` (hoặc `GET /api/store/products`) → render mỗi product: tên, mô tả ngắn, giá credits, tồn kho, nút mua (callback_data `buy:<productId>`). Hết hàng/inactive → không có nút mua.
-- [ ] **C3**: Error wrapper: try/catch quanh handler → message ngắn "Có lỗi, thử lại hoặc /support", KHÔNG leak stack.
+- [x] **C1**: `/start` handler: `getUserByTelegramId(from.id)` → nếu null, `createUser(placeholderEmail, null, displayName)` + set telegramId (reuse 2.22 pattern). Trả menu chính (inline keyboard: Products/Wallet/Orders/API/Support).
+- [x] **C2**: `/products` handler: gọi `listActiveProducts()` (hoặc `GET /api/store/products`) → render mỗi product: tên, mô tả ngắn, giá credits, tồn kho, nút mua (callback_data `buy:<productId>`). Hết hàng/inactive → không có nút mua.
+- [x] **C3**: Error wrapper: try/catch quanh handler → message ngắn "Có lỗi, thử lại hoặc /support", KHÔNG leak stack.
 
 ### Part D — Store read API (AC2)
 
-- [ ] **D1**: `GET /api/store/products` — trả active products (an toàn public-read hoặc auth tùy; bot gọi internal). KHÔNG expose sensitive field (inventory payload — chưa có ở 2.25). Cache-Control hợp lý.
+- [x] **D1**: `GET /api/store/products` — trả active products (an toàn public-read hoặc auth tùy; bot gọi internal). KHÔNG expose sensitive field (inventory payload — chưa có ở 2.25). Cache-Control hợp lý.
 
 ### Part E — Tests (AC6)
 
-- [ ] **E1**: `tests/unit/telegram-store.test.js`: `/start` create/link user; `/products` active filter; webhook secret reject (401); productsRepo CRUD + enum validation; error fallback không leak.
+- [x] **E1**: `tests/unit/telegram-store.test.js`: `/start` create/link user; `/products` active filter; webhook secret reject (401); productsRepo CRUD + enum validation; error fallback không leak.
 
 ## Dev Notes
 
@@ -248,3 +248,5 @@ Test deps tại `tests/node_modules`. Mock `fetch` (Telegram API) + `TELEGRAM_BO
 
 ### Change Log
 - 2026-06-11: Story created (ready-for-dev). Epic I story đầu tiên — dựng bot infra + products catalog + /start + /products.
+- 2026-06-11: Implementation hoàn tất (→ review). Đã code: `products` table + index trong `schema.js` (SCHEMA_VERSION bump), `src/lib/db/repos/productsRepo.js` (`listActiveProducts`, `getProductById`, `createProduct`, enum validation), `src/lib/telegram/botClient.js` (pure-fetch wrapper: `sendMessage`, `answerCallbackQuery`, `setWebhook`, `fetchWithTimeout`), `src/lib/telegram/router.js` (`handleUpdate` dispatch `/start`/`/products`/callback_query), route `POST /api/telegram/webhook` (secret-token verify → 401 nếu sai, luôn 200 sau verify), route `GET /api/telegram/setup-webhook` (admin), route `GET /api/store/products` (public read). `/api/telegram` + `/api/store` thêm vào `PUBLIC_API_PATHS`. Tests: `tests/unit/telegram-store.test.js` cover `/start` create/link, `/products` active filter, webhook 401/200, productsRepo CRUD + enum validation, error fallback. Verification: existing `telegramAuth.test.js` 10/10 passed (không regression), Next.js build thành công (149 routes, `/api/telegram/webhook` + `/api/telegram/setup-webhook` + `/api/store/products` compile OK).
+- 2026-06-11: Code review (adversarial) + fixes. **H1 (security)**: `/api/telegram/setup-webhook` chưa được role-gate → user role thường gọi được thao tác ops. Fix: thêm `/api/telegram/setup-webhook` vào `ADMIN_ONLY_API_PATHS` trong `dashboardGuard.js` (route nhận-update `/api/telegram/webhook` vẫn public, tự verify secret). **M1 (security)**: webhook secret compare dùng `!==` → timing attack. Fix: chuyển sang `crypto.timingSafeEqual` qua helper `secretMatches` (giữ fail-closed: thiếu/khác độ dài → 401). Đã verify lại: `telegram-store.test.js` 16/16 pass, `adminGuard.test.js` 11/11 pass, build 149 routes OK. **Deferred (không làm ở 2.25)**: M2 — race khi 2 `/start` đồng thời từ cùng telegramId có thể tạo trùng user; idempotency/khóa thuộc phạm vi checkout story 2.26 (xem Dev Notes), edge case hiếm → defer. L1–L5 (passwordHash `"!"` thay vì null, bỏ `details` khỏi 502 setup-webhook, 2 test case bổ sung) → backlog polish.

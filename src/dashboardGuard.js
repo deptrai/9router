@@ -38,6 +38,10 @@ const PUBLIC_API_PATHS = [
   "/api/auth/google",
   "/api/auth/telegram",
   "/api/auth/social-providers",
+  // Story 2.25: Telegram webhook tự verify bằng secret-token header (AC4)
+  "/api/telegram/webhook",
+  // Story 2.25: Store read API — public catalog, không có dữ liệu nhạy cảm
+  "/api/store/products",
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
@@ -93,6 +97,9 @@ const ADMIN_ONLY_API_PATHS = [
   "/api/mcp",
   "/api/translator",
   "/api/tunnel",
+  // Story 2.25: đăng ký webhook URL với Telegram — thao tác ops, chỉ admin.
+  // (webhook nhận-update /api/telegram/webhook vẫn public, tự verify secret token.)
+  "/api/telegram/setup-webhook",
 ];
 
 // Routes that spawn child processes or read host secrets — restrict to localhost.
