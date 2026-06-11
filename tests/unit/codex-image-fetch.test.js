@@ -157,6 +157,35 @@ describe("CodexExecutor image handling", () => {
     await expect(new Response(peek.replacementBody).text()).resolves.toContain("context window");
   });
 
+  it("detects delayed context-window SSE failures beyond the old 4KB peek", async () => {
+    const executor = new CodexExecutor();
+    const padding = "x".repeat(8 * 1024);
+    const sse = `event: response.created\ndata: {"type":"response.created","response":{"id":"r1","metadata":{"padding":"${padding}"}}}\n\n` +
+      `event: response.failed\ndata: {"type":"response.failed","response":{"error":{"message":"Your input exceeds the context window of this model."}}}\n\n`;
+
+    const peek = await executor._peekSseOverloaded(new Response(sse, {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    }));
+
+    expect(peek.matchType).toBe("context");
+    expect(peek.matched).toBe("exceeds the context window");
+  });
+
+  it("does not classify normal output text mentioning context windows as an SSE context failure", async () => {
+    const executor = new CodexExecutor();
+    const sse = `event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"The phrase exceeds the context window appears in normal text."}\n\n`;
+
+    const peek = await executor._peekSseOverloaded(new Response(sse, {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    }));
+
+    expect(peek.matchType).toBeNull();
+    expect(peek.matched).toBeNull();
+    await expect(new Response(peek.replacementBody).text()).resolves.toContain("normal text");
+  });
+
   it("execute() converts hidden context-window SSE failures to HTTP 400 JSON", async () => {
     const sse = `event: response.failed\ndata: {"response":{"error":{"message":"Your input exceeds the context window of this model."}}}\n\n`;
     vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockResolvedValue(new Response(sse, {

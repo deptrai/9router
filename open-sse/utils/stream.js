@@ -18,6 +18,86 @@ const STREAM_MODE = {
   PASSTHROUGH: "passthrough" // No translation, normalize output, extract usage
 };
 
+function stringifyToolCalls(toolCalls) {
+  if (!Array.isArray(toolCalls) || toolCalls.length === 0) return "";
+  return toolCalls.map((call) => {
+    const name = call?.function?.name || call?.name || "unknown";
+    const args = call?.function?.arguments || call?.arguments || "";
+    return `[tool_call:${name}]${args ? ` ${args}` : ""}`;
+  }).join("\n");
+}
+
+function extractResponsesOutput(parsed) {
+  const eventType = parsed?.type || parsed?.event;
+  const data = parsed?.data || parsed;
+  if (!eventType || !data) return { content: "", thinking: "" };
+
+  if (eventType === "response.output_text.delta") {
+    return { content: data.delta || "", thinking: "" };
+  }
+
+  if (eventType === "response.reasoning_summary_text.delta") {
+    return { content: "", thinking: data.delta || "" };
+  }
+
+  if (eventType === "response.output_item.added" &&
+      (data.item?.type === "function_call" || data.item?.type === "custom_tool_call")) {
+    return { content: `[tool_call:${data.item.name || "unknown"}]`, thinking: "" };
+  }
+
+  if (eventType === "response.function_call_arguments.delta" || eventType === "response.custom_tool_call_input.delta") {
+    return { content: data.delta || "", thinking: "" };
+  }
+
+  if (eventType === "error" || eventType === "response.failed") {
+    const error = data.error || data.response?.error;
+    if (error) return { content: `[Error] ${error.message || JSON.stringify(error)}`, thinking: "" };
+  }
+
+  return { content: "", thinking: "" };
+}
+
+function extractOpenAIOutput(parsed) {
+  const delta = parsed?.choices?.[0]?.delta;
+  if (!delta) return { content: "", thinking: "" };
+  return {
+    content: (typeof delta.content === "string" ? delta.content : "") || stringifyToolCalls(delta.tool_calls),
+    thinking: typeof delta.reasoning_content === "string" ? delta.reasoning_content : "",
+  };
+}
+
+function extractClaudeOutput(parsed) {
+  const delta = parsed?.delta || {};
+  const block = parsed?.content_block || {};
+  const toolStart = parsed?.type === "content_block_start" && block.type === "tool_use"
+    ? `[tool_call:${block.name || "unknown"}]`
+    : "";
+  return {
+    content: delta.text || delta.partial_json || toolStart || "",
+    thinking: delta.thinking || "",
+  };
+}
+
+function appendOutput(output, addContent, addThinking) {
+  const content = typeof addContent === "string" ? addContent : "";
+  const thinking = typeof addThinking === "string" ? addThinking : "";
+  if (content) {
+    output.totalContentLength += content.length;
+    output.accumulatedContent += content;
+  }
+  if (thinking) {
+    output.totalContentLength += thinking.length;
+    output.accumulatedThinking += thinking;
+  }
+}
+
+function extractOutputForFormat(parsed, format) {
+  if (format === FORMATS.OPENAI_RESPONSES) return extractResponsesOutput(parsed);
+  if (format === FORMATS.OPENAI) return extractOpenAIOutput(parsed);
+  if (format === FORMATS.CLAUDE) return extractClaudeOutput(parsed);
+  return { content: "", thinking: "" };
+}
+
 /**
  * Create unified SSE transform stream
  * @param {object} options
@@ -56,9 +136,11 @@ export function createSSEStream(options = {}) {
 
   const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap, model } : null;
 
-  let totalContentLength = 0;
-  let accumulatedContent = "";
-  let accumulatedThinking = "";
+  const outputState = {
+    totalContentLength: 0,
+    accumulatedContent: "",
+    accumulatedThinking: "",
+  };
   let ttftAt = null;
   let sseLineCount = 0;
   let sseEmittedCount = 0;
@@ -120,17 +202,9 @@ export function createSSEStream(options = {}) {
                 continue;
               }
 
-              const delta = parsed.choices?.[0]?.delta;
-              const content = delta?.content;
-              const reasoning = delta?.reasoning_content;
-              if (content && typeof content === "string") {
-                totalContentLength += content.length;
-                accumulatedContent += content;
-              }
-              if (reasoning && typeof reasoning === "string") {
-                totalContentLength += reasoning.length;
-                accumulatedThinking += reasoning;
-              }
+              const passthroughFormat = parsed.type?.startsWith?.("response.") ? FORMATS.OPENAI_RESPONSES : FORMATS.OPENAI;
+              const outputParts = extractOutputForFormat(parsed, passthroughFormat);
+              appendOutput(outputState, outputParts.content, outputParts.thinking);
 
               const extracted = extractUsage(parsed);
               if (extracted) {
@@ -139,7 +213,7 @@ export function createSSEStream(options = {}) {
 
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
               if (isFinishChunk && !hasValidUsage(parsed.usage)) {
-                const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
+                const estimated = estimateUsage(body, outputState.totalContentLength, FORMATS.OPENAI);
                 parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 usage = estimated;
@@ -185,38 +259,38 @@ export function createSSEStream(options = {}) {
           continue;
         }
 
-        // Claude format - content
-        if (parsed.delta?.text) {
-          totalContentLength += parsed.delta.text.length;
-          accumulatedContent += parsed.delta.text;
-        }
-        // Claude format - thinking
-        if (parsed.delta?.thinking) {
-          totalContentLength += parsed.delta.thinking.length;
-          accumulatedThinking += parsed.delta.thinking;
-        }
-        
-        // OpenAI format - content
-        if (parsed.choices?.[0]?.delta?.content) {
-          totalContentLength += parsed.choices[0].delta.content.length;
-          accumulatedContent += parsed.choices[0].delta.content;
-        }
-        // OpenAI format - reasoning
-        if (parsed.choices?.[0]?.delta?.reasoning_content) {
-          totalContentLength += parsed.choices[0].delta.reasoning_content.length;
-          accumulatedThinking += parsed.choices[0].delta.reasoning_content;
+        if (targetFormat === FORMATS.OPENAI_RESPONSES) {
+          const outputParts = extractOutputForFormat(parsed, targetFormat);
+          appendOutput(outputState, outputParts.content, outputParts.thinking);
+        } else {
+          // Claude format - content
+          if (parsed.delta?.text) {
+            outputState.totalContentLength += parsed.delta.text.length;
+            outputState.accumulatedContent += parsed.delta.text;
+          }
+          // Claude format - thinking
+          if (parsed.delta?.thinking) {
+            outputState.totalContentLength += parsed.delta.thinking.length;
+            outputState.accumulatedThinking += parsed.delta.thinking;
+          }
+
+          // OpenAI format - content/tool calls
+          if (parsed.choices?.[0]?.delta) {
+            const outputParts = extractOutputForFormat(parsed, FORMATS.OPENAI);
+            appendOutput(outputState, outputParts.content, outputParts.thinking);
+          }
         }
         
         // Gemini format
         if (parsed.candidates?.[0]?.content?.parts) {
           for (const part of parsed.candidates[0].content.parts) {
             if (part.text && typeof part.text === "string") {
-              totalContentLength += part.text.length;
+              outputState.totalContentLength += part.text.length;
               // Check if this is thinking content
               if (part.thought === true) {
-                accumulatedThinking += part.text;
+                outputState.accumulatedThinking += part.text;
               } else {
-                accumulatedContent += part.text;
+                outputState.accumulatedContent += part.text;
               }
             }
           }
@@ -246,8 +320,8 @@ export function createSSEStream(options = {}) {
 
             // Inject estimated usage if finish chunk has no valid usage
             const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
-            if (state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && totalContentLength > 0) {
-              const estimated = estimateUsage(body, totalContentLength, sourceFormat);
+            if (state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && outputState.totalContentLength > 0) {
+              const estimated = estimateUsage(body, outputState.totalContentLength, sourceFormat);
               item.usage = filterUsageForFormat(estimated, sourceFormat); // Filter + already has buffer
               state.usage = estimated;
             } else if (state.finishReason && isFinishChunk && state.usage) {
@@ -294,8 +368,8 @@ export function createSSEStream(options = {}) {
             controller.enqueue(sharedEncoder.encode(output));
           }
 
-          if (!hasValidUsage(usage) && totalContentLength > 0) {
-            usage = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
+          if (!hasValidUsage(usage) && outputState.totalContentLength > 0) {
+            usage = estimateUsage(body, outputState.totalContentLength, FORMATS.OPENAI);
           }
 
           if (hasValidUsage(usage)) {
@@ -315,8 +389,8 @@ export function createSSEStream(options = {}) {
 
           if (onStreamComplete) {
             onStreamComplete({
-              content: accumulatedContent,
-              thinking: accumulatedThinking
+              content: outputState.accumulatedContent,
+              thinking: outputState.accumulatedThinking
             }, usage, ttftAt);
           }
           return;
@@ -366,8 +440,8 @@ export function createSSEStream(options = {}) {
         controller.enqueue(sharedEncoder.encode(doneOutput));
         terminatorEmitted = true;
 
-        if (!hasValidUsage(state?.usage) && totalContentLength > 0) {
-          state.usage = estimateUsage(body, totalContentLength, sourceFormat);
+        if (!hasValidUsage(state?.usage) && outputState.totalContentLength > 0) {
+          state.usage = estimateUsage(body, outputState.totalContentLength, sourceFormat);
         }
 
         if (hasValidUsage(state?.usage)) {
@@ -378,8 +452,8 @@ export function createSSEStream(options = {}) {
         
         if (onStreamComplete) {
           onStreamComplete({
-            content: accumulatedContent,
-            thinking: accumulatedThinking
+            content: outputState.accumulatedContent,
+            thinking: outputState.accumulatedThinking
           }, state?.usage, ttftAt);
         }
       } catch (error) {

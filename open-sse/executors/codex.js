@@ -17,7 +17,14 @@ const CODEX_SSE_CONTEXT_ERROR_PATTERNS = [
   "context_length_exceeded",
   "too many input tokens",
 ];
-const CODEX_SSE_PEEK_BYTES = 4096;
+const CODEX_SSE_PEEK_BYTES = 64 * 1024;
+const CODEX_SSE_SEMANTIC_OUTPUT_PATTERNS = [
+  "response.output_text.delta",
+  "response.reasoning_summary_text.delta",
+  "response.function_call_arguments.delta",
+  "response.custom_tool_call_input.delta",
+  "response.output_item.added",
+];
 
 // In-memory map: hash(machineId + first assistant content) → { sessionId, lastUsed }
 const SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -121,6 +128,72 @@ function hashContent(text) {
 
 function generateSessionId() {
   return `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function matchLowerPattern(text, patterns) {
+  const lower = String(text || "").toLowerCase();
+  return patterns.find(p => lower.includes(p));
+}
+
+function matchRawPattern(text, patterns) {
+  const raw = String(text || "");
+  return patterns.find(p => raw.includes(p));
+}
+
+function getCompleteSseBlocks(text) {
+  const parts = String(text || "").split(/\n\n/);
+  if (!text.endsWith("\n\n")) parts.pop();
+  return parts.filter(Boolean);
+}
+
+function parseSseBlock(block) {
+  const event = block.match(/^event:\s*(.+)$/m)?.[1]?.trim() || "";
+  const data = block
+    .split("\n")
+    .filter(line => line.startsWith("data:"))
+    .map(line => line.slice(5).trim())
+    .join("\n");
+  return { event, data };
+}
+
+function stringifyCodexSseError(data) {
+  if (!data || data === "[DONE]") return "";
+  try {
+    const parsed = JSON.parse(data);
+    const error = parsed.error || parsed.response?.error || parsed;
+    return [error.message, error.code, error.type, error.reason]
+      .filter(Boolean)
+      .join(" ");
+  } catch {
+    return data;
+  }
+}
+
+function findCodexSseTerminalError(text) {
+  for (const block of getCompleteSseBlocks(text)) {
+    const { event, data } = parseSseBlock(block);
+    if (event !== "error" && event !== "response.failed") continue;
+
+    const errorText = stringifyCodexSseError(data);
+    const contextHit = matchLowerPattern(errorText, CODEX_SSE_CONTEXT_ERROR_PATTERNS);
+    if (contextHit) return { matched: contextHit, matchType: "context" };
+
+    const overloadedHit = matchRawPattern(errorText, CODEX_SSE_OVERLOADED_PATTERNS);
+    if (overloadedHit) return { matched: overloadedHit, matchType: "overloaded" };
+  }
+  return { matched: null, matchType: null };
+}
+
+function hasCodexSseSemanticOutput(text) {
+  for (const block of getCompleteSseBlocks(text)) {
+    const { event, data } = parseSseBlock(block);
+    if (CODEX_SSE_SEMANTIC_OUTPUT_PATTERNS.includes(event)) return true;
+    try {
+      const parsed = JSON.parse(data);
+      if (CODEX_SSE_SEMANTIC_OUTPUT_PATTERNS.includes(parsed.type || parsed.event)) return true;
+    } catch { /* ignore malformed/incomplete data */ }
+  }
+  return false;
 }
 
 // Extract text content from an input item
@@ -329,10 +402,13 @@ export class CodexExecutor extends BaseExecutor {
         if (done) break;
         chunks.push(value);
         text += decoder.decode(value, { stream: true });
-        const contextHit = CODEX_SSE_CONTEXT_ERROR_PATTERNS.find(p => text.toLowerCase().includes(p));
-        if (contextHit) { matched = contextHit; matchType = "context"; break; }
-        const hit = CODEX_SSE_OVERLOADED_PATTERNS.find(p => text.includes(p));
-        if (hit) { matched = hit; matchType = "overloaded"; break; }
+        const terminalError = findCodexSseTerminalError(text);
+        if (terminalError.matched) {
+          matched = terminalError.matched;
+          matchType = terminalError.matchType;
+          break;
+        }
+        if (hasCodexSseSemanticOutput(text)) break;
       }
     } catch (e) {
       dbg("CODEX", `peek read error: ${e.message}`);

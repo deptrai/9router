@@ -5,6 +5,7 @@ import { FORMATS } from "open-sse/translator/formats.js";
 vi.mock("@/lib/usageDb.js", () => ({
   trackPendingRequest: vi.fn(),
   appendRequestLog: vi.fn(() => Promise.resolve()),
+  saveRequestUsage: vi.fn(() => Promise.resolve()),
 }));
 
 const enc = new TextEncoder();
@@ -25,6 +26,17 @@ async function runStream(opts, chunks) {
     out += dec.decode(value, { stream: true });
   }
   return out;
+}
+
+async function runStreamWithCompletion(opts, chunks) {
+  let completion = null;
+  const out = await runStream({
+    ...opts,
+    onStreamComplete: (content, usage, ttftAt) => {
+      completion = { content, usage, ttftAt };
+    },
+  }, chunks);
+  return { out, completion };
 }
 
 describe("createSSEStream — transform() per-line resilience", () => {
@@ -68,5 +80,27 @@ describe("createSSEStream — transform() per-line resilience", () => {
     );
     expect(out).toContain("data: [DONE]");
     expect((out.match(/data: \[DONE\]/g) || []).length).toBe(1);
+  });
+
+  it("TRANSLATE Codex Responses→Claude: tool-call-only streams are not recorded as empty", async () => {
+    const { out, completion } = await runStreamWithCompletion(
+      {
+        mode: "translate",
+        targetFormat: FORMATS.OPENAI_RESPONSES,
+        sourceFormat: FORMATS.CLAUDE,
+        provider: "codex",
+        model: "gpt-5.5",
+      },
+      [
+        'event: response.output_item.added\ndata: {"type":"response.output_item.added","item":{"type":"function_call","call_id":"call_1","name":"Bash"}}\n\n',
+        'event: response.function_call_arguments.delta\ndata: {"type":"response.function_call_arguments.delta","delta":"{\\"cmd\\":\\"git status\\"}"}\n\n',
+        'event: response.output_item.done\ndata: {"type":"response.output_item.done","item":{"type":"function_call","call_id":"call_1","name":"Bash"}}\n\n',
+        'event: response.completed\ndata: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":4}}}\n\n',
+      ]
+    );
+
+    expect(out).toContain("data: [DONE]");
+    expect(completion.content.content).toContain("[tool_call:Bash]");
+    expect(completion.content.content).toContain("git status");
   });
 });

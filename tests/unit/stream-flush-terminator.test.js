@@ -7,6 +7,7 @@ import { FORMATS } from "open-sse/translator/formats.js";
 vi.mock("@/lib/usageDb.js", () => ({
   trackPendingRequest: vi.fn(),
   appendRequestLog: vi.fn(() => Promise.resolve()),
+  saveRequestUsage: vi.fn(() => Promise.resolve()),
 }));
 
 const enc = new TextEncoder();
