@@ -215,3 +215,52 @@ describe("markAccountUnavailable — expired resetsAtMs uses backoff", () => {
     );
   });
 });
+
+describe("markAccountUnavailable — request-shape 400 does not lock account", () => {
+  it("Kiro 'Improperly formed request' returns no fallback and does not update modelLock", async () => {
+    const baseNow = 1_700_000_000_000;
+    Date.now = vi.fn(() => baseNow);
+
+    const updateProviderConnection = vi.fn(async () => ({}));
+
+    vi.doMock("@/lib/localDb", () => ({
+      getProviderConnections: vi.fn(async () => [{
+        id: "conn-1",
+        backoffLevel: 0,
+        providerSpecificData: {},
+      }]),
+      updateProviderConnection,
+      validateApiKey: vi.fn(),
+      getSettings: vi.fn(),
+    }));
+    vi.doMock("@/lib/network/connectionProxy", () => ({
+      resolveConnectionProxyConfig: vi.fn(async () => ({
+        connectionProxyEnabled: false,
+        connectionProxyUrl: "",
+        connectionNoProxy: true,
+        proxyPoolId: null,
+        vercelRelayUrl: "",
+      })),
+    }));
+    vi.doMock("@/shared/constants/providers.js", () => ({
+      resolveProviderId: vi.fn((p) => p),
+      FREE_PROVIDERS: {},
+    }));
+    vi.doMock("../utils/logger.js", () => ({
+      debug: vi.fn(), warn: vi.fn(), info: vi.fn(), error: vi.fn(),
+    }));
+
+    const { markAccountUnavailable } = await import("../../src/sse/services/auth.js");
+
+    const result = await markAccountUnavailable(
+      "conn-1",
+      400,
+      "Improperly formed request.",
+      "kiro",
+      "claude-opus-4.8",
+    );
+
+    expect(result).toEqual({ shouldFallback: false, cooldownMs: 0 });
+    expect(updateProviderConnection).not.toHaveBeenCalled();
+  });
+});

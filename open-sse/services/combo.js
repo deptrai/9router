@@ -2,7 +2,7 @@
  * Shared combo (model combo) handling with fallback support
  */
 
-import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
+import { checkFallbackError, formatRetryAfter, isRequestShapeError } from "./accountFallback.js";
 import { parseModel } from "./model.js";
 import { getModelContextWindow, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { unavailableResponse } from "../utils/error.js";
@@ -298,6 +298,13 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         if (!hasLargerFallback) {
           return contextWindowErrorResponse(lastError);
         }
+        continue;
+      }
+
+      if (result.status === 400 && isRequestShapeError(errorText)) {
+        lastStatus = 400;
+        lastError = `[${modelStr}] ${errorText || "request shape error"}`;
+        log.warn("COMBO", `Model ${modelStr} returned request-shape 400, trying next`, { status: result.status });
         continue;
       }
 

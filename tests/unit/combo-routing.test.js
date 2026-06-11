@@ -282,6 +282,36 @@ describe("combo round-robin routing", () => {
     expect(response.status).toBe(200);
   });
 
+  it("falls back from Kiro request-shape 400 without treating it as account availability", async () => {
+    const calls = [];
+    const log = { info: () => {}, warn: () => {} };
+
+    const response = await handleComboChat({
+      body: { messages: [{ role: "user", content: "continue" }] },
+      models: ["kiro/claude-opus-4.8", "codex/gpt-5.5-xhigh"],
+      estimateInputTokens: () => 100,
+      log,
+      handleSingleModel: async (_body, model) => {
+        calls.push(model);
+        if (model === "kiro/claude-opus-4.8") {
+          return new Response(JSON.stringify({
+            error: { message: "[kiro/claude-opus-4.8] [400]: Improperly formed request." },
+          }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    });
+
+    expect(calls).toEqual(["kiro/claude-opus-4.8", "codex/gpt-5.5-xhigh"]);
+    expect(response.status).toBe(200);
+  });
+
   it("skips Kiro input-limit overflow when a larger-context combo fallback exists", async () => {
     const calls = [];
     const log = { info: () => {}, warn: () => {} };

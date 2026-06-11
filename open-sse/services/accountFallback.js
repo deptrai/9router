@@ -1,6 +1,23 @@
 import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
 import { isContextWindowError } from "../utils/contextWindowError.js";
 
+const REQUEST_SHAPE_ERROR_PATTERNS = [
+  "improperly formed request",
+  "malformed request",
+  "invalid request body",
+];
+
+function stringifyErrorText(errorText) {
+  if (!errorText) return "";
+  if (typeof errorText === "string") return errorText;
+  try { return JSON.stringify(errorText); } catch { return String(errorText); }
+}
+
+export function isRequestShapeError(errorText) {
+  const lower = stringifyErrorText(errorText).toLowerCase();
+  return REQUEST_SHAPE_ERROR_PATTERNS.some(pattern => lower.includes(pattern));
+}
+
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
  * Level 1: 1s, Level 2: 2s, Level 3: 4s... → max 4 min
@@ -22,12 +39,14 @@ export function getQuotaCooldown(backoffLevel = 0) {
  * @returns {{ shouldFallback: boolean, cooldownMs: number, newBackoffLevel?: number }}
  */
 export function checkFallbackError(status, errorText, backoffLevel = 0) {
-  const lowerError = errorText
-    ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
-    : "";
+  const lowerError = stringifyErrorText(errorText).toLowerCase();
 
   if (isContextWindowError(errorText)) {
     return { shouldFallback: false, cooldownMs: 0, reason: "context_window_exceeded" };
+  }
+
+  if (Number(status) === 400 && isRequestShapeError(errorText)) {
+    return { shouldFallback: false, cooldownMs: 0, reason: "request_shape_error" };
   }
 
   for (const rule of ERROR_RULES) {

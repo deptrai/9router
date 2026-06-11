@@ -12,8 +12,9 @@ import {
   isAccountUnavailable,
   getEarliestModelLockUntil,
   buildModelLockUpdate,
+  isRequestShapeError,
 } from "../../open-sse/services/accountFallback.js";
-import { parseUpstreamError } from "../../open-sse/utils/error.js";
+import { normalizeUnavailableStatus, parseUpstreamError } from "../../open-sse/utils/error.js";
 
 // ---------------------------------------------------------------------------
 // getQuotaCooldown — level 0 boundary (Patch B: base = 8000)
@@ -100,6 +101,30 @@ describe("checkFallbackError — text rules (case-insensitive)", () => {
     const result = checkFallbackError(400, "Input is too long.");
     expect(result.shouldFallback).toBe(false);
     expect(result.cooldownMs).toBe(0);
+  });
+
+  it("Kiro 'Improperly formed request' is request-shape, not account cooldown", () => {
+    const result = checkFallbackError(400, "Improperly formed request.");
+
+    expect(isRequestShapeError("Improperly formed request.")).toBe(true);
+    expect(result).toMatchObject({
+      shouldFallback: false,
+      cooldownMs: 0,
+      reason: "request_shape_error",
+    });
+  });
+});
+
+describe("normalizeUnavailableStatus — all-locked provider state", () => {
+  it("does not leak stale upstream 400 as an unavailable response status", () => {
+    expect(normalizeUnavailableStatus(400)).toBe(503);
+  });
+
+  it("preserves retryable rate-limit and gateway statuses", () => {
+    expect(normalizeUnavailableStatus(429)).toBe(429);
+    expect(normalizeUnavailableStatus(502)).toBe(502);
+    expect(normalizeUnavailableStatus(503)).toBe(503);
+    expect(normalizeUnavailableStatus(504)).toBe(504);
   });
 });
 
