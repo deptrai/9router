@@ -88,10 +88,11 @@ Status: done
 ### Change Log
 - 2026-06-07: Story created (ready-for-dev)
 - 2026-06-10: Implemented (5b732f5 + 3 fix commits). Status → review.
+- 2026-06-12: Removed isActive gate from forgot-password (Option B — OWASP best practice). All review findings resolved.
 
 ## Review Findings — 2026-06-10
 
-- [ ] [Review][Decision] isActive gate on forgot-password — code only sends reset email when `user?.isActive`, but spec says "WHEN email exists → create token" with no active-status restriction. Silent failure for inactive accounts (they get `{success:true}` with no email). Product decision: should inactive users be able to reset their password? Options: (A) keep isActive gate and update spec, (B) remove gate and allow any existing user to reset.
+- [x] [Review][Decision] isActive gate on forgot-password — Resolved: Option B. Removed `isActive` gate; inactive users can request reset (access control stays at login). `isEmailVerified` gate retained. (2026-06-12)
 
 - [x] [Review][Decision] Unverified users can reset password — decision: gate on `isEmailVerified`. Inactive+unverified accounts cannot self-reset; add check to forgot-password route. (2026-06-10)
 
