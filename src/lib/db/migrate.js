@@ -7,6 +7,7 @@ import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
 import { makeBackupDir, backupFile, pruneOldBackups } from "./backup.js";
 import { getAppVersion } from "./version.js";
 import { stringifyJson } from "./helpers/jsonCol.js";
+import { syncContextSafeCombos } from "./seeds/contextSafeCombos.js";
 
 // Marker file: prevents re-importing legacy JSON when user wipes data.sqlite.
 const MIGRATED_MARKER = path.join(DB_DIR, ".migrated-from-json");
@@ -25,11 +26,18 @@ export class MigrationAborted extends Error {
 }
 
 // Insert rows one-by-one, collect failures, then assert COUNT(*) matches input length.
-function importWithAssertion(adapter, tableName, rows, insertFn, rowMeta) {
+function importWithAssertion(adapter, tableName, rows, insertFn, rowMeta, options = {}) {
   const dropped = [];
   for (const row of rows) {
     try { insertFn(row); }
     catch (err) { dropped.push({ ...rowMeta(row), reason: err.message }); }
+  }
+  if (options.skipRowCountAssertion) {
+    if (dropped.length > 0) {
+      console.warn(`[DB][migrate] ${tableName} import failures:`, dropped);
+      throw new MigrationAborted(`${tableName} import failures: ${dropped.length}`, dropped);
+    }
+    return;
   }
   const inserted = adapter.get(`SELECT COUNT(*) as c FROM ${tableName}`)?.c ?? 0;
   if (inserted !== rows.length) {
@@ -152,7 +160,7 @@ function importLegacyMain(adapter, data) {
       `INSERT OR REPLACE INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
       [c.id, c.name, c.kind || null, stringifyJson(c.models || []), c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString()]
     );
-  }, (c) => ({ id: c.id ?? null, name: c.name ?? null }));
+  }, (c) => ({ id: c.id ?? null, name: c.name ?? null }), { skipRowCountAssertion: true });
 
   for (const [alias, model] of Object.entries(data.modelAliases || {})) {
     adapter.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('modelAliases', ?, ?)`, [alias, stringifyJson(model)]);
@@ -246,6 +254,7 @@ export async function runMigrationOnce(adapter) {
         importLegacyUsage(adapter, legacyUsage);
         importLegacyDisabled(adapter, legacyDisabled);
         importLegacyDetails(adapter, legacyDetails);
+        syncContextSafeCombos(adapter);
         setMetaSync(adapter, "appVersion", getAppVersion());
         setMetaSync(adapter, "migratedAt", new Date().toISOString());
       });

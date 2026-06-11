@@ -6,8 +6,9 @@ import m002 from "./002-plans.js";
 import m003 from "./003-credit-ledger.js";
 import m004 from "./004-credit-overflow.js";
 import m005 from "./005-plan-purchase-fields.js";
+import m007 from "./007-context-safe-combos.js";
 
-export const MIGRATIONS = [m001, m002, m003, m004, m005].sort((a, b) => a.version - b.version);
+export const MIGRATIONS = [m001, m002, m003, m004, m005, m007].sort((a, b) => a.version - b.version);
 
 export function latestVersion() {
   return MIGRATIONS.length ? MIGRATIONS[MIGRATIONS.length - 1].version : 0;
