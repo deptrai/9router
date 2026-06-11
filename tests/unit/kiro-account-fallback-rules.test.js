@@ -12,8 +12,10 @@ import {
   isAccountUnavailable,
   getEarliestModelLockUntil,
   buildModelLockUpdate,
+  isRequestShapeError,
+  applyErrorState,
 } from "../../open-sse/services/accountFallback.js";
-import { parseUpstreamError } from "../../open-sse/utils/error.js";
+import { normalizeUnavailableStatus, parseUpstreamError } from "../../open-sse/utils/error.js";
 
 // ---------------------------------------------------------------------------
 // getQuotaCooldown — level 0 boundary (Patch B: base = 8000)
@@ -101,6 +103,66 @@ describe("checkFallbackError — text rules (case-insensitive)", () => {
     expect(result.shouldFallback).toBe(false);
     expect(result.cooldownMs).toBe(0);
   });
+
+  it("Kiro 'Improperly formed request' is request-shape, not account cooldown", () => {
+    const result = checkFallbackError(400, "Improperly formed request.");
+
+    expect(isRequestShapeError("Improperly formed request.")).toBe(true);
+    expect(result).toMatchObject({
+      shouldFallback: false,
+      cooldownMs: 0,
+      reason: "request_shape_error",
+    });
+  });
+
+  it("all known request-shape patterns avoid account cooldown", () => {
+    for (const text of [
+      "Improperly formed request.",
+      "Malformed request payload",
+      "invalid request body",
+    ]) {
+      const result = checkFallbackError(400, text);
+      expect(result).toMatchObject({
+        shouldFallback: false,
+        cooldownMs: 0,
+        reason: "request_shape_error",
+      });
+    }
+  });
+});
+
+describe("normalizeUnavailableStatus — all-locked provider state", () => {
+  it("maps stale request/auth statuses to provider-unavailable 503", () => {
+    for (const status of [400, 401, 402, 403, 404, 406, 500]) {
+      expect(normalizeUnavailableStatus(status)).toBe(503);
+    }
+  });
+
+  it("preserves retryable rate-limit and gateway statuses", () => {
+    for (const status of [429, 502, 503, 504]) {
+      expect(normalizeUnavailableStatus(status)).toBe(status);
+    }
+  });
+});
+
+describe("applyErrorState — lock/no-lock policy", () => {
+  it("does not set cooldown for context-window or request-shape failures", () => {
+    for (const text of [
+      "Input is too long.",
+      "CONTENT_LENGTH_EXCEEDS_THRESHOLD",
+      "Improperly formed request.",
+    ]) {
+      const updated = applyErrorState({ id: "conn-1", backoffLevel: 0 }, 400, text);
+      expect(updated.rateLimitedUntil).toBeNull();
+      expect(updated.backoffLevel).toBe(0);
+    }
+  });
+
+  it("sets cooldown for retryable provider/account failures", () => {
+    const updated = applyErrorState({ id: "conn-1", backoffLevel: 0 }, 429, "rate limit exceeded");
+    expect(updated.rateLimitedUntil).toEqual(expect.any(String));
+    expect(updated.backoffLevel).toBe(1);
+  });
 });
 
 describe("parseUpstreamError — Kiro structured 400", () => {
@@ -161,6 +223,19 @@ describe("checkFallbackError — status-only rules", () => {
     const result = checkFallbackError(404, "");
     expect(result.shouldFallback).toBe(true);
     expect(result.cooldownMs).toBe(2 * 60 * 1000);
+  });
+
+  it("status 402 triggers long cooldown", () => {
+    const result = checkFallbackError(402, "");
+    expect(result.shouldFallback).toBe(true);
+    expect(result.cooldownMs).toBe(2 * 60 * 1000);
+  });
+
+  it("5xx and unknown statuses fallback with transient cooldown", () => {
+    for (const status of [418, 500, 502, 503, 504]) {
+      const result = checkFallbackError(status, "upstream unavailable");
+      expect(result).toMatchObject({ shouldFallback: true, cooldownMs: 30 * 1000 });
+    }
   });
 
   it("text rule takes priority over status rule", () => {

@@ -43,6 +43,19 @@ export function errorResponse(statusCode, message, metadata = {}) {
   });
 }
 
+/**
+ * Normalize an aggregate provider-unavailable state to a retryable HTTP status.
+ * A cached/account lock may remember the original upstream status (including
+ * request-specific 400s), but once all accounts are locked the router state is
+ * availability, not a fresh client bad request.
+ */
+export function normalizeUnavailableStatus(statusCode) {
+  const status = Number(statusCode);
+  if (status === 429) return 429;
+  if (status === 502 || status === 503 || status === 504) return status;
+  return 503;
+}
+
 function stringifyValue(value) {
   if (value == null) return "";
   if (typeof value === "string") return value;

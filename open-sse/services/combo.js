@@ -2,7 +2,7 @@
  * Shared combo (model combo) handling with fallback support
  */
 
-import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
+import { checkFallbackError, formatRetryAfter, isRequestShapeError } from "./accountFallback.js";
 import { parseModel } from "./model.js";
 import { getModelContextWindow, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { unavailableResponse } from "../utils/error.js";
@@ -153,6 +153,22 @@ function appendErrorPart(parts, value) {
   try { parts.push(JSON.stringify(value)); } catch { parts.push(String(value)); }
 }
 
+function normalizeRetryAfter(value) {
+  if (value == null || value === "") return null;
+  const raw = typeof value === "string" ? value.trim() : String(value);
+  if (!raw) return null;
+
+  if (/^\d+$/.test(raw)) {
+    const seconds = Number.parseInt(raw, 10);
+    if (Number.isFinite(seconds) && seconds > 0) {
+      return new Date(Date.now() + seconds * 1000).toISOString();
+    }
+  }
+
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+}
+
 function extractComboErrorInfo(errorBody, fallbackText = "") {
   const parts = [];
   const err = errorBody?.error;
@@ -172,7 +188,7 @@ function extractComboErrorInfo(errorBody, fallbackText = "") {
 
   return {
     errorText: parts.join(" ") || fallbackText,
-    retryAfter: errorBody?.retryAfter || (err && typeof err === "object" ? err.retryAfter : null) || null,
+    retryAfter: normalizeRetryAfter(errorBody?.retryAfter || (err && typeof err === "object" ? err.retryAfter : null)),
   };
 }
 
@@ -278,6 +294,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       } catch {
         // Ignore JSON parse errors
       }
+      retryAfter = retryAfter || normalizeRetryAfter(result.headers?.get?.("Retry-After"));
 
       // Track earliest retryAfter across all combo models
       if (retryAfter && (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter))) {
@@ -298,6 +315,13 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         if (!hasLargerFallback) {
           return contextWindowErrorResponse(lastError);
         }
+        continue;
+      }
+
+      if (result.status === 400 && isRequestShapeError(errorText)) {
+        lastStatus = 400;
+        lastError = `[${modelStr}] ${errorText || "request shape error"}`;
+        log.warn("COMBO", `Model ${modelStr} returned request-shape 400, trying next`, { status: result.status });
         continue;
       }
 

@@ -1,5 +1,5 @@
 const CHARS_PER_TOKEN_ESTIMATE = 4;
-const DEFAULT_KIRO_AUTO_COMPACT_LIMIT_TOKENS = 180_000;
+const DEFAULT_KIRO_AUTO_COMPACT_LIMIT_TOKENS = 150_000;
 const DEFAULT_KIRO_KEEP_HEAD = 2;
 const DEFAULT_KIRO_KEEP_TAIL = 24;
 const MIN_KIRO_KEEP_TAIL = 4;
@@ -144,4 +144,3 @@ export function applyAutoCompact({ provider, body, options = {} }) {
   if (provider === "kiro") return compactKiroPayload(body, options);
   return null;
 }
-
