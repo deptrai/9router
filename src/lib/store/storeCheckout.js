@@ -20,12 +20,17 @@ import {
   getOrderByIdempotencyKey,
   getOrderByIdempotencyKeySync,
 } from "../db/repos/ordersRepo.js";
+import {
+  reserveCredentialSync,
+  completeDeliverySync,
+  productHasInventorySync,
+} from "../db/repos/credentialsRepo.js";
 
 export class CheckoutError extends Error {
   constructor(code, message) {
     super(message);
     this.name = "CheckoutError";
-    this.code = code; // PRODUCT_NOT_FOUND | INACTIVE | OUT_OF_STOCK | INSUFFICIENT_CREDITS | INVALID_QUANTITY
+    this.code = code; // PRODUCT_NOT_FOUND | INACTIVE | OUT_OF_STOCK | NO_INVENTORY | INSUFFICIENT_CREDITS | INVALID_QUANTITY
   }
 }
 
@@ -53,6 +58,9 @@ export async function storeCheckout(userId, productId, { quantity = 1, idempoten
   const orderId = uuidv4();
   const ts = now || new Date().toISOString();
   let result = null;
+  // Credentials reserved inside the txn; delivery is completed AFTER commit (QĐ3/D1).
+  let reservedCredentialIds = null;
+  let orderItemIdForDelivery = null;
 
   adapter.transaction(() => {
     // ── In-txn idempotency recheck (closes the race the outer pre-check leaves open) ──
@@ -73,8 +81,13 @@ export async function storeCheckout(userId, productId, { quantity = 1, idempoten
     const unitCredits = product.priceCredits;
     const totalCredits = unitCredits * quantity;
 
+    // ── D3 gate (QĐ1): inventory is the source of truth when the product has ANY
+    //    credential row. Such products skip products.stock entirely and reserve from
+    //    inventory below. Products with no inventory keep the Story 2.26 stock path. ──
+    const usesInventory = product.deliveryMode === "instant" && productHasInventorySync(adapter, productId);
+
     // ── Conditional stock decrement (oversell-safe). NULL stock = unlimited. ──
-    if (product.stock !== null && product.stock !== undefined) {
+    if (!usesInventory && product.stock !== null && product.stock !== undefined) {
       const dec = adapter.run(
         `UPDATE products SET stock = stock - ?, updatedAt = ? WHERE id = ? AND stock >= ?`,
         [quantity, ts, productId, quantity]
@@ -133,14 +146,45 @@ export async function storeCheckout(userId, productId, { quantity = 1, idempoten
       ]
     );
 
-    // ── Instant delivery → fulfill now; admin_fulfill / self_connect stay `paid`. ──
+    // ── Instant delivery → reserve inventory now, fulfill order; delivery completed
+    //    AFTER commit (QĐ3/D1). admin_fulfill / self_connect stay `paid`. ──
     let finalOrder = order;
     if (product.deliveryMode === "instant") {
+      // Inventory-backed products: reserve one available credential per unit (FIFO).
+      if (usesInventory) {
+        reservedCredentialIds = [];
+        orderItemIdForDelivery = items[0].id;
+        for (let i = 0; i < quantity; i++) {
+          const cred = reserveCredentialSync(adapter, productId, orderId, items[0].id, ts);
+          if (!cred) {
+            throw new CheckoutError(
+              "NO_INVENTORY",
+              "Không đủ credential trong kho (cần " + quantity + ", chỉ còn " + i + ")"
+            );
+          }
+          reservedCredentialIds.push(cred.id);
+        }
+      }
       finalOrder = transitionOrderSync(adapter, orderId, "fulfilled", { note: "Giao tự động" });
     }
 
     result = { order: finalOrder, items, ledgerTxnId: txn.id, alreadyProcessed: false };
   });
+
+  // ── Post-commit delivery completion (QĐ3/D1): reserved → delivered. ──
+  // The credit debit + reservation are already durable; if completion fails the
+  // credentials remain `reserved` against this fulfilled order and can be retried.
+  if (reservedCredentialIds && reservedCredentialIds.length > 0) {
+    const deliverTs = ts;
+    const deliveredCredentialIds = [];
+    for (const credId of reservedCredentialIds) {
+      completeDeliverySync(adapter, credId, deliverTs);
+      deliveredCredentialIds.push(credId);
+    }
+    result.deliveredCredentialIds = deliveredCredentialIds;
+  } else {
+    result.deliveredCredentialIds = null;
+  }
 
   return result;
 }

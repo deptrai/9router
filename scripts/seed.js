@@ -236,6 +236,46 @@ if (!existingAdminKey) {
   console.log(`\n   ✓ seed-admin-key (legacy, no userId): ${adminKey}`);
 }
 
+// ─── Store demo: credential product + inventory (Story 2.28 T10) ──────────────
+// Chỉ seed khi STORE_ENC_KEY có mặt (cần để mã hoá payload at-rest, NFR8).
+if (process.env.STORE_ENC_KEY) {
+  try {
+    const { encrypt } = await import("../src/lib/crypto/secretBox.js");
+    const PRODUCT_NAME = "Demo VPN Credential";
+    const existingProd = db.prepare("SELECT id FROM products WHERE name = ?").get(PRODUCT_NAME);
+    if (existingProd) {
+      console.log(`\n   ⏭️  Skip store demo product "${PRODUCT_NAME}" (đã tồn tại)`);
+    } else {
+      const prodId = uuidv4();
+      const ts = now();
+      // Credential product, instant delivery — tồn kho lấy từ productCredentials (D3).
+      db.prepare(`
+        INSERT INTO products(id, kind, name, description, priceCredits, deliveryMode, targetType, targetId, stock, isActive, createdAt, updatedAt)
+        VALUES(?, 'credential', ?, ?, ?, 'instant', NULL, NULL, NULL, 1, ?, ?)
+      `).run(prodId, PRODUCT_NAME, "Tài khoản VPN demo — giao tự động từ kho credential", 100, ts, ts);
+
+      // 3 credential demo, mã hoá payload trước khi lưu (giống addCredential).
+      const demoCreds = [
+        { username: "vpn_demo1", password: "Pass!demo1" },
+        { username: "vpn_demo2", password: "Pass!demo2" },
+        { username: "vpn_demo3", password: "Pass!demo3" },
+      ];
+      const insCred = db.prepare(`
+        INSERT INTO productCredentials(id, productId, payload, status, note, createdAt, updatedAt)
+        VALUES(?, ?, ?, 'available', ?, ?, ?)
+      `);
+      for (const c of demoCreds) {
+        insCred.run(uuidv4(), prodId, encrypt(JSON.stringify(c)), "seed demo", ts, ts);
+      }
+      console.log(`\n   ✓ Store demo: "${PRODUCT_NAME}" (100 credits) + ${demoCreds.length} credential available`);
+    }
+  } catch (e) {
+    console.log(`\n   ⚠️  Bỏ qua store demo seed: ${e?.message}`);
+  }
+} else {
+  console.log("\n   ℹ️  STORE_ENC_KEY chưa set — bỏ qua store demo seed (credential product).");
+}
+
 // ─── Summary ──────────────────────────────────────────────────────────────────
 console.log(`
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

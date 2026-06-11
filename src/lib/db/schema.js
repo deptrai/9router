@@ -1,5 +1,5 @@
 // Latest schema version — bumped when a migration is added in ./migrations/
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 10;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -325,6 +325,7 @@ export const TABLES = {
       ledgerTxnId: "TEXT",                        // creditTransactions.id of the store_purchase debit
       idempotencyKey: "TEXT",                     // client/callback dedup key
       note: "TEXT",
+      fulfilledAt: "TEXT",                        // set when order reaches fulfilled status
       createdAt: "TEXT NOT NULL",
       updatedAt: "TEXT NOT NULL",
     },
@@ -352,6 +353,28 @@ export const TABLES = {
     },
     indexes: [
       "CREATE INDEX IF NOT EXISTS idx_orderitems_order ON orderItems(orderId)",
+    ],
+  },
+
+  // Story 2.27: Per-unit credential inventory. One row = one deliverable credential item.
+  // Status flow: available → delivered (storeCheckout txn) | revoked (admin).
+  productCredentials: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      productId: "TEXT NOT NULL",
+      payload: "TEXT NOT NULL",                    // JSON or plain string: the actual credential
+      status: "TEXT NOT NULL DEFAULT 'available'", // available|reserved|delivered|revoked
+      orderId: "TEXT",                             // set when reserved (→ orders.id)
+      orderItemId: "TEXT",                         // set when reserved (→ orderItems.id)
+      reservedAt: "TEXT",                          // set when status→reserved (inside txn)
+      deliveredAt: "TEXT",                         // set when status→delivered (post-txn)
+      note: "TEXT",
+      createdAt: "TEXT NOT NULL",
+      updatedAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_pc_product_status ON productCredentials(productId, status)",
+      "CREATE INDEX IF NOT EXISTS idx_pc_order ON productCredentials(orderId)",
     ],
   },
 };

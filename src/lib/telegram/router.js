@@ -8,6 +8,8 @@
 import { sendMessage, answerCallbackQuery } from "./botClient.js";
 import { getUserByTelegramId, createUser, updateUser } from "../db/repos/usersRepo.js";
 import { listActiveProducts, getProductById } from "../db/repos/productsRepo.js";
+import { listOrdersByUser } from "../db/repos/ordersRepo.js";
+import { getDecryptedPayload, countAvailableCredentials, productHasInventory } from "../db/repos/credentialsRepo.js";
 import { storeCheckout, CheckoutError } from "../store/storeCheckout.js";
 
 // Inline keyboard menu chính (AC1)
@@ -69,8 +71,24 @@ async function handleProducts(chatId) {
     }
 
     for (const p of products) {
-      const inStock = p.stock === null || p.stock > 0;
-      const stockText = p.stock === null ? "Không giới hạn" : `${p.stock}`;
+      const isInstant = p.deliveryMode === "instant";
+
+      let buyable;
+      let stockText;
+
+      // D3 (QĐ1): inventory là nguồn chân lý CHỈ khi product thực sự có credential.
+      // Dùng productHasInventory thay vì product.kind để tránh credential product
+      // chưa seed bị kẹt ở nhánh inventory (luôn báo hết hàng).
+      if (isInstant && (await productHasInventory(p.id))) {
+        // D2: tồn kho lấy từ số credential `available`.
+        const available = await countAvailableCredentials(p.id);
+        buyable = available > 0;
+        stockText = buyable ? `${available}` : "⛔ Tạm hết hàng";
+      } else {
+        // Sản phẩm theo stock field (Story 2.26).
+        buyable = p.stock === null || p.stock > 0;
+        stockText = p.stock === null ? "Không giới hạn" : `${p.stock}`;
+      }
 
       const lines = [
         `<b>${p.name}</b>`,
@@ -81,7 +99,7 @@ async function handleProducts(chatId) {
 
       // Nút mua chỉ hiện khi còn hàng và product active (AC2)
       const keyboard =
-        inStock && p.isActive
+        buyable && p.isActive
           ? { inline_keyboard: [[{ text: "🛒 Mua ngay", callback_data: `buy:${p.id}` }]] }
           : undefined;
 
@@ -140,6 +158,7 @@ const CHECKOUT_ERROR_MESSAGES = {
   PRODUCT_NOT_FOUND: "Sản phẩm không tồn tại.",
   INACTIVE: "Sản phẩm đã ngừng bán.",
   OUT_OF_STOCK: "Sản phẩm đã hết hàng.",
+  NO_INVENTORY: "❌ Sản phẩm tạm hết hàng.",
   INSUFFICIENT_CREDITS: "Số dư không đủ. Nạp thêm tại /wallet.",
   INVALID_QUANTITY: "Số lượng không hợp lệ.",
 };
@@ -152,19 +171,34 @@ async function handleBuyExecute(chatId, telegramId, productId, callbackQueryId) 
       return;
     }
 
-    // Idempotency: 1 user + 1 product trong cùng callback message không double-charge.
     const idempotencyKey = `tg:${telegramId}:${productId}:${callbackQueryId}`;
-    const { order, alreadyProcessed } = await storeCheckout(user.id, productId, { idempotencyKey });
+    const { order, alreadyProcessed, deliveredCredentialIds } = await storeCheckout(user.id, productId, { idempotencyKey });
 
     if (alreadyProcessed) {
       await sendMessage(chatId, `Đơn <code>${order.id}</code> đã được xử lý trước đó.`);
       return;
     }
 
+    // Deliver credential payloads via private message after txn commit (QĐ3).
+    if (deliveredCredentialIds?.length) {
+      for (const credId of deliveredCredentialIds) {
+        try {
+          const payload = await getDecryptedPayload(credId);
+          await sendMessage(chatId, `🔑 Credential của bạn:\n<pre>${payload}</pre>`);
+        } catch (sendErr) {
+          console.error("[telegram/router] gửi credential thất bại:", sendErr?.message);
+          await sendMessage(
+            chatId,
+            "⚠️ Mua thành công nhưng gửi credential thất bại. Vui lòng xem /orders hoặc liên hệ /support."
+          ).catch(() => {});
+        }
+      }
+    }
+
     const statusLine =
       order.status === "fulfilled"
         ? "✅ Đã giao. Kiểm tra /orders để xem chi tiết."
-        : "⏳ Đơn đang chờ xử lý. Theo dõi tại /orders.";
+        : "⏳ Đơn đang chờ admin xử lý. Theo dõi tại /orders.";
     await sendMessage(
       chatId,
       [`🎉 Mua thành công!`, `Mã đơn: <code>${order.id}</code>`, statusLine].join("\n")
@@ -186,6 +220,44 @@ async function handleStub(chatId, command) {
     chatId,
     `Chức năng <b>${command}</b> sẽ sớm ra mắt.\nDùng /products để xem sản phẩm.`
   ).catch(() => {});
+}
+
+// ─── /orders — danh sách đơn hàng của user (AC4, T6) ─────────────────────────
+
+const ORDER_STATUS_LABEL = {
+  pending:   "🕐 Chờ thanh toán",
+  paid:      "⏳ Chờ admin xử lý",
+  fulfilled: "✅ Đã giao",
+  cancelled: "❌ Đã huỷ",
+  failed:    "❌ Thất bại",
+  refunded:  "↩️ Đã hoàn tiền",
+};
+
+async function handleOrders(chatId, telegramId) {
+  try {
+    const user = await getUserByTelegramId(telegramId);
+    if (!user) {
+      await sendMessage(chatId, "Vui lòng /start trước.");
+      return;
+    }
+    const orders = await listOrdersByUser(user.id, { limit: 10 });
+    if (!orders.length) {
+      await sendMessage(chatId, "Bạn chưa có đơn hàng nào. Dùng /products để mua sắm.");
+      return;
+    }
+    const lines = orders.map((o) => {
+      const label = ORDER_STATUS_LABEL[o.status] ?? o.status;
+      const date = o.createdAt ? o.createdAt.slice(0, 10) : "";
+      return `• <code>${o.id.slice(0, 8)}</code> | ${label} | ${o.totalCredits} cr | ${date}`;
+    });
+    await sendMessage(
+      chatId,
+      [`<b>📦 Đơn hàng gần đây</b>`, ...lines].join("\n")
+    );
+  } catch (e) {
+    console.error("[telegram/router] orders lỗi:", e?.message);
+    await sendMessage(chatId, "Không thể tải đơn hàng. Thử lại sau.").catch(() => {});
+  }
 }
 
 // ─── Main dispatcher ──────────────────────────────────────────────────────────
@@ -211,8 +283,10 @@ export async function handleUpdate(update) {
       case "/products":
         await handleProducts(chatId);
         return;
-      case "/wallet":
       case "/orders":
+        await handleOrders(chatId, String(update.message.from?.id));
+        return;
+      case "/wallet":
       case "/api":
       case "/support":
         await handleStub(chatId, command);
@@ -238,6 +312,10 @@ export async function handleUpdate(update) {
 
     if (data === "cmd:products") {
       await handleProducts(chatId);
+      return;
+    }
+    if (data === "cmd:orders") {
+      await handleOrders(chatId, String(cq.from.id));
       return;
     }
     if (data === "buyx") {

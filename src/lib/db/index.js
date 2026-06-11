@@ -52,6 +52,13 @@ export {
   ORDER_STATUSES,
 } from "./repos/ordersRepo.js";
 
+// Credentials inventory (Story 2.27)
+export {
+  addCredential, listCredentials, getCredentialById, countAvailableCredentials,
+  getAvailableCredentialSync, deliverCredentialSync, revokeCredential, getDecryptedPayload,
+  CREDENTIAL_STATUSES,
+} from "./repos/credentialsRepo.js";
+
 // Payments
 export {
   createPayment, getPaymentById, getPaymentByGatewayId, updatePayment, listPayments, getPaymentsByUser,
