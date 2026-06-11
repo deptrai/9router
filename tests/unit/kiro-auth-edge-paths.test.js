@@ -73,7 +73,6 @@ describe("Negative cache — skipped when excludeSet non-empty", () => {
       makeConn("a", { [`modelLock_kiro/auto`]: lockedUntil }),
     ]);
 
-    mockDeps({ connections: [] });
     vi.doMock("@/lib/localDb", () => ({
       getProviderConnections,
       updateProviderConnection: vi.fn(async () => ({})),
@@ -262,5 +261,63 @@ describe("markAccountUnavailable — request-shape 400 does not lock account", (
 
     expect(result).toEqual({ shouldFallback: false, cooldownMs: 0 });
     expect(updateProviderConnection).not.toHaveBeenCalled();
+  });
+});
+
+describe("markAccountUnavailable — fatal auth errors lock the whole account", () => {
+  it("Codex token_invalidated uses modelLock___all instead of a per-model lock", async () => {
+    const baseNow = 1_700_000_000_000;
+    Date.now = vi.fn(() => baseNow);
+
+    const updateProviderConnection = vi.fn(async () => ({}));
+
+    vi.doMock("@/lib/localDb", () => ({
+      getProviderConnections: vi.fn(async () => [{
+        id: "conn-1",
+        backoffLevel: 0,
+        providerSpecificData: {},
+      }]),
+      updateProviderConnection,
+      validateApiKey: vi.fn(),
+      getSettings: vi.fn(),
+    }));
+    vi.doMock("@/lib/network/connectionProxy", () => ({
+      resolveConnectionProxyConfig: vi.fn(async () => ({
+        connectionProxyEnabled: false,
+        connectionProxyUrl: "",
+        connectionNoProxy: true,
+        proxyPoolId: null,
+        vercelRelayUrl: "",
+      })),
+    }));
+    vi.doMock("@/shared/constants/providers.js", () => ({
+      resolveProviderId: vi.fn((p) => p),
+      FREE_PROVIDERS: {},
+    }));
+    vi.doMock("../utils/logger.js", () => ({
+      debug: vi.fn(), warn: vi.fn(), info: vi.fn(), error: vi.fn(),
+    }));
+
+    const { markAccountUnavailable } = await import("../../src/sse/services/auth.js");
+
+    const result = await markAccountUnavailable(
+      "conn-1",
+      401,
+      "Your authentication token has been invalidated. Please try signing in again. (code=token_invalidated)",
+      "codex",
+      "gpt-5.5",
+    );
+
+    expect(result.shouldFallback).toBe(true);
+    expect(result.cooldownMs).toBe(24 * 60 * 60 * 1000);
+    expect(updateProviderConnection).toHaveBeenCalledWith(
+      "conn-1",
+      expect.objectContaining({
+        modelLock___all: new Date(baseNow + 24 * 60 * 60 * 1000).toISOString(),
+        testStatus: "unavailable",
+        errorCode: 401,
+      }),
+    );
+    expect(updateProviderConnection.mock.calls[0][1]).not.toHaveProperty("modelLock_gpt-5.5");
   });
 });

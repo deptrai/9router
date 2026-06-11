@@ -259,6 +259,9 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   let lastError = null;
   let earliestRetryAfter = null;
   let lastStatus = null;
+  let lastContextError = null;
+  let lastContextStatus = null;
+  let lastOutcome = null;
 
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
@@ -268,8 +271,9 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     if (!contextFit.fits) {
       const hasLargerFallback = hasPotentialLargerContextCandidate(rotatedModels, i + 1, contextFit.effectiveLimit || contextFit.contextWindow);
       if (!contextFit.inputLimit || hasLargerFallback) {
-        lastStatus = 400;
-        lastError = `[${modelStr}] estimated input ${contextFit.estimatedTokens} tokens (+reserve ${contextFit.requiredTokens - contextFit.estimatedTokens}) exceeds ${describeContextLimit(contextFit)}; compact the conversation or use a larger-context fallback`;
+        lastContextStatus = 400;
+        lastContextError = `[${modelStr}] estimated input ${contextFit.estimatedTokens} tokens (+reserve ${contextFit.requiredTokens - contextFit.estimatedTokens}) exceeds ${describeContextLimit(contextFit)}; compact the conversation or use a larger-context fallback`;
+        lastOutcome = "context";
         log.warn("COMBO", `Skipping ${modelStr}: context window too small`, { ...contextFit, hasLargerFallback });
         continue;
       }
@@ -308,12 +312,13 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
       if (result.status === 400 && isContextWindowError(errorText)) {
         const currentContextWindow = resolveModelInputLimit(modelStr) || resolveModelContextWindow(modelStr);
-        lastStatus = 400;
-        lastError = `[${modelStr}] input exceeds context window${currentContextWindow ? ` ${currentContextWindow}` : ""}; compact the conversation or use a larger-context fallback`;
+        lastContextStatus = 400;
+        lastContextError = `[${modelStr}] input exceeds context window${currentContextWindow ? ` ${currentContextWindow}` : ""}; compact the conversation or use a larger-context fallback`;
+        lastOutcome = "context";
         const hasLargerFallback = hasPotentialLargerContextCandidate(rotatedModels, i + 1, currentContextWindow);
         log.warn("COMBO", `Model ${modelStr} exceeded context window`, { currentContextWindow, hasLargerFallback });
         if (!hasLargerFallback) {
-          return contextWindowErrorResponse(lastError);
+          return contextWindowErrorResponse(lastContextError);
         }
         continue;
       }
@@ -321,6 +326,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       if (result.status === 400 && isRequestShapeError(errorText)) {
         lastStatus = 400;
         lastError = `[${modelStr}] ${errorText || "request shape error"}`;
+        lastOutcome = "provider";
         log.warn("COMBO", `Model ${modelStr} returned request-shape 400, trying next`, { status: result.status });
         continue;
       }
@@ -345,11 +351,13 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       // Fallback to next model
       lastError = errorText || String(result.status);
       if (!lastStatus) lastStatus = result.status;
+      lastOutcome = "provider";
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues
       lastError = error.message || String(error);
       if (!lastStatus) lastStatus = 500;
+      lastOutcome = "provider";
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
     }
   }
@@ -358,9 +366,12 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   // Use 503 (Service Unavailable) rather than 406 (Not Acceptable) — 406 implies
   // the request itself is invalid, but here the providers are simply unavailable
   // or have no active credentials. 503 is more accurate and retryable by clients.
-  const allDisabled = lastError && lastError.toLowerCase().includes("no credentials");
-  const status = allDisabled ? 503 : (lastStatus || 503);
-  const msg = lastError || "All combo models unavailable";
+  const useContextResult = lastOutcome === "context";
+  const finalError = useContextResult ? lastContextError : (lastError || lastContextError);
+  const finalStatus = useContextResult ? lastContextStatus : (lastStatus || lastContextStatus);
+  const allDisabled = finalError && finalError.toLowerCase().includes("no credentials");
+  const status = allDisabled ? 503 : (finalStatus || 503);
+  const msg = finalError || "All combo models unavailable";
 
   if (earliestRetryAfter) {
     const retryHuman = formatRetryAfter(earliestRetryAfter);

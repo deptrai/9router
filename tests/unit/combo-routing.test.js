@@ -435,6 +435,31 @@ describe("combo round-robin routing", () => {
     expect(response.status).toBe(200);
   });
 
+  it("does not surface skipped Kiro context 400 when the larger fallback is unavailable", async () => {
+    const calls = [];
+    const log = { info: () => {}, warn: () => {} };
+
+    const response = await handleComboChat({
+      body: { messages: [{ role: "user", content: "large session" }] },
+      models: ["kiro/claude-opus-4.8", "codex/gpt-5.5-xhigh"],
+      estimateInputTokens: () => 170_000,
+      log,
+      handleSingleModel: async (_body, model) => {
+        calls.push(model);
+        return new Response(JSON.stringify({ error: { message: `[${model}] provider unavailable` } }), {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    });
+
+    expect(calls).toEqual(["codex/gpt-5.5-xhigh"]);
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { message: expect.stringContaining("provider unavailable") },
+    });
+  });
+
   it("still tries Kiro input-limit overflow when no larger-context fallback exists", async () => {
     const calls = [];
     const log = { info: () => {}, warn: () => {} };

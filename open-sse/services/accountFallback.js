@@ -7,6 +7,16 @@ const REQUEST_SHAPE_ERROR_PATTERNS = [
   "invalid request body",
 ];
 
+const ACCOUNT_LEVEL_AUTH_ERROR_PATTERNS = [
+  "token_invalidated",
+  "authentication token has been invalidated",
+  "please try signing in again",
+  "invalid_grant",
+  "invalid refresh token",
+];
+
+export const ACCOUNT_AUTH_LOCK_MS = 24 * 60 * 60 * 1000;
+
 function stringifyErrorText(errorText) {
   if (!errorText) return "";
   if (typeof errorText === "string") return errorText;
@@ -16,6 +26,12 @@ function stringifyErrorText(errorText) {
 export function isRequestShapeError(errorText) {
   const lower = stringifyErrorText(errorText).toLowerCase();
   return REQUEST_SHAPE_ERROR_PATTERNS.some(pattern => lower.includes(pattern));
+}
+
+export function isAccountLevelAuthError(status, errorText) {
+  if (Number(status) !== 401) return false;
+  const lower = stringifyErrorText(errorText).toLowerCase();
+  return ACCOUNT_LEVEL_AUTH_ERROR_PATTERNS.some(pattern => lower.includes(pattern));
 }
 
 /**
@@ -47,6 +63,15 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
 
   if (Number(status) === 400 && isRequestShapeError(errorText)) {
     return { shouldFallback: false, cooldownMs: 0, reason: "request_shape_error" };
+  }
+
+  if (isAccountLevelAuthError(status, errorText)) {
+    return {
+      shouldFallback: true,
+      cooldownMs: ACCOUNT_AUTH_LOCK_MS,
+      scope: "account",
+      reason: "account_auth_invalidated",
+    };
   }
 
   for (const rule of ERROR_RULES) {

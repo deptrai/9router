@@ -14,6 +14,7 @@ import {
   buildModelLockUpdate,
   isRequestShapeError,
   applyErrorState,
+  ACCOUNT_AUTH_LOCK_MS,
 } from "../../open-sse/services/accountFallback.js";
 import { normalizeUnavailableStatus, parseUpstreamError } from "../../open-sse/utils/error.js";
 
@@ -83,6 +84,20 @@ describe("checkFallbackError — text rules (case-insensitive)", () => {
     const result = checkFallbackError(200, "request not allowed by policy");
     expect(result.shouldFallback).toBe(true);
     expect(result.cooldownMs).toBe(5 * 1000);
+  });
+
+  it("Codex token_invalidated locks at account scope for a durable cooldown", () => {
+    const result = checkFallbackError(
+      401,
+      "Your authentication token has been invalidated. Please try signing in again. (code=token_invalidated)",
+    );
+
+    expect(result).toMatchObject({
+      shouldFallback: true,
+      cooldownMs: ACCOUNT_AUTH_LOCK_MS,
+      scope: "account",
+      reason: "account_auth_invalidated",
+    });
   });
 
   it("Kiro content-length threshold is context overflow, not account fallback", () => {
