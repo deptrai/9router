@@ -1,4 +1,5 @@
 import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
+import { isContextWindowError } from "../utils/contextWindowError.js";
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
@@ -24,6 +25,10 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
   const lowerError = errorText
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";
+
+  if (isContextWindowError(errorText)) {
+    return { shouldFallback: false, cooldownMs: 0, reason: "context_window_exceeded" };
+  }
 
   for (const rule of ERROR_RULES) {
     // Text-based rule: match substring in error message

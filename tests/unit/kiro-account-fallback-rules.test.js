@@ -13,6 +13,7 @@ import {
   getEarliestModelLockUntil,
   buildModelLockUpdate,
 } from "../../open-sse/services/accountFallback.js";
+import { parseUpstreamError } from "../../open-sse/utils/error.js";
 
 // ---------------------------------------------------------------------------
 // getQuotaCooldown — level 0 boundary (Patch B: base = 8000)
@@ -80,6 +81,48 @@ describe("checkFallbackError — text rules (case-insensitive)", () => {
     const result = checkFallbackError(200, "request not allowed by policy");
     expect(result.shouldFallback).toBe(true);
     expect(result.cooldownMs).toBe(5 * 1000);
+  });
+
+  it("Kiro content-length threshold is context overflow, not account fallback", () => {
+    const result = checkFallbackError(
+      400,
+      '{"message":"Input is too long.","reason":"CONTENT_LENGTH_EXCEEDS_THRESHOLD"}'
+    );
+
+    expect(result).toMatchObject({
+      shouldFallback: false,
+      cooldownMs: 0,
+      reason: "context_window_exceeded",
+    });
+  });
+
+  it("plain 'Input is too long' is context overflow, not account fallback", () => {
+    const result = checkFallbackError(400, "Input is too long.");
+    expect(result.shouldFallback).toBe(false);
+    expect(result.cooldownMs).toBe(0);
+  });
+});
+
+describe("parseUpstreamError — Kiro structured 400", () => {
+  it("preserves CONTENT_LENGTH_EXCEEDS_THRESHOLD reason when executor echoes raw JSON", async () => {
+    const response = new Response(JSON.stringify({
+      message: "Input is too long.",
+      reason: "CONTENT_LENGTH_EXCEEDS_THRESHOLD",
+    }), { status: 400, headers: { "Content-Type": "application/json" } });
+    const executor = {
+      parseError(res, bodyText) {
+        return { status: res.status, message: bodyText };
+      },
+    };
+
+    const parsed = await parseUpstreamError(response, executor);
+
+    expect(parsed).toMatchObject({
+      statusCode: 400,
+      reason: "CONTENT_LENGTH_EXCEEDS_THRESHOLD",
+    });
+    expect(parsed.message).toContain("Input is too long.");
+    expect(parsed.message).toContain("CONTENT_LENGTH_EXCEEDS_THRESHOLD");
   });
 });
 
