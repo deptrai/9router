@@ -10,6 +10,14 @@ import { unavailableResponse } from "../utils/error.js";
 const DEFAULT_CONTEXT_RESERVE_TOKENS = 4096;
 const CONTEXT_ESTIMATE_SAFETY_RATIO = 1.1;
 const CHARS_PER_TOKEN_ESTIMATE = 4;
+const CONTEXT_WINDOW_ERROR_PATTERNS = [
+  "context window",
+  "context_window_exceeded",
+  "context length",
+  "context_length_exceeded",
+  "too many input tokens",
+  "maximum context length",
+];
 
 /**
  * Track rotation state per combo (for round-robin strategy)
@@ -103,6 +111,36 @@ function resolveModelContextWindow(modelStr) {
     if (contextWindow) return contextWindow;
   }
   return null;
+}
+
+export function isContextWindowError(errorText) {
+  if (!errorText) return false;
+  const text = typeof errorText === "string" ? errorText : JSON.stringify(errorText);
+  const lower = text.toLowerCase();
+  return CONTEXT_WINDOW_ERROR_PATTERNS.some(pattern => lower.includes(pattern));
+}
+
+function hasPotentialLargerContextCandidate(models, startIndex, currentContextWindow) {
+  for (let i = startIndex; i < models.length; i++) {
+    const nextContextWindow = resolveModelContextWindow(models[i]);
+    if (!currentContextWindow || !nextContextWindow || nextContextWindow > currentContextWindow) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function contextWindowErrorResponse(message) {
+  return new Response(
+    JSON.stringify({
+      error: {
+        message,
+        type: "invalid_request_error",
+        code: "context_window_exceeded",
+      },
+    }),
+    { status: 400, headers: { "Content-Type": "application/json" } }
+  );
 }
 
 export function getModelContextFit(body, modelStr, estimateInputTokens = estimateRequestInputTokens, reserveTokens = DEFAULT_CONTEXT_RESERVE_TOKENS) {
@@ -204,6 +242,18 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
       }
 
+      if (result.status === 400 && isContextWindowError(errorText)) {
+        const currentContextWindow = resolveModelContextWindow(modelStr);
+        lastStatus = 400;
+        lastError = `[${modelStr}] input exceeds context window${currentContextWindow ? ` ${currentContextWindow}` : ""}; compact the conversation or use a larger-context fallback`;
+        const hasLargerFallback = hasPotentialLargerContextCandidate(rotatedModels, i + 1, currentContextWindow);
+        log.warn("COMBO", `Model ${modelStr} exceeded context window`, { currentContextWindow, hasLargerFallback });
+        if (!hasLargerFallback) {
+          return contextWindowErrorResponse(lastError);
+        }
+        continue;
+      }
+
       // Check if should fallback to next model
       const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
 
@@ -245,6 +295,10 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     const retryHuman = formatRetryAfter(earliestRetryAfter);
     log.warn("COMBO", `All models failed | ${msg} (${retryHuman})`);
     return unavailableResponse(status, msg, earliestRetryAfter, retryHuman);
+  }
+
+  if (status === 400 && isContextWindowError(msg)) {
+    return contextWindowErrorResponse(msg);
   }
 
   log.warn("COMBO", `All models failed | ${msg}`);
