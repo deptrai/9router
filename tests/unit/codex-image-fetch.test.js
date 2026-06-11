@@ -157,6 +157,20 @@ describe("CodexExecutor image handling", () => {
     await expect(new Response(peek.replacementBody).text()).resolves.toContain("context window");
   });
 
+  it("detects response.failed context errors even when the SSE block omits event:", async () => {
+    const executor = new CodexExecutor();
+    const sse = `data: {"type":"response.failed","response":{"error":{"message":"Input is too long.","reason":"CONTENT_LENGTH_EXCEEDS_THRESHOLD"}}}\n\n`;
+
+    const peek = await executor._peekSseOverloaded(new Response(sse, {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    }));
+
+    expect(peek.matchType).toBe("context");
+    expect(peek.matched).toBe("content_length_exceeds_threshold");
+    await expect(new Response(peek.replacementBody).text()).resolves.toContain("CONTENT_LENGTH_EXCEEDS_THRESHOLD");
+  });
+
   it("detects delayed context-window SSE failures beyond the old 4KB peek", async () => {
     const executor = new CodexExecutor();
     const padding = "x".repeat(8 * 1024);
@@ -184,6 +198,63 @@ describe("CodexExecutor image handling", () => {
     expect(peek.matchType).toBeNull();
     expect(peek.matched).toBeNull();
     await expect(new Response(peek.replacementBody).text()).resolves.toContain("normal text");
+  });
+
+  it("does not convert a late context failure after semantic output has started", async () => {
+    const executor = new CodexExecutor();
+    const enc = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(enc.encode(`event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"partial"}\n\n`));
+        controller.enqueue(enc.encode(`event: response.failed\ndata: {"type":"response.failed","response":{"error":{"message":"Your input exceeds the context window of this model."}}}\n\n`));
+        controller.close();
+      },
+    });
+
+    const peek = await executor._peekSseOverloaded(new Response(stream, {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    }));
+
+    expect(peek.matchType).toBeNull();
+    expect(peek.matched).toBeNull();
+    const replacementText = await new Response(peek.replacementBody).text();
+    expect(replacementText).toContain("partial");
+    expect(replacementText).toContain("response.failed");
+  });
+
+  it("retries overloaded SSE responses once before returning a successful stream", async () => {
+    const overloaded = new Response(
+      `event: response.failed\ndata: {"response":{"error":{"message":"server_is_overloaded"}}}\n\n`,
+      { status: 200, headers: { "Content-Type": "text/event-stream" } }
+    );
+    const success = new Response(
+      `event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"ok"}\n\n` +
+      `event: response.completed\ndata: {"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1}}}\n\n`,
+      { status: 200, headers: { "Content-Type": "text/event-stream" } }
+    );
+
+    const fetchSpy = vi.spyOn(proxyFetchModule, "proxyAwareFetch")
+      .mockResolvedValueOnce(overloaded)
+      .mockResolvedValueOnce(success);
+
+    const executor = new CodexExecutor();
+    executor.config.retry = {
+      ...(executor.config.retry || {}),
+      503: { attempts: 1, delayMs: 0 },
+    };
+
+    const result = await executor.execute({
+      model: "gpt-5.5-xhigh",
+      body: { input: [{ role: "user", content: "retry please" }] },
+      stream: true,
+      credentials: { accessToken: "test" },
+      log: { warn: vi.fn(), debug: vi.fn() },
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(result.response.status).toBe(200);
+    await expect(result.response.text()).resolves.toContain("ok");
   });
 
   it("execute() converts hidden context-window SSE failures to HTTP 400 JSON", async () => {

@@ -16,6 +16,8 @@ const CODEX_SSE_CONTEXT_ERROR_PATTERNS = [
   "exceeds the context window",
   "context_length_exceeded",
   "too many input tokens",
+  "content_length_exceeds_threshold",
+  "input is too long",
 ];
 const CODEX_SSE_PEEK_BYTES = 64 * 1024;
 const CODEX_SSE_SEMANTIC_OUTPUT_PATTERNS = [
@@ -156,6 +158,20 @@ function parseSseBlock(block) {
   return { event, data };
 }
 
+function resolveSseEventType(event, data) {
+  if (event) return event;
+  try {
+    const parsed = JSON.parse(data);
+    return parsed.type || parsed.event || "";
+  } catch {
+    return "";
+  }
+}
+
+function isCodexSseSemanticOutput(event, data) {
+  return CODEX_SSE_SEMANTIC_OUTPUT_PATTERNS.includes(resolveSseEventType(event, data));
+}
+
 function stringifyCodexSseError(data) {
   if (!data || data === "[DONE]") return "";
   try {
@@ -172,7 +188,12 @@ function stringifyCodexSseError(data) {
 function findCodexSseTerminalError(text) {
   for (const block of getCompleteSseBlocks(text)) {
     const { event, data } = parseSseBlock(block);
-    if (event !== "error" && event !== "response.failed") continue;
+    if (isCodexSseSemanticOutput(event, data)) {
+      return { matched: null, matchType: null, semanticOutput: true };
+    }
+
+    const eventType = resolveSseEventType(event, data);
+    if (eventType !== "error" && eventType !== "response.failed") continue;
 
     const errorText = stringifyCodexSseError(data);
     const contextHit = matchLowerPattern(errorText, CODEX_SSE_CONTEXT_ERROR_PATTERNS);
@@ -181,17 +202,13 @@ function findCodexSseTerminalError(text) {
     const overloadedHit = matchRawPattern(errorText, CODEX_SSE_OVERLOADED_PATTERNS);
     if (overloadedHit) return { matched: overloadedHit, matchType: "overloaded" };
   }
-  return { matched: null, matchType: null };
+  return { matched: null, matchType: null, semanticOutput: false };
 }
 
 function hasCodexSseSemanticOutput(text) {
   for (const block of getCompleteSseBlocks(text)) {
     const { event, data } = parseSseBlock(block);
-    if (CODEX_SSE_SEMANTIC_OUTPUT_PATTERNS.includes(event)) return true;
-    try {
-      const parsed = JSON.parse(data);
-      if (CODEX_SSE_SEMANTIC_OUTPUT_PATTERNS.includes(parsed.type || parsed.event)) return true;
-    } catch { /* ignore malformed/incomplete data */ }
+    if (isCodexSseSemanticOutput(event, data)) return true;
   }
   return false;
 }
@@ -408,6 +425,7 @@ export class CodexExecutor extends BaseExecutor {
           matchType = terminalError.matchType;
           break;
         }
+        if (terminalError.semanticOutput) break;
         if (hasCodexSseSemanticOutput(text)) break;
       }
     } catch (e) {

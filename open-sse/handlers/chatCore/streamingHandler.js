@@ -71,12 +71,22 @@ export function handleStreamingResponse({ providerResponse, provider, model, sou
 export function buildOnStreamComplete({ provider, model, connectionId, apiKey, billingSource, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
+  const resolveRecordedContent = (contentObj) => {
+    const content = typeof contentObj?.content === "string" ? contentObj.content : "";
+    if (content.trim()) return content;
+
+    const thinking = typeof contentObj?.thinking === "string" ? contentObj.thinking : "";
+    if (thinking.trim()) return `[Thinking-only streaming response]\n${thinking}`;
+
+    return "[Empty streaming response]";
+  };
+
   const onStreamComplete = (contentObj, usage, ttftAt) => {
     const latency = {
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
       total: Date.now() - requestStartTime
     };
-    const safeContent = contentObj?.content || "[Empty streaming response]";
+    const safeContent = resolveRecordedContent(contentObj);
     const safeThinking = contentObj?.thinking || null;
 
     saveRequestDetail(buildRequestDetail({

@@ -103,4 +103,65 @@ describe("createSSEStream — transform() per-line resilience", () => {
     expect(completion.content.content).toContain("[tool_call:Bash]");
     expect(completion.content.content).toContain("git status");
   });
+
+  it("TRANSLATE Codex Responses→OpenAI: custom-tool-call-only streams are not recorded as empty", async () => {
+    const { out, completion } = await runStreamWithCompletion(
+      {
+        mode: "translate",
+        targetFormat: FORMATS.OPENAI_RESPONSES,
+        sourceFormat: FORMATS.OPENAI,
+        provider: "codex",
+        model: "gpt-5.5",
+      },
+      [
+        'event: response.output_item.added\ndata: {"type":"response.output_item.added","item":{"type":"custom_tool_call","call_id":"call_2","name":"Patch"}}\n\n',
+        'event: response.custom_tool_call_input.delta\ndata: {"type":"response.custom_tool_call_input.delta","delta":"apply patch"}\n\n',
+        'event: response.output_item.done\ndata: {"type":"response.output_item.done","item":{"type":"custom_tool_call","call_id":"call_2","name":"Patch"}}\n\n',
+        'event: response.completed\ndata: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":4}}}\n\n',
+      ]
+    );
+
+    expect(out).toContain("data: [DONE]");
+    expect(out).toContain("custom_tool_call");
+    expect(completion.content.content).toContain("[tool_call:Patch]");
+    expect(completion.content.content).toContain("apply patch");
+  });
+
+  it("PASSTHROUGH Codex Responses tool-call-only streams are not recorded as empty", async () => {
+    const { out, completion } = await runStreamWithCompletion(
+      {
+        mode: "passthrough",
+        provider: "codex",
+        model: "gpt-5.5",
+      },
+      [
+        'event: response.output_item.added\ndata: {"type":"response.output_item.added","item":{"type":"function_call","call_id":"call_1","name":"Bash"}}\n\n',
+        'event: response.function_call_arguments.delta\ndata: {"type":"response.function_call_arguments.delta","delta":"{\\"cmd\\":\\"git diff\\"}"}\n\n',
+        'event: response.output_item.done\ndata: {"type":"response.output_item.done","item":{"type":"function_call","call_id":"call_1","name":"Bash"}}\n\n',
+        'event: response.completed\ndata: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":4}}}\n\n',
+      ]
+    );
+
+    expect(out).toContain("data: [DONE]");
+    expect(completion.content.content).toContain("[tool_call:Bash]");
+    expect(completion.content.content).toContain("git diff");
+  });
+
+  it("PASSTHROUGH Codex Responses reasoning-only streams keep thinking in completion", async () => {
+    const { out, completion } = await runStreamWithCompletion(
+      {
+        mode: "passthrough",
+        provider: "codex",
+        model: "gpt-5.5",
+      },
+      [
+        'event: response.reasoning_summary_text.delta\ndata: {"type":"response.reasoning_summary_text.delta","delta":"checking files"}\n\n',
+        'event: response.completed\ndata: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":2}}}\n\n',
+      ]
+    );
+
+    expect(out).toContain("data: [DONE]");
+    expect(completion.content.content).toBe("");
+    expect(completion.content.thinking).toBe("checking files");
+  });
 });
