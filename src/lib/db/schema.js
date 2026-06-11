@@ -1,5 +1,5 @@
 // Latest schema version — bumped when a migration is added in ./migrations/
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -308,6 +308,50 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_ct_user_ts ON creditTransactions(userId, createdAt)",
       "CREATE INDEX IF NOT EXISTS idx_ct_user_bucket ON creditTransactions(userId, bucket)",
       "CREATE UNIQUE INDEX IF NOT EXISTS idx_ct_idempotency ON creditTransactions(idempotencyKey)",
+    ],
+  },
+
+  // Story 2.26: Telegram Store orders. State machine: pending|paid|fulfilled|cancelled|failed|refunded.
+  // For a credit-paid store purchase, order is created already `paid` (credit debited atomically in
+  // same txn) then transitioned to `fulfilled` for instant delivery, or kept `paid` awaiting admin_fulfill.
+  orders: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      userId: "TEXT NOT NULL",
+      status: "TEXT NOT NULL DEFAULT 'pending'", // pending|paid|fulfilled|cancelled|failed|refunded
+      source: "TEXT NOT NULL DEFAULT 'telegram'", // telegram|web|...
+      totalCredits: "REAL NOT NULL DEFAULT 0",
+      deliveryMode: "TEXT",                       // snapshot from product at purchase time
+      ledgerTxnId: "TEXT",                        // creditTransactions.id of the store_purchase debit
+      idempotencyKey: "TEXT",                     // client/callback dedup key
+      note: "TEXT",
+      createdAt: "TEXT NOT NULL",
+      updatedAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_orders_user_ts ON orders(userId, createdAt)",
+      "CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)",
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_idempotency ON orders(idempotencyKey)",
+    ],
+  },
+
+  // Order line items — snapshot product fields at purchase time (price/name immutable post-sale).
+  orderItems: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      orderId: "TEXT NOT NULL",
+      productId: "TEXT NOT NULL",
+      productName: "TEXT NOT NULL",   // snapshot
+      kind: "TEXT NOT NULL",          // snapshot
+      deliveryMode: "TEXT NOT NULL",  // snapshot
+      targetType: "TEXT",             // snapshot
+      targetId: "TEXT",               // snapshot
+      unitCredits: "REAL NOT NULL",   // snapshot price
+      quantity: "INTEGER NOT NULL DEFAULT 1",
+      createdAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_orderitems_order ON orderItems(orderId)",
     ],
   },
 };

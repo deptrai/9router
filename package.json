@@ -9,6 +9,8 @@
     "start": "next start",
     "dev:bun": "bun --bun next dev --webpack --port 20128",
     "build:bun": "bun --bun next build --webpack",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "seed": "node scripts/seed.js",
     "seed:reset": "node scripts/seed.js --reset",
     "seed:show": "node scripts/seed.js --show",
@@ -64,6 +66,7 @@
     "eslint-config-next": "16.1.6",
     "postcss": "^8.5.6",
     "tailwindcss": "^4",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.8"
   }
 }

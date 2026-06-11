@@ -45,6 +45,13 @@ export {
   PRODUCT_KINDS, DELIVERY_MODES,
 } from "./repos/productsRepo.js";
 
+// Orders (Story 2.26 — Telegram Store checkout)
+export {
+  insertOrderWithItems, transitionOrder, getOrderById,
+  getOrderByIdempotencyKey, listOrdersByUser, canTransition,
+  ORDER_STATUSES,
+} from "./repos/ordersRepo.js";
+
 // Payments
 export {
   createPayment, getPaymentById, getPaymentByGatewayId, updatePayment, listPayments, getPaymentsByUser,
