@@ -352,6 +352,33 @@ export function compactKiroPayload(body, options = {}) {
     }
   }
 
+  if (options.allowEmergencyCompact !== false && !attemptedTailCounts.includes(0)) {
+    state.currentMessage = cloneJson(originalCurrentMessage);
+    state.currentMessage.userInputMessage.content = originalContent;
+    const candidate = buildKiroHistoryCandidate(originalHistory, 0, state.currentMessage);
+    state.history = candidate.history;
+    setCurrentMessageNotice(state, originalContent, candidate.omittedCount, candidate.headCount, candidate.tailCount, candidate.protectedReferences);
+
+    const afterBytes = estimatePayloadBytes(body);
+    const afterTokens = Math.ceil(afterBytes / CHARS_PER_TOKEN_ESTIMATE);
+    best = { ...candidate, afterBytes, afterTokens };
+    if (afterTokens <= limitTokens) {
+      return {
+        applied: true,
+        tooLarge: false,
+        provider: "kiro",
+        beforeBytes,
+        afterBytes,
+        beforeTokens,
+        afterTokens,
+        limitTokens,
+        omittedCount: candidate.omittedCount,
+        keptHistoryCount: candidate.history.length,
+        emergency: true,
+      };
+    }
+  }
+
   return {
     applied: true,
     tooLarge: true,

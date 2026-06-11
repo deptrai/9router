@@ -164,6 +164,33 @@ describe("auto-compact — Kiro payload", () => {
     expect(result.afterTokens).toBeGreaterThan(100);
   });
 
+  it("falls back to current-message-only compact when the retained recent tail is still too large", () => {
+    const history = Array.from({ length: 8 }, (_, i) => (
+      i % 2 === 0 ? kiroUser(`old user ${i} ${"x".repeat(4000)}`) : kiroAssistant(`old assistant ${i} ${"y".repeat(4000)}`)
+    ));
+    const body = {
+      conversationState: {
+        chatTriggerType: "MANUAL",
+        conversationId: "test",
+        currentMessage: kiroUser("continue"),
+        history,
+      },
+    };
+
+    const result = compactKiroPayload(body, {
+      limitTokens: 1_000,
+      keepTail: 4,
+      minTail: 4,
+    });
+
+    expect(result.applied).toBe(true);
+    expect(result.tooLarge).toBe(false);
+    expect(result.emergency).toBe(true);
+    expect(result.keptHistoryCount).toBe(0);
+    expect(body.conversationState.history).toHaveLength(0);
+    expect(body.conversationState.currentMessage.userInputMessage.content).toContain("kept 0 initial and 0 recent entries");
+  });
+
   it("keeps a contiguous recent suffix instead of stitching unrelated head and tail", () => {
     const history = Array.from({ length: 12 }, (_, i) => (
       i % 2 === 0 ? kiroUser(`old user ${i} ${"x".repeat(1000)}`) : kiroAssistant(`old assistant ${i} ${"y".repeat(1000)}`)
@@ -213,6 +240,7 @@ describe("auto-compact — Kiro payload", () => {
       keepHead: 0,
       keepTail: 3,
       minTail: 3,
+      allowEmergencyCompact: false,
     });
 
     expect(messageKinds(body.conversationState.history)).toEqual(["user", "assistant"]);
@@ -242,6 +270,7 @@ describe("auto-compact — Kiro payload", () => {
       keepHead: 0,
       keepTail: 4,
       minTail: 4,
+      allowEmergencyCompact: false,
     });
 
     expect(body.conversationState.history[0].userInputMessage.content).toContain("u2");
@@ -267,6 +296,7 @@ describe("auto-compact — Kiro payload", () => {
       keepHead: 0,
       keepTail: 2,
       minTail: 2,
+      allowEmergencyCompact: false,
     });
 
     expect(body.conversationState.history[1].assistantResponseMessage.toolUses).toHaveLength(1);
