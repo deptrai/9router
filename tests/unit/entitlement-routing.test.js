@@ -235,3 +235,65 @@ describe("AC6 — cross-user isolation (M7 security test)", () => {
     expect(creds?.connectionId).toBe(adminConn.id);
   });
 });
+
+// ── P2 (review fix): null-userId path KHÔNG được leak owned connection (M5) ──
+
+describe("P2 — null-userId path excludes owned connections (M5 leak guard)", () => {
+  it("legacy caller (no userId) nhận shared, KHÔNG nhận owned của user khác", async () => {
+    const shared = await insertConnection({ ownerUserId: null });
+    await insertConnection({ ownerUserId: "user-A" }); // owned — phải bị loại
+
+    const creds = await callGetProviderCredentials("anthropic", {}); // no userId
+    expect(creds).not.toBeNull();
+    expect(creds.connectionId).toBe(shared.id);
+  });
+
+  it("chỉ có owned connection + caller no userId → null (owned cần entitlement, không leak)", async () => {
+    await insertConnection({ ownerUserId: "user-A" }); // chỉ owned, không shared
+
+    const creds = await callGetProviderCredentials("anthropic", {}); // no userId
+    expect(creds).toBeNull(); // owned KHÔNG được phục vụ legacy caller
+  });
+
+  it("empty-string userId KHÔNG bypass filter (harden userId != null)", async () => {
+    await insertConnection({ ownerUserId: "user-A" }); // chỉ owned
+
+    // "" trước đây falsy → bypass; giờ != null nên vẫn đi entitlement path,
+    // không có entitlement cho "" → shared-only → null.
+    const creds = await callGetProviderCredentials("anthropic", { userId: "" });
+    expect(creds).toBeNull();
+  });
+});
+
+// ── P4 (review fix): nhiều active entitlement → bản MỚI NHẤT thắng (DESC) ──
+
+describe("P4 — resolveActiveEntitlement picks newest entitlement", () => {
+  it("entitlement owned_only mới ghi đè prefer_owned cũ cùng (userId, provider)", async () => {
+    const owned = await insertConnection({ ownerUserId: "user-A" });
+    // cũ: prefer_owned
+    await insertEntitlement({ userId: "user-A", routePolicy: "prefer_owned" });
+    await new Promise((r) => setTimeout(r, 5)); // đảm bảo createdAt khác nhau
+    // mới: owned_only
+    await insertEntitlement({ userId: "user-A", routePolicy: "owned_only" });
+
+    // Nếu prefer_owned (cũ) thắng + owned bị loại → sẽ fallback shared.
+    // Ở đây không có shared; nếu owned_only (mới) thắng → vẫn chọn owned.
+    const creds = await callGetProviderCredentials("anthropic", { userId: "user-A" });
+    expect(creds?.connectionId).toBe(owned.id);
+
+    // Xác nhận chính sách mới (owned_only) đang áp: xoá owned → block, KHÔNG shared.
+    // (thêm shared rồi kiểm tra vẫn không rơi shared dưới owned_only)
+  });
+
+  it("owned_only mới + không có owned → block (chứng minh policy mới áp, không phải prefer_owned cũ)", async () => {
+    await insertConnection({ ownerUserId: null }); // có shared
+    await insertEntitlement({ userId: "user-A", routePolicy: "prefer_owned" });
+    await new Promise((r) => setTimeout(r, 5));
+    await insertEntitlement({ userId: "user-A", routePolicy: "owned_only" });
+
+    const creds = await callGetProviderCredentials("anthropic", { userId: "user-A" });
+    // Nếu prefer_owned cũ thắng → fallback shared (có connectionId).
+    // owned_only mới thắng → block (không lén shared).
+    expect(creds?.ownedOnlyUnavailable).toBe(true);
+  });
+});

@@ -211,7 +211,7 @@ export async function resolveActiveEntitlement(userId, provider) {
       `SELECT * FROM entitlements
        WHERE userId = ? AND provider IS NULL AND status = ?
          AND (expiresAt IS NULL OR expiresAt > ?)
-       ORDER BY createdAt ASC LIMIT 1`,
+       ORDER BY createdAt DESC LIMIT 1`,
       [userId, ENTITLEMENT_STATUS.ACTIVE, now]
     );
   } else {
@@ -219,7 +219,7 @@ export async function resolveActiveEntitlement(userId, provider) {
       `SELECT * FROM entitlements
        WHERE userId = ? AND provider = ? AND status = ?
          AND (expiresAt IS NULL OR expiresAt > ?)
-       ORDER BY createdAt ASC LIMIT 1`,
+       ORDER BY createdAt DESC LIMIT 1`,
       [userId, provider, ENTITLEMENT_STATUS.ACTIVE, now]
     );
   }

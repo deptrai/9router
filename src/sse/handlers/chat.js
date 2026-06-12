@@ -235,7 +235,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   const userAgent = request?.headers?.get("user-agent") || "";
 
   // Resolve userId once before retry loop — thread into opts for entitlement routing (2.29b).
-  const keyRow = await getApiKeyByKey(apiKey).catch(() => null);
+  // Guard: only query when apiKey present (local/no-auth mode has null apiKey → skip).
+  const keyRow = apiKey ? await getApiKeyByKey(apiKey).catch(() => null) : null;
   const routingUserId = keyRow?.userId ?? null;
 
   // Try with available accounts (fallback on errors)

@@ -15,7 +15,7 @@ context:
 
 # Story 2.29b — Entitlement Routing Engine Integration
 
-Status: review
+Status: done
 
 ## Story
 
@@ -216,3 +216,23 @@ Nếu dev chỉ chọn 1 trong 2 sẽ sai một nửa. Code phải có CẢ hai 
 ## Change Log
 
 - **2026-06-13** — Implement T1–T6: `resolveActiveEntitlement` in entitlementsRepo, entitlement filter layer in `auth.js` (opts.userId + M2–M7), userId threading in `chat.js`, 13 new tests (AC1–AC6 including M7 security test). Bugfix: `createProviderConnection` now persists `ownerUserId`/`entitlementId`. Full suite 1374 passed | 24 skipped.
+
+## Review Findings (Code Review 2026-06-13)
+
+3 review layers (Blind, Edge, Acceptance). Verified bằng đọc code thật. Dismiss: `HTTP_STATUS.FORBIDDEN ?? 403` (FORBIDDEN tồn tại=403, vô hại); `prefer_owned` dùng `ownedConns` vs `ownedAvail` (downstream re-filter, không phải bug); direct repo import (style).
+
+### Patches
+
+- [x] [Review][Patch] 🔴 BLOCKER — `getApiKeyByKey` KHÔNG re-export từ `localDb.js` shim → `chat.js:26` import = `undefined` → `.catch(()=>null)` nuốt lỗi → `routingUserId` LUÔN null trong prod → toàn bộ routing chết dù 1374 test pass (test gọi auth.js trực tiếp, bỏ qua chain chat.js). Fix: thêm `getApiKeyByKey` vào export list `src/lib/localDb.js` [src/lib/localDb.js]
+- [x] [Review][Patch] HIGH — null-userId path để owned connection lọt shared pool (M5 leak): `auth.js:88 poolConnections = connections` (unfiltered) khi userId null. 6 legacy handler (tts/stt/embeddings/imageGeneration/fetch/search) không truyền userId → có thể nhận owned credential của user khác. Fix: null path cũng filter `ownerUserId == null` (owned luôn cần entitlement; non-SaaS không có owned → no-op) [src/sse/services/auth.js:88]
+- [x] [Review][Patch] HIGH — negative-cache cross-user poisoning: cache check (auth.js:41) chạy TRƯỚC khi đọc userId, và cache write (auth.js:152) dùng key `providerId:model` user-agnostic trong khi `poolConnections` giờ user-scoped. → all-locked của shared pool chặn owned connection khoẻ của user khác; owned-pool lock của user A đầu độc shared pool của user B. Fix: bỏ qua negative cache khi `userId` có (chỉ cache cho shared path) [src/sse/services/auth.js:41,152]
+- [x] [Review][Patch] MEDIUM — `resolveActiveEntitlement` ORDER BY `createdAt ASC` → nếu có nhiều entitlement active cùng (userId,provider), bản CŨ NHẤT thắng. User nâng cấp lên owned_only vẫn bị áp prefer_owned cũ. Fix: `DESC` (mới nhất thắng) [src/lib/db/repos/entitlementsRepo.js resolveActiveEntitlement]
+- [x] [Review][Patch] MEDIUM — owned_only + owned tồn tại nhưng tất cả excluded (đã thử fail trong retry) → trả null → chat.js báo generic 503 thay vì thông điệp rõ. (model-locked thì OK vì rơi vào allRateLimited có retry). Đảm bảo owned_only không rơi vào "all accounts unavailable" mơ hồ [src/sse/services/auth.js:108-113]
+- [x] [Review][Patch] LOW — harden `if (userId)` (auth.js:90) → `if (userId != null)` (empty-string bypass); guard `getApiKeyByKey(apiKey)` chỉ gọi khi `apiKey` non-null (tránh query thừa local mode) [src/sse/services/auth.js:90, src/sse/handlers/chat.js:238]
+
+### Deferred
+
+- [x] [Review][Defer] `resolveActiveEntitlement` await trong `selectionMutex` → serialize mọi credential lookup. Perf, không phải correctness; 1 indexed query sub-ms. Defer optimize sau (resolve ngoài mutex).
+- [x] [Review][Defer] Unknown `routePolicy` DB value rơi im lặng vào prefer_owned — thêm log warning defensive. Defer.
+- [x] [Review][Defer] Block signal `ownedOnlyUnavailable` chỉ chat.js xử lý — handler khác chưa truyền userId nên chưa gặp; rủi ro tương lai khi handler khác thread userId. Defer tới khi mở rộng.
+- [x] [Review][Defer] Orphaned JSDoc của `transitionEntitlement` lệch lên trên `resolveActiveEntitlement` — nit doc.

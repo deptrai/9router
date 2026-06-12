@@ -37,8 +37,12 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     // Resolve alias to provider ID (e.g., "kc" -> "kilocode")
     const providerId = resolveProviderId(provider);
 
-    // Check negative cache for all-locked state (only when excludeSet is empty)
-    if (excludeSet.size === 0) {
+    // Check negative cache for all-locked state (only when excludeSet is empty AND
+    // no userId — the cache key is provider-scoped, but with entitlement routing the
+    // available pool is user-scoped, so a cached shared-pool result is NOT valid for
+    // an entitlement user and vice-versa (P3 cross-user poisoning guard).
+    const userIdForCache = options?.userId ?? null;
+    if (excludeSet.size === 0 && userIdForCache == null) {
       const cacheKey = `${providerId}:${model || "__all"}`;
       const cached = _allLockedCache.get(cacheKey);
       if (cached && cached.expiresAt > Date.now()) {
@@ -83,11 +87,14 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     }
 
     // --- Entitlement routing layer (2.29b) ---
-    // QĐ1: opts.userId null/undefined → skip entirely (zero overhead, backward-compat).
+    // QĐ1: opts.userId null/undefined → skip entitlement resolve (zero overhead).
     const userId = options?.userId ?? null;
-    let poolConnections = connections;
+    // Default pool = shared only. Owned connections (ownerUserId != null) require an
+    // ACTIVE entitlement to be selected and never leak to legacy/null-userId callers
+    // (M5/P2). Non-SaaS DBs have no owned connections so this filter is a no-op there.
+    let poolConnections = connections.filter(c => c.ownerUserId == null);
 
-    if (userId) {
+    if (userId != null) {
       let entitlementResult = null;
       try {
         entitlementResult = await resolveActiveEntitlement(userId, providerId);
@@ -110,6 +117,10 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
             // Policy-decision block (AC5/QĐ3). NOT infra-error — do NOT fail-open.
             return { ownedOnlyUnavailable: true, reason: "No active owned connection. Please link your provider account to activate this entitlement." };
           }
+          // owned_only NEVER falls back to shared (M3 policy-decision). When all owned
+          // are model-locked → downstream allRateLimited (retry timing). When excluded
+          // mid-retry → null → caller surfaces lastError (account is linked, just errored
+          // this request — clearer than a generic "link your account" message). (P5)
           poolConnections = ownedConns;
         } else {
           // prefer_owned (QĐ7): owned if available after excludeSet/modelLock, else shared minus other-owned.
@@ -148,8 +159,10 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         const earliestConn = lockedConns[0];
         log.warn("AUTH", `${provider} | all ${poolConnections.length} accounts locked for ${model || "all"} (${formatRetryAfter(earliest)}) | lastError=${earliestConn?.lastError?.slice(0, 50)}`);
 
-        // Set negative cache only when excludeSet is empty (result is valid for all callers)
-        if (excludeSet.size === 0) {
+        // Set negative cache only for the shared path (excludeSet empty AND no userId).
+        // With entitlement routing the pool is user-scoped, so a per-user all-locked
+        // result must NOT poison the shared cache for other users (P3).
+        if (excludeSet.size === 0 && userId == null) {
           const cacheKey = `${providerId}:${model || "__all"}`;
           const cacheTTL = Math.max(1, Math.min(2000, new Date(earliest).getTime() - Date.now()));
           _allLockedCache.set(cacheKey, {
