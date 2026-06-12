@@ -144,6 +144,8 @@ export async function createProviderConnection(data) {
       name: connectionName,
       priority: connectionPriority,
       isActive: data.isActive !== undefined ? data.isActive : true,
+      ownerUserId: data.ownerUserId ?? null,
+      entitlementId: data.entitlementId ?? null,
       createdAt: now,
       updatedAt: now,
     };

@@ -59,13 +59,17 @@ export {
   CREDENTIAL_STATUSES,
 } from "./repos/credentialsRepo.js";
 
-// Entitlements (Story 2.29a — user_self_connect)
+// Entitlements (Story 2.29a/b)
 export {
-  createEntitlement, createEntitlementSync, getEntitlementById,
-  listEntitlementsByUser, getEntitlementsByProduct, findPendingEntitlement,
-  transitionEntitlement, canTransitionEntitlement,
-  ENTITLEMENT_STATUSES, ROUTE_POLICIES,
+  createEntitlement, createEntitlementSync,
+  getEntitlementById, listEntitlementsByUser, getEntitlementsByProduct,
+  findPendingEntitlement, transitionEntitlement, resolveActiveEntitlement,
+  canTransitionEntitlement,
+  ENTITLEMENT_STATUS, ENTITLEMENT_STATUSES, ROUTE_POLICY, ROUTE_POLICIES,
 } from "./repos/entitlementsRepo.js";
+
+// API key lookup by key string (Story 2.29b — userId threading)
+export { getApiKeyByKey } from "./repos/apiKeysRepo.js";
 
 // Payments
 export {

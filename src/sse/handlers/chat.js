@@ -23,6 +23,7 @@ import { checkKeyQuota } from "@/lib/quota/keyQuota.js";
 import { checkCredits, checkPerKeyLimit } from "@/lib/billing/checkCredits.js";
 import { checkRpmLimit } from "@/lib/quota/rpmLimit.js";
 import { checkPlanQuota } from "@/lib/quota/planQuota.js";
+import { getApiKeyByKey } from "@/lib/localDb";
 
 /**
  * Handle chat completion request
@@ -233,13 +234,23 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   // Extract userAgent from request
   const userAgent = request?.headers?.get("user-agent") || "";
 
+  // Resolve userId once before retry loop — thread into opts for entitlement routing (2.29b).
+  const keyRow = await getApiKeyByKey(apiKey).catch(() => null);
+  const routingUserId = keyRow?.userId ?? null;
+
   // Try with available accounts (fallback on errors)
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { userId: routingUserId });
+
+    // owned_only entitlement — owned connection unavailable (policy block, AC5)
+    if (credentials?.ownedOnlyUnavailable) {
+      log.warn("CHAT", `[${provider}] owned_only block: ${credentials.reason}`);
+      return errorResponse(HTTP_STATUS.FORBIDDEN ?? 403, credentials.reason);
+    }
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {

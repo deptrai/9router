@@ -197,6 +197,37 @@ export async function getEntitlementsByProduct(productId) {
  * Chuyển trạng thái entitlement an toàn (validate transition).
  * patch có thể kèm providerConnectionId, expiresAt, note.
  */
+/**
+ * Resolve active entitlement for (userId, provider) — hot-path (M2, T1 2.29b).
+ * Lazy expiry: expiresAt overdue → treated as inactive (no state transition here).
+ * Returns { entitlement, routePolicy } or null.
+ */
+export async function resolveActiveEntitlement(userId, provider) {
+  const db = await getAdapter();
+  const now = new Date().toISOString();
+  let row;
+  if (provider == null) {
+    row = db.get(
+      `SELECT * FROM entitlements
+       WHERE userId = ? AND provider IS NULL AND status = ?
+         AND (expiresAt IS NULL OR expiresAt > ?)
+       ORDER BY createdAt ASC LIMIT 1`,
+      [userId, ENTITLEMENT_STATUS.ACTIVE, now]
+    );
+  } else {
+    row = db.get(
+      `SELECT * FROM entitlements
+       WHERE userId = ? AND provider = ? AND status = ?
+         AND (expiresAt IS NULL OR expiresAt > ?)
+       ORDER BY createdAt ASC LIMIT 1`,
+      [userId, provider, ENTITLEMENT_STATUS.ACTIVE, now]
+    );
+  }
+  if (!row) return null;
+  const entitlement = rowToEntitlement(row);
+  return { entitlement, routePolicy: entitlement.routePolicy };
+}
+
 export async function transitionEntitlement(id, toStatus, patch = {}) {
   const db = await getAdapter();
   let result;

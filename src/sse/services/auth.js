@@ -4,6 +4,7 @@ import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLock
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
+import { resolveActiveEntitlement, ROUTE_POLICY } from "@/lib/db/repos/entitlementsRepo.js";
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
@@ -81,15 +82,55 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
+    // --- Entitlement routing layer (2.29b) ---
+    // QĐ1: opts.userId null/undefined → skip entirely (zero overhead, backward-compat).
+    const userId = options?.userId ?? null;
+    let poolConnections = connections;
+
+    if (userId) {
+      let entitlementResult = null;
+      try {
+        entitlementResult = await resolveActiveEntitlement(userId, providerId);
+      } catch (err) {
+        // Infra-error → fail-open shared pool (M3/AC3). Do NOT throw — 503 penalises user for our bug.
+        log.error("AUTH", `entitlement resolve error, fail-open: ${err?.message}`);
+      }
+
+      if (!entitlementResult) {
+        // No active entitlement → strict shared pool (M5): only null-owned connections.
+        // Owned connections require an active entitlement — even the user's own (AC4).
+        poolConnections = connections.filter(c => c.ownerUserId == null);
+      } else {
+        const { routePolicy } = entitlementResult;
+        // Strict match (M4): null !== userId — null = shared, never owned-by-user.
+        const ownedConns = connections.filter(c => c.ownerUserId === userId);
+
+        if (routePolicy === ROUTE_POLICY.OWNED_ONLY) {
+          if (ownedConns.length === 0) {
+            // Policy-decision block (AC5/QĐ3). NOT infra-error — do NOT fail-open.
+            return { ownedOnlyUnavailable: true, reason: "No active owned connection. Please link your provider account to activate this entitlement." };
+          }
+          poolConnections = ownedConns;
+        } else {
+          // prefer_owned (QĐ7): owned if available after excludeSet/modelLock, else shared minus other-owned.
+          const ownedAvail = ownedConns.filter(c => !excludeSet.has(c.id) && !isModelLockActive(c, model));
+          poolConnections = ownedAvail.length > 0
+            ? ownedConns
+            : connections.filter(c => c.ownerUserId == null);
+        }
+      }
+    }
+    // --- End entitlement routing layer ---
+
     // Filter out model-locked and excluded connections
-    const availableConnections = connections.filter(c => {
+    const availableConnections = poolConnections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
       return true;
     });
 
-    log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${connections.length}`);
-    connections.forEach(c => {
+    log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${poolConnections.length} (total loaded: ${connections.length})`);
+    poolConnections.forEach(c => {
       const excluded = excludeSet.has(c.id);
       const locked = isModelLockActive(c, model);
       if (excluded || locked) {
@@ -99,13 +140,13 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     });
 
     if (availableConnections.length === 0) {
-      // Find earliest lock expiry across all connections for retry timing
-      const lockedConns = connections.filter(c => isModelLockActive(c, model));
+      // Find earliest lock expiry across pool connections for retry timing
+      const lockedConns = poolConnections.filter(c => isModelLockActive(c, model));
       const expiries = lockedConns.map(c => getEarliestModelLockUntil(c)).filter(Boolean);
       const earliest = expiries.sort()[0] || null;
       if (earliest) {
         const earliestConn = lockedConns[0];
-        log.warn("AUTH", `${provider} | all ${connections.length} accounts locked for ${model || "all"} (${formatRetryAfter(earliest)}) | lastError=${earliestConn?.lastError?.slice(0, 50)}`);
+        log.warn("AUTH", `${provider} | all ${poolConnections.length} accounts locked for ${model || "all"} (${formatRetryAfter(earliest)}) | lastError=${earliestConn?.lastError?.slice(0, 50)}`);
 
         // Set negative cache only when excludeSet is empty (result is valid for all callers)
         if (excludeSet.size === 0) {
@@ -126,7 +167,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           lastErrorCode: earliestConn?.errorCode || null
         };
       }
-      log.warn("AUTH", `${provider} | all ${connections.length} accounts unavailable`);
+      log.warn("AUTH", `${provider} | all ${poolConnections.length} accounts unavailable`);
       return null;
     }
 
