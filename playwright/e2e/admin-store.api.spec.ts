@@ -5,10 +5,11 @@
  * endpoints over HTTP. Story 2.28 has NO dashboard UI page — its entire surface
  * is API + Telegram bot, so browser-level verification == these API specs.
  *
- * NOTE on auth (AC9): requireAdmin() currently treats "no token" as admin
- * (documented backward-compat shim in src/lib/auth/requireRole.js). The AC9
- * test below asserts the SECURE expectation (403) and is therefore expected to
- * FAIL against current code — it surfaces a real security gap, not a test bug.
+ * Auth (AC9): requireAdmin() denies requests without a valid admin session
+ * (src/lib/auth/requireRole.js → 403). The apiRequest fixture carries an admin
+ * auth_token cookie, so AC1–AC8 exercise the authenticated CRUD surface. The
+ * AC9 describe block below uses the raw `request` fixture (no cookie) to assert
+ * the unauthenticated path is rejected with 403.
  *
  * Each test creates its own product and cleans it up to stay parallel-safe.
  */
@@ -257,9 +258,8 @@ test.describe('API: Admin Store — inventory (AC5, NFR8)', () => {
 });
 
 test.describe('API: Admin Store — auth guard (AC9)', () => {
-  // These requests carry NO auth cookie (fresh request context).
-  // AC9 requires 403. Current requireAdmin() treats no-token as admin, so these
-  // are EXPECTED TO FAIL — documenting a real security gap, not a flaky test.
+  // These requests carry NO auth cookie (raw request fixture).
+  // requireAdmin() denies sessionless requests, so AC9 asserts 403.
   test('unauthenticated GET products should be 403 (AC9)', async ({ request }) => {
     const res = await request.get('/api/store/admin/products');
     expect(res.status()).toBe(403);

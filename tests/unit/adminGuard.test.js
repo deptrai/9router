@@ -61,14 +61,14 @@ describe("requireAdmin helper — AC4 role logic", () => {
     expect(result).not.toBeNull(); // legacy → admin
   });
 
-  it("no token (no session) → treated as admin (backward-compat, legacy)", async () => {
+  it("no token (no session) → returns null (denied, AC9/NFR2)", async () => {
     vi.doMock("@/lib/auth/dashboardSession", () => ({
       getDashboardAuthSession: vi.fn().mockResolvedValue(null),
     }));
     const { requireAdmin } = await import("@/lib/auth/requireRole");
-    // AC4: no token → legacy fallback → admin (backward-compat)
+    // AC9: no valid session → denied (the no-token→admin shim was removed).
     const result = await requireAdmin(makeReq(null));
-    expect(result).not.toBeNull(); // legacy: treated as admin
+    expect(result).toBeNull();
   });
 });
 

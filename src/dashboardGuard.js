@@ -97,6 +97,10 @@ const ADMIN_ONLY_API_PATHS = [
   // Story 2.25: đăng ký webhook URL với Telegram — thao tác ops, chỉ admin.
   // (webhook nhận-update /api/telegram/webhook vẫn public, tự verify secret token.)
   "/api/telegram/setup-webhook",
+  // Story 2.28: admin product/inventory/order management — tất cả gọi requireAdmin,
+  // trả 403 nếu không có session hợp lệ (AC9/NFR2). Public store routes (browse/checkout)
+  // không nằm dưới prefix này nên không bị gate.
+  "/api/store/admin",
 ];
 
 // Routes that spawn child processes or read host secrets — restrict to localhost.
@@ -232,12 +236,20 @@ export async function proxy(request) {
   if (pathname.startsWith("/api/")) {
     if (isPublicApi(pathname)) return NextResponse.next();
     if (await hasValidCliToken(request)) return NextResponse.next();
+
+    const isAdminOnly = ADMIN_ONLY_API_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+
     if (!(await isAuthenticated(request))) {
+      // Admin-only paths deny sessionless requests with 403 (AC9/NFR2);
+      // other /api/* routes use 401 to signal "credentials required".
+      if (isAdminOnly) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     // Role-based guard: block user role from admin-only paths
-    if (ADMIN_ONLY_API_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+    if (isAdminOnly) {
       const token = request.cookies.get("auth_token")?.value;
       const session = await getDashboardAuthSession(token);
       const role = session?.role ?? "admin"; // legacy token → admin (backward-compat)

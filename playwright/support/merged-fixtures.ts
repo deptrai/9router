@@ -15,6 +15,7 @@
  */
 import { test as base, expect } from '@playwright/test';
 import { createUser, type User } from './factories/user-factory';
+import { adminCookieHeader } from './helpers/admin-token';
 
 type CustomFixtures = {
   /** Typed API request helper */
@@ -50,6 +51,11 @@ export const test = base.extend<CustomFixtures>({
   },
 
   apiRequest: async ({ request }, use) => {
+    // Story 2.28 AC9: requireAdmin() denies unauthenticated requests. The
+    // apiRequest fixture is the admin CRUD surface, so it carries an admin
+    // auth_token cookie by default. Tests that need to assert the unauth path
+    // (AC9) use the raw `request` fixture instead, which has no cookie.
+    const cookie = await adminCookieHeader();
     const apiRequestFn = async (opts: {
       method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
       path: string;
@@ -60,7 +66,7 @@ export const test = base.extend<CustomFixtures>({
         opts.path,
         {
           ...(opts.data ? { data: opts.data } : {}),
-          ...(opts.headers ? { headers: opts.headers } : {}),
+          headers: { Cookie: cookie, ...(opts.headers || {}) },
         },
       );
 

@@ -20,6 +20,13 @@ async function setupTestContext(nodeData) {
     },
   }));
 
+  // Authenticated admin session — the route's requireAdmin guard now denies
+  // sessionless requests (AC9/NFR2), so provide a valid admin session.
+  vi.doMock("@/lib/auth/requireRole", () => ({
+    requireAdmin: vi.fn().mockResolvedValue({ userId: "admin", role: "admin" }),
+    getSessionRole: vi.fn().mockResolvedValue({ session: { userId: "admin", role: "admin" }, role: "admin" }),
+  }));
+
   const { POST } = await import("@/app/api/providers/route.js");
   const {
     createProviderNode,

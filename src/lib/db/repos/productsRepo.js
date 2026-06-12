@@ -132,7 +132,7 @@ export async function productHasOrders(productId) {
   if (!productId) return false;
   const db = await getAdapter();
   const row = db.get(
-    `SELECT COUNT(*) AS c FROM orders WHERE productId = ?`,
+    `SELECT COUNT(*) AS c FROM orderItems WHERE productId = ?`,
     [productId]
   );
   return (row?.c ?? 0) > 0;

@@ -1,5 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 import path from 'path';
+import { loadEnvConfig } from '@next/env';
 
 /**
  * 9router E2E Test Configuration
@@ -7,6 +8,23 @@ import path from 'path';
  * Environment switching: TEST_ENV=local|staging (default: local)
  * Base URL: env.BASE_URL || http://localhost:20128
  */
+
+// Load .env / .env.local the SAME way Next.js does so the test process resolves
+// the identical DATA_DIR (and thus the same jwt-secret file) as the running
+// server. Without this, admin-token.ts falls back to ~/.9router/jwt-secret while
+// the server signs with <DATA_DIR>/jwt-secret → JWT signature mismatch → 401.
+loadEnvConfig(__dirname);
+
+// loadEnvConfig above also pulls BASE_URL from .env — which points at the REMOTE
+// deployment (https://router.chainlens.net). The apiRequest fixture issues
+// relative paths resolved against baseURL, so a remote BASE_URL silently routes
+// admin calls to the remote server, which signs JWTs with a different secret →
+// 401. API tests must target the LOCAL dev server (started by the webServer
+// block) unless explicitly switched to staging via TEST_ENV=staging.
+const TEST_ENV = process.env.TEST_ENV || 'local';
+if (TEST_ENV === 'local') {
+  process.env.BASE_URL = 'http://localhost:20128';
+}
 
 const baseURL = process.env.BASE_URL || 'http://localhost:20128';
 

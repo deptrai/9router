@@ -7,10 +7,13 @@ import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
 export async function requireAdmin(request) {
   const token = request?.cookies?.get?.("auth_token")?.value;
   const session = await getDashboardAuthSession(token);
-  const role = session?.role ?? "admin"; // legacy token → admin; no token → admin (backward-compat)
+  // No valid session (no token, or invalid/expired token) → deny (AC9, NFR2).
+  if (!session) return null;
+  // Valid session: a legacy token without a role field is treated as admin
+  // for backward-compat; an explicit non-admin role is denied.
+  const role = session.role ?? "admin";
   if (role !== "admin") return null;
-  // Return session if exists, else sentinel object for legacy/no-token (backward-compat)
-  return session ?? { role: "admin" };
+  return session;
 }
 
 /**
