@@ -49,11 +49,43 @@ describe("/v1/models context metadata", () => {
     const kiroSonnet = models.find((model) => model.id === "kr/claude-sonnet-4.6");
 
     expect(kiroOpus).toMatchObject({
+      context_window: 480_000,
+      contextWindow: 480_000,
+      max_context_length: 480_000,
+    });
+    expect(kiroSonnet).toMatchObject({
       context_window: 150_000,
       contextWindow: 150_000,
       max_context_length: 150_000,
     });
-    expect(kiroSonnet).toMatchObject({
+  });
+
+  it("publishes 480000 for Kiro opus-4.7 variants", async () => {
+    const models = await buildModelsList(["llm"]);
+    const m = models.find((model) => model.id === "kr/claude-opus-4.7-thinking-agentic");
+    expect(m).toMatchObject({
+      context_window: 480_000,
+      contextWindow: 480_000,
+      max_context_length: 480_000,
+    });
+  });
+
+  it("publishes 1000000 for Kiro opus-4.6 variants and auto", async () => {
+    const models = await buildModelsList(["llm"]);
+    for (const id of ["kr/claude-opus-4.6", "kr/claude-opus-4.6-thinking", "kr/auto", "kr/auto-thinking"]) {
+      const m = models.find((model) => model.id === id);
+      expect(m, id).toMatchObject({
+        context_window: 1_000_000,
+        contextWindow: 1_000_000,
+        max_context_length: 1_000_000,
+      });
+    }
+  });
+
+  it("falls back to 150000 for Kiro models without an explicit ceiling", async () => {
+    const models = await buildModelsList(["llm"]);
+    const m = models.find((model) => model.id === "kr/deepseek-3.2");
+    expect(m).toMatchObject({
       context_window: 150_000,
       contextWindow: 150_000,
       max_context_length: 150_000,
@@ -96,9 +128,9 @@ describe("/v1/models context metadata", () => {
 
     expect(combo).toMatchObject({
       owned_by: "combo",
-      context_window: 150_000,
-      contextWindow: 150_000,
-      max_context_length: 150_000,
+      context_window: 480_000,
+      contextWindow: 480_000,
+      max_context_length: 480_000,
     });
   });
 
@@ -156,9 +188,9 @@ describe("/v1/models context metadata", () => {
     expect(response.status).toBe(200);
     expect(body).toMatchObject({
       id: "kr/claude-opus-4.8-thinking-agentic",
-      context_window: 150_000,
-      contextWindow: 150_000,
-      max_context_length: 150_000,
+      context_window: 480_000,
+      contextWindow: 480_000,
+      max_context_length: 480_000,
     });
   });
 });

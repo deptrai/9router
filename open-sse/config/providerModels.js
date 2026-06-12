@@ -9,6 +9,20 @@ const CODEX_REVIEW_SUFFIX = "-review";
 const GPT_5_5_CONTEXT_WINDOW = 1_050_000;
 const CLAUDE_OPUS_4_8_CONTEXT_WINDOW = 1_000_000;
 
+// Kiro (AWS CodeWhisperer) imposes a per-model upstream content-length ceiling that
+// differs from the Anthropic context window. Measured empirically against production:
+// opus-4.8/4.7 hard-fail (~500-520K) with CONTENT_LENGTH_EXCEEDS_THRESHOLD, while
+// opus-4.6/auto accept up to ~1M. These defaults are env-overridable so the ceilings
+// can be re-tuned without a code change (process restarts on redeploy).
+// NOTE: keep this helper LOCAL — importing readPositiveIntEnv from autoCompact.js would
+// create a circular import (autoCompact.js imports getModelContextWindow from this file).
+const readPosIntEnv = (name, fallback) => {
+  const n = Number.parseInt(process.env?.[name], 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+const KIRO_OPUS_48_CONTEXT_WINDOW = readPosIntEnv("KIRO_LIMIT_OPUS_48", 480_000);
+const KIRO_OPUS_46_CONTEXT_WINDOW = readPosIntEnv("KIRO_LIMIT_OPUS_46", 1_000_000);
+
 function withCodexReviewModels(models) {
   return models.flatMap((model) => {
     if ((model.type || "llm") !== "llm" || model.id.endsWith(CODEX_REVIEW_SUFFIX)) {
@@ -132,12 +146,12 @@ export const PROVIDER_MODELS = {
   ],
   kr: [  // Kiro AI
     // --- Auto routing ---
-    { id: "auto", name: "Auto" },
-    { id: "auto-thinking", name: "Auto (Thinking)" },
+    { id: "auto", name: "Auto", contextWindow: KIRO_OPUS_46_CONTEXT_WINDOW },
+    { id: "auto-thinking", name: "Auto (Thinking)", contextWindow: KIRO_OPUS_46_CONTEXT_WINDOW },
     // --- Claude base variants ---
-    { id: "claude-opus-4.8", name: "Claude Opus 4.8", contextWindow: CLAUDE_OPUS_4_8_CONTEXT_WINDOW },
-    { id: "claude-opus-4.7", name: "Claude Opus 4.7" },
-    { id: "claude-opus-4.6", name: "Claude Opus 4.6" },
+    { id: "claude-opus-4.8", name: "Claude Opus 4.8", contextWindow: KIRO_OPUS_48_CONTEXT_WINDOW },
+    { id: "claude-opus-4.7", name: "Claude Opus 4.7", contextWindow: KIRO_OPUS_48_CONTEXT_WINDOW },
+    { id: "claude-opus-4.6", name: "Claude Opus 4.6", contextWindow: KIRO_OPUS_46_CONTEXT_WINDOW },
     { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
     { id: "claude-sonnet-4.6", name: "Claude Sonnet 4.6" },
     { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
@@ -150,9 +164,9 @@ export const PROVIDER_MODELS = {
     { id: "minimax-m2.5", name: "MiniMax M2.5" },
     { id: "minimax-m2.1", name: "MiniMax M2.1" },
     // --- Thinking variants ---
-    { id: "claude-opus-4.8-thinking", name: "Claude Opus 4.8 (Thinking)", contextWindow: CLAUDE_OPUS_4_8_CONTEXT_WINDOW },
-    { id: "claude-opus-4.7-thinking", name: "Claude Opus 4.7 (Thinking)" },
-    { id: "claude-opus-4.6-thinking", name: "Claude Opus 4.6 (Thinking)" },
+    { id: "claude-opus-4.8-thinking", name: "Claude Opus 4.8 (Thinking)", contextWindow: KIRO_OPUS_48_CONTEXT_WINDOW },
+    { id: "claude-opus-4.7-thinking", name: "Claude Opus 4.7 (Thinking)", contextWindow: KIRO_OPUS_48_CONTEXT_WINDOW },
+    { id: "claude-opus-4.6-thinking", name: "Claude Opus 4.6 (Thinking)", contextWindow: KIRO_OPUS_46_CONTEXT_WINDOW },
     { id: "claude-opus-4.5-thinking", name: "Claude Opus 4.5 (Thinking)" },
     { id: "claude-sonnet-4.6-thinking", name: "Claude Sonnet 4.6 (Thinking)" },
     { id: "claude-sonnet-4.5-thinking", name: "Claude Sonnet 4.5 (Thinking)" },
@@ -164,9 +178,9 @@ export const PROVIDER_MODELS = {
     { id: "minimax-m2.5-thinking", name: "MiniMax M2.5 (Thinking)" },
     { id: "minimax-m2.1-thinking", name: "MiniMax M2.1 (Thinking)" },
     // --- Agentic variants ---
-    { id: "claude-opus-4.8-agentic", name: "Claude Opus 4.8 (Agentic)", contextWindow: CLAUDE_OPUS_4_8_CONTEXT_WINDOW },
-    { id: "claude-opus-4.7-agentic", name: "Claude Opus 4.7 (Agentic)" },
-    { id: "claude-opus-4.6-agentic", name: "Claude Opus 4.6 (Agentic)" },
+    { id: "claude-opus-4.8-agentic", name: "Claude Opus 4.8 (Agentic)", contextWindow: KIRO_OPUS_48_CONTEXT_WINDOW },
+    { id: "claude-opus-4.7-agentic", name: "Claude Opus 4.7 (Agentic)", contextWindow: KIRO_OPUS_48_CONTEXT_WINDOW },
+    { id: "claude-opus-4.6-agentic", name: "Claude Opus 4.6 (Agentic)", contextWindow: KIRO_OPUS_46_CONTEXT_WINDOW },
     { id: "claude-opus-4.5-agentic", name: "Claude Opus 4.5 (Agentic)" },
     { id: "claude-sonnet-4.6-agentic", name: "Claude Sonnet 4.6 (Agentic)" },
     { id: "claude-sonnet-4.5-agentic", name: "Claude Sonnet 4.5 (Agentic)" },
@@ -178,9 +192,9 @@ export const PROVIDER_MODELS = {
     { id: "minimax-m2.5-agentic", name: "MiniMax M2.5 (Agentic)" },
     { id: "minimax-m2.1-agentic", name: "MiniMax M2.1 (Agentic)" },
     // --- Thinking + Agentic variants ---
-    { id: "claude-opus-4.8-thinking-agentic", name: "Claude Opus 4.8 (Thinking + Agentic)", contextWindow: CLAUDE_OPUS_4_8_CONTEXT_WINDOW },
-    { id: "claude-opus-4.7-thinking-agentic", name: "Claude Opus 4.7 (Thinking + Agentic)" },
-    { id: "claude-opus-4.6-thinking-agentic", name: "Claude Opus 4.6 (Thinking + Agentic)" },
+    { id: "claude-opus-4.8-thinking-agentic", name: "Claude Opus 4.8 (Thinking + Agentic)", contextWindow: KIRO_OPUS_48_CONTEXT_WINDOW },
+    { id: "claude-opus-4.7-thinking-agentic", name: "Claude Opus 4.7 (Thinking + Agentic)", contextWindow: KIRO_OPUS_48_CONTEXT_WINDOW },
+    { id: "claude-opus-4.6-thinking-agentic", name: "Claude Opus 4.6 (Thinking + Agentic)", contextWindow: KIRO_OPUS_46_CONTEXT_WINDOW },
     { id: "claude-opus-4.5-thinking-agentic", name: "Claude Opus 4.5 (Thinking + Agentic)" },
     { id: "claude-sonnet-4.6-thinking-agentic", name: "Claude Sonnet 4.6 (Thinking + Agentic)" },
     { id: "claude-sonnet-4.5-thinking-agentic", name: "Claude Sonnet 4.5 (Thinking + Agentic)" },

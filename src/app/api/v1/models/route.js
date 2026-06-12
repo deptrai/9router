@@ -156,8 +156,8 @@ function addContextMetadata(entry, contextWindow) {
   return entry;
 }
 
-function resolveEffectiveContextWindow(contextWindow, providerId) {
-  const providerInputLimit = getProviderAutoCompactLimit(providerId);
+function resolveEffectiveContextWindow(contextWindow, providerId, modelId = null) {
+  const providerInputLimit = getProviderAutoCompactLimit(providerId, modelId);
   if (Number.isFinite(contextWindow) && Number.isFinite(providerInputLimit)) {
     return Math.min(contextWindow, providerInputLimit);
   }
@@ -187,7 +187,7 @@ function resolveFullModelContextWindow(fullModel) {
   const contextWindow = getModelContextWindow(alias, modelId)
     || getModelContextWindow(staticAlias, modelId)
     || getModelContextWindow(providerId, modelId);
-  return resolveEffectiveContextWindow(contextWindow, providerId);
+  return resolveEffectiveContextWindow(contextWindow, providerId, modelId);
 }
 
 function resolveComboContextWindow(combo) {
@@ -278,7 +278,7 @@ export async function buildModelsList(kindFilter) {
           id: `${alias}/${model.id}`,
           object: "model",
           owned_by: alias,
-        }, resolveEffectiveContextWindow(model.contextWindow, providerId)));
+        }, resolveEffectiveContextWindow(model.contextWindow, providerId, model.id)));
       }
     }
 
@@ -412,7 +412,7 @@ export async function buildModelsList(kindFilter) {
           id: `${outputAlias}/${modelId}`,
           object: "model",
           owned_by: outputAlias,
-        }, resolveEffectiveContextWindow(contextWindow, providerId)));
+        }, resolveEffectiveContextWindow(contextWindow, providerId, modelId)));
       }
 
       // Merge sub-config models (TTS / embedding) that live on AI_PROVIDERS, not PROVIDER_MODELS

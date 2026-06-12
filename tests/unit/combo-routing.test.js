@@ -102,12 +102,12 @@ describe("combo round-robin routing", () => {
     const fit = getModelContextFit(
       { messages: [{ role: "user", content: "large Kiro session" }] },
       "kr/claude-opus-4.8-thinking-agentic",
-      () => 170_000,
+      () => 500_000,
     );
 
-    expect(fit.contextWindow).toBe(1_000_000);
-    expect(fit.inputLimit).toBe(150_000);
-    expect(fit.effectiveLimit).toBe(150_000);
+    expect(fit.contextWindow).toBe(480_000);
+    expect(fit.inputLimit).toBe(480_000);
+    expect(fit.effectiveLimit).toBe(480_000);
     expect(fit.fits).toBe(false);
   });
 
@@ -433,7 +433,7 @@ describe("combo round-robin routing", () => {
     const response = await handleComboChat({
       body: { messages: [{ role: "user", content: "large session" }] },
       models: ["kiro/claude-opus-4.8", "codex/gpt-5.5-xhigh"],
-      estimateInputTokens: () => 170_000,
+      estimateInputTokens: () => 500_000,
       log,
       handleSingleModel: async (_body, model) => {
         calls.push(model);
@@ -455,7 +455,7 @@ describe("combo round-robin routing", () => {
     const response = await handleComboChat({
       body: { messages: [{ role: "user", content: "large session" }] },
       models: ["kiro/claude-opus-4.8", "codex/gpt-5.5-xhigh"],
-      estimateInputTokens: () => 170_000,
+      estimateInputTokens: () => 500_000,
       log,
       handleSingleModel: async (_body, model) => {
         calls.push(model);

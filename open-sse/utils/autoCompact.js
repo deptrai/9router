@@ -1,3 +1,5 @@
+import { getModelContextWindow } from "../config/providerModels.js";
+
 const CHARS_PER_TOKEN_ESTIMATE = 4;
 const DEFAULT_KIRO_AUTO_COMPACT_LIMIT_TOKENS = 150_000;
 const DEFAULT_KIRO_KEEP_TAIL = 24;
@@ -30,8 +32,14 @@ export function estimatePayloadTokens(payload) {
   return Math.ceil(estimatePayloadBytes(payload) / CHARS_PER_TOKEN_ESTIMATE);
 }
 
-export function getProviderAutoCompactLimit(provider) {
+export function getProviderAutoCompactLimit(provider, model = null) {
   if (provider !== "kiro") return null;
+  // Per-model ceiling is the single source of truth (providerModels.js, alias "kr").
+  // Falls back to env/default only for kiro models without an explicit contextWindow.
+  if (model) {
+    const perModel = getModelContextWindow("kr", model);
+    if (Number.isFinite(perModel)) return perModel;
+  }
   return readPositiveIntEnv("KIRO_AUTO_COMPACT_LIMIT_TOKENS", DEFAULT_KIRO_AUTO_COMPACT_LIMIT_TOKENS);
 }
 
@@ -393,10 +401,10 @@ export function compactKiroPayload(body, options = {}) {
   };
 }
 
-export function applyAutoCompact({ provider, body, options = {} }) {
+export function applyAutoCompact({ provider, model, body, options = {} }) {
   if (provider === "kiro") {
     if (!isAutoCompactEnabled(options)) {
-      const limitTokens = options.limitTokens || getProviderAutoCompactLimit(provider);
+      const limitTokens = options.limitTokens || getProviderAutoCompactLimit(provider, model);
       const beforeBytes = estimatePayloadBytes(body);
       const beforeTokens = Math.ceil(beforeBytes / CHARS_PER_TOKEN_ESTIMATE);
       return {
@@ -411,7 +419,7 @@ export function applyAutoCompact({ provider, body, options = {} }) {
         limitTokens,
       };
     }
-    return compactKiroPayload(body, options);
+    return compactKiroPayload(body, { ...options, limitTokens: options.limitTokens || getProviderAutoCompactLimit(provider, model) });
   }
   return null;
 }

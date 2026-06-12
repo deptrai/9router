@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { applyAutoCompact, compactKiroPayload, estimatePayloadTokens } from "../../open-sse/utils/autoCompact.js";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { applyAutoCompact, compactKiroPayload, estimatePayloadTokens, getProviderAutoCompactLimit } from "../../open-sse/utils/autoCompact.js";
 
 function kiroUser(content, context) {
   return {
@@ -324,5 +324,59 @@ describe("auto-compact — Kiro payload", () => {
     expect(current.userInputMessageContext).toBeUndefined();
     expect(current.content).toContain("Tool result metadata omitted");
     expect(current.content).toContain("result body");
+  });
+});
+
+describe("getProviderAutoCompactLimit — per-model kiro ceilings", () => {
+  beforeEach(() => {
+    // Ensure the flat env override does not leak into the unknown-model fallback assertions.
+    vi.stubEnv("KIRO_AUTO_COMPACT_LIMIT_TOKENS", "");
+  });
+
+  it("returns 480000 for opus-4.8 variants", () => {
+    for (const m of [
+      "claude-opus-4.8",
+      "claude-opus-4.8-thinking",
+      "claude-opus-4.8-agentic",
+      "claude-opus-4.8-thinking-agentic",
+    ]) {
+      expect(getProviderAutoCompactLimit("kiro", m), m).toBe(480_000);
+    }
+  });
+
+  it("returns 480000 for opus-4.7 variants", () => {
+    for (const m of [
+      "claude-opus-4.7",
+      "claude-opus-4.7-thinking",
+      "claude-opus-4.7-agentic",
+      "claude-opus-4.7-thinking-agentic",
+    ]) {
+      expect(getProviderAutoCompactLimit("kiro", m), m).toBe(480_000);
+    }
+  });
+
+  it("returns 1000000 for opus-4.6 variants and auto", () => {
+    for (const m of [
+      "claude-opus-4.6",
+      "claude-opus-4.6-thinking",
+      "claude-opus-4.6-agentic",
+      "claude-opus-4.6-thinking-agentic",
+      "auto",
+      "auto-thinking",
+    ]) {
+      expect(getProviderAutoCompactLimit("kiro", m), m).toBe(1_000_000);
+    }
+  });
+
+  it("falls back to default 150000 for unknown/no model", () => {
+    expect(getProviderAutoCompactLimit("kiro", "deepseek-3.2")).toBe(150_000);
+    expect(getProviderAutoCompactLimit("kiro", "qwen3-coder-next")).toBe(150_000);
+    expect(getProviderAutoCompactLimit("kiro", "glm-5")).toBe(150_000);
+    expect(getProviderAutoCompactLimit("kiro", null)).toBe(150_000);
+  });
+
+  it("returns null for non-kiro providers", () => {
+    expect(getProviderAutoCompactLimit("claude", "claude-opus-4.8")).toBeNull();
+    expect(getProviderAutoCompactLimit("openai", "gpt-5.5")).toBeNull();
   });
 });

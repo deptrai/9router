@@ -126,7 +126,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     log?.debug?.("CAVEMAN", `${cavemanLevel} | ${finalFormat}`);
   }
 
-  const compactStats = applyAutoCompact({ provider, body: translatedBody, options: { enabled: !!kiroAutoCompactEnabled } });
+  const compactStats = applyAutoCompact({ provider, model, body: translatedBody, options: { enabled: !!kiroAutoCompactEnabled } });
   if (compactStats?.disabled && compactStats.tooLarge) {
     const line = `provider=${provider} model=${model} estimated=${compactStats.beforeTokens}t limit=${compactStats.limitTokens}t autoCompact=disabled`;
     log?.warn?.("AUTOCOMPACT", line);

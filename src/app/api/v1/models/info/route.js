@@ -23,7 +23,7 @@ function resolveModelContextWindow(model) {
 
 function resolveEffectiveContextWindow(model, providerId) {
   const contextWindow = resolveModelContextWindow(model);
-  const providerInputLimit = getProviderAutoCompactLimit(providerId);
+  const providerInputLimit = getProviderAutoCompactLimit(providerId, model?.id);
   if (Number.isFinite(contextWindow) && Number.isFinite(providerInputLimit)) {
     return Math.min(contextWindow, providerInputLimit);
   }
