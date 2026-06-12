@@ -1,5 +1,6 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { registerCleanup } from "../cleanupRegistry.js";
 
 const DEFAULT_MAX_RECORDS = 200;
 const DEFAULT_BATCH_SIZE = 20;
@@ -185,16 +186,8 @@ const _shutdownHandler = async () => {
   if (writeBuffer.length > 0) await flushToDatabase();
 };
 
-function ensureShutdownHandler() {
-  process.off("beforeExit", _shutdownHandler);
-  process.off("SIGINT", _shutdownHandler);
-  process.off("SIGTERM", _shutdownHandler);
-  process.off("exit", _shutdownHandler);
-
-  process.on("beforeExit", _shutdownHandler);
-  process.on("SIGINT", _shutdownHandler);
-  process.on("SIGTERM", _shutdownHandler);
-  process.on("exit", _shutdownHandler);
-}
-
-ensureShutdownHandler();
+// Registered under a stable module-level key. Re-importing this module (vitest
+// realm resets, Next.js hot-reload) replaces the same key rather than adding a
+// new listener, so the buffer-flush handler never accumulates. See
+// cleanupRegistry.js for why the shared registry is necessary.
+registerCleanup("repo:requestDetails", _shutdownHandler);

@@ -31,7 +31,6 @@ const PUBLIC_API_PATHS = [
   "/api/auth/forgot-password",
   "/api/auth/reset-password",
   "/api/auth/oidc",
-  "/api/version",
   "/api/settings/require-login",
   "/api/webhooks/crypto",
   "/api/webhooks/bitcart",
@@ -51,8 +50,6 @@ const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta"];
 const ALWAYS_PROTECTED = [
   "/api/shutdown",
   "/api/settings/database",
-  "/api/version/shutdown",
-  "/api/version/update",
   "/api/oauth/cursor/auto-import",
   "/api/oauth/kiro/auto-import",
 ];

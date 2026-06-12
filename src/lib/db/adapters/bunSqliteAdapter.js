@@ -1,8 +1,11 @@
 // Bun runtime adapter — uses built-in bun:sqlite (native, fastest under Bun).
 // Loaded only when process.versions.bun is present.
 import { PRAGMA_SQL } from "../schema.js";
+import { registerCleanup, unregisterCleanup } from "../cleanupRegistry.js";
 
 const CHECKPOINT_INTERVAL_MS = 60 * 1000;
+
+let _instanceSeq = 0;
 
 export async function createBunSqliteAdapter(filePath) {
   // Dynamic import — only resolves under Bun runtime
@@ -30,10 +33,11 @@ export async function createBunSqliteAdapter(filePath) {
     try { stmtCache.clear(); } catch {}
     try { db.close(); } catch {}
   }
-  const onShutdown = () => gracefulClose();
-  process.once("beforeExit", onShutdown);
-  process.once("SIGINT", () => { onShutdown(); process.exit(0); });
-  process.once("SIGTERM", () => { onShutdown(); process.exit(0); });
+  // Registered under a unique per-instance key so close() can unregister
+  // cleanly (prevents listener accumulation when adapters are created
+  // repeatedly, e.g. in tests). See cleanupRegistry.js for why this matters.
+  const cleanupKey = `bun-sqlite:${++_instanceSeq}`;
+  registerCleanup(cleanupKey, () => gracefulClose());
 
   return {
     driver: "bun:sqlite",
@@ -56,6 +60,7 @@ export async function createBunSqliteAdapter(filePath) {
     checkpoint() { try { db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch {} },
     close() {
       clearInterval(checkpointTimer);
+      unregisterCleanup(cleanupKey);
       gracefulClose();
     },
     raw: db,

@@ -275,6 +275,24 @@ Hệ quả vận hành:
 - Không trộn Kiro `150k effective` với model `1M` theo kiểu tuần tự nếu không muốn Kiro bị skip trên session dài; nếu trộn, router sẽ chỉ gọi Kiro khi request fit hoặc khi fallback lớn hơn cũng không fit và auto-compact là đường cứu còn lại.
 - Combo tên theo model mạnh, ví dụ `opus-4.8`, không nên chứa fallback âm thầm xuống lower-quality tier như `claude-opus-4.6`, trừ khi đó là chủ ý sản phẩm rõ ràng.
 
+### Context-safe combo presets (seed migration 007)
+
+Migration `007-context-safe-combos` (`src/lib/db/migrations/007-context-safe-combos.js`) seed một bộ combo preset qua `syncContextSafeCombos` (`src/lib/db/seeds/contextSafeCombos.js`). Mục tiêu: giữ Kiro model lên đầu vì cost/latency tốt, rồi gắn `cx/gpt-5.5` làm large-context fallback ở cuối để session dài (Claude Code) không bị kẹt khi Kiro chạm `150k effective`.
+
+Seed dùng `INSERT ... ON CONFLICT(name) DO UPDATE` nên idempotent: chạy lại chỉ cập nhật `models` khi khác, `updatedAt` chỉ đổi khi nội dung thay đổi. Các combo được seed:
+
+| Combo | Models (thứ tự fallback) |
+|---|---|
+| `deep-search` | `cx/gpt-5.5` |
+| `develop` | `kr/claude-sonnet-4.6` -> `cx/gpt-5.5` |
+| `review` | `kr/claude-opus-4.8-thinking` -> `cx/gpt-5.5` |
+| `dev-mini` | `kr/claude-haiku-4.5` -> `kr/auto-thinking` -> `kr/auto` -> `cx/gpt-5.5` |
+| `haiku-4.5` | `kr/claude-haiku-4.5` -> `kr/auto-thinking` -> `kr/auto` -> `cx/gpt-5.4-mini` -> `cx/gpt-5.5` |
+| `opus-4.8` | `kr/claude-opus-4.8-thinking-agentic` -> `...-thinking` -> `...-agentic` -> `...` -> `cx/gpt-5.5` |
+| `sonnet-4.6` | `kr/claude-sonnet-4.6-thinking-agentic` -> `...-thinking` -> `...-agentic` -> `...` -> `cx/gpt-5.5` |
+
+Mọi preset đều đóng đuôi bằng `cx/gpt-5.5` (large-context) để áp dụng đúng rule context-aware fallback ở trên: khi request không fit `150k effective` của Kiro, router skip sang fallback lớn hơn thật sự thay vì cố nén.
+
 ## Vòng đời OAuth Onboarding và Token Refresh
 
 ```mermaid

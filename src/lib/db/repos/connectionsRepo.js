@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { canTransitionEntitlement } from "./entitlementsRepo.js";
 
 const OPTIONAL_FIELDS = [
   "displayName", "email", "globalPriority", "defaultModel",
@@ -22,13 +23,19 @@ function rowToConn(row) {
     email: row.email,
     priority: row.priority,
     isActive: row.isActive === 1 || row.isActive === true,
+    // Story 2.29a: ownership cols (nullable; legacy admin-pool connections = NULL)
+    ownerUserId: row.ownerUserId ?? null,
+    entitlementId: row.entitlementId ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
 }
 
 function connToRow(c) {
-  const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
+  const {
+    id, provider, authType, name, email, priority, isActive,
+    ownerUserId, entitlementId, createdAt, updatedAt, ...rest
+  } = c;
   return {
     id,
     provider,
@@ -37,6 +44,8 @@ function connToRow(c) {
     email: email ?? null,
     priority: priority ?? null,
     isActive: isActive === false ? 0 : 1,
+    ownerUserId: ownerUserId ?? null,
+    entitlementId: entitlementId ?? null,
     data: stringifyJson(rest),
     createdAt,
     updatedAt,
@@ -46,13 +55,14 @@ function connToRow(c) {
 function upsert(db, c) {
   const r = connToRow(c);
   db.run(
-    `INSERT INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt)
-     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO providerConnections(id, provider, authType, name, email, priority, isActive, ownerUserId, entitlementId, data, createdAt, updatedAt)
+     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        provider=excluded.provider, authType=excluded.authType, name=excluded.name,
        email=excluded.email, priority=excluded.priority, isActive=excluded.isActive,
+       ownerUserId=excluded.ownerUserId, entitlementId=excluded.entitlementId,
        data=excluded.data, updatedAt=excluded.updatedAt`,
-    [r.id, r.provider, r.authType, r.name, r.email, r.priority, r.isActive, r.data, r.createdAt, r.updatedAt]
+    [r.id, r.provider, r.authType, r.name, r.email, r.priority, r.isActive, r.ownerUserId, r.entitlementId, r.data, r.createdAt, r.updatedAt]
   );
 }
 
@@ -223,4 +233,76 @@ export async function cleanupProviderConnections() {
     }
   });
   return cleaned;
+}
+
+/**
+ * Link một providerConnection vào một entitlement và kích hoạt entitlement đó.
+ * Atomic — chạy trong MỘT transaction để set ownership cols trên connection
+ * VÀ chuyển entitlement pending_connection → active cùng lúc (Story 2.29a, AC3).
+ *
+ * Guards:
+ *  - connection phải tồn tại
+ *  - entitlement phải tồn tại và thuộc về cùng userId (ownership guard)
+ *  - entitlement phải transition được sang "active" (status guard)
+ *
+ * Lưu ý: KHÔNG gọi transitionEntitlement() ở đây vì nó tự mở transaction riêng
+ * (better-sqlite3 không cho nested transaction) — thay vào đó dùng
+ * canTransitionEntitlement() rồi UPDATE inline.
+ */
+export async function linkConnectionToEntitlement(connectionId, entitlementId, userId) {
+  const db = await getAdapter();
+  let result;
+  db.transaction(() => {
+    const connRow = db.get(
+      `SELECT * FROM providerConnections WHERE id = ?`,
+      [connectionId]
+    );
+    if (!connRow) {
+      throw new Error(`linkConnectionToEntitlement: connection ${connectionId} not found`);
+    }
+
+    const entRow = db.get(`SELECT * FROM entitlements WHERE id = ?`, [entitlementId]);
+    if (!entRow) {
+      throw new Error(`linkConnectionToEntitlement: entitlement ${entitlementId} not found`);
+    }
+
+    // Ownership guard — entitlement phải thuộc về user đang kết nối.
+    if (entRow.userId !== userId) {
+      throw new Error(
+        `linkConnectionToEntitlement: entitlement ${entitlementId} không thuộc về user ${userId}`
+      );
+    }
+
+    // Status guard — chỉ link khi entitlement có thể active.
+    if (!canTransitionEntitlement(entRow.status, "active")) {
+      throw new Error(
+        `linkConnectionToEntitlement: illegal transition ${entRow.status} → active`
+      );
+    }
+
+    const now = new Date().toISOString();
+
+    // 1) Gắn ownership cols lên connection.
+    const conn = rowToConn(connRow);
+    conn.ownerUserId = userId;
+    conn.entitlementId = entitlementId;
+    conn.updatedAt = now;
+    upsert(db, conn);
+
+    // 2) Activate entitlement + trỏ providerConnectionId về connection này.
+    db.run(
+      `UPDATE entitlements
+       SET status = 'active', providerConnectionId = ?, updatedAt = ?
+       WHERE id = ?`,
+      [connectionId, now, entitlementId]
+    );
+
+    result = {
+      connection: rowToConn(
+        db.get(`SELECT * FROM providerConnections WHERE id = ?`, [connectionId])
+      ),
+      entitlement: db.get(`SELECT * FROM entitlements WHERE id = ?`, [entitlementId]),
+    };
+  });
+  return result;
 }

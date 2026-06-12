@@ -8,7 +8,6 @@ import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
 import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 import Button from "./Button";
-import { ConfirmModal } from "./Modal";
 
 // const VISIBLE_MEDIA_KINDS = ["embedding", "image", "imageToText", "tts", "stt", "webSearch", "webFetch", "video", "music"];
 const VISIBLE_MEDIA_KINDS = ["embedding", "image", "tts", "stt"];
@@ -51,9 +50,6 @@ const systemItems = [
 export default function Sidebar({ onClose }) {
   const pathname = usePathname();
   const [mediaOpen, setMediaOpen] = useState(false);
-  const [showShutdownModal, setShowShutdownModal] = useState(false);
-  const [isShuttingDown, setIsShuttingDown] = useState(false);
-  const [isDisconnected, setIsDisconnected] = useState(false);
   const [enableTranslator, setEnableTranslator] = useState(false);
   // AC5: role state — null = loading (skeleton), "admin"/"user" = loaded
   const [role, setRole] = useState(null);
@@ -83,17 +79,6 @@ export default function Sidebar({ onClose }) {
     return pathname.startsWith(href);
   };
 
-  const handleShutdown = async () => {
-    setIsShuttingDown(true);
-    try {
-      await fetch("/api/version/shutdown", { method: "POST" });
-    } catch (e) {
-      // Expected to fail as server shuts down; ignore error
-    }
-    setIsShuttingDown(false);
-    setShowShutdownModal(false);
-    setIsDisconnected(true);
-  };
 
   return (
     <>
@@ -323,78 +308,23 @@ export default function Sidebar({ onClose }) {
           )}
         </nav>
 
-        {/* Footer section — AC5: hide Shutdown for role=user */}
-        {role !== "user" && (
-          <div className="p-3 border-t border-border-subtle flex flex-col gap-2">
-            <Button
-              variant="ghost"
-              fullWidth
-              icon="logout"
-              onClick={async () => {
-                await fetch("/api/auth/logout", { method: "POST" });
-                window.location.href = "/login";
-              }}
-              className="text-text-muted hover:text-text-main"
-            >
-              Logout
-            </Button>
-            <Button
-              variant="outline"
-              fullWidth
-              icon="power_settings_new"
-              onClick={() => setShowShutdownModal(true)}
-              className="text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300"
-            >
-              Shutdown
-            </Button>
-          </div>
-        )}
-        {role === "user" && (
-          <div className="p-3 border-t border-border-subtle">
-            <Button
-              variant="ghost"
-              fullWidth
-              icon="logout"
-              onClick={async () => {
-                await fetch("/api/auth/logout", { method: "POST" });
-                window.location.href = "/login";
-              }}
-              className="text-text-muted hover:text-text-main"
-            >
-              Logout
-            </Button>
-          </div>
-        )}
+        {/* Footer */}
+        <div className="p-3 border-t border-border-subtle">
+          <Button
+            variant="ghost"
+            fullWidth
+            icon="logout"
+            onClick={async () => {
+              await fetch("/api/auth/logout", { method: "POST" });
+              window.location.href = "/login";
+            }}
+            className="text-text-muted hover:text-text-main"
+          >
+            Logout
+          </Button>
+        </div>
       </aside>
 
-      {/* Shutdown Confirmation Modal */}
-      <ConfirmModal
-        isOpen={showShutdownModal}
-        onClose={() => setShowShutdownModal(false)}
-        onConfirm={handleShutdown}
-        title="Close Proxy"
-        message="Are you sure you want to close the proxy server?"
-        confirmText="Close"
-        cancelText="Cancel"
-        variant="danger"
-        loading={isShuttingDown}
-      />
-
-      {/* Disconnected Overlay */}
-      {isDisconnected && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-6">
-          <div className="text-center p-8">
-            <div className="flex items-center justify-center size-16 rounded-full bg-red-500/20 text-red-500 mx-auto mb-4">
-              <span className="material-symbols-outlined text-[32px]">power_off</span>
-            </div>
-            <h2 className="text-xl font-semibold text-white mb-2">Server Disconnected</h2>
-            <p className="text-text-muted mb-6">The proxy server has been stopped.</p>
-            <Button variant="secondary" onClick={() => globalThis.location.reload()}>
-              Reload Page
-            </Button>
-          </div>
-        </div>
-      )}
     </>
   );
 }

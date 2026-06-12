@@ -59,6 +59,14 @@ export {
   CREDENTIAL_STATUSES,
 } from "./repos/credentialsRepo.js";
 
+// Entitlements (Story 2.29a — user_self_connect)
+export {
+  createEntitlement, createEntitlementSync, getEntitlementById,
+  listEntitlementsByUser, getEntitlementsByProduct, findPendingEntitlement,
+  transitionEntitlement, canTransitionEntitlement,
+  ENTITLEMENT_STATUSES, ROUTE_POLICIES,
+} from "./repos/entitlementsRepo.js";
+
 // Payments
 export {
   createPayment, getPaymentById, getPaymentByGatewayId, updatePayment, listPayments, getPaymentsByUser,

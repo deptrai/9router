@@ -1,5 +1,5 @@
 // Latest schema version — bumped when a migration is added in ./migrations/
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -37,6 +37,11 @@ export const TABLES = {
       priority: "INTEGER",
       isActive: "INTEGER DEFAULT 1",
       data: "TEXT NOT NULL",
+      // Story 2.29a: user-owned connections for entitlement routing (2.29b).
+      // BOTH nullable / NO non-null default (anti-pattern F7): NULL = shared admin
+      // pool — legacy connections keep NULL and routing behaviour is unchanged (M1).
+      ownerUserId: "TEXT",      // NULL = shared admin pool; set when a user self-connects
+      entitlementId: "TEXT",    // link to entitlements.id when this conn activates an entitlement
       createdAt: "TEXT NOT NULL",
       updatedAt: "TEXT NOT NULL",
     },
@@ -44,6 +49,7 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_pc_provider ON providerConnections(provider)",
       "CREATE INDEX IF NOT EXISTS idx_pc_provider_active ON providerConnections(provider, isActive)",
       "CREATE INDEX IF NOT EXISTS idx_pc_priority ON providerConnections(provider, priority)",
+      "CREATE INDEX IF NOT EXISTS idx_pc_owner ON providerConnections(ownerUserId)",
     ],
   },
   providerNodes: {
@@ -375,6 +381,31 @@ export const TABLES = {
     indexes: [
       "CREATE INDEX IF NOT EXISTS idx_pc_product_status ON productCredentials(productId, status)",
       "CREATE INDEX IF NOT EXISTS idx_pc_order ON productCredentials(orderId)",
+    ],
+  },
+
+  // Story 2.29a: Entitlements — records a user's purchased right to use a provider
+  // via their OWN connected account. Lifecycle: pending_connection → active →
+  // expired|revoked. Created (status=pending_connection) atomically in the same
+  // storeCheckout txn as a `user_self_connect` order. Routing consumption is 2.29b.
+  entitlements: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      userId: "TEXT NOT NULL",
+      productId: "TEXT NOT NULL",
+      provider: "TEXT",                                          // derived from product.targetId; null = needs admin fixup (QĐ3)
+      status: "TEXT NOT NULL DEFAULT 'pending_connection'",      // pending_connection|active|expired|revoked
+      providerConnectionId: "TEXT",                              // set when a connection activates this entitlement
+      routePolicy: "TEXT NOT NULL DEFAULT 'prefer_owned'",       // owned_only|prefer_owned (2.29b)
+      expiresAt: "TEXT",                                         // null = never expires
+      note: "TEXT",
+      createdAt: "TEXT NOT NULL",
+      updatedAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_entitlements_user ON entitlements(userId, status)",
+      "CREATE INDEX IF NOT EXISTS idx_entitlements_product ON entitlements(productId)",
+      "CREATE INDEX IF NOT EXISTS idx_entitlements_status ON entitlements(status)",
     ],
   },
 };

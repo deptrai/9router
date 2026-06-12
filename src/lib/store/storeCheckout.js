@@ -25,6 +25,7 @@ import {
   completeDeliverySync,
   productHasInventorySync,
 } from "../db/repos/credentialsRepo.js";
+import { createEntitlementSync } from "../db/repos/entitlementsRepo.js";
 
 export class CheckoutError extends Error {
   constructor(code, message) {
@@ -61,6 +62,8 @@ export async function storeCheckout(userId, productId, { quantity = 1, idempoten
   // Credentials reserved inside the txn; delivery is completed AFTER commit (QĐ3/D1).
   let reservedCredentialIds = null;
   let orderItemIdForDelivery = null;
+  // Entitlement created in-txn for user_self_connect (Story 2.29a, AC1).
+  let entitlementId = null;
 
   adapter.transaction(() => {
     // ── In-txn idempotency recheck (closes the race the outer pre-check leaves open) ──
@@ -166,9 +169,29 @@ export async function storeCheckout(userId, productId, { quantity = 1, idempoten
         }
       }
       finalOrder = transitionOrderSync(adapter, orderId, "fulfilled", { note: "Giao tự động" });
+    } else if (product.deliveryMode === "user_self_connect") {
+      // Story 2.29a/AC1: tạo entitlement pending_connection cho mỗi unit đã mua.
+      // Order vẫn ở trạng thái `paid`; user kết nối tài khoản provider sau (AC3).
+      // products không có cột provider/routePolicy riêng → provider lấy từ targetId,
+      // routePolicy mặc định prefer_owned (entitlementsRepo áp default).
+      const ent = createEntitlementSync(adapter, {
+        userId,
+        productId: product.id,
+        provider: product.targetId ?? null,
+        status: "pending_connection",
+        note: `Từ đơn ${orderId} (${product.name} x${quantity})`,
+        now: ts,
+      });
+      entitlementId = ent.id;
     }
 
-    result = { order: finalOrder, items, ledgerTxnId: txn.id, alreadyProcessed: false };
+    result = {
+      order: finalOrder,
+      items,
+      ledgerTxnId: txn.id,
+      entitlementId,
+      alreadyProcessed: false,
+    };
   });
 
   // ── Post-commit delivery completion (QĐ3/D1): reserved → delivered. ──

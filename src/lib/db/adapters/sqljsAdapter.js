@@ -1,8 +1,11 @@
 import fs from "node:fs";
 import initSqlJs from "sql.js";
 import { PRAGMA_SQL } from "../schema.js";
+import { registerCleanup, unregisterCleanup } from "../cleanupRegistry.js";
 
 let SQL = null;
+
+let _instanceSeq = 0;
 
 async function loadSql() {
   if (SQL) return SQL;
@@ -102,14 +105,15 @@ export async function createSqlJsAdapter(filePath) {
   function close() {
     if (saveTimer) clearTimeout(saveTimer);
     if (dirty) persist();
+    unregisterCleanup(cleanupKey);
     db.close();
   }
 
-  // Flush on shutdown
-  const flush = () => { if (dirty) try { persist(); } catch {} };
-  process.on("beforeExit", flush);
-  process.on("SIGINT", flush);
-  process.on("SIGTERM", flush);
+  // Flush on shutdown. Registered under a unique per-instance key so close()
+  // can unregister cleanly (prevents listener accumulation when adapters are
+  // created repeatedly, e.g. in tests). See cleanupRegistry.js for details.
+  const cleanupKey = `sqljs:${++_instanceSeq}`;
+  registerCleanup(cleanupKey, () => { if (dirty) try { persist(); } catch {} });
 
   return { driver: "sql.js", run, get, all, exec, transaction, close, raw: db };
 }

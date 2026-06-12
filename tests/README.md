@@ -28,11 +28,10 @@ npm test
 | File | What it tests |
 |------|--------------|
 | `unit/embeddingsCore.test.js` | `open-sse/handlers/embeddingsCore.js` — core logic: body builder, URL router, headers, handler flow |
-| `unit/embeddings.cloud.test.js` | `cloud/src/handlers/embeddings.js` — cloud worker handler: auth, validation, rate limits, CORS |
 
-## Coverage Summary (59 tests)
+## Coverage Summary (38 tests)
 
-### `embeddingsCore.test.js` (36 tests)
+### `embeddingsCore.test.js` (38 tests)
 - `buildEmbeddingsBody`: single string, array, encoding_format, default float
 - `buildEmbeddingsUrl`: openai, openrouter, openai-compatible-*, unsupported providers
 - `buildEmbeddingsHeaders`: per-provider header sets, fallback to accessToken

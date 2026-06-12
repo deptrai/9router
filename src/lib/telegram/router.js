@@ -172,7 +172,7 @@ async function handleBuyExecute(chatId, telegramId, productId, callbackQueryId) 
     }
 
     const idempotencyKey = `tg:${telegramId}:${productId}:${callbackQueryId}`;
-    const { order, alreadyProcessed, deliveredCredentialIds } = await storeCheckout(user.id, productId, { idempotencyKey });
+    const { order, alreadyProcessed, deliveredCredentialIds, entitlementId } = await storeCheckout(user.id, productId, { idempotencyKey });
 
     if (alreadyProcessed) {
       await sendMessage(chatId, `Đơn <code>${order.id}</code> đã được xử lý trước đó.`);
@@ -193,6 +193,23 @@ async function handleBuyExecute(chatId, telegramId, productId, callbackQueryId) 
           ).catch(() => {});
         }
       }
+    }
+
+    // Story 2.29a/AC1: sản phẩm user_self_connect tạo entitlement pending_connection.
+    // Hướng dẫn user kết nối tài khoản để hoàn tất kích hoạt.
+    if (entitlementId) {
+      await sendMessage(
+        chatId,
+        [
+          `🎉 Mua thành công!`,
+          `Mã đơn: <code>${order.id}</code>`,
+          ``,
+          `🔗 <b>Cần kết nối tài khoản để kích hoạt.</b>`,
+          `Mở Cài đặt → Kết nối nhà cung cấp trên dashboard, hoặc xem /api để biết hướng dẫn.`,
+          `Theo dõi trạng thái tại /orders.`,
+        ].join("\n")
+      );
+      return;
     }
 
     const statusLine =
