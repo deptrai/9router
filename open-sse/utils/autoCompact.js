@@ -310,7 +310,7 @@ function buildKiroHistoryCandidate(history, keepTail, currentMessage) {
 }
 
 export function compactKiroPayload(body, options = {}) {
-  const limitTokens = options.limitTokens || getProviderAutoCompactLimit("kiro");
+  const limitTokens = options.limitTokens || getProviderAutoCompactLimit("kiro", options.model ?? null);
   const beforeBytes = estimatePayloadBytes(body);
   const beforeTokens = Math.ceil(beforeBytes / CHARS_PER_TOKEN_ESTIMATE);
   if (!limitTokens || beforeTokens <= limitTokens) {
@@ -419,7 +419,7 @@ export function applyAutoCompact({ provider, model, body, options = {} }) {
         limitTokens,
       };
     }
-    return compactKiroPayload(body, { ...options, limitTokens: options.limitTokens || getProviderAutoCompactLimit(provider, model) });
+    return compactKiroPayload(body, { ...options, model, limitTokens: options.limitTokens || getProviderAutoCompactLimit(provider, model) });
   }
   return null;
 }
