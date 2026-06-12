@@ -6,23 +6,31 @@ import { getAdapter } from "../driver.js";
 // active            → đã link tới một providerConnection, sẵn sàng route
 // expired           → quá expiresAt
 // revoked           → admin/hệ thống thu hồi
-export const ENTITLEMENT_STATUSES = [
-  "pending_connection",
-  "active",
-  "expired",
-  "revoked",
-];
+// Single source of truth cho status (E8) — import thay vì hardcode string rải rác.
+export const ENTITLEMENT_STATUS = Object.freeze({
+  PENDING: "pending_connection", // user đã mua nhưng chưa kết nối account provider
+  ACTIVE: "active",              // đã link tới providerConnection, sẵn sàng route
+  EXPIRED: "expired",            // quá expiresAt
+  REVOKED: "revoked",            // admin/hệ thống thu hồi
+});
+
+// Mảng dẫn xuất (giữ thứ tự pending→active→expired→revoked cho validate + test).
+export const ENTITLEMENT_STATUSES = Object.values(ENTITLEMENT_STATUS);
 
 // prefer_owned → ưu tiên connection do user sở hữu, fallback pool admin
 // owned_only   → chỉ dùng connection của chính user
-export const ROUTE_POLICIES = ["prefer_owned", "owned_only"];
+export const ROUTE_POLICY = Object.freeze({
+  PREFER_OWNED: "prefer_owned",
+  OWNED_ONLY: "owned_only",
+});
+export const ROUTE_POLICIES = Object.values(ROUTE_POLICY);
 
 // Các chuyển trạng thái hợp lệ (giống ORDER_STATUSES pattern trong ordersRepo)
 const VALID_TRANSITIONS = {
-  pending_connection: ["active", "revoked"],
-  active: ["expired", "revoked"],
-  expired: ["active", "revoked"], // re-link/gia hạn có thể active lại
-  revoked: [],
+  [ENTITLEMENT_STATUS.PENDING]: [ENTITLEMENT_STATUS.ACTIVE, ENTITLEMENT_STATUS.REVOKED],
+  [ENTITLEMENT_STATUS.ACTIVE]: [ENTITLEMENT_STATUS.EXPIRED, ENTITLEMENT_STATUS.REVOKED],
+  [ENTITLEMENT_STATUS.EXPIRED]: [ENTITLEMENT_STATUS.ACTIVE, ENTITLEMENT_STATUS.REVOKED], // re-link/gia hạn
+  [ENTITLEMENT_STATUS.REVOKED]: [],
 };
 
 export function canTransitionEntitlement(from, to) {
@@ -98,14 +106,23 @@ export function createEntitlementSync(db, data) {
     userId: data.userId,
     productId: data.productId,
     provider: data.provider ?? null,
-    status: data.status || "pending_connection",
+    status: data.status || ENTITLEMENT_STATUS.PENDING,
     providerConnectionId: data.providerConnectionId ?? null,
-    routePolicy: data.routePolicy || "prefer_owned",
+    routePolicy: data.routePolicy || ROUTE_POLICY.PREFER_OWNED,
     expiresAt: data.expiresAt ?? null,
     note: data.note ?? null,
     createdAt: now,
     updatedAt: now,
   };
+  // Validate trong txn — fail rõ ràng thay vì để raw SQLite constraint error.
+  if (!ent.userId) throw new Error("createEntitlementSync: userId required");
+  if (!ent.productId) throw new Error("createEntitlementSync: productId required");
+  if (!ENTITLEMENT_STATUSES.includes(ent.status)) {
+    throw new Error(`createEntitlementSync: invalid status ${ent.status}`);
+  }
+  if (!ROUTE_POLICIES.includes(ent.routePolicy)) {
+    throw new Error(`createEntitlementSync: invalid routePolicy ${ent.routePolicy}`);
+  }
   db.run(
     `INSERT INTO entitlements(id, userId, productId, provider, status, providerConnectionId, routePolicy, expiresAt, note, createdAt, updatedAt)
      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -152,11 +169,14 @@ export async function listEntitlementsByUser(userId, filter = {}) {
  */
 export async function findPendingEntitlement(userId, provider) {
   const db = await getAdapter();
+  // provider=null (QĐ3 fail-safe) cần `IS NULL` — SQL `= NULL` không bao giờ match.
+  const providerClause = provider == null ? "provider IS NULL" : "provider = ?";
+  const params = provider == null ? [userId] : [userId, provider];
   const row = db.get(
     `SELECT * FROM entitlements
-     WHERE userId = ? AND provider = ? AND status = 'pending_connection'
+     WHERE userId = ? AND ${providerClause} AND status = ?
      ORDER BY createdAt ASC LIMIT 1`,
-    [userId, provider]
+    [...params, ENTITLEMENT_STATUS.PENDING]
   );
   return rowToEntitlement(row);
 }
@@ -211,16 +231,4 @@ export async function transitionEntitlement(id, toStatus, patch = {}) {
     );
   });
   return result;
-}
-
-/**
- * Link một providerConnection vào entitlement và kích hoạt (pending_connection → active).
- * Atomic — dùng khi user vừa kết nối tài khoản provider của họ (AC3).
- */
-export async function linkConnectionToEntitlement(entitlementId, connectionId, opts = {}) {
-  return transitionEntitlement(entitlementId, "active", {
-    providerConnectionId: connectionId,
-    expiresAt: opts.expiresAt,
-    note: opts.note,
-  });
 }

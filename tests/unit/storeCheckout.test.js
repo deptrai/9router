@@ -285,15 +285,83 @@ describe("storeCheckout — edge cases", () => {
     expect(user.creditsBalance).toBe(450);
   });
 
-  it("leaves user_self_connect orders in paid status", async () => {
+  it("leaves user_self_connect orders in paid status and creates a pending entitlement (Story 2.29a/AC1)", async () => {
     const userId = await seedUser(300);
     const product = await createProduct({
       kind: "account", name: "Self Connect", priceCredits: 100,
       deliveryMode: "user_self_connect", stock: null,
+      targetType: "provider", targetId: "anthropic",
     });
     const res = await storeCheckout(userId, product.id, { idempotencyKey: "usc-1" });
     expect(res.order.status).toBe("paid");
     expect(res.order.deliveryMode).toBe("user_self_connect");
+    // AC1: checkout result returns entitlementId
+    expect(res.entitlementId).toBeTruthy();
+
+    // entitlement row created with the right shape
+    const adapter = await getAdapter();
+    const ent = adapter.get(`SELECT * FROM entitlements WHERE id = ?`, [res.entitlementId]);
+    expect(ent).toBeTruthy();
+    expect(ent.userId).toBe(userId);
+    expect(ent.productId).toBe(product.id);
+    expect(ent.provider).toBe("anthropic"); // QĐ3: derived from product.targetId
+    expect(ent.status).toBe("pending_connection");
+    expect(ent.routePolicy).toBe("prefer_owned"); // default
+    expect(ent.providerConnectionId).toBeNull();
+  });
+
+  it("user_self_connect with no targetId still creates entitlement with provider=null (QĐ3 fail-safe)", async () => {
+    const userId = await seedUser(300);
+    const product = await createProduct({
+      kind: "account", name: "Self Connect (no target)", priceCredits: 100,
+      deliveryMode: "user_self_connect", stock: null,
+      // No targetType/targetId — admin to fill later. Checkout must NOT block.
+    });
+    const res = await storeCheckout(userId, product.id, { idempotencyKey: "usc-no-target" });
+    expect(res.order.status).toBe("paid");
+    expect(res.entitlementId).toBeTruthy();
+
+    const adapter = await getAdapter();
+    const ent = adapter.get(`SELECT * FROM entitlements WHERE id = ?`, [res.entitlementId]);
+    expect(ent.provider).toBeNull();
+    expect(ent.status).toBe("pending_connection");
+  });
+
+  it("rejects quantity>1 for user_self_connect (per-user-per-provider, D1)", async () => {
+    const userId = await seedUser(300);
+    const product = await createProduct({
+      kind: "account", name: "Self Connect Qty", priceCredits: 50,
+      deliveryMode: "user_self_connect", stock: null,
+      targetType: "provider", targetId: "anthropic",
+    });
+    await expect(
+      storeCheckout(userId, product.id, { quantity: 2, idempotencyKey: "usc-qty" })
+    ).rejects.toMatchObject({ code: "INVALID_QUANTITY" });
+
+    // Credits must NOT be deducted on rejection
+    const user = await getUserById(userId);
+    expect(user.creditsBalance).toBe(300);
+  });
+
+  it("idempotent replay of user_self_connect does NOT duplicate entitlements", async () => {
+    const userId = await seedUser(300);
+    const product = await createProduct({
+      kind: "account", name: "Self Connect Idem", priceCredits: 100,
+      deliveryMode: "user_self_connect", stock: null,
+      targetType: "provider", targetId: "anthropic",
+    });
+    const first = await storeCheckout(userId, product.id, { idempotencyKey: "usc-idem" });
+    const second = await storeCheckout(userId, product.id, { idempotencyKey: "usc-idem" });
+    expect(second.alreadyProcessed).toBe(true);
+    expect(second.order.id).toBe(first.order.id);
+
+    const adapter = await getAdapter();
+    const rows = adapter.all(
+      `SELECT id FROM entitlements WHERE userId = ? AND productId = ?`,
+      [userId, product.id]
+    );
+    expect(rows).toHaveLength(1); // exactly one entitlement
+    expect(rows[0].id).toBe(first.entitlementId);
   });
 
   it("succeeds when balance equals totalCredits exactly (boundary)", async () => {

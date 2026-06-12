@@ -138,7 +138,7 @@ describe("admin-only route files — requireAdmin import present", () => {
   it("providers route GET imports requireAdmin and uses it", async () => {
     // Source inspection: just verify the guard call exists in the route files
     const providersContent = fs.readFileSync(
-      path.join(process.cwd(), "src/app/api/providers/route.js"),
+      path.join(new URL("../../", import.meta.url).pathname, "src/app/api/providers/route.js"),
       "utf8"
     );
     expect(providersContent).toContain("requireAdmin");
@@ -146,7 +146,7 @@ describe("admin-only route files — requireAdmin import present", () => {
 
   it("settings route imports requireAdmin", async () => {
     const settingsContent = fs.readFileSync(
-      path.join(process.cwd(), "src/app/api/settings/route.js"),
+      path.join(new URL("../../", import.meta.url).pathname, "src/app/api/settings/route.js"),
       "utf8"
     );
     expect(settingsContent).toContain("requireAdmin");

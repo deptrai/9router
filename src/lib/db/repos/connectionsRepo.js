@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
-import { canTransitionEntitlement } from "./entitlementsRepo.js";
+import { canTransitionEntitlement, ENTITLEMENT_STATUS } from "./entitlementsRepo.js";
 
 const OPTIONAL_FIELDS = [
   "displayName", "email", "globalPriority", "defaultModel",
@@ -274,9 +274,17 @@ export async function linkConnectionToEntitlement(connectionId, entitlementId, u
     }
 
     // Status guard — chỉ link khi entitlement có thể active.
-    if (!canTransitionEntitlement(entRow.status, "active")) {
+    if (!canTransitionEntitlement(entRow.status, ENTITLEMENT_STATUS.ACTIVE)) {
       throw new Error(
         `linkConnectionToEntitlement: illegal transition ${entRow.status} → active`
+      );
+    }
+
+    // Hijack guard — connection đã thuộc về user KHÁC thì không cho cướp quyền.
+    // null = shared pool (cho phép claim); === userId = re-link của chính họ (ok).
+    if (connRow.ownerUserId != null && connRow.ownerUserId !== userId) {
+      throw new Error(
+        `linkConnectionToEntitlement: connection ${connectionId} đã thuộc về user khác`
       );
     }
 
@@ -292,9 +300,9 @@ export async function linkConnectionToEntitlement(connectionId, entitlementId, u
     // 2) Activate entitlement + trỏ providerConnectionId về connection này.
     db.run(
       `UPDATE entitlements
-       SET status = 'active', providerConnectionId = ?, updatedAt = ?
+       SET status = ?, providerConnectionId = ?, updatedAt = ?
        WHERE id = ?`,
-      [connectionId, now, entitlementId]
+      [ENTITLEMENT_STATUS.ACTIVE, connectionId, now, entitlementId]
     );
 
     result = {

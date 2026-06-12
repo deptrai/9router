@@ -25,7 +25,7 @@ import {
   completeDeliverySync,
   productHasInventorySync,
 } from "../db/repos/credentialsRepo.js";
-import { createEntitlementSync } from "../db/repos/entitlementsRepo.js";
+import { createEntitlementSync, ENTITLEMENT_STATUS } from "../db/repos/entitlementsRepo.js";
 
 export class CheckoutError extends Error {
   constructor(code, message) {
@@ -80,6 +80,15 @@ export async function storeCheckout(userId, productId, { quantity = 1, idempoten
     if (!product) throw new CheckoutError("PRODUCT_NOT_FOUND", "Sản phẩm không tồn tại");
     const isActive = product.isActive === 1 || product.isActive === true;
     if (!isActive) throw new CheckoutError("INACTIVE", "Sản phẩm đã ngừng bán");
+
+    // ── Self-connect là per-user-per-provider: 1 entitlement / order. quantity>1
+    //    sẽ tạo entitlement mồ côi (findPendingEntitlement LIMIT 1) → fail-closed. ──
+    if (product.deliveryMode === "user_self_connect" && quantity > 1) {
+      throw new CheckoutError(
+        "INVALID_QUANTITY",
+        "Sản phẩm tự kết nối (user_self_connect) chỉ mua được 1 mỗi đơn"
+      );
+    }
 
     const unitCredits = product.priceCredits;
     const totalCredits = unitCredits * quantity;
@@ -178,7 +187,7 @@ export async function storeCheckout(userId, productId, { quantity = 1, idempoten
         userId,
         productId: product.id,
         provider: product.targetId ?? null,
-        status: "pending_connection",
+        status: ENTITLEMENT_STATUS.PENDING,
         note: `Từ đơn ${orderId} (${product.name} x${quantity})`,
         now: ts,
       });

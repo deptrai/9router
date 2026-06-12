@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 describe("Kiro auto-compact policy wiring", () => {
   it("defaults Kiro auto-compact on and passes the setting into chatCore", () => {
-    const root = process.cwd();
+    const root = new URL("../../", import.meta.url).pathname;
     const settingsRepo = fs.readFileSync(path.join(root, "src/lib/db/repos/settingsRepo.js"), "utf8");
     const chatHandler = fs.readFileSync(path.join(root, "src/sse/handlers/chat.js"), "utf8");
     const chatCore = fs.readFileSync(path.join(root, "open-sse/handlers/chatCore.js"), "utf8");

@@ -263,7 +263,12 @@ async function handleOrders(chatId, telegramId) {
       return;
     }
     const lines = orders.map((o) => {
-      const label = ORDER_STATUS_LABEL[o.status] ?? o.status;
+      // Self-connect order ở trạng thái paid = việc cần USER làm (kết nối account),
+      // không phải "chờ admin xử lý" (AC5). Các trạng thái khác giữ nhãn chung.
+      const label =
+        o.status === "paid" && o.deliveryMode === "user_self_connect"
+          ? "🔌 Cần kết nối tài khoản"
+          : (ORDER_STATUS_LABEL[o.status] ?? o.status);
       const date = o.createdAt ? o.createdAt.slice(0, 10) : "";
       return `• <code>${o.id.slice(0, 8)}</code> | ${label} | ${o.totalCredits} cr | ${date}`;
     });
