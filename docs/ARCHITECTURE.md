@@ -130,7 +130,7 @@ Các module luồng chính:
 - Model parse/resolve: `src/sse/services/model.js`, `open-sse/services/model.js`
 - Combo fallback logic: `open-sse/services/combo.js`
 - Account fallback logic: `open-sse/services/accountFallback.js`
-- Provider input-limit / Kiro auto-compact helper: `open-sse/utils/autoCompact.js`
+- Provider input-limit (per-model) / Kiro auto-compact helper: `open-sse/utils/autoCompact.js` (`getProviderAutoCompactLimit(provider, model)`); per-model `contextWindow` source: `open-sse/config/providerModels.js`
 - Translation registry: `open-sse/translator/index.js`
 - Stream transformations: `open-sse/utils/stream.js`, `open-sse/utils/streamHandler.js`
 - Usage extraction/normalization: `open-sse/utils/usageTracking.js`
@@ -253,7 +253,7 @@ effectiveLimit = min(model contextWindow, provider inputLimit) nếu cả hai đ
 effectiveLimit = provider inputLimit hoặc model contextWindow nếu chỉ biết một giá trị
 ```
 
-Ví dụ: `kr/claude-opus-4.8` có metadata `contextWindow=1_000_000`, nhưng Kiro có provider input limit mặc định `150_000`, nên effective limit của request qua Kiro là `150_000`, không phải `1M`.
+Ví dụ: `kr/claude-opus-4.8` có `contextWindow=480_000` (trần upstream thật của Kiro/AWS cho model này), nên effective limit của request qua Kiro là `480_000`. Lưu ý đây là giới hạn **per-model**, không còn là một con số phẳng cho mọi model Kiro (xem mục "Kiro per-model context ceilings" bên dưới).
 
 Preflight của `handleComboChat` ước lượng:
 
@@ -272,12 +272,12 @@ Rule chọn fallback:
 Hệ quả vận hành:
 
 - Combo dùng cho session dài nên gom các model cùng effective context tier, hoặc phải có fallback lớn hơn thật sự ở phía sau.
-- Không trộn Kiro `150k effective` với model `1M` theo kiểu tuần tự nếu không muốn Kiro bị skip trên session dài; nếu trộn, router sẽ chỉ gọi Kiro khi request fit hoặc khi fallback lớn hơn cũng không fit và auto-compact là đường cứu còn lại.
+- Không trộn Kiro effective limit thấp (vd opus-4.8/4.7 = `480k`) với model `1M` theo kiểu tuần tự nếu không muốn Kiro bị skip trên session dài; nếu trộn, router sẽ chỉ gọi Kiro khi request fit hoặc khi fallback lớn hơn cũng không fit và auto-compact là đường cứu còn lại.
 - Combo tên theo model mạnh, ví dụ `opus-4.8`, không nên chứa fallback âm thầm xuống lower-quality tier như `claude-opus-4.6`, trừ khi đó là chủ ý sản phẩm rõ ràng.
 
 ### Context-safe combo presets (seed migration 007)
 
-Migration `007-context-safe-combos` (`src/lib/db/migrations/007-context-safe-combos.js`) seed một bộ combo preset qua `syncContextSafeCombos` (`src/lib/db/seeds/contextSafeCombos.js`). Mục tiêu: giữ Kiro model lên đầu vì cost/latency tốt, rồi gắn `cx/gpt-5.5` làm large-context fallback ở cuối để session dài (Claude Code) không bị kẹt khi Kiro chạm `150k effective`.
+Migration `007-context-safe-combos` (`src/lib/db/migrations/007-context-safe-combos.js`) seed một bộ combo preset qua `syncContextSafeCombos` (`src/lib/db/seeds/contextSafeCombos.js`). Mục tiêu: giữ Kiro model lên đầu vì cost/latency tốt, rồi gắn `cx/gpt-5.5` làm large-context fallback ở cuối để session dài (Claude Code) không bị kẹt khi Kiro chạm effective limit của nó (vd opus-4.8 = `480k`).
 
 Seed dùng `INSERT ... ON CONFLICT(name) DO UPDATE` nên idempotent: chạy lại chỉ cập nhật `models` khi khác, `updatedAt` chỉ đổi khi nội dung thay đổi. Các combo được seed:
 
@@ -291,7 +291,29 @@ Seed dùng `INSERT ... ON CONFLICT(name) DO UPDATE` nên idempotent: chạy lạ
 | `opus-4.8` | `kr/claude-opus-4.8-thinking-agentic` -> `...-thinking` -> `...-agentic` -> `...` -> `cx/gpt-5.5` |
 | `sonnet-4.6` | `kr/claude-sonnet-4.6-thinking-agentic` -> `...-thinking` -> `...-agentic` -> `...` -> `cx/gpt-5.5` |
 
-Mọi preset đều đóng đuôi bằng `cx/gpt-5.5` (large-context) để áp dụng đúng rule context-aware fallback ở trên: khi request không fit `150k effective` của Kiro, router skip sang fallback lớn hơn thật sự thay vì cố nén.
+Mọi preset đều đóng đuôi bằng `cx/gpt-5.5` (large-context) để áp dụng đúng rule context-aware fallback ở trên: khi request không fit effective limit của Kiro (vd `480k` với opus-4.8), router skip sang fallback lớn hơn thật sự thay vì cố nén.
+
+### Kiro per-model context ceilings
+
+Kiro chạy trên AWS CodeWhisperer (`https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse`). Upstream áp một trần **content-length theo từng model** (không phải trần token), trả lỗi HTTP 400 `CONTENT_LENGTH_EXCEEDS_THRESHOLD` khi vượt. Lỗi này phát từ AWS, không có trong source 9router.
+
+Trần thực đo trên production (đơn vị ước lượng `bytes/4`):
+
+| Model Kiro (mọi biến thể `-thinking` / `-agentic`) | Trần thật | `contextWindow` advertise |
+|---|---|---|
+| `claude-opus-4.8`, `claude-opus-4.7` | ~500–520K (fail) | `480000` |
+| `claude-opus-4.6`, `auto`, `auto-thinking` | ≥1M (pass sạch) | `1000000` |
+| còn lại (deepseek, qwen3, glm-5, minimax, sonnet, haiku, opus-4.5) | chưa đo | không set → fallback `150000` |
+
+Cơ chế (single source of truth = `providerModels.js`):
+
+- `open-sse/config/providerModels.js` gắn `contextWindow` per-model cho alias `kr`. Hai hằng env-overridable: `KIRO_OPUS_48_CONTEXT_WINDOW = readPosIntEnv("KIRO_LIMIT_OPUS_48", 480_000)` và `KIRO_OPUS_46_CONTEXT_WINDOW = readPosIntEnv("KIRO_LIMIT_OPUS_46", 1_000_000)`. Helper `readPosIntEnv` để LOCAL trong file này (import từ `autoCompact.js` sẽ gây circular import).
+- `getProviderAutoCompactLimit(provider, model)` (`open-sse/utils/autoCompact.js`) trả `getModelContextWindow("kr", model)` khi finite; nếu không có per-model `contextWindow` thì fallback env `KIRO_AUTO_COMPACT_LIMIT_TOKENS` → default `150000`.
+- `applyAutoCompact({ provider, model, body, options })` thread `model` để `compactKiroPayload` compact đúng ngưỡng per-model. `compactKiroPayload` đo `JSON.stringify(body).length/4` — **cùng đơn vị content-length với trần AWS**, nên server-side compact là lưới chính đáng tin; CLI auto-compact (token-based) là phụ.
+- `/v1/models` và `/v1/models/info` (`resolveEffectiveContextWindow(contextWindow, providerId, modelId)`) advertise `min(contextWindow, providerInputLimit)` per-model — giờ hai giá trị cùng nguồn nên `min()` thành no-op, CLI nhận đúng window từng model để tự auto-compact (~92%).
+
+Điều chỉnh trần sau này: đổi env `KIRO_LIMIT_OPUS_48` / `KIRO_LIMIT_OPUS_46` rồi redeploy — KHÔNG cần sửa code. Lưu ý: `opus-4.8`/`4.7` qua Kiro KHÔNG thể vượt ~500K dù chỉnh env; muốn 1M context thật phải dùng `kr/claude-opus-4.6` hoặc `kr/auto`.
+
 
 ## Vòng đời OAuth Onboarding và Token Refresh
 
@@ -592,6 +614,7 @@ Environment variables đang được code sử dụng:
 - Logging: `ENABLE_REQUEST_LOGS`
 - Sync/cloud URLing: `NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_CLOUD_URL`
 - Outbound proxy: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` và các biến lowercase tương ứng
+- Kiro per-model context ceiling (xem mục "Kiro per-model context ceilings"): `KIRO_LIMIT_OPUS_48` (default `480000`), `KIRO_LIMIT_OPUS_46` (default `1000000`), `KIRO_AUTO_COMPACT_LIMIT_TOKENS` (fallback cho model Kiro chưa định nghĩa ceiling, default `150000`)
 - Platform/runtime helpers, không phải app-specific config: `APPDATA`, `NODE_ENV`, `PORT`, `HOSTNAME`
 
 ## Ghi chú kiến trúc đã biết (Known Architectural Notes)
