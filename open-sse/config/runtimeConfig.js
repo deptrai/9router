@@ -46,7 +46,7 @@ export const STREAM_STALL_TIMEOUT_MS = 300 * 1000;
 export const STREAM_TTFT_TIMEOUT_MS = 150 * 1000;
 
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
-export const FETCH_CONNECT_TIMEOUT_MS = 20 * 1000;
+export const FETCH_CONNECT_TIMEOUT_MS = 8 * 1000;
 
 // Default token limits
 export const DEFAULT_MAX_TOKENS = 64000;
@@ -62,9 +62,9 @@ export const RETRY_CONFIG = {
 // Backward compat: if value is a number, treated as attempts with RETRY_CONFIG.delayMs
 export const DEFAULT_RETRY_CONFIG = {
   429: { attempts: 0, delayMs: 0 },
-  502: { attempts: 3, delayMs: 3000 },
-  503: { attempts: 3, delayMs: 2000 },
-  504: { attempts: 2, delayMs: 3000 }
+  502: { attempts: 2, delayMs: 1000 },
+  503: { attempts: 2, delayMs: 1000 },
+  504: { attempts: 2, delayMs: 1000 }
 };
 
 // Normalize a retry entry to { attempts, delayMs }
