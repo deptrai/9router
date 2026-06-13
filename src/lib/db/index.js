@@ -68,6 +68,14 @@ export {
   ENTITLEMENT_STATUS, ENTITLEMENT_STATUSES, ROUTE_POLICY, ROUTE_POLICIES,
 } from "./repos/entitlementsRepo.js";
 
+// Supplier sources (Story 2.30 — external store catalog sync)
+export {
+  createSupplierSource, listSupplierSources, getSupplierSourceById,
+  updateSupplierSource, deleteSupplierSource,
+  recordSyncSuccess, recordSyncFailure, markSourceUnsupported, listPollableSources,
+  ADAPTER_TYPES, SYNC_MODES, SOURCE_STATUSES,
+} from "./repos/supplierSourcesRepo.js";
+
 // API key lookup by key string (Story 2.29b — userId threading)
 export { getApiKeyByKey } from "./repos/apiKeysRepo.js";
 

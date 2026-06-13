@@ -21,6 +21,12 @@ function rowToProduct(row) {
     targetId: row.targetId ?? null,
     stock: row.stock ?? null,          // null = unlimited
     isActive: row.isActive === 1 || row.isActive === true,
+    // Story 2.30: external source fields (null for local products)
+    source: row.source ?? "local",
+    supplierSourceId: row.supplierSourceId ?? null,
+    supplierProductId: row.supplierProductId ?? null,
+    syncVersion: row.syncVersion ?? null,
+    lastSyncedAt: row.lastSyncedAt ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

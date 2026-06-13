@@ -265,7 +265,7 @@ export default function PlanPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
               <div className="rounded-lg bg-surface-2 p-4">
                 <p className="text-xs uppercase tracking-wider text-text-muted mb-1">RPM</p>
-                <p className="font-semibold text-text-main">{quota.rpmUsed || 0} / {quota.rpm || 0} req/min</p>
+                <p className="font-semibold text-text-main">{quota.rpm > 0 ? `${quota.rpmUsed || 0} / ${quota.rpm} req/min` : `${quota.rpmUsed || 0} req/min • Unlimited`}</p>
               </div>
               <div className="rounded-lg bg-surface-2 p-4">
                 <p className="text-xs uppercase tracking-wider text-text-muted mb-1">Credit balance</p>

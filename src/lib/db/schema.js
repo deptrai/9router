@@ -1,5 +1,5 @@
 // Latest schema version — bumped when a migration is added in ./migrations/
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -285,11 +285,19 @@ export const TABLES = {
       targetId: "TEXT",                 // planId nếu targetType=9router_plan
       stock: "INTEGER",                 // null = unlimited
       isActive: "INTEGER DEFAULT 1",
+      // Story 2.30: external supplier source fields (backward-compat — all nullable except source DEFAULT 'local')
+      source: "TEXT NOT NULL DEFAULT 'local'",  // local|external_telegram_store
+      supplierSourceId: "TEXT",                  // FK-less ref to supplierSources.id
+      supplierProductId: "TEXT",                 // id at supplier side (dedup sync)
+      syncVersion: "INTEGER",
+      lastSyncedAt: "TEXT",
       createdAt: "TEXT NOT NULL",
       updatedAt: "TEXT NOT NULL",
     },
     indexes: [
       "CREATE INDEX IF NOT EXISTS idx_products_active ON products(isActive)",
+      "CREATE INDEX IF NOT EXISTS idx_products_source ON products(source)",
+      "CREATE INDEX IF NOT EXISTS idx_products_supplier ON products(supplierSourceId, supplierProductId)",
     ],
   },
 
@@ -406,6 +414,29 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_entitlements_user ON entitlements(userId, status)",
       "CREATE INDEX IF NOT EXISTS idx_entitlements_product ON entitlements(productId)",
       "CREATE INDEX IF NOT EXISTS idx_entitlements_status ON entitlements(status)",
+    ],
+  },
+
+  // Story 2.30: external supplier sources for catalog sync
+  supplierSources: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      name: "TEXT NOT NULL",
+      adapterType: "TEXT NOT NULL",              // supplier_api|channel_feed|polling_feed|webhook
+      authEnc: "TEXT",                           // encrypted auth credentials (STORE_ENC_KEY)
+      syncMode: "TEXT NOT NULL DEFAULT 'polling'", // webhook|polling
+      syncIntervalSec: "INTEGER DEFAULT 3600",   // poll interval (ignored for webhook)
+      status: "TEXT NOT NULL DEFAULT 'active'",  // active|degraded|unhealthy|unsupported
+      lastSyncedAt: "TEXT",
+      lastSyncError: "TEXT",
+      syncVersion: "INTEGER DEFAULT 0",
+      isActive: "INTEGER DEFAULT 1",
+      createdAt: "TEXT NOT NULL",
+      updatedAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_supplier_status ON supplierSources(status)",
+      "CREATE INDEX IF NOT EXISTS idx_supplier_active ON supplierSources(isActive)",
     ],
   },
 };
