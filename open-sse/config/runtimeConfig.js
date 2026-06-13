@@ -46,7 +46,7 @@ export const STREAM_STALL_TIMEOUT_MS = 300 * 1000;
 export const STREAM_TTFT_TIMEOUT_MS = 150 * 1000;
 
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
-export const FETCH_CONNECT_TIMEOUT_MS = 3 * 1000;
+export const FETCH_CONNECT_TIMEOUT_MS = 10 * 1000;
 
 // Default token limits
 export const DEFAULT_MAX_TOKENS = 64000;
