@@ -61,6 +61,10 @@ export const ERROR_RULES = [
   // --- Text-based rules (checked first, order = priority) ---
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
+  // Empty-upstream (vuz→kiro returned 200 then errored before any content). This is a
+  // transient upstream content failure, NOT an account fault. 8s so the per-model lock
+  // is brief; >5s means combo.js skips its inline wait and falls through immediately.
+  { text: "empty_upstream_response",  cooldownMs: 8000 },
   { text: "rate limit",               backoff: true },
   { text: "too many requests",        backoff: true },
   { text: "quota exceeded",           backoff: true },

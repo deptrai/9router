@@ -31,10 +31,44 @@ export class DefaultExecutor extends BaseExecutor {
       return result;
     }
 
-    const { matched, kind, response } = await peekStreamForEmptyUpstream(result.response, {
+    // Scope guard: only the openai-/anthropic-compatible RELAY providers (e.g. vuz)
+    // exhibit the 200-then-empty-error pattern and use SSE shapes ssePeek understands.
+    // Native-format providers that also fall through to DefaultExecutor (claude, gemini,
+    // glm, kimi, ...) are left untouched — peeking them risks misclassifying their
+    // distinct SSE shapes (Gemini candidates[], etc.) as empty.
+    const isRelayProvider =
+      this.provider?.startsWith?.("openai-compatible-") ||
+      this.provider?.startsWith?.("anthropic-compatible-");
+    if (!isRelayProvider) {
+      return result;
+    }
+
+    const { matched, kind, response, aborted } = await peekStreamForEmptyUpstream(result.response, {
       log: args.log,
       provider: this.provider,
+      signal: args.signal,
     });
+
+    // Peek timed out / was aborted mid-stream → body is no longer reliably replayable.
+    // Surface as 503 so fallback can try the next model rather than forwarding a half-dead
+    // stream. Skip when the caller's own signal aborted (genuine client cancel — let it propagate).
+    if (aborted) {
+      if (args.signal?.aborted) return result;
+      args.log?.warn?.("PEEK", `${this.provider} | peek timed out before content → 503 for fallback`);
+      return {
+        ...result,
+        response: new Response(
+          JSON.stringify({
+            error: {
+              message: `[${this.provider}] upstream stalled before any content; retrying next model`,
+              type: "upstream_error",
+              code: "empty_upstream_response",
+            },
+          }),
+          { status: HTTP_STATUS.SERVICE_UNAVAILABLE, headers: { "Content-Type": "application/json" } },
+        ),
+      };
+    }
 
     if (!matched) {
       // No pre-content error — use the replayed body (original was consumed by peek).
@@ -45,14 +79,16 @@ export class DefaultExecutor extends BaseExecutor {
     // Pre-content terminal error → surface as 503 so the upstream body is dropped
     // and account/combo fallback can try the next model. Cancel the consumed body.
     try { await response.body?.cancel?.(); } catch { /* noop */ }
-    args.log?.warn?.("PEEK", `${this.provider} | converting pre-content ${kind} error → 503 for fallback`);
+    // Log the raw matched detail for diagnosis, but do NOT leak it to the client —
+    // generic error branches may carry raw upstream text. Client sees a stable message.
+    args.log?.warn?.("PEEK", `${this.provider} | pre-content ${kind} error → 503 for fallback: ${matched}`);
 
     return {
       ...result,
       response: new Response(
         JSON.stringify({
           error: {
-            message: `[${this.provider}] upstream returned no content (${matched}); retrying next model`,
+            message: `[${this.provider}] upstream returned no content before erroring; retrying next model`,
             type: "upstream_error",
             code: "empty_upstream_response",
           },

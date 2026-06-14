@@ -23,6 +23,7 @@
 // DefaultExecutor (openai-compatible providers such as vuz).
 
 import { dbg } from "./debugLog.js";
+import { STREAM_TTFT_TIMEOUT_MS } from "../config/runtimeConfig.js";
 
 // How many bytes to read before giving up the peek. Enough to cover a role
 // delta + an error event; small enough to add negligible latency.
@@ -58,10 +59,13 @@ function matchPattern(text, patterns) {
 
 // Split buffered text into complete SSE blocks (separated by a blank line).
 // A trailing partial block (no terminating "\n\n") is dropped so we never parse
-// half a JSON payload.
+// half a JSON payload. CRLF line endings are normalized to LF first — some relays
+// emit "\r\n\r\n" block separators, which would otherwise make endsWith("\n\n")
+// false and drop the final complete block (missing a lone error-only stream).
 function getCompleteSseBlocks(text) {
-  const parts = String(text || "").split(/\n\n/);
-  if (!text.endsWith("\n\n")) parts.pop();
+  const normalized = String(text || "").replace(/\r\n/g, "\n");
+  const parts = normalized.split(/\n\n/);
+  if (!normalized.endsWith("\n\n")) parts.pop();
   return parts.filter(Boolean);
 }
 
@@ -163,11 +167,15 @@ function scanForTerminalError(text) {
  * @param {object} [opts]
  * @param {object} [opts.log] - Logger
  * @param {string} [opts.provider] - Provider name (for logging)
+ * @param {AbortSignal} [opts.signal] - Upstream request signal; aborting it ends the peek.
+ * @param {number} [opts.timeoutMs] - Max time to spend peeking before giving up (defaults
+ *   to the TTFT budget). The peek runs BEFORE the pipe-level stall watchdog is armed, so
+ *   without its own deadline a 200-then-trickle/stall upstream would hang here forever.
  * @returns {Promise<{ matched: string|null, kind: string|null, response: Response }>}
  *   - matched/kind: non-null when a pre-content terminal error was detected
  *   - response: a replayable Response to use downstream (original body is consumed)
  */
-export async function peekStreamForEmptyUpstream(response, { log, provider } = {}) {
+export async function peekStreamForEmptyUpstream(response, { log, provider, signal, timeoutMs = STREAM_TTFT_TIMEOUT_MS } = {}) {
   if (!response || !response.ok || !response.body) {
     return { matched: null, kind: null, response };
   }
@@ -177,6 +185,18 @@ export async function peekStreamForEmptyUpstream(response, { log, provider } = {
   const chunks = [];
   let text = "";
   let result = { kind: null, matched: null, sawOutput: false };
+
+  // Deadline so the peek can never outlive the time-to-first-byte budget. Without
+  // this, an upstream that sends 200 OK then trickles/stalls the body would block
+  // here indefinitely — the pipe stall watchdog is only armed AFTER execute() returns.
+  let timedOut = false;
+  const deadline = setTimeout(() => { timedOut = true; reader.cancel().catch(() => {}); }, Math.max(1000, timeoutMs));
+  if (deadline.unref) deadline.unref();
+  const onAbort = () => { reader.cancel().catch(() => {}); };
+  if (signal) {
+    if (signal.aborted) onAbort();
+    else signal.addEventListener("abort", onAbort, { once: true });
+  }
 
   try {
     while (text.length < SSE_PEEK_BYTES) {
@@ -194,8 +214,11 @@ export async function peekStreamForEmptyUpstream(response, { log, provider } = {
       if (result.matched || result.sawOutput) break;
     }
   } catch (e) {
-    dbg("PEEK", `${provider || "?"} | peek read error: ${e?.message}`);
+    // A cancel() from the deadline/abort surfaces here as a read rejection — expected.
+    dbg("PEEK", `${provider || "?"} | peek read ${timedOut ? "timed out" : "error"}: ${e?.message}`);
   } finally {
+    clearTimeout(deadline);
+    if (signal) signal.removeEventListener?.("abort", onAbort);
     reader.releaseLock();
   }
 
@@ -203,13 +226,22 @@ export async function peekStreamForEmptyUpstream(response, { log, provider } = {
     log?.warn?.("PEEK", `${provider || "upstream"} | pre-content ${result.kind} error: ${result.matched}`);
   }
 
+  // If the peek was aborted/timed out mid-stream, the body is no longer reliably
+  // replayable — the deadline/abort handler already called reader.cancel(). Treat as
+  // a transient upstream error so the caller can fall back rather than forward a
+  // half-dead stream. (Don't touch the released reader here; the stream is cancelled.)
+  if (timedOut || signal?.aborted) {
+    return { matched: null, kind: null, response: null, aborted: true };
+  }
+
   // Re-assemble a replayable body: already-read chunks first, then the rest.
-  const upstream = response.body;
-  let upstreamReader = null;
+  // upstreamReader is acquired up-front (not inside start()) so the cancel()
+  // handler can always reach it — avoids leaking the upstream connection if the
+  // consumer cancels before start() runs.
+  const upstreamReader = response.body.getReader();
   const replacementBody = new ReadableStream({
     start(controller) {
       for (const c of chunks) controller.enqueue(c);
-      upstreamReader = upstream.getReader();
     },
     async pull(controller) {
       try {
@@ -221,7 +253,7 @@ export async function peekStreamForEmptyUpstream(response, { log, provider } = {
       }
     },
     cancel(reason) {
-      try { upstreamReader?.cancel(reason); } catch { /* noop */ }
+      try { upstreamReader.cancel(reason); } catch { /* noop */ }
     },
   });
 

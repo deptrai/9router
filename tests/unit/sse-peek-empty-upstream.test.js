@@ -137,4 +137,54 @@ describe("ssePeek internals", () => {
     const data = JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }] });
     expect(_internal.blockHasSemanticOutput("", data)).toBe(true);
   });
+
+  it("getCompleteSseBlocks handles CRLF (\\r\\n) block separators without dropping the final block", () => {
+    // A relay that emits CRLF endings: the lone error block must still be detected.
+    const crlf =
+      `data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}\r\n\r\n` +
+      `event: error\r\ndata: {"error":{"message":"empty upstream response"}}\r\n\r\n`;
+    const r = _internal.scanForTerminalError(crlf);
+    expect(r.kind).toBe("empty");
+    expect(r.matched).toBeTruthy();
+  });
+});
+
+describe("peekStreamForEmptyUpstream — CRLF + abort paths", () => {
+  it("detects an empty-upstream error delivered with CRLF endings", async () => {
+    const crlf = [
+      `data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}\r\n\r\n`,
+      `event: error\r\ndata: {"error":{"message":"completed with no content (empty upstream response)"}}\r\n\r\n`,
+    ];
+    const { kind, matched } = await peekStreamForEmptyUpstream(sseResponse(crlf));
+    expect(kind).toBe("empty");
+    expect(matched).toBeTruthy();
+  });
+
+  it("returns aborted with no replayable body when the signal is already aborted", async () => {
+    const r = sseResponse(EMPTY_UPSTREAM_STREAM);
+    const ac = new AbortController();
+    ac.abort();
+    const { matched, response, aborted } = await peekStreamForEmptyUpstream(r, { signal: ac.signal });
+    expect(matched).toBeNull();
+    expect(aborted).toBe(true);
+    expect(response).toBeNull();
+  });
+
+  it("gives up with a short timeout on a stalled body that never sends content", async () => {
+    // Body that emits one role-only delta then hangs forever — must not block past timeout.
+    let cancelled = false;
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(enc.encode(`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}\n\n`));
+        // never close, never enqueue more
+      },
+      cancel() { cancelled = true; },
+    });
+    const stalled = new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+    const t0 = Date.now();
+    const { aborted } = await peekStreamForEmptyUpstream(stalled, { timeoutMs: 1000 });
+    expect(Date.now() - t0).toBeLessThan(3000);
+    expect(aborted).toBe(true);
+    expect(cancelled).toBe(true);
+  });
 });
