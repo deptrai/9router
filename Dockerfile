@@ -25,6 +25,7 @@ ENV PORT=20128
 ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV DATA_DIR=/app/data
+ENV NODE_OPTIONS=--dns-result-order=ipv4first
 
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/static ./.next/static
