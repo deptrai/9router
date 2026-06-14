@@ -77,6 +77,16 @@ export function resolveRetryEntry(entry) {
   };
 }
 
+// In-flight semaphore: max concurrent requests per connection (per-process).
+// 0 or negative → unlimited (semaphore disabled); invalid/NaN → default 1.
+const _rawMaxInFlight = Number.parseInt(process.env?.MAX_IN_FLIGHT_PER_CONNECTION ?? "1", 10);
+export const MAX_IN_FLIGHT_PER_CONNECTION =
+  Number.isNaN(_rawMaxInFlight) ? 1 : (_rawMaxInFlight <= 0 ? Infinity : _rawMaxInFlight);
+
+// Safety-net TTL: auto-release lease if caller forgets (must exceed STREAM_STALL_TIMEOUT_MS=300s)
+export const LEASE_MAX_MS =
+  Number.parseInt(process.env?.LEASE_MAX_MS ?? String(10 * 60 * 1000), 10) || (10 * 60 * 1000);
+
 // Requests containing these texts will bypass provider
 export const SKIP_PATTERNS = [
   "Please write a 5-10 word title for the following conversation:"

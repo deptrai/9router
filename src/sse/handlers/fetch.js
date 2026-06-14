@@ -169,9 +169,12 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
 
     log.info("AUTH", `\x1b[32mUsing ${providerId} account: ${credentials.connectionName}\x1b[0m`);
 
+    const lease = credentials._lease || null;
+    let result;
+    try {
     const refreshedCredentials = await checkAndRefreshToken(providerId, credentials);
 
-    const result = await handleFetchCore({
+    result = await handleFetchCore({
       url: targetUrl,
       format,
       maxCharacters,
@@ -209,5 +212,8 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
     }
 
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "Fetch failed");
+  } finally {
+    if (lease) lease.release();
+  }
   }
 }

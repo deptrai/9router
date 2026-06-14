@@ -5,6 +5,7 @@ import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
 import { resolveActiveEntitlement, ROUTE_POLICY } from "@/lib/db/repos/entitlementsRepo.js";
+import { MAX_IN_FLIGHT_PER_CONNECTION, LEASE_MAX_MS } from "open-sse/config/runtimeConfig.js";
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
@@ -12,6 +13,35 @@ let selectionMutex = Promise.resolve();
 // Negative cache for all-locked state (per-process, TTL ≤2s, DB is source of truth)
 // Key: `${providerId}:${model||"__all"}` → { expiresAt: number, retryAfter: string, retryAfterHuman: string }
 const _allLockedCache = new Map();
+
+// Per-process in-flight counter (not persisted — same pattern as _allLockedCache)
+const _inFlight = new Map(); // connectionId → number
+
+function _acquire(connectionId) {
+  if (!connectionId || connectionId === "noauth") return { release: () => {}, connectionId: null };
+  _inFlight.set(connectionId, (_inFlight.get(connectionId) || 0) + 1);
+  let released = false;
+  const timer = setTimeout(() => release(), LEASE_MAX_MS);
+  if (timer.unref) timer.unref();
+  function release() {
+    if (released) return;
+    released = true;
+    clearTimeout(timer);
+    const next = (_inFlight.get(connectionId) || 0) - 1;
+    if (next > 0) _inFlight.set(connectionId, next);
+    else _inFlight.delete(connectionId); // count→0: drop entry (avoid zero-count map growth)
+  }
+  return { release, connectionId };
+}
+
+export function getInFlightCount(connectionId) {
+  return _inFlight.get(connectionId) || 0;
+}
+
+// Exported for unit tests — acquire an in-flight lease for a connection.
+export function _acquireLeaseForTest(connectionId) {
+  return _acquire(connectionId);
+}
 
 /**
  * Get provider credentials from localDb
@@ -184,13 +214,27 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
+    // In-flight aware pool: prefer connections with available slots
+    const idleConnections = availableConnections.filter(
+      c => (_inFlight.get(c.id) || 0) < MAX_IN_FLIGHT_PER_CONNECTION
+    );
+    // All busy → degrade to least-loaded (no hard fail — connection is alive, just busy)
+    const poolForSelect = idleConnections.length > 0
+      ? idleConnections
+      : [...availableConnections].sort(
+          (a, b) => (_inFlight.get(a.id) || 0) - (_inFlight.get(b.id) || 0)
+        );
+    log.debug("AUTH", `${provider} | idle: ${idleConnections.length}/${availableConnections.length} | inFlight: ${[...availableConnections].map(c => `${c.id?.slice(0,8)}=${_inFlight.get(c.id)||0}`).join(",")}`);
+
     const settings = await getSettings();
     // Per-provider strategy overrides global setting
     const providerOverride = (settings.providerStrategies || {})[providerId] || {};
     const strategy = providerOverride.fallbackStrategy || settings.fallbackStrategy || "fill-first";
 
     let connection;
-    // Pin to preferred connection if specified and available
+    // Pin to preferred connection if specified and available.
+    // Search full availableConnections (not poolForSelect) — explicit pin always honored
+    // even when the connection is busy; idle-first only applies to unpinned selection.
     if (preferredConnectionId) {
       connection = availableConnections.find((c) => c.id === preferredConnectionId);
       if (connection) {
@@ -203,7 +247,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       const stickyLimit = providerOverride.stickyRoundRobinLimit || settings.stickyRoundRobinLimit || 3;
 
       // Sort by lastUsed (most recent first) to find current candidate
-      const byRecency = [...availableConnections].sort((a, b) => {
+      const byRecency = [...poolForSelect].sort((a, b) => {
         if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
         if (!a.lastUsedAt) return 1;
         if (!b.lastUsedAt) return -1;
@@ -223,7 +267,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         });
       } else {
         // Pick the least recently used (excluding current if possible)
-        const sortedByOldest = [...availableConnections].sort((a, b) => {
+        const sortedByOldest = [...poolForSelect].sort((a, b) => {
           if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
           if (!a.lastUsedAt) return -1;
           if (!b.lastUsedAt) return 1;
@@ -247,7 +291,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       const now = Date.now();
       const HEALTH_PENALTY_WINDOW_MS = 60 * 1000;
 
-      const ranked = [...availableConnections].sort((a, b) => {
+      const ranked = [...poolForSelect].sort((a, b) => {
         // Compute health penalty: 1 if lastErrorAt < 60s ago, 0 otherwise
         const aPenalty = (a.lastErrorAt && (now - new Date(a.lastErrorAt).getTime() < HEALTH_PENALTY_WINDOW_MS)) ? 1 : 0;
         const bPenalty = (b.lastErrorAt && (now - new Date(b.lastErrorAt).getTime() < HEALTH_PENALTY_WINDOW_MS)) ? 1 : 0;
@@ -263,6 +307,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     }
 
     const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+    const _lease = _acquire(connection.id);
 
     return {
       authType: connection.authType,
@@ -285,7 +330,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       testStatus: connection.testStatus,
       lastError: connection.lastError,
       // Pass full connection for clearAccountError to read modelLock_* keys
-      _connection: connection
+      _connection: connection,
+      _lease,
     };
   } finally {
     if (resolveMutex) resolveMutex();
