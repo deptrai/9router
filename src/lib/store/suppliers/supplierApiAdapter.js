@@ -48,7 +48,7 @@ export async function fetchCatalog(source, auth = {}) {
 
 export function normalizeProduct(raw) {
   return {
-    supplierProductId: String(raw.id ?? raw.productId ?? ""),
+    supplierProductId: String(raw.supplierProductId ?? raw.id ?? raw.productId ?? ""),
     name: raw.name ?? raw.title ?? "Unnamed",
     priceCredits: Number(raw.priceCredits ?? raw.price ?? 0),
     stock: raw.stock != null ? Number(raw.stock) : null,

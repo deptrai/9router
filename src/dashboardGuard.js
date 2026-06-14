@@ -41,6 +41,8 @@ const PUBLIC_API_PATHS = [
   "/api/telegram/webhook",
   // Story 2.25: Store read API — public catalog, không có dữ liệu nhạy cảm
   "/api/store/products",
+  // Story 2.30: Supplier webhook — public, self-authenticates via timingSafeEqual secret (AC3)
+  "/api/store/suppliers/webhook",
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
