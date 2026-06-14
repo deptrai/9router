@@ -5,10 +5,61 @@ import { buildClineHeaders } from "../../src/shared/utils/clineAuth.js";
 import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
+import { peekStreamForEmptyUpstream } from "../utils/ssePeek.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
 
 export class DefaultExecutor extends BaseExecutor {
   constructor(provider) {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
+  }
+
+  /**
+   * Wrap BaseExecutor.execute to detect upstream errors that arrive AFTER a
+   * 200-OK header but BEFORE any real content (the "empty upstream response"
+   * case from openai-compatible relays such as vuz→kiro). Such a stream is
+   * forwarded as a healthy 200, so combo/account fallback never gets to try the
+   * next model and the client just stops mid-stream.
+   *
+   * By peeking the first few KB of the SSE body we can convert that pre-content
+   * error into a retryable 503 — SAFE because no content byte has reached the
+   * client yet. When real output is seen first, the body is replayed untouched.
+   */
+  async execute(args) {
+    const result = await super.execute(args);
+    // Only meaningful for streaming 200 responses with a readable body.
+    if (!args?.stream || !result?.response?.ok || !result.response.body) {
+      return result;
+    }
+
+    const { matched, kind, response } = await peekStreamForEmptyUpstream(result.response, {
+      log: args.log,
+      provider: this.provider,
+    });
+
+    if (!matched) {
+      // No pre-content error — use the replayed body (original was consumed by peek).
+      result.response = response;
+      return result;
+    }
+
+    // Pre-content terminal error → surface as 503 so the upstream body is dropped
+    // and account/combo fallback can try the next model. Cancel the consumed body.
+    try { await response.body?.cancel?.(); } catch { /* noop */ }
+    args.log?.warn?.("PEEK", `${this.provider} | converting pre-content ${kind} error → 503 for fallback`);
+
+    return {
+      ...result,
+      response: new Response(
+        JSON.stringify({
+          error: {
+            message: `[${this.provider}] upstream returned no content (${matched}); retrying next model`,
+            type: "upstream_error",
+            code: "empty_upstream_response",
+          },
+        }),
+        { status: HTTP_STATUS.SERVICE_UNAVAILABLE, headers: { "Content-Type": "application/json" } },
+      ),
+    };
   }
 
   transformRequest(model, body) {
