@@ -615,6 +615,154 @@ Auth system (`src/sse/services/auth.js`) track số request đang chạy trên m
 
 **Giới hạn**: in-memory Map, per-process. Multi-replica deployment cần distributed counter (Redis/DB) để load-balance chính xác across replicas. Single-process (Docker single container) hoạt động đúng.
 
+## Request Queue & Backpressure
+
+### Bối cảnh và quyết định kiến trúc (Context & Decision)
+
+In-Flight Semaphore (mục trên) chỉ là **soft limit**: khi tất cả connections của một provider đã đạt `MAX_IN_FLIGHT_PER_CONNECTION`, `getProviderCredentials` không fail — nó **degrade xuống least-loaded** và dispatch request lên connection đang bận. Dưới tải concurrent cao (N request cùng tới `vuz`/`kiro`/`viber`), tất cả N request đều được dispatch dù connection đã quá tải → upstream overload → timeout → 503.
+
+**Quyết định**: thêm một **bounded in-memory wait queue per (provider) selection** đứng *trước* bước degrade. Khi không còn slot idle, request **chờ** một lease được release thay vì dispatch ngay. Đây là backpressure: chuyển áp lực từ upstream (nơi ta không kiểm soát được, biểu hiện bằng 503/timeout) về phía 9Router (nơi ta kiểm soát được, biểu hiện bằng chờ có giới hạn hoặc 503 fail-fast rõ ràng).
+
+Lựa chọn đã cân nhắc:
+- **A. Giữ nguyên degrade (hiện tại)** — đơn giản nhưng đẩy overload lên upstream. ❌ chính là bug đang sửa.
+- **B. Fail-fast 503 ngay khi all-busy** — bảo vệ upstream nhưng burst ngắn (các request lệch nhau vài trăm ms) cũng bị từ chối oan, UX kém với CLI tools. ❌
+- **C. Bounded queue + wait timeout (chọn)** — hấp thụ burst ngắn, vẫn fail-fast khi quá tải thực sự (queue đầy hoặc chờ quá lâu). Boring, in-memory, cùng pattern `Map` với `_inFlight`. ✅
+
+Nguyên tắc: **queue là per-process, in-memory** — đồng nhất với `_inFlight` và `_allLockedCache`. Không introduce Redis/DB cho single-process deployment (Rule of Three: chưa có replica thứ hai thì chưa trừu tượng hóa thành distributed queue).
+
+### Data flow diagram (text)
+
+```
+                    getProviderCredentials(provider, excludeSet, model, opts)
+                                      │
+                                      ▼
+              ┌──────────────────────────────────────────┐
+              │  selectionMutex (giữ NGẮN — chỉ chọn conn) │
+              │  filter: excludeSet + modelLock            │
+              │  → availableConnections                    │
+              │  idleConnections = avail.filter(inFlight   │
+              │                    < MAX_IN_FLIGHT)        │
+              └──────────────────────────────────────────┘
+                          │                       │
+            idle > 0 ?  ──┤                       │
+                          │ YES                   │ NO (all busy)
+                          ▼                       ▼
+              ┌────────────────────┐   ┌───────────────────────────────┐
+              │ _acquire(connId)   │   │  enqueue waiter vào            │
+              │ → lease            │   │  queue[provider]               │
+              │ (release mutex)    │   │  (release mutex TRƯỚC khi chờ) │
+              └────────────────────┘   └───────────────────────────────┘
+                          │                       │
+                          │                       │ await: race(
+                          │                       │   slotFreed(release notify),
+                          │                       │   timeout(QUEUE_WAIT_MAX_MS),
+                          │                       │   queueFull → reject ngay)
+                          │                       ▼
+                          │            ┌───────────────────────────────┐
+                          │            │ woken → re-acquire selectionMutex│
+                          │            │ → re-evaluate idle pool         │
+                          │            │ (loop lại bước chọn conn)       │
+                          │            └───────────────────────────────┘
+                          ▼                       ▼
+                    credentials._lease ────────────┘
+                          │
+                          ▼
+        handler (chat / fetch / ... ) chạy request
+                          │
+        ┌─────────────────┴───────────────────┐
+        │ streaming: onSettled() → lease.release()
+        │ non-streaming: try/finally lease.release()
+        │ crash/forget: TTL setTimeout(LEASE_MAX_MS) → release()
+        └─────────────────┬───────────────────┘
+                          ▼
+                   lease.release()
+                          │
+                          ▼
+              ┌───────────────────────────────┐
+              │ 1. giảm _inFlight[connId]      │
+              │ 2. notify queue[provider]:     │
+              │    dequeue 1 waiter (FIFO) →   │
+              │    resolve slotFreed           │
+              └───────────────────────────────┘
+                          │
+                          ▼  (waiter được đánh thức → quay lại re-evaluate)
+```
+
+**Điểm mấu chốt**: `release()` là **single notify point**. Mọi đường release (streaming `onSettled`, non-streaming `try/finally`, TTL safety-net) đều funnel qua đúng một hàm `release()` — nên chỉ cần hook dequeue vào đó một lần là phủ hết mọi handler. Không cần sửa từng handler riêng lẻ.
+
+### Queue data structure
+
+```
+_waitQueue: Map<providerId, Waiter[]>     // FIFO per provider, in-memory, per-process
+
+Waiter = {
+  resolve,         // gọi khi có slot → đánh thức getProviderCredentials đang chờ
+  reject,          // gọi khi timeout / queue full / shutdown
+  enqueuedAt,      // timestamp để đo wait time + cleanup
+  timer,           // setTimeout(QUEUE_WAIT_MAX_MS) — .unref() để không giữ process sống
+}
+```
+
+Lý do chọn cấu trúc:
+- **Key theo `providerId`** (không theo `connectionId`): waiter chờ *bất kỳ* connection nào của provider rảnh, không pin vào một connection cụ thể. Khi tỉnh dậy mới re-evaluate pool. Tránh tình trạng chờ đúng một connection trong khi connection khác đã rảnh.
+- **FIFO array**: fairness — request đến trước được phục vụ trước, tránh starvation. `shift()` khi dequeue.
+- **Bounded**: mỗi `_waitQueue[provider]` có trần `QUEUE_MAX_DEPTH`. Vượt trần → reject ngay (fail-fast), không cho queue phình vô hạn gây OOM.
+
+### Lease → queue integration points
+
+Tích hợp dựa trên invariant đã có: **mọi lease đều kết thúc bằng đúng một lần `release()` thực thi** (idempotent qua cờ `released`). Hook điểm:
+
+| Điểm | Cơ chế hiện có | Thay đổi cho queue |
+|------|----------------|--------------------|
+| **Acquire** | `_acquire(connId)` trong `getProviderCredentials` | Khi `idleConnections.length === 0` → thay vì degrade least-loaded ngay, **enqueue waiter** rồi chờ. Chỉ degrade khi queue đã đầy hoặc đã hết wait timeout. |
+| **Release (single point)** | `release()` trong closure của `_acquire` | Sau khi giảm `_inFlight`, gọi `_notifyQueue(providerId)`: dequeue 1 waiter FIFO và `resolve` để đánh thức. |
+| **Streaming** | `onSettled` → `lease.release()` (chat.js, chatCore `settle()`) | Không đổi — vẫn gọi `release()`, queue notify nằm bên trong `release()`. |
+| **Non-streaming** | `try/finally { lease?.release() }` (fetch/search/embeddings/imageGeneration/stt/tts) | Không đổi — như trên. |
+| **TTL safety-net** | `setTimeout(release, LEASE_MAX_MS)` | Không đổi — TTL gọi `release()` → tự động notify queue, nên waiter không bao giờ kẹt vĩnh viễn vì một handler crash. |
+
+**Ràng buộc concurrency (quan trọng)**: bước **chờ trong queue KHÔNG được giữ `selectionMutex`**. `release()` cần mutate `_inFlight` (và có thể chạy đồng thời với selection). Nếu waiter ngủ trong khi vẫn giữ mutex → `release()` của request đang chạy không thể tiến triển phần chọn connection kế tiếp, và waiter chờ chính cái release đó → **deadlock**. Trình tự đúng: giữ mutex để *chọn/đánh giá pool* → nếu phải chờ thì **nhả mutex trước**, chờ ngoài critical section → khi tỉnh dậy **re-acquire mutex** và đánh giá lại pool từ đầu (idle có thể đã thay đổi, hoặc connection đã bị model-lock trong lúc chờ).
+
+### Timeout handling
+
+Hai tầng timeout độc lập, không thay thế nhau:
+
+1. **Queue wait timeout — `QUEUE_WAIT_MAX_MS`** (mới): thời gian tối đa một waiter nằm trong queue trước khi *được dispatch*. Hết hạn → hai lựa chọn chính sách (chọn **degrade**, xem dưới). Phải đặt **nhỏ hơn nhiều** so với client/CLI timeout để client không tự bỏ cuộc trước. Khuyến nghị mặc định ~30s, tunable qua env.
+2. **Lease TTL — `LEASE_MAX_MS`** (đã có, 10 phút): safety-net cho lease *đang giữ* (request đã dispatch nhưng handler quên/crash). Khác hẳn queue wait: TTL bảo vệ slot khỏi rò rỉ; queue wait bảo vệ waiter khỏi chờ vô hạn.
+
+Quan hệ bắt buộc: `QUEUE_WAIT_MAX_MS` ≪ `STREAM_TTFT_TIMEOUT_MS` (150s) ≪ `LEASE_MAX_MS` (600s). Nếu queue wait ≥ TTFT thì client sẽ thấy treo lâu vô nghĩa.
+
+**Hành vi khi hết queue wait timeout** — quyết định **degrade-on-timeout** (không phải reject):
+- Hết `QUEUE_WAIT_MAX_MS` mà chưa có slot → waiter **rời queue và degrade xuống least-loaded** (đúng hành vi cũ). Lý do: burst ngắn đã được hấp thụ; nếu sau 30s vẫn không có slot thì hoặc upstream thực sự nghẽn (dispatch để upstream tự trả lỗi/cooldown, kích hoạt account-fallback có sẵn), hoặc thà thử còn hơn trả 503 oan. Giữ được tính tương thích ngược: queue chỉ *trì hoãn* chứ không *từ chối* dưới tải vừa.
+- Đây là điểm cấu hình chính sách: có thể chuyển sang **reject-on-timeout (503 + Retry-After)** qua env nếu vận hành muốn bảo vệ upstream tuyệt đối. Mặc định = degrade để an toàn ngược (no regression so với hành vi hiện tại).
+
+### Error handling
+
+| Tình huống | Hành vi | Status / kết quả |
+|------------|---------|------------------|
+| **Queue đầy** (`depth ≥ QUEUE_MAX_DEPTH`) | Fail-fast, không enqueue | `503 Service Unavailable` + `Retry-After`, đi qua `unavailableResponse()` (đồng nhất với all-rate-limited path). Tránh OOM do queue phình. |
+| **Queue wait timeout** | Degrade least-loaded (mặc định) | Request vẫn được dispatch; nếu env bật reject-mode → `503 + Retry-After`. |
+| **`noauth` / null connectionId** | Bỏ qua queue hoàn toàn | No-op lease như hiện tại — free providers không bị semaphore/queue chi phối. |
+| **`MAX_IN_FLIGHT_PER_CONNECTION = 0/∞`** (semaphore tắt) | Bỏ qua queue hoàn toàn | Không bao giờ all-busy → không enqueue. Queue chỉ active khi semaphore active. |
+| **Client disconnect khi đang chờ trong queue** | Waiter phải được dọn | Hook abort signal → reject waiter + clear timer + xóa khỏi array. Không để waiter "ma" chiếm slot khi release tới. |
+| **Account model-locked trong lúc chờ** | Re-evaluate khi tỉnh dậy | Vì re-acquire mutex và đánh giá lại pool từ đầu, connection bị lock trong lúc chờ sẽ tự bị loại ở vòng filter kế. |
+| **All connections rate-limited khi tỉnh dậy** | Trả về path có sẵn | `allRateLimited` + `retryAfter` như flow hiện tại — queue không bypass account-fallback/model-lock logic. |
+| **Provider shutdown / process exit** | Reject toàn bộ waiter | Dọn `_waitQueue`, reject với lỗi rõ ràng để handler trả 503, không treo connection. |
+
+**Invariant cần giữ**:
+- Đếm sổ cân bằng: mỗi `_acquire` ↔ đúng một `release`; mỗi enqueue ↔ đúng một (resolve **hoặc** reject). Không double-resolve (cờ giống `released`).
+- Queue notify idempotent với release idempotent: `release()` gọi hai lần chỉ notify một lần (cờ `released` chặn lần hai).
+- Mọi đường thoát của waiter (resolve/timeout/abort/queue-full/shutdown) đều **clear `timer`** để timer không giữ process sống và không notify nhầm.
+
+### Env vars (mới)
+
+| Env | Default đề xuất | Ý nghĩa |
+|-----|-----------------|---------|
+| `QUEUE_WAIT_MAX_MS` | `30000` (30s) | Thời gian tối đa chờ slot trước khi degrade/reject. Phải ≪ `STREAM_TTFT_TIMEOUT_MS`. |
+| `QUEUE_MAX_DEPTH` | `100` | Trần số waiter per provider. Vượt → 503 fail-fast. `0`/âm → tắt queue (về hành vi degrade cũ). |
+| `QUEUE_TIMEOUT_POLICY` | `degrade` | `degrade` (mặc định, no-regression) hoặc `reject` (503 bảo vệ upstream). |
+
+**Giới hạn**: như semaphore — in-memory, per-process. Multi-replica cần distributed queue (Redis list / DB) để backpressure chính xác across replicas; single-process Docker hoạt động đúng. Queue chỉ điều phối *thứ tự dispatch nội bộ*, không thay thế account-fallback hay model-lock — nó nằm *trước* bước dispatch và *sau* bước filter availability.
+
 ## Observability và Operational Signals
 
 Nguồn runtime visibility:
@@ -647,7 +795,7 @@ Environment variables đang được code sử dụng:
 - Platform/runtime helpers, không phải app-specific config: `APPDATA`, `NODE_ENV`, `PORT`, `HOSTNAME`
 - DNS/network (Docker): `NODE_OPTIONS=--dns-result-order=ipv4first` (xem Network Resilience)
 - Fetch timeout: `FETCH_CONNECT_TIMEOUT_MS` (mặc định 30000), `STREAM_STALL_TIMEOUT_MS` (mặc định 600000)
-- Connection pool semaphore: `MAX_IN_FLIGHT_PER_CONNECTION` (mặc định 1), `LEASE_MAX_MS` (mặc định 600000)
+- Connection pool semaphore: `MAX_IN_FLIGHT_PER_CONNECTION` (mặc định 1), `LEASE_MAX_MS` (mặc định 600000), `QUEUE_WAIT_MAX_MS` (mặc định 3000 — **implemented**; `QUEUE_MAX_DEPTH`/`QUEUE_TIMEOUT_POLICY` future extension)
 - Retry: `DEFAULT_RETRY_CONFIG` (502/503/504: 2 attempts, 1s delay; 429: 0 attempts)
 
 ## Ghi chú kiến trúc đã biết (Known Architectural Notes)

@@ -5,7 +5,7 @@ import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
 import { resolveActiveEntitlement, ROUTE_POLICY } from "@/lib/db/repos/entitlementsRepo.js";
-import { MAX_IN_FLIGHT_PER_CONNECTION, LEASE_MAX_MS } from "open-sse/config/runtimeConfig.js";
+import { MAX_IN_FLIGHT_PER_CONNECTION, LEASE_MAX_MS, QUEUE_WAIT_MAX_MS } from "open-sse/config/runtimeConfig.js";
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
@@ -16,6 +16,10 @@ const _allLockedCache = new Map();
 
 // Per-process in-flight counter (not persisted — same pattern as _allLockedCache)
 const _inFlight = new Map(); // connectionId → number
+
+// Per-process wait queue: queueKey → Array<{ resolve: fn, reject: fn, signal?: AbortSignal }>
+// queueKey = `${providerId}:${model||"__all"}` (same granularity as _allLockedCache)
+const _waitQueue = new Map();
 
 function _acquire(connectionId) {
   if (!connectionId || connectionId === "noauth") return { release: () => {}, connectionId: null };
@@ -30,6 +34,18 @@ function _acquire(connectionId) {
     const next = (_inFlight.get(connectionId) || 0) - 1;
     if (next > 0) _inFlight.set(connectionId, next);
     else _inFlight.delete(connectionId); // count→0: drop entry (avoid zero-count map growth)
+    // Notify first waiter across all queues that share this connectionId's provider pool.
+    // We iterate _waitQueue and wake the first waiter of every key that could benefit
+    // (keys are provider:model scoped — release of any connection in that provider
+    // may free a slot for a waiting request on the same provider+model).
+    for (const [key, waiters] of _waitQueue) {
+      if (waiters.length > 0) {
+        const waiter = waiters.shift();
+        if (waiters.length === 0) _waitQueue.delete(key);
+        waiter.resolve();
+        break; // wake one waiter per release (FIFO, one-at-a-time)
+      }
+    }
   }
   return { release, connectionId };
 }
@@ -215,10 +231,73 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     }
 
     // In-flight aware pool: prefer connections with available slots
-    const idleConnections = availableConnections.filter(
+    let idleConnections = availableConnections.filter(
       c => (_inFlight.get(c.id) || 0) < MAX_IN_FLIGHT_PER_CONNECTION
     );
-    // All busy → degrade to least-loaded (no hard fail — connection is alive, just busy)
+
+    // Backpressure: if semaphore active and all connections busy, enqueue + wait for a slot.
+    // Wait happens OUTSIDE selectionMutex to avoid deadlock with release().
+    if (
+      idleConnections.length === 0 &&
+      MAX_IN_FLIGHT_PER_CONNECTION !== Infinity &&
+      QUEUE_WAIT_MAX_MS > 0
+    ) {
+      const queueKey = `${providerId}:${model || "__all"}`;
+      resolveMutex(); // release mutex BEFORE awaiting — prevent deadlock
+      resolveMutex = null;
+
+      const slotAwaited = await new Promise((resolve, reject) => {
+        const waiter = { resolve, reject };
+        const abortSignal = options?.signal;
+        if (abortSignal?.aborted) {
+          return reject(new Error("aborted"));
+        }
+        if (abortSignal) {
+          const onAbort = () => {
+            const q = _waitQueue.get(queueKey);
+            if (q) {
+              const idx = q.indexOf(waiter);
+              if (idx !== -1) q.splice(idx, 1);
+              if (q.length === 0) _waitQueue.delete(queueKey);
+            }
+            reject(new Error("aborted"));
+          };
+          abortSignal.addEventListener("abort", onAbort, { once: true });
+          waiter._onAbort = onAbort;
+          waiter._signal = abortSignal;
+        }
+        if (!_waitQueue.has(queueKey)) _waitQueue.set(queueKey, []);
+        _waitQueue.get(queueKey).push(waiter);
+        // Timeout: degrade after QUEUE_WAIT_MAX_MS
+        setTimeout(() => {
+          const q = _waitQueue.get(queueKey);
+          if (q) {
+            const idx = q.indexOf(waiter);
+            if (idx !== -1) q.splice(idx, 1);
+            if (q.length === 0) _waitQueue.delete(queueKey);
+          }
+          if (waiter._signal && waiter._onAbort) {
+            waiter._signal.removeEventListener("abort", waiter._onAbort);
+          }
+          resolve(false); // timeout → degrade (not reject)
+        }, QUEUE_WAIT_MAX_MS);
+      }).catch(() => false); // abort → degrade
+
+      // Re-acquire mutex for re-evaluation
+      const nextMutex = selectionMutex;
+      let reResolve;
+      selectionMutex = new Promise(r => { reResolve = r; });
+      resolveMutex = reResolve;
+      try { await nextMutex; } catch {}
+
+      // Re-evaluate idle slots after wakeup/timeout
+      idleConnections = availableConnections.filter(
+        c => (_inFlight.get(c.id) || 0) < MAX_IN_FLIGHT_PER_CONNECTION
+      );
+      log.debug("AUTH", `${provider} | queue wakeup (slotAwaited=${slotAwaited}) idle=${idleConnections.length}`);
+    }
+
+    // All busy (timeout/bypass) → degrade to least-loaded (no hard fail — connection is alive, just busy)
     const poolForSelect = idleConnections.length > 0
       ? idleConnections
       : [...availableConnections].sort(
@@ -476,4 +555,40 @@ export function extractApiKey(request) {
 export async function isValidApiKey(apiKey) {
   if (!apiKey) return false;
   return await validateApiKey(apiKey);
+}
+
+// Exported for unit tests — queue inspection handles.
+export function _getQueueDepthForTest(queueKey) {
+  return (_waitQueue.get(queueKey) || []).length;
+}
+
+export function _getWaitQueueForTest() {
+  return _waitQueue;
+}
+
+// Push a waiter directly into _waitQueue for unit tests (bypasses getProviderCredentials/DB).
+export function _enqueueWaiterForTest(queueKey, resolve, signal) {
+  const waiter = { resolve };
+  if (signal) {
+    const onAbort = () => {
+      const q = _waitQueue.get(queueKey);
+      if (q) {
+        const idx = q.indexOf(waiter);
+        if (idx !== -1) q.splice(idx, 1);
+        if (q.length === 0) _waitQueue.delete(queueKey);
+      }
+      resolve(false); // degrade on abort
+    };
+    if (signal.aborted) { resolve(false); return; }
+    signal.addEventListener("abort", onAbort, { once: true });
+    waiter._onAbort = onAbort;
+    waiter._signal = signal;
+  }
+  if (!_waitQueue.has(queueKey)) _waitQueue.set(queueKey, []);
+  _waitQueue.get(queueKey).push(waiter);
+}
+
+// Clear _waitQueue for test isolation.
+export function _clearWaitQueueForTest() {
+  _waitQueue.clear();
 }

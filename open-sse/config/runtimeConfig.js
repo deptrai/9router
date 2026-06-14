@@ -87,6 +87,13 @@ export const MAX_IN_FLIGHT_PER_CONNECTION =
 export const LEASE_MAX_MS =
   Number.parseInt(process.env?.LEASE_MAX_MS ?? String(10 * 60 * 1000), 10) || (10 * 60 * 1000);
 
+// Wait-queue backpressure: max ms a request waits for a free in-flight slot before
+// degrading to least-loaded dispatch (hành vi cũ). 0/negative → disable queue (degrade ngay).
+// Must be << STREAM_TTFT_TIMEOUT_MS (150s) so queue-wait itself doesn't cause client timeout.
+const _rawQueueWaitMax = Number.parseInt(process.env?.QUEUE_WAIT_MAX_MS ?? "3000", 10);
+export const QUEUE_WAIT_MAX_MS =
+  Number.isNaN(_rawQueueWaitMax) ? 3000 : (_rawQueueWaitMax <= 0 ? 0 : _rawQueueWaitMax);
+
 // Requests containing these texts will bypass provider
 export const SKIP_PATTERNS = [
   "Please write a 5-10 word title for the following conversation:"
