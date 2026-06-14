@@ -105,9 +105,12 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
       return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
     }
 
+    const lease = credentials._lease || null;
+    let result;
+    try {
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
-    const result = await handleImageGenerationCore({
+    result = await handleImageGenerationCore({
       body,
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
@@ -138,5 +141,8 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
     }
 
     return result.response;
+  } finally {
+    if (lease) lease.release();
+  }
   }
 }

@@ -98,7 +98,13 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language) {
 
     log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
 
-    const result = await handleTtsCore({ provider, model, input: body.input, credentials, responseFormat, language });
+    const lease = credentials._lease || null;
+    let result;
+    try {
+      result = await handleTtsCore({ provider, model, input: body.input, credentials, responseFormat, language });
+    } finally {
+      if (lease) lease.release();
+    }
 
     if (result.success) return result.response;
 

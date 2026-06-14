@@ -596,16 +596,24 @@ Node.js trong Docker container ưu tiên IPv6 DNS resolution mặc định. Khi 
 
 `FETCH_CONNECT_TIMEOUT_MS = 30s` (`open-sse/config/runtimeConfig.js:49`, tăng từ 10s) — cho phép request chờ upstream connection trong thời gian đủ dài để xử lý queue khi single connection bận stream response dài (20–30s). Đi kèm retry config `DEFAULT_RETRY_CONFIG` (`runtimeConfig.js:63–68`): 502/503/504 retry 2 lần, delay 1s; 429 không retry.
 
-### Concurrent Connection Pool Gap
+### In-Flight Semaphore (Connection Load Balancing)
 
-Hệ thống auth (`src/sse/services/auth.js:137–141`) KHÔNG theo dõi connection nào đang "in-use". Nó chỉ filter theo model lock + excludeSet. Khi `total loaded = 1` và hai request concurrent đến, cả hai đều chọn cùng một connection upstream — gây timeout do TCP contention + Docker overlay pressure.
+Auth system (`src/sse/services/auth.js`) track số request đang chạy trên mỗi connection qua module-scope `_inFlight: Map<connectionId, number>`. Mỗi request nhận một **lease** khi connection được chọn; lease được release khi request kết thúc (success, error, hoặc disconnect).
 
-**Workaround hiện tại**: Migration `010-vuz2-connection.js` tạo connection `vuz-2` (duplicate của `vuz`, cùng API key). Production DB `data.sqlite` có 2 connections cho provider `vuz` → mỗi request concurrent chọn connection khác nhau → upstream nhận 2 parallel requests → response trong 2.7–3.4s thay vì timeout.
+**Idle-first selection**: `getProviderCredentials` filter ra `idleConnections` (connections có `inFlight < MAX_IN_FLIGHT_PER_CONNECTION`). Nếu tất cả bận → fallback sort least-loaded — không bao giờ fail hard.
 
-**Giới hạn của workaround**: 
-- Không scale — cần N connections cho N concurrent requests
-- Không tự động — migration chỉ chạy 1 lần, không điều chỉnh theo load
-- Giải pháp đúng: auth system cần track `inFlightCount` hoặc semaphore, chỉ gán connection khi nó available
+**Lease lifecycle**:
+- Acquire: `_acquire(connectionId)` → trả `{ release, connectionId }`, tăng counter
+- Release: idempotent (gọi nhiều lần an toàn, `released` flag)
+- TTL safety-net: `setTimeout(release, LEASE_MAX_MS)` tự giải phóng sau 10 phút nếu handler crash mà không gọi release
+- Streaming: release được delegate qua `onSettled` hook → `buildOnStreamComplete` callback (không release sớm khi stream mở)
+- Non-streaming handlers (tts/stt/search/fetch/embeddings/imageGeneration): `try/finally { lease?.release() }`
+
+**Env vars**:
+- `MAX_IN_FLIGHT_PER_CONNECTION` (default `1`): số request tối đa được dispatch đồng thời tới 1 connection. Đặt `0` hoặc số âm → unlimited (tắt semaphore); giá trị không hợp lệ → fallback `1`
+- `LEASE_MAX_MS` (default `600000` = 10 phút): TTL safety-net
+
+**Giới hạn**: in-memory Map, per-process. Multi-replica deployment cần distributed counter (Redis/DB) để load-balance chính xác across replicas. Single-process (Docker single container) hoạt động đúng.
 
 ## Observability và Operational Signals
 
@@ -639,6 +647,7 @@ Environment variables đang được code sử dụng:
 - Platform/runtime helpers, không phải app-specific config: `APPDATA`, `NODE_ENV`, `PORT`, `HOSTNAME`
 - DNS/network (Docker): `NODE_OPTIONS=--dns-result-order=ipv4first` (xem Network Resilience)
 - Fetch timeout: `FETCH_CONNECT_TIMEOUT_MS` (mặc định 30000), `STREAM_STALL_TIMEOUT_MS` (mặc định 600000)
+- Connection pool semaphore: `MAX_IN_FLIGHT_PER_CONNECTION` (mặc định 1), `LEASE_MAX_MS` (mặc định 600000)
 - Retry: `DEFAULT_RETRY_CONFIG` (502/503/504: 2 attempts, 1s delay; 429: 0 attempts)
 
 ## Ghi chú kiến trúc đã biết (Known Architectural Notes)
@@ -647,7 +656,7 @@ Environment variables đang được code sử dụng:
 2. `/api/v1/route.js` trả về static model list và không phải nguồn models chính được `/v1/models` sử dụng.
 3. Request logger ghi full headers/body khi bật; cần xem log directory là dữ liệu nhạy cảm.
 4. Cloud behavior phụ thuộc vào `NEXT_PUBLIC_BASE_URL` chính xác và cloud endpoint có thể truy cập được.
-5. Auth system (`auth.js:137–141`) không track in-use connections → single connection bottleneck khi concurrent requests. Migration `010-vuz2-connection.js` tạo duplicate vuz-2 làm workaround, nhưng giải pháp đúng là thêm semaphore tracking.
+5. Auth system có in-flight semaphore (`_inFlight` Map, `_acquire`/`release` lease) — idle-first connection selection, TTL safety-net 10 phút. Migration `010-vuz2-connection.js` (vuz-2) giữ nguyên để cho phép load-balance thực sự giữa 2 connections khi concurrent requests.
 
 ## Checklist xác minh vận hành (Operational Verification Checklist)
 

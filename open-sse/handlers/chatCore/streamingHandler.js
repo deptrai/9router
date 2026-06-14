@@ -68,7 +68,7 @@ export function handleStreamingResponse({ providerResponse, provider, model, sou
 /**
  * Build onStreamComplete callback for streaming usage tracking.
  */
-export function buildOnStreamComplete({ provider, model, connectionId, apiKey, billingSource, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest }) {
+export function buildOnStreamComplete({ provider, model, connectionId, apiKey, billingSource, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, settle }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
   const resolveRecordedContent = (contentObj) => {
@@ -82,6 +82,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, b
   };
 
   const onStreamComplete = (contentObj, usage, ttftAt) => {
+    settle?.(); // release in-flight lease when stream actually ends
     const latency = {
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
       total: Date.now() - requestStartTime

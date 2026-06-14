@@ -72,7 +72,13 @@ export async function handleStt(request) {
 
     log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
 
-    const result = await handleSttCore({ provider, model, formData, credentials });
+    const lease = credentials._lease || null;
+    let result;
+    try {
+      result = await handleSttCore({ provider, model, formData, credentials });
+    } finally {
+      if (lease) lease.release();
+    }
 
     if (result.success) return result.response;
 

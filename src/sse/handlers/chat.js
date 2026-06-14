@@ -269,68 +269,78 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
     }
 
-    // Log account selection
-    log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
+    let lease = credentials._lease || null;
+    let handed = false;
+    try {
+      // Log account selection
+      log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
 
-    const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+      const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
-    // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
-    if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
-      const pid = await getProjectIdForConnection(credentials.connectionId, refreshedCredentials.accessToken);
-      if (pid) {
-        refreshedCredentials.projectId = pid;
-        // Persist to DB in background so subsequent requests have it immediately
-        updateProviderCredentials(credentials.connectionId, { projectId: pid }).catch(() => { });
+      // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
+      if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
+        const pid = await getProjectIdForConnection(credentials.connectionId, refreshedCredentials.accessToken);
+        if (pid) {
+          refreshedCredentials.projectId = pid;
+          // Persist to DB in background so subsequent requests have it immediately
+          updateProviderCredentials(credentials.connectionId, { projectId: pid }).catch(() => { });
+        }
       }
-    }
 
-    // Use shared chatCore
-    const chatSettings = await getSettings();
-    const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
-    const result = await handleChatCore({
-      body: { ...body, model: `${provider}/${model}` },
-      modelInfo: { provider, model },
-      credentials: refreshedCredentials,
-      log,
-      clientRawRequest,
-      connectionId: credentials.connectionId,
-      userAgent,
-      apiKey,
-      billingSource,
-      ccFilterNaming: !!chatSettings.ccFilterNaming,
-      rtkEnabled: !!chatSettings.rtkEnabled,
-      kiroAutoCompactEnabled: !!chatSettings.kiroAutoCompactEnabled,
-      cavemanEnabled: !!chatSettings.cavemanEnabled,
-      cavemanLevel: chatSettings.cavemanLevel || "full",
-      providerThinking,
-      // Detect source format by endpoint + body
-      sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
-      onCredentialsRefreshed: async (newCreds) => {
-        await updateProviderCredentials(credentials.connectionId, {
-          accessToken: newCreds.accessToken,
-          refreshToken: newCreds.refreshToken,
-          providerSpecificData: newCreds.providerSpecificData,
-          testStatus: "active"
-        });
-      },
-      onRequestSuccess: async () => {
-        await clearAccountError(credentials.connectionId, credentials, model);
+      // Use shared chatCore
+      const chatSettings = await getSettings();
+      const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+      const result = await handleChatCore({
+        body: { ...body, model: `${provider}/${model}` },
+        modelInfo: { provider, model },
+        credentials: refreshedCredentials,
+        log,
+        clientRawRequest,
+        connectionId: credentials.connectionId,
+        userAgent,
+        apiKey,
+        billingSource,
+        ccFilterNaming: !!chatSettings.ccFilterNaming,
+        rtkEnabled: !!chatSettings.rtkEnabled,
+        kiroAutoCompactEnabled: !!chatSettings.kiroAutoCompactEnabled,
+        cavemanEnabled: !!chatSettings.cavemanEnabled,
+        cavemanLevel: chatSettings.cavemanLevel || "full",
+        providerThinking,
+        // Detect source format by endpoint + body
+        sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
+        onSettled: () => lease?.release(),
+        onCredentialsRefreshed: async (newCreds) => {
+          await updateProviderCredentials(credentials.connectionId, {
+            accessToken: newCreds.accessToken,
+            refreshToken: newCreds.refreshToken,
+            providerSpecificData: newCreds.providerSpecificData,
+            testStatus: "active"
+          });
+        },
+        onRequestSuccess: async () => {
+          await clearAccountError(credentials.connectionId, credentials, model);
+        }
+      });
+
+      if (result.success) {
+        handed = true;
+        return result.response;
       }
-    });
 
-    if (result.success) return result.response;
+      // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
+      const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
 
-    // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
+      if (shouldFallback) {
+        log.warn("AUTH", `Account ${credentials.connectionName} unavailable (${result.status}), trying fallback`);
+        excludeConnectionIds.add(credentials.connectionId);
+        lastError = result.error;
+        lastStatus = result.status;
+        continue;
+      }
 
-    if (shouldFallback) {
-      log.warn("AUTH", `Account ${credentials.connectionName} unavailable (${result.status}), trying fallback`);
-      excludeConnectionIds.add(credentials.connectionId);
-      lastError = result.error;
-      lastStatus = result.status;
-      continue;
+      return result.response;
+    } finally {
+      if (lease && !handed) lease.release();
     }
-
-    return result.response;
   }
 }
