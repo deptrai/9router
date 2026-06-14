@@ -17,9 +17,11 @@ const _allLockedCache = new Map();
 // Per-process in-flight counter (not persisted — same pattern as _allLockedCache)
 const _inFlight = new Map(); // connectionId → number
 
-// Per-process wait queue: queueKey → Array<{ resolve: fn, reject: fn, signal?: AbortSignal }>
+// Per-process wait queue: queueKey → Array<{ resolve: fn, timer?, _onAbort?, _signal? }>
 // queueKey = `${providerId}:${model||"__all"}` (same granularity as _allLockedCache)
 const _waitQueue = new Map();
+// Maps connectionId → queueKey so release() only notifies waiters for the right provider+model.
+const _connectionKeyMap = new Map();
 
 function _acquire(connectionId) {
   if (!connectionId || connectionId === "noauth") return { release: () => {}, connectionId: null };
@@ -34,16 +36,31 @@ function _acquire(connectionId) {
     const next = (_inFlight.get(connectionId) || 0) - 1;
     if (next > 0) _inFlight.set(connectionId, next);
     else _inFlight.delete(connectionId); // count→0: drop entry (avoid zero-count map growth)
-    // Notify first waiter across all queues that share this connectionId's provider pool.
-    // We iterate _waitQueue and wake the first waiter of every key that could benefit
-    // (keys are provider:model scoped — release of any connection in that provider
-    // may free a slot for a waiting request on the same provider+model).
-    for (const [key, waiters] of _waitQueue) {
-      if (waiters.length > 0) {
+    // Notify first waiter for the same provider+model pool that just freed a slot.
+    // If _connectionKeyMap has an entry for this connection, target that key only.
+    // Otherwise (e.g. test helpers, or connection never had an enqueue) fall back to
+    // iterating all keys so release() still wakes waiters in the simple/test case.
+    const mappedKey = _connectionKeyMap.get(connectionId);
+    const notifyQueue = (key) => {
+      const waiters = _waitQueue.get(key);
+      if (waiters && waiters.length > 0) {
         const waiter = waiters.shift();
         if (waiters.length === 0) _waitQueue.delete(key);
+        // Clean up timer and abort listener before resolving to prevent leaks.
+        if (waiter.timer) clearTimeout(waiter.timer);
+        if (waiter._signal && waiter._onAbort) {
+          waiter._signal.removeEventListener("abort", waiter._onAbort);
+        }
         waiter.resolve();
-        break; // wake one waiter per release (FIFO, one-at-a-time)
+        return true;
+      }
+      return false;
+    };
+    if (mappedKey) {
+      notifyQueue(mappedKey);
+    } else {
+      for (const key of _waitQueue.keys()) {
+        if (notifyQueue(key)) break;
       }
     }
   }
@@ -243,6 +260,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       QUEUE_WAIT_MAX_MS > 0
     ) {
       const queueKey = `${providerId}:${model || "__all"}`;
+      // Register all available connections for this pool so release() can find the right queue key.
+      for (const c of availableConnections) _connectionKeyMap.set(c.id, queueKey);
       resolveMutex(); // release mutex BEFORE awaiting — prevent deadlock
       resolveMutex = null;
 
@@ -268,8 +287,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         }
         if (!_waitQueue.has(queueKey)) _waitQueue.set(queueKey, []);
         _waitQueue.get(queueKey).push(waiter);
-        // Timeout: degrade after QUEUE_WAIT_MAX_MS
-        setTimeout(() => {
+        // Timeout: degrade after QUEUE_WAIT_MAX_MS — clean up before resolving to prevent leaks.
+        const timeoutId = setTimeout(() => {
           const q = _waitQueue.get(queueKey);
           if (q) {
             const idx = q.indexOf(waiter);
@@ -281,6 +300,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           }
           resolve(false); // timeout → degrade (not reject)
         }, QUEUE_WAIT_MAX_MS);
+        if (timeoutId.unref) timeoutId.unref();
+        waiter.timer = timeoutId;
       }).catch(() => false); // abort → degrade
 
       // Re-acquire mutex for re-evaluation

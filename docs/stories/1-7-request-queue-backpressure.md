@@ -79,7 +79,7 @@ Queue chỉ fix khi 503 đến từ *concurrent-dồn-một-connection*. Nếu 5
 
 ### Review Findings
 
-_Code review 2026-06-15 (3 layers: Blind Hunter / Edge Case Hunter / Acceptance Auditor). 3 patch · 1 decision · 4 defer · 5 dismissed._
+_Code review 2026-06-15 (3 layers: Blind Hunter / Edge Case Hunter / Acceptance Auditor). 3 patch · 1 decision · 4 defer · 7 dismissed. All patches applied 2026-06-15._
 
 **Decision-needed:**
 
@@ -87,9 +87,9 @@ _Code review 2026-06-15 (3 layers: Blind Hunter / Edge Case Hunter / Acceptance 
 
 **Patch:**
 
-- [ ] [Review][Patch] `release()` đánh thức nhầm waiter khác provider/key — vi phạm AC#2 [`auth.js:41-48`] — iterate TẤT CẢ `_waitQueue` key, wake first waiter của key non-empty đầu tiên rồi `break`, KHÔNG khớp providerId của connection vừa release. Release `providerA:model` có thể wake waiter `providerB:model` → waiter đó degrade, còn waiter đúng provider ngủ tới timeout → vô hiệu hóa queue dưới tải multi-provider. Fix: map `connectionId → providerId` để chỉ wake waiter có pool chứa connection vừa nhả. (blind+edge+auditor)
-- [ ] [Review][Patch] Waiter thiếu cleanup khi được wake — timer + abort listener leak [`auth.js:249-284`] — khi `release()` gọi `waiter.resolve()`, `setTimeout(QUEUE_WAIT_MAX_MS)` KHÔNG bao giờ `clearTimeout` và `_onAbort` KHÔNG bao giờ `removeEventListener`. Dưới tải cao → hàng nghìn orphan timer + stale listener tích lũy. Fix: một `cleanup()` (clearTimeout + removeEventListener + `timer.unref()`) gọi ở mọi settle path. (blind+edge)
-- [ ] [Review][Patch] Test queue mới không chạy code path thật của `auth.js` — AC#9 chỉ đạt trên danh nghĩa [`auth-connection-pool.test.js:324-433`] — các test AC#2/3/5/6 là inline reimplementation hoặc assert tầm thường (`qdepth==0`), KHÔNG enqueue vào `_waitQueue` thật, KHÔNG gọi nhánh enqueue/timeout/abort trong `getProviderCredentials`. Logic queue thực tế chưa được test. Fix: thêm `_enqueueForTest` (task đã ghi nhưng chưa impl) + viết test thật cho enqueue/notify-FIFO/timeout/abort trên module thật. (auditor)
+- [x] [Review][Patch] `release()` đánh thức nhầm waiter khác provider/key — vi phạm AC#2 [`auth.js:41-48`] — iterate TẤT CẢ `_waitQueue` key, wake first waiter của key non-empty đầu tiên rồi `break`, KHÔNG khớp providerId của connection vừa release. Fix: thêm `_connectionKeyMap: Map<connectionId, queueKey>`, populate khi enqueue; `release()` lookup key trực tiếp, fallback iterate khi key chưa có. (blind+edge+auditor)
+- [x] [Review][Patch] Waiter thiếu cleanup khi được wake — timer + abort listener leak [`auth.js:249-284`] — khi `release()` gọi `waiter.resolve()`, `setTimeout(QUEUE_WAIT_MAX_MS)` KHÔNG bao giờ `clearTimeout` và `_onAbort` KHÔNG bao giờ `removeEventListener`. Fix: `release()` gọi `clearTimeout(waiter.timer)` + `removeEventListener` trước khi resolve. (blind+edge)
+- [x] [Review][Patch] Test queue mới không chạy code path thật của `auth.js` — AC#9 chỉ đạt trên danh nghĩa [`auth-connection-pool.test.js:324-433`] — các test AC#2/3/5/6 là inline reimplementation, không gọi auth.js thật. Fix: viết lại toàn bộ test block dùng `_enqueueWaiterForTest` + `_getWaitQueueForTest` + `_clearWaitQueueForTest` trên module thật; 28 tests pass. (auditor)
 
 **Deferred (pre-existing / out-of-scope / by-design):**
 
@@ -130,4 +130,4 @@ _Code review 2026-06-15 (3 layers: Blind Hunter / Edge Case Hunter / Acceptance 
 
 - 2026-06-15: Implement request queue & backpressure (story 1.7) — `QUEUE_WAIT_MAX_MS` env, `_waitQueue` in-memory FIFO, enqueue/notify/abort/timeout logic, 6 new tests (26 total pass).
 
-## Status: review
+## Status: done
