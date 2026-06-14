@@ -29,14 +29,13 @@ function upsertExternalProduct(db, { sourceId, syncVersion, normalized, now }) {
   );
   if (existing) {
     db.run(
-      `UPDATE products SET name=?, description=?, priceCredits=?, stock=?, isActive=?,
+      `UPDATE products SET name=?, description=?, priceCredits=?, stock=?,
          syncVersion=?, lastSyncedAt=?, updatedAt=? WHERE id=?`,
       [
         normalized.name,
         normalized.description ?? null,
         Number(normalized.priceCredits ?? 0),
         normalized.stock ?? null,
-        normalized.isActive === false ? 0 : 1,
         syncVersion,
         now,
         now,
