@@ -171,6 +171,13 @@ export function createSSEStream(options = {}) {
           let output;
           let injectedUsage = false;
 
+          // Drop the upstream [DONE] sentinel here — flush() always emits exactly
+          // one terminator at stream end. Forwarding it too produces a double
+          // "data: [DONE]" which can confuse strict client SDKs.
+          if (trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]") {
+            continue;
+          }
+
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
@@ -251,11 +258,10 @@ export function createSSEStream(options = {}) {
         if (!parsed) continue;
 
         // For Ollama: done=true is the final chunk with finish_reason/usage, must translate
-        // For other formats: done=true is the [DONE] sentinel, skip
+        // For other formats: done=true is the upstream [DONE] sentinel — drop it here.
+        // flush() emits exactly one terminator at stream end; forwarding the upstream
+        // sentinel too produces a double "data: [DONE]" which can confuse strict SDKs.
         if (parsed && parsed.done && targetFormat !== FORMATS.OLLAMA) {
-          const output = "data: [DONE]\n\n";
-          reqLogger?.appendConvertedChunk?.(output);
-          controller.enqueue(sharedEncoder.encode(output));
           continue;
         }
 

@@ -54,9 +54,9 @@ describe("/v1/models context metadata", () => {
       max_context_length: 480_000,
     });
     expect(kiroSonnet).toMatchObject({
-      context_window: 150_000,
-      contextWindow: 150_000,
-      max_context_length: 150_000,
+      context_window: 200_000,
+      contextWindow: 200_000,
+      max_context_length: 200_000,
     });
   });
 
