@@ -32,13 +32,20 @@ export async function POST(request, { params }) {
 
   // Load source WITH decrypted auth (internal trusted path) to read its webhookSecret.
   const source = await getSupplierSourceWithAuth(id);
+  if (!source) {
+    return NextResponse.json({ error: "Unknown source" }, { status: 404 });
+  }
+  // Reject events for sources not configured to receive webhooks (T7 — AC3 Given is
+  // syncMode='webhook'; a polling-mode source should not have its products mutated
+  // via this public endpoint even if a webhookSecret happens to be configured).
+  if (source.syncMode !== "webhook") {
+    return NextResponse.json(
+      { error: "Source is not configured for webhook delivery" },
+      { status: 400 }
+    );
+  }
 
-  // Uniform 401 for unknown source / non-webhook source / bad secret — distinct status
-  // codes (404 vs 400 vs 401) would leak source existence + config to unauthenticated
-  // callers (source-existence oracle). All pre-auth failures look identical (#161).
-  // syncMode guard kept here so a polling-mode source isn't mutated via this public
-  // endpoint even if a webhookSecret happens to be configured (T7 — AC3).
-  const expectedSecret = source?.auth?.webhookSecret;
+  const expectedSecret = source.auth?.webhookSecret;
   // Accept secret from header (preferred) or query param.
   const url = new URL(request.url);
   const provided =
@@ -46,12 +53,7 @@ export async function POST(request, { params }) {
     url.searchParams.get("secret") ||
     "";
 
-  if (
-    !source ||
-    source.syncMode !== "webhook" ||
-    !expectedSecret ||
-    !secretMatches(provided, expectedSecret)
-  ) {
+  if (!expectedSecret || !secretMatches(provided, expectedSecret)) {
     return NextResponse.json({ error: "Invalid webhook secret" }, { status: 401 });
   }
 

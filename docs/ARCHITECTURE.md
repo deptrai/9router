@@ -1,6 +1,6 @@
 # Kiến trúc 9Router
 
-_Cập nhật lần cuối: 2026-06-12_
+_Cập nhật lần cuối: 2026-06-14_
 
 ## Tóm tắt điều hành (Executive Summary)
 
@@ -586,6 +586,27 @@ Translation được chọn động dựa trên source payload shape và provide
 - DB shape migration/repair cho missing keys
 - corrupt JSON reset safeguards cho localDb và usageDb
 
+## 6) Network Resilience
+
+### IPv6 / DNS Resolution (Docker)
+
+Node.js trong Docker container ưu tiên IPv6 DNS resolution mặc định. Khi Docker network không có IPv6, mỗi `fetch()` bị fail IPv6 → fallback IPv4 gây trễ **2–5s** mỗi request. Fix: `ENV NODE_OPTIONS=--dns-result-order=ipv4first` trong `Dockerfile:27`.
+
+### Fetch Connect Timeout
+
+`FETCH_CONNECT_TIMEOUT_MS = 30s` (`open-sse/config/runtimeConfig.js:49`, tăng từ 10s) — cho phép request chờ upstream connection trong thời gian đủ dài để xử lý queue khi single connection bận stream response dài (20–30s). Đi kèm retry config `DEFAULT_RETRY_CONFIG` (`runtimeConfig.js:63–68`): 502/503/504 retry 2 lần, delay 1s; 429 không retry.
+
+### Concurrent Connection Pool Gap
+
+Hệ thống auth (`src/sse/services/auth.js:137–141`) KHÔNG theo dõi connection nào đang "in-use". Nó chỉ filter theo model lock + excludeSet. Khi `total loaded = 1` và hai request concurrent đến, cả hai đều chọn cùng một connection upstream — gây timeout do TCP contention + Docker overlay pressure.
+
+**Workaround hiện tại**: Migration `010-vuz2-connection.js` tạo connection `vuz-2` (duplicate của `vuz`, cùng API key). Production DB `data.sqlite` có 2 connections cho provider `vuz` → mỗi request concurrent chọn connection khác nhau → upstream nhận 2 parallel requests → response trong 2.7–3.4s thay vì timeout.
+
+**Giới hạn của workaround**: 
+- Không scale — cần N connections cho N concurrent requests
+- Không tự động — migration chỉ chạy 1 lần, không điều chỉnh theo load
+- Giải pháp đúng: auth system cần track `inFlightCount` hoặc semaphore, chỉ gán connection khi nó available
+
 ## Observability và Operational Signals
 
 Nguồn runtime visibility:
@@ -616,6 +637,9 @@ Environment variables đang được code sử dụng:
 - Outbound proxy: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` và các biến lowercase tương ứng
 - Kiro per-model context ceiling (xem mục "Kiro per-model context ceilings"): `KIRO_LIMIT_OPUS_48` (default `480000`), `KIRO_LIMIT_OPUS_46` (default `1000000`), `KIRO_AUTO_COMPACT_LIMIT_TOKENS` (fallback cho model Kiro chưa định nghĩa ceiling, default `150000`)
 - Platform/runtime helpers, không phải app-specific config: `APPDATA`, `NODE_ENV`, `PORT`, `HOSTNAME`
+- DNS/network (Docker): `NODE_OPTIONS=--dns-result-order=ipv4first` (xem Network Resilience)
+- Fetch timeout: `FETCH_CONNECT_TIMEOUT_MS` (mặc định 30000), `STREAM_STALL_TIMEOUT_MS` (mặc định 600000)
+- Retry: `DEFAULT_RETRY_CONFIG` (502/503/504: 2 attempts, 1s delay; 429: 0 attempts)
 
 ## Ghi chú kiến trúc đã biết (Known Architectural Notes)
 
@@ -623,6 +647,7 @@ Environment variables đang được code sử dụng:
 2. `/api/v1/route.js` trả về static model list và không phải nguồn models chính được `/v1/models` sử dụng.
 3. Request logger ghi full headers/body khi bật; cần xem log directory là dữ liệu nhạy cảm.
 4. Cloud behavior phụ thuộc vào `NEXT_PUBLIC_BASE_URL` chính xác và cloud endpoint có thể truy cập được.
+5. Auth system (`auth.js:137–141`) không track in-use connections → single connection bottleneck khi concurrent requests. Migration `010-vuz2-connection.js` tạo duplicate vuz-2 làm workaround, nhưng giải pháp đúng là thêm semaphore tracking.
 
 ## Checklist xác minh vận hành (Operational Verification Checklist)
 

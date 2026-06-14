@@ -16,7 +16,7 @@ context:
 
 # Story 2.30 — External Telegram Store Sources & Catalog Sync
 
-Status: done
+Status: review
 
 ## Story
 
@@ -142,24 +142,24 @@ so that catalog luôn cập nhật từ nhiều nguồn mà KHÔNG phá vỡ flo
 ### Review Findings
 
 #### [Review][Decision] — cần quyết định trước khi patch
-- [x] [Review][Decision] `deleteSupplierSource` để lại orphaned external products — DELETE source KHÔNG cascade/nullify `products WHERE supplierSourceId=?`. Dangling ref → 2.31 publishing surface product mồ côi. Chọn: cascade-delete external products / nullify supplier cột / block delete khi còn product. [supplierSourcesRepo.js:151]
-- [x] [Review][Decision] Stale guard KHÔNG persist thành flag — spec QĐ5/Dev Notes nói "2.30 set flag", impl chỉ compute on-the-fly `isProductStale()` (không có cột `isStale` lưu DB). 2.31 consumer phải tự re-implement threshold. Chọn: thêm cột persisted vs giữ computed (chấp nhận lệch wording spec). [catalogSync.js:165]
-- [x] [Review][Decision] `listPollableSources` poll cả source `unhealthy` — SQL chỉ loại `unsupported`, nên `unhealthy` vẫn bị poll mỗi interval (comment line 210 ghi "active/degraded" → code/comment mismatch), không backoff. Chọn: unhealthy auto-retry (heal) vs dừng tới khi admin can thiệp (QĐ6 "admin thấy lỗi"). [supplierSourcesRepo.js:213]
+- [ ] [Review][Decision] `deleteSupplierSource` để lại orphaned external products — DELETE source KHÔNG cascade/nullify `products WHERE supplierSourceId=?`. Dangling ref → 2.31 publishing surface product mồ côi. Chọn: cascade-delete external products / nullify supplier cột / block delete khi còn product. [supplierSourcesRepo.js:151]
+- [ ] [Review][Decision] Stale guard KHÔNG persist thành flag — spec QĐ5/Dev Notes nói "2.30 set flag", impl chỉ compute on-the-fly `isProductStale()` (không có cột `isStale` lưu DB). 2.31 consumer phải tự re-implement threshold. Chọn: thêm cột persisted vs giữ computed (chấp nhận lệch wording spec). [catalogSync.js:165]
+- [ ] [Review][Decision] `listPollableSources` poll cả source `unhealthy` — SQL chỉ loại `unsupported`, nên `unhealthy` vẫn bị poll mỗi interval (comment line 210 ghi "active/degraded" → code/comment mismatch), không backoff. Chọn: unhealthy auto-retry (heal) vs dừng tới khi admin can thiệp (QĐ6 "admin thấy lỗi"). [supplierSourcesRepo.js:213]
 
 #### [Review][Patch] — fix không cần input
-- [x] [Review][Patch] `updateSupplierSource` bỏ qua `adapter.validate()` khi đổi auth (AC1/QĐ4 — validate mỗi lần save) [supplierSourcesRepo.js:141]
-- [x] [Review][Patch] SSRF/data-bug: `auth.apiUrl || source.name` → dùng tên source làm URL khi thiếu apiUrl (bỏ fallback, throw nếu thiếu) [supplierApiAdapter.js:25]
-- [x] [Review][Patch] Silent decrypt fallback `catch { auth = {} }` → sync chạy với creds rỗng, lỗi gây hiểu nhầm transient. Record lỗi "auth decrypt failed" rõ ràng thay vì âm thầm [supplierSourcesRepo.js:121]
-- [x] [Review][Patch] `syncSource` trên source adapterType=`webhook` → `fetchCatalog` trả error → `recordSyncFailure` degrade health oan. Skip webhook-type trong syncSource/runDuePolls [catalogSync.js:96]
-- [x] [Review][Patch] `upsertExternalProduct` UPDATE ghi đè `isActive` do admin set (publishing gate 2.31, QĐ7) — UPDATE phải giữ nguyên isActive hiện có, chỉ INSERT set 0 [catalogSync.js:39]
-- [x] [Review][Patch] Lỗi `STORE_ENC_KEY is required` leak nguyên văn ra client — regex 422 `/required/i` match → echo `e.message`. Siết regex/sanitize [route.js:62]
-- [x] [Review][Patch] `syncIntervalSec` không validate — 0 → interval 0ms → poll vô hạn max rate. Enforce min interval ở create/update [supplierSourcesRepo.js:81,137]
-- [x] [Review][Patch] `getSupplierSourceWithAuth` export qua barrel công khai `db/index.js` — mở rộng truy cập decrypted creds; cả 2 caller import trực tiếp từ repo nên export này thừa. Gỡ bỏ [db/index.js:74]
-- [x] [Review][Patch] `secretMatches` early-return khi length mismatch → leak độ dài secret qua timing. HMAC cả 2 vế về digest cùng độ dài [webhook/[id]/route.js:22]
-- [x] [Review][Patch] `webhookAdapter.validate` check `scrape` SAU `webhookSecret` → config scrape thiếu secret trả "webhookSecret required" thay vì `unsupported` (AC2). Đảo thứ tự check scrape trước [webhookAdapter.js:4]
-- [x] [Review][Patch] `normalizeProduct` trả `supplierProductId=""` → `syncSource` âm thầm `continue` (data loss, không count/warn). Đếm skipped + surface trong result [catalogSync.js:110]
-- [x] [Review][Patch] Webhook endpoint: 404 (unknown) vs 401 (bad secret) → source-existence oracle; thiếu guard `syncMode==='webhook'`. Trả 401 thống nhất + check syncMode [webhook/[id]/route.js:31,43]
-- [x] [Review][Patch] `updateSupplierSource` validate `syncMode` SAU khi build `next` (ordering nit; throw trước DB write nên hiện vô hại). Đưa validate lên đầu [supplierSourcesRepo.js:137]
+- [ ] [Review][Patch] `updateSupplierSource` bỏ qua `adapter.validate()` khi đổi auth (AC1/QĐ4 — validate mỗi lần save) [supplierSourcesRepo.js:141]
+- [ ] [Review][Patch] SSRF/data-bug: `auth.apiUrl || source.name` → dùng tên source làm URL khi thiếu apiUrl (bỏ fallback, throw nếu thiếu) [supplierApiAdapter.js:25]
+- [ ] [Review][Patch] Silent decrypt fallback `catch { auth = {} }` → sync chạy với creds rỗng, lỗi gây hiểu nhầm transient. Record lỗi "auth decrypt failed" rõ ràng thay vì âm thầm [supplierSourcesRepo.js:121]
+- [ ] [Review][Patch] `syncSource` trên source adapterType=`webhook` → `fetchCatalog` trả error → `recordSyncFailure` degrade health oan. Skip webhook-type trong syncSource/runDuePolls [catalogSync.js:96]
+- [ ] [Review][Patch] `upsertExternalProduct` UPDATE ghi đè `isActive` do admin set (publishing gate 2.31, QĐ7) — UPDATE phải giữ nguyên isActive hiện có, chỉ INSERT set 0 [catalogSync.js:39]
+- [ ] [Review][Patch] Lỗi `STORE_ENC_KEY is required` leak nguyên văn ra client — regex 422 `/required/i` match → echo `e.message`. Siết regex/sanitize [route.js:62]
+- [ ] [Review][Patch] `syncIntervalSec` không validate — 0 → interval 0ms → poll vô hạn max rate. Enforce min interval ở create/update [supplierSourcesRepo.js:81,137]
+- [ ] [Review][Patch] `getSupplierSourceWithAuth` export qua barrel công khai `db/index.js` — mở rộng truy cập decrypted creds; cả 2 caller import trực tiếp từ repo nên export này thừa. Gỡ bỏ [db/index.js:74]
+- [ ] [Review][Patch] `secretMatches` early-return khi length mismatch → leak độ dài secret qua timing. HMAC cả 2 vế về digest cùng độ dài [webhook/[id]/route.js:22]
+- [ ] [Review][Patch] `webhookAdapter.validate` check `scrape` SAU `webhookSecret` → config scrape thiếu secret trả "webhookSecret required" thay vì `unsupported` (AC2). Đảo thứ tự check scrape trước [webhookAdapter.js:4]
+- [ ] [Review][Patch] `normalizeProduct` trả `supplierProductId=""` → `syncSource` âm thầm `continue` (data loss, không count/warn). Đếm skipped + surface trong result [catalogSync.js:110]
+- [ ] [Review][Patch] Webhook endpoint: 404 (unknown) vs 401 (bad secret) → source-existence oracle; thiếu guard `syncMode==='webhook'`. Trả 401 thống nhất + check syncMode [webhook/[id]/route.js:31,43]
+- [ ] [Review][Patch] `updateSupplierSource` validate `syncMode` SAU khi build `next` (ordering nit; throw trước DB write nên hiện vô hại). Đưa validate lên đầu [supplierSourcesRepo.js:137]
 
 #### [Review][Defer] — pre-existing / hoãn
 - [x] [Review][Defer] `syncVersion` race read-compute-write không lock — 2 sync concurrent mất 1 increment [catalogSync.js:102] — deferred, MVP single-process sequential (no cron infra), risk thấp

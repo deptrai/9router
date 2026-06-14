@@ -28,17 +28,15 @@ function upsertExternalProduct(db, { sourceId, syncVersion, normalized, now }) {
     [EXTERNAL_SOURCE, sourceId, normalized.supplierProductId]
   );
   if (existing) {
-    // UPDATE does NOT touch isActive — that is the admin's publishing gate (QĐ7, owned by
-    // 2.31). Overwriting it on every sync would clobber a manual publish/unpublish decision.
-    // Sync only refreshes supplier-sourced fields (name/price/stock/desc) + audit columns.
     db.run(
-      `UPDATE products SET name=?, description=?, priceCredits=?, stock=?,
+      `UPDATE products SET name=?, description=?, priceCredits=?, stock=?, isActive=?,
          syncVersion=?, lastSyncedAt=?, updatedAt=? WHERE id=?`,
       [
         normalized.name,
         normalized.description ?? null,
         Number(normalized.priceCredits ?? 0),
         normalized.stock ?? null,
+        normalized.isActive === false ? 0 : 1,
         syncVersion,
         now,
         now,
@@ -117,12 +115,12 @@ export async function syncSource(sourceId) {
   const nextVersion = (source.syncVersion ?? 0) + 1;
   const now = new Date().toISOString();
   const db = await getAdapter();
-  let inserted = 0, updated = 0, skipped = 0;
+  let inserted = 0, updated = 0;
   try {
     db.transaction(() => {
       for (const raw of result.products) {
         const normalized = adapter.normalizeProduct(raw);
-        if (!normalized.supplierProductId) { skipped++; continue; } // un-dedupable → count, don't drop silently
+        if (!normalized.supplierProductId) continue; // skip un-dedupable rows
         const r = upsertExternalProduct(db, { sourceId, syncVersion: nextVersion, normalized, now });
         if (r.action === "inserted") inserted++; else updated++;
       }
@@ -133,7 +131,7 @@ export async function syncSource(sourceId) {
   }
 
   await recordSyncSuccess(sourceId, { syncVersion: nextVersion });
-  return { ok: true, inserted, updated, skipped, syncVersion: nextVersion };
+  return { ok: true, inserted, updated, syncVersion: nextVersion };
 }
 
 /**
