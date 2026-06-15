@@ -39,9 +39,10 @@ export {
   getUserByTelegramId,
 } from "./repos/usersRepo.js";
 
-// Products (Story 2.25 — Telegram Store catalog)
+// Products (Story 2.25 — Telegram Store catalog; Story 2.31 — external markup/publish)
 export {
   listActiveProducts, getProductById, createProduct,
+  listExternalProducts, listAllProducts, updateProduct, deleteProduct,
   PRODUCT_KINDS, DELIVERY_MODES,
 } from "./repos/productsRepo.js";
 
@@ -75,6 +76,13 @@ export {
   recordSyncSuccess, recordSyncFailure, markSourceUnsupported, listPollableSources,
   ADAPTER_TYPES, SYNC_MODES, SOURCE_STATUSES,
 } from "./repos/supplierSourcesRepo.js";
+
+// Markup rules (Story 2.31 — external product markup + publishing)
+export {
+  createMarkupRule, listMarkupRules, getMarkupRuleById,
+  updateMarkupRule, deleteMarkupRule, findApplicableRule,
+  ROUNDING_RULES,
+} from "./repos/markupRulesRepo.js";
 
 // API key lookup by key string (Story 2.29b — userId threading)
 export { getApiKeyByKey } from "./repos/apiKeysRepo.js";

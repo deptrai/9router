@@ -105,7 +105,11 @@ describe("syncSource — upsert + dedup + syncVersion (AC4)", () => {
     const prods = await allProducts();
     expect(prods).toHaveLength(1);
     expect(prods[0].name).toBe("Prod 1 RENAMED");
-    expect(prods[0].priceCredits).toBe(15);
+    // Story 2.31 (QĐ6): UPDATE path writes supplierPrice; priceCredits is set ONLY by
+    // applyMarkupToProduct. With no markup rule, priceCredits keeps its INSERT default (10),
+    // and the new supplier price lands in supplierPrice (15).
+    expect(prods[0].supplierPrice).toBe(15);
+    expect(prods[0].priceCredits).toBe(10);
     expect(prods[0].syncVersion).toBe(2);
   });
 

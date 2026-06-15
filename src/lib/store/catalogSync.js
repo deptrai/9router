@@ -11,6 +11,8 @@ import {
   recordSyncFailure,
   listPollableSources,
 } from "../db/repos/supplierSourcesRepo.js";
+import { findApplicableRule } from "../db/repos/markupRulesRepo.js";
+import { applyMarkupToProduct } from "./markupEngine.js";
 
 export const EXTERNAL_SOURCE = "external_telegram_store";
 // Default staleness threshold — external product not synced within this window is "stale"
@@ -19,22 +21,37 @@ export const DEFAULT_STALE_THRESHOLD_SEC = 24 * 3600;
 
 /**
  * Upsert one normalized external product into products (dedup by supplierSourceId+supplierProductId).
- * Bumps syncVersion + stamps lastSyncedAt. Returns { inserted | updated }.
- * MUST run inside a caller-managed flow; uses its own statements (no local-product impact).
+ * Bumps syncVersion + stamps lastSyncedAt. Returns { id, action: "inserted"|"updated" }.
+ *
+ * QĐ6 invariants (2.31):
+ * - UPDATE path: only writes supplierPrice + name/description/stock/syncVersion/lastSyncedAt.
+ *   NEVER writes priceCredits directly — priceCredits is ONLY set by applyMarkupToProduct.
+ *   NEVER writes isActive or isPublished — publish state is admin-only truth.
+ * - INSERT path: sets priceCredits = supplierPrice as safe initial default (priceCredits is
+ *   NOT NULL; leaving it 0 would allow checkout to charge 0 before markup is applied).
+ * - After write: if a markup rule applies, calls applyMarkupToProduct(id, db) inline within
+ *   the SAME transaction (pass db adapter — do NOT open a nested transaction, pattern E7).
+ *
+ * MUST be called from within a caller-managed db.transaction().
  */
 function upsertExternalProduct(db, { sourceId, syncVersion, normalized, now }) {
+  const supplierPrice = Number(normalized.priceCredits ?? 0);
+
   const existing = db.get(
-    `SELECT id FROM products WHERE source = ? AND supplierSourceId = ? AND supplierProductId = ?`,
+    `SELECT id, supplierSourceId FROM products WHERE source = ? AND supplierSourceId = ? AND supplierProductId = ?`,
     [EXTERNAL_SOURCE, sourceId, normalized.supplierProductId]
   );
+
+  let productId;
   if (existing) {
+    // UPDATE path: write supplierPrice + metadata. NEVER touch priceCredits/isActive/isPublished.
     db.run(
-      `UPDATE products SET name=?, description=?, priceCredits=?, stock=?,
+      `UPDATE products SET name=?, description=?, supplierPrice=?, stock=?,
          syncVersion=?, lastSyncedAt=?, updatedAt=? WHERE id=?`,
       [
         normalized.name,
         normalized.description ?? null,
-        Number(normalized.priceCredits ?? 0),
+        supplierPrice,
         normalized.stock ?? null,
         syncVersion,
         now,
@@ -42,35 +59,55 @@ function upsertExternalProduct(db, { sourceId, syncVersion, normalized, now }) {
         existing.id,
       ]
     );
-    return { id: existing.id, action: "updated" };
+    productId = existing.id;
+
+    // Re-apply markup inline if a rule exists (keeps priceCredits = retailPrice atomic).
+    const rule = findApplicableRule(db, productId, sourceId);
+    if (rule) {
+      applyMarkupToProduct(productId, db);
+    }
+
+    return { id: productId, action: "updated" };
   }
-  const id = uuidv4();
+
+  // INSERT path: set priceCredits = supplierPrice as initial default (non-zero safe default).
+  // applyMarkupToProduct will overwrite priceCredits once a rule is set (QĐ6).
+  productId = uuidv4();
   db.run(
     `INSERT INTO products(id, kind, name, description, priceCredits, deliveryMode,
-       targetType, targetId, stock, isActive, source, supplierSourceId, supplierProductId,
-       syncVersion, lastSyncedAt, createdAt, updatedAt)
-     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       targetType, targetId, stock, isActive, isPublished, source, supplierSourceId,
+       supplierProductId, supplierPrice, syncVersion, lastSyncedAt, createdAt, updatedAt)
+     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      id,
-      "service",                         // external products default kind (markup/publish = 2.31)
+      productId,
+      "service",
       normalized.name,
       normalized.description ?? null,
-      Number(normalized.priceCredits ?? 0),
-      "admin_fulfill",                   // external delivery handled in 2.32+; not sellable yet (QĐ7)
+      supplierPrice,              // priceCredits = supplierPrice (safe initial default)
+      "admin_fulfill",
       null,
       null,
       normalized.stock ?? null,
-      0,                                 // isActive=0 until 2.31 publishing (QĐ7 gate)
+      0,                          // isActive=0 until admin publishes (QĐ7/QĐ9 gate)
+      0,                          // isPublished=0 — admin explicit publish required
       EXTERNAL_SOURCE,
       sourceId,
       normalized.supplierProductId,
+      supplierPrice,              // supplierPrice stored separately
       syncVersion,
       now,
       now,
       now,
     ]
   );
-  return { id, action: "inserted" };
+
+  // Apply markup inline if a rule already exists for this supplier/product.
+  const rule = findApplicableRule(db, productId, sourceId);
+  if (rule) {
+    applyMarkupToProduct(productId, db);
+  }
+
+  return { id: productId, action: "inserted" };
 }
 
 /**

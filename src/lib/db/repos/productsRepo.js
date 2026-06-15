@@ -5,6 +5,11 @@ import { getAdapter } from "../driver.js";
 export const PRODUCT_KINDS = ["plan", "credential", "account", "service", "api_package"];
 export const DELIVERY_MODES = ["instant", "admin_fulfill", "user_self_connect"];
 
+// Story 2.31: external product source marker. Defined locally (NOT imported from
+// catalogSync.js) to keep the repo layer free of store-layer dependencies and avoid
+// a circular import (catalogSync → markupEngine → markupRulesRepo).
+const EXTERNAL_SOURCE = "external_telegram_store";
+
 /**
  * Map DB row → product object.
  */
@@ -27,6 +32,11 @@ function rowToProduct(row) {
     supplierProductId: row.supplierProductId ?? null,
     syncVersion: row.syncVersion ?? null,
     lastSyncedAt: row.lastSyncedAt ?? null,
+    // Story 2.31: pricing + publish fields (null for local products)
+    supplierPrice: row.supplierPrice ?? null,
+    retailPrice: row.retailPrice ?? null,
+    expectedMargin: row.expectedMargin ?? null,
+    isPublished: row.isPublished === 1 || row.isPublished === true,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -35,12 +45,36 @@ function rowToProduct(row) {
 /**
  * Liệt kê tất cả products đang active.
  * Dùng cho /products handler và GET /api/store/products (AC2).
+ *
+ * Story 2.31 invariant: external products require isPublished=1 to appear, but
+ * publishProduct() always sets isActive=1 when isPublished=1 — so filtering on
+ * isActive=1 alone is sufficient for BOTH local and external products. We do NOT
+ * add `isPublished IS NOT NULL` or `source='local'` here (that would break local
+ * products, whose isPublished is null). See markupEngine.publishProduct/unpublishProduct.
  */
 export async function listActiveProducts() {
   const db = await getAdapter();
   const rows = db.all(
     `SELECT * FROM products WHERE isActive = 1 ORDER BY name ASC`
   );
+  return rows.map(rowToProduct);
+}
+
+/**
+ * Liệt kê external products (published + unpublished) cho admin view (Story 2.31 T6).
+ * Optional filter theo supplierSourceId.
+ */
+export async function listExternalProducts(supplierId) {
+  const db = await getAdapter();
+  const rows = supplierId
+    ? db.all(
+        `SELECT * FROM products WHERE source = ? AND supplierSourceId = ? ORDER BY name ASC`,
+        [EXTERNAL_SOURCE, supplierId]
+      )
+    : db.all(
+        `SELECT * FROM products WHERE source = ? ORDER BY name ASC`,
+        [EXTERNAL_SOURCE]
+      );
   return rows.map(rowToProduct);
 }
 
@@ -212,6 +246,16 @@ export async function updateProduct(id, data) {
     values.push(data.stock ?? null);
   }
   if (data.isActive !== undefined) {
+    // Story 2.31 (Review CRITICAL #4): enforce invariant isPublished=1 ⇒ isActive=1.
+    // External products must change visibility ONLY via publishProduct/unpublishProduct,
+    // never by setting isActive directly (would leave isPublished=1 + isActive=0 skew).
+    // Guard is scoped narrowly to external source — local product CRUD (story 2.28)
+    // continues to set isActive freely.
+    if (existing.source === EXTERNAL_SOURCE) {
+      throw new Error(
+        "updateProduct: external product không được set isActive trực tiếp — dùng publishProduct/unpublishProduct"
+      );
+    }
     fields.push("isActive = ?");
     values.push(data.isActive !== false ? 1 : 0);
   }

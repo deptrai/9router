@@ -1,5 +1,5 @@
 // Latest schema version — bumped when a migration is added in ./migrations/
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 13;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -291,6 +291,11 @@ export const TABLES = {
       supplierProductId: "TEXT",                 // id at supplier side (dedup sync)
       syncVersion: "INTEGER",
       lastSyncedAt: "TEXT",
+      // Story 2.31: markup + publish pricing columns (nullable — local products remain null)
+      supplierPrice: "REAL",             // raw supplier price (persisted separate from priceCredits)
+      retailPrice: "REAL",               // supplier price × (1 + markupPct/100)
+      expectedMargin: "REAL",            // retailPrice - supplierPrice (audit snapshot)
+      isPublished: "INTEGER DEFAULT 0",  // 1 = admin published; invariant isPublished=1 ⇒ isActive=1
       createdAt: "TEXT NOT NULL",
       updatedAt: "TEXT NOT NULL",
     },
@@ -298,6 +303,26 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_products_active ON products(isActive)",
       "CREATE INDEX IF NOT EXISTS idx_products_source ON products(source)",
       "CREATE INDEX IF NOT EXISTS idx_products_supplier ON products(supplierSourceId, supplierProductId)",
+    ],
+  },
+
+  // Story 2.31: markup pricing rules for external products.
+  // Priority: product-level > supplier-level > global (supplierId=null, productId=null).
+  // No category tier — products table has no category column.
+  markupRules: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      supplierId: "TEXT",                // null = not supplier-scoped
+      productId: "TEXT",                 // null = not product-scoped
+      markupPct: "REAL NOT NULL",        // must be > 0
+      roundingRule: "TEXT DEFAULT 'none'", // none|ceil|floor|round
+      isActive: "INTEGER DEFAULT 1",
+      createdAt: "TEXT",
+      updatedAt: "TEXT",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_markup_supplier ON markupRules(supplierId)",
+      "CREATE INDEX IF NOT EXISTS idx_markup_product ON markupRules(productId)",
     ],
   },
 

@@ -11,8 +11,9 @@ import m007 from "./007-context-safe-combos.js";
 import m008 from "./008-entitlements.js";
 import m009 from "./009-external-store-sources.js";
 import m010 from "./010-vuz2-connection.js";
+import m011 from "./011-markup-rules.js";
 
-export const MIGRATIONS = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010].sort((a, b) => a.version - b.version);
+export const MIGRATIONS = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010, m011].sort((a, b) => a.version - b.version);
 
 export function latestVersion() {
   return MIGRATIONS.length ? MIGRATIONS[MIGRATIONS.length - 1].version : 0;
