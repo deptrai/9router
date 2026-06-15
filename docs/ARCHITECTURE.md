@@ -134,6 +134,8 @@ Các module luồng chính:
 - Provider input-limit (per-model) / Kiro auto-compact helper: `open-sse/utils/autoCompact.js` (`getProviderAutoCompactLimit(provider, model)`); per-model `contextWindow` source: `open-sse/config/providerModels.js`
 - Translation registry: `open-sse/translator/index.js`
 - Stream transformations: `open-sse/utils/stream.js`, `open-sse/utils/streamHandler.js`
+- Pre-content empty/error peek (relay): `open-sse/utils/ssePeek.js` (`peekStreamForEmptyUpstream`); in-place retry tại `open-sse/executors/default.js`
+- Buffered combo fallback (opt-in): `open-sse/utils/bufferFallback.js`
 - Usage extraction/normalization: `open-sse/utils/usageTracking.js`
 
 ## 3) Lớp lưu trữ (Persistence Layer — SQLite)
@@ -631,6 +633,20 @@ Translation được chọn động dựa trên source payload shape và provide
 - disconnect-aware stream controller
 - translation stream có end-of-stream flush và xử lý `[DONE]`
 - fallback ước lượng usage khi provider usage metadata bị thiếu
+
+### Empty/truncated upstream recovery (200-then-error)
+
+Một số relay provider (vd `vuz` / `openai-compatible-*`) commit `HTTP 200` rồi mới phát `event: error` "empty upstream response" — hoặc đóng socket giữa chừng — nên client (Claude Code) thấy stream lỗi/dừng và **không retry**, trong khi 200 đã coi là "thành công" nên fallback không kích hoạt. Surface ra client là `"empty or malformed response (HTTP 200)"`. Hệ thống recovery gồm 3 lớp, tất cả dựa trên ranh giới **pre-content** (chưa có byte nội dung nào rời server):
+
+1. **Pre-content peek + in-place retry** (`open-sse/utils/ssePeek.js`, `open-sse/executors/default.js`): `peekStreamForEmptyUpstream` đọc tối đa ~16KB đầu SSE body, phát hiện `event: error` / `response.failed` / empty đứng **trước** mọi semantic output (content / tool_call / thinking delta), phân loại `kind` ∈ `empty` | `overloaded` | `error`. Khi match, `DefaultExecutor.execute()` **retry IN-PLACE cùng account/upstream** (mặc định 2 lần, delay 1s — `resolveRetryEntry({ ...DEFAULT_RETRY_CONFIG, ...config.retry }[503])`), an toàn vì chưa có content tới client. Stream lành → replay nguyên body (phần đã đọc + phần còn lại) forward bình thường. Scope **chỉ** relay (`openai-compatible-*` / `anthropic-compatible-*`) + streaming — provider native (gemini `candidates[]`, claude...) bị loại để tránh misclassify shape. Mô phỏng pattern đã có ở `open-sse/executors/codex.js` (`_peekSseOverloaded`).
+2. **Escalate sang account/combo fallback**: hết budget retry in-place → đổi thành `503` retryable (`code: empty_upstream_response`, cooldown ngắn 8s ở `errorConfig.js`) → `accountFallback` thử account khác, rồi combo thử model kế. Chỉ per-model lock, không khóa account-wide.
+3. **Truncation guard mid-stream** (`open-sse/utils/stream.js`): khi content **đã** forward rồi upstream mới đóng socket trước finish signal, `flush()` phát một error terminator **retryable** (không phát `[DONE]` lành) dựa trên `upstreamFinished` (đọc raw terminal marker qua `isUpstreamTerminalChunk`) → client coi half-answer là lỗi và retry cả turn thay vì nuốt nội dung cụt. `isSuccessfulTerminalChunk` (loại error-terminal) dùng cho buffered-fallback để error vẫn kích hoạt fallback.
+
+Mỗi response stream chỉ phát **đúng một** terminator (`[DONE]` hoặc một error event) ở cả passthrough lẫn translate mode.
+
+### Buffered combo fallback (tùy chọn, mặc định OFF)
+
+`open-sse/utils/bufferFallback.js` + `open-sse/services/combo.js`: khi `bufferedFallbackEnabled`, combo streaming buffer toàn bộ translated SSE body server-side trước khi commit cho client; nếu truncated/empty thì thử model kế trong combo mà client không thấy lỗi (heartbeat comment giữ kết nối sống). Đánh đổi: mất real-time streaming. `bufferSSEResponse` nhận `abortSignal` (client disconnect hủy buffering ngay) và dùng `hasSemanticData()` để phân biệt empty-thật với stream chỉ có heartbeat.
 
 ## 4) Cloud Sync Degradation
 

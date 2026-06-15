@@ -6,7 +6,7 @@ import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { peekStreamForEmptyUpstream } from "../utils/ssePeek.js";
-import { HTTP_STATUS } from "../config/runtimeConfig.js";
+import { HTTP_STATUS, DEFAULT_RETRY_CONFIG, resolveRetryEntry } from "../config/runtimeConfig.js";
 
 export class DefaultExecutor extends BaseExecutor {
   constructor(provider) {
@@ -20,82 +20,112 @@ export class DefaultExecutor extends BaseExecutor {
    * forwarded as a healthy 200, so combo/account fallback never gets to try the
    * next model and the client just stops mid-stream.
    *
-   * By peeking the first few KB of the SSE body we can convert that pre-content
-   * error into a retryable 503 — SAFE because no content byte has reached the
-   * client yet. When real output is seen first, the body is replayed untouched.
+   * Two layers of recovery, both SAFE because no content byte has reached the
+   * client yet (the pre-content guarantee from ssePeek):
+   *   L1 — in-place retry: re-issue the SAME request to the SAME account up to
+   *        N times (mirrors codex.js). A relay's empty/overloaded blip is usually
+   *        transient, so retrying the same upstream recovers without burning the
+   *        account or switching models.
+   *   L2 — escalate: once L1 is exhausted, convert to a retryable 503 so the
+   *        existing account/combo fallback can try the next account/model.
+   *
+   * When real output is seen first, the body is replayed untouched (no retry).
    */
   async execute(args) {
-    const result = await super.execute(args);
-    // Only meaningful for streaming 200 responses with a readable body.
-    if (!args?.stream || !result?.response?.ok || !result.response.body) {
-      return result;
-    }
-
     // Scope guard: only the openai-/anthropic-compatible RELAY providers (e.g. vuz)
     // exhibit the 200-then-empty-error pattern and use SSE shapes ssePeek understands.
     // Native-format providers that also fall through to DefaultExecutor (claude, gemini,
     // glm, kimi, ...) are left untouched — peeking them risks misclassifying their
-    // distinct SSE shapes (Gemini candidates[], etc.) as empty.
+    // distinct SSE shapes (Gemini candidates[], etc.) as empty. Non-streaming requests
+    // never exhibit the pattern either. Both skip the peek/retry path entirely.
     const isRelayProvider =
       this.provider?.startsWith?.("openai-compatible-") ||
       this.provider?.startsWith?.("anthropic-compatible-");
-    if (!isRelayProvider) {
-      return result;
+    if (!args?.stream || !isRelayProvider) {
+      return super.execute(args);
     }
 
-    const { matched, kind, response, aborted } = await peekStreamForEmptyUpstream(result.response, {
-      log: args.log,
-      provider: this.provider,
-      signal: args.signal,
-    });
+    // In-place retry budget. Merge with DEFAULT_RETRY_CONFIG so relay providers
+    // (which usually don't set this.config.retry) still get the default 503
+    // budget — reading this.config.retry[503] alone would yield 0 retries.
+    const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
+    const { attempts: rawAttempts, delayMs } = resolveRetryEntry(retryConfig[503]);
+    // Defensive: a misconfigured Infinity/NaN/negative attempts must never spin
+    // this loop forever (it issues a live upstream fetch each turn).
+    const attempts = Number.isFinite(rawAttempts) && rawAttempts > 0 ? rawAttempts : 0;
+    let attempt = 0;
 
-    // Peek timed out / was aborted mid-stream → body is no longer reliably replayable.
-    // Surface as 503 so fallback can try the next model rather than forwarding a half-dead
-    // stream. Skip when the caller's own signal aborted (genuine client cancel — let it propagate).
-    if (aborted) {
-      if (args.signal?.aborted) return result;
-      args.log?.warn?.("PEEK", `${this.provider} | peek timed out before content → 503 for fallback`);
-      return {
-        ...result,
-        response: new Response(
-          JSON.stringify({
-            error: {
-              message: `[${this.provider}] upstream stalled before any content; retrying next model`,
-              type: "upstream_error",
-              code: "empty_upstream_response",
-            },
-          }),
-          { status: HTTP_STATUS.SERVICE_UNAVAILABLE, headers: { "Content-Type": "application/json" } },
-        ),
-      };
+    while (true) {
+      // Client already cancelled — abort cleanly. Do NOT call super.execute again
+      // (it would fire a redundant fetch for a request nobody is waiting on);
+      // chatCore maps AbortError → 499.
+      if (args.signal?.aborted) {
+        const abortErr = new Error("Request aborted before upstream call");
+        abortErr.name = "AbortError";
+        throw abortErr;
+      }
+
+      const result = await super.execute(args);
+
+      // Only meaningful for streaming 200 responses with a readable body. A non-ok
+      // upstream is handled by the existing error branch in chatCore — don't peek it.
+      if (!result?.response?.ok || !result.response.body) {
+        return result;
+      }
+
+      const { matched, kind, response, aborted } = await peekStreamForEmptyUpstream(result.response, {
+        log: args.log,
+        provider: this.provider,
+        signal: args.signal,
+      });
+
+      // Peek timed out / was aborted mid-stream → body is no longer reliably replayable.
+      // Surface as 503 so fallback can try the next model rather than forwarding a half-dead
+      // stream. Skip when the caller's own signal aborted (genuine client cancel — let it propagate).
+      if (aborted) {
+        if (args.signal?.aborted) return result;
+        args.log?.warn?.("PEEK", `${this.provider} | peek timed out before content → 503 for fallback`);
+        return { ...result, response: this._emptyUpstream503("upstream stalled before any content; retrying next model") };
+      }
+
+      if (!matched) {
+        // No pre-content error — use the replayed body (original was consumed by peek).
+        result.response = response;
+        return result;
+      }
+
+      // Pre-content terminal error. Drop the consumed body either way.
+      try { await response.body?.cancel?.(); } catch { /* noop */ }
+
+      // L1 — retry the SAME account/upstream while we still have budget. SAFE: no
+      // content byte has left the server (peek only matched pre-content errors).
+      if (attempt < attempts) {
+        attempt++;
+        args.log?.warn?.("RETRY", `${this.provider} | pre-content ${kind} → in-place retry ${attempt}/${attempts} after ${delayMs / 1000}s: ${matched}`);
+        await new Promise(r => setTimeout(r, delayMs));
+        continue;
+      }
+
+      // L2 — retries exhausted → surface as 503 so account/combo fallback takes over.
+      // Log the raw matched detail for diagnosis, but do NOT leak it to the client.
+      args.log?.warn?.("PEEK", `${this.provider} | pre-content ${kind} error, ${attempt} in-place retries exhausted → 503 for fallback: ${matched}`);
+      return { ...result, response: this._emptyUpstream503("upstream returned no content before erroring; retrying next model") };
     }
+  }
 
-    if (!matched) {
-      // No pre-content error — use the replayed body (original was consumed by peek).
-      result.response = response;
-      return result;
-    }
-
-    // Pre-content terminal error → surface as 503 so the upstream body is dropped
-    // and account/combo fallback can try the next model. Cancel the consumed body.
-    try { await response.body?.cancel?.(); } catch { /* noop */ }
-    // Log the raw matched detail for diagnosis, but do NOT leak it to the client —
-    // generic error branches may carry raw upstream text. Client sees a stable message.
-    args.log?.warn?.("PEEK", `${this.provider} | pre-content ${kind} error → 503 for fallback: ${matched}`);
-
-    return {
-      ...result,
-      response: new Response(
-        JSON.stringify({
-          error: {
-            message: `[${this.provider}] upstream returned no content before erroring; retrying next model`,
-            type: "upstream_error",
-            code: "empty_upstream_response",
-          },
-        }),
-        { status: HTTP_STATUS.SERVICE_UNAVAILABLE, headers: { "Content-Type": "application/json" } },
-      ),
-    };
+  // Build the stable client-facing 503 for an exhausted/aborted empty-upstream
+  // case. Matches errorConfig's `empty_upstream_response` rule (short cooldown).
+  _emptyUpstream503(reason) {
+    return new Response(
+      JSON.stringify({
+        error: {
+          message: `[${this.provider}] ${reason}`,
+          type: "upstream_error",
+          code: "empty_upstream_response",
+        },
+      }),
+      { status: HTTP_STATUS.SERVICE_UNAVAILABLE, headers: { "Content-Type": "application/json" } },
+    );
   }
 
   transformRequest(model, body) {
