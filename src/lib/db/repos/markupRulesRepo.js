@@ -19,8 +19,10 @@ function rowToRule(row) {
 }
 
 function validateRuleData(data) {
-  if (typeof data.markupPct !== "number" || isNaN(data.markupPct)) {
-    throw new Error("markupPct phải là số");
+  // Review patch (MAJOR): !Number.isFinite bắt cả Infinity/NaN — Infinity <= 0 = false nên
+  // lọt qua check cũ → markupPct=Infinity ghi vào DB → retailPrice/priceCredits=Infinity.
+  if (typeof data.markupPct !== "number" || !Number.isFinite(data.markupPct)) {
+    throw new Error("markupPct phải là số hữu hạn");
   }
   if (data.markupPct <= 0) {
     throw new Error("markupPct phải lớn hơn 0 (margin dương bắt buộc)");
@@ -114,10 +116,14 @@ export async function deleteMarkupRule(id) {
  * Tier `category` bị bỏ — products không có cột category để bind.
  */
 export function findApplicableRule(db, productId, supplierId) {
+  // Review patch (MINOR): ORDER BY createdAt ASC makes LIMIT 1 deterministic — without it
+  // SQLite returns rows in B-tree/rowid order, which shifts after VACUUM/checkpoint and lets
+  // the applied markup change with no admin action when >1 active rule exists per tier.
+  // "Oldest rule wins" within a tier (stable, predictable).
   // product-level
   if (productId) {
     const rule = db.get(
-      `SELECT * FROM markupRules WHERE productId = ? AND isActive = 1 LIMIT 1`,
+      `SELECT * FROM markupRules WHERE productId = ? AND isActive = 1 ORDER BY createdAt ASC LIMIT 1`,
       [productId]
     );
     if (rule) return rowToRule(rule);
@@ -125,14 +131,14 @@ export function findApplicableRule(db, productId, supplierId) {
   // supplier-level
   if (supplierId) {
     const rule = db.get(
-      `SELECT * FROM markupRules WHERE supplierId = ? AND productId IS NULL AND isActive = 1 LIMIT 1`,
+      `SELECT * FROM markupRules WHERE supplierId = ? AND productId IS NULL AND isActive = 1 ORDER BY createdAt ASC LIMIT 1`,
       [supplierId]
     );
     if (rule) return rowToRule(rule);
   }
   // global
   const rule = db.get(
-    `SELECT * FROM markupRules WHERE supplierId IS NULL AND productId IS NULL AND isActive = 1 LIMIT 1`
+    `SELECT * FROM markupRules WHERE supplierId IS NULL AND productId IS NULL AND isActive = 1 ORDER BY createdAt ASC LIMIT 1`
   );
   return rule ? rowToRule(rule) : null;
 }

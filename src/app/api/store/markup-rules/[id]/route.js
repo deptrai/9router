@@ -39,8 +39,8 @@ export async function PUT(request, { params }) {
     return NextResponse.json({ error: "Body JSON không hợp lệ" }, { status: 400 });
   }
 
-  // AC4: nếu cập nhật markupPct, phải > 0.
-  if (body.markupPct !== undefined && (typeof body.markupPct !== "number" || isNaN(body.markupPct) || body.markupPct <= 0)) {
+  // AC4: nếu cập nhật markupPct, phải > 0. Number.isFinite bắt cả Infinity/NaN (Review patch MAJOR).
+  if (body.markupPct !== undefined && (typeof body.markupPct !== "number" || !Number.isFinite(body.markupPct) || body.markupPct <= 0)) {
     return NextResponse.json(
       { error: "markupPct phải lớn hơn 0 (margin dương bắt buộc)" },
       { status: 422 }

@@ -13,7 +13,7 @@ context:
 
 # Story 2.31: External Product Markup & Publishing
 
-Status: review
+Status: done
 
 ## Story
 
@@ -293,6 +293,37 @@ _Design-phase review 2026-06-15 (story chưa implement). **Round 1**: Schema & L
 - [x] [Review][Defer] Unpublished product + sync price update → `expectedMargin`/`retailPrice` stale tới khi republish [QĐ6] — sync có thể skip `applyMarkupToProduct` cho product unpublished (không lợi ích re-price hàng ẩn); margin stale chỉ lộ khi admin republish (lúc đó admin re-apply markup là tự nhiên). Edge-case, defer; nếu cần chính xác tuyệt đối → `publishProduct` luôn re-apply markup trước khi set isPublished=1.
 
 **Dismissed (2):** `unpublishProduct` vs in-flight checkout (by-design — checkout đọc snapshot nhất quán trong transaction, hành vi đúng, chỉ cần document không thêm re-check); markup lookup race "có thể insert rule giữa reads" (SQLite single-writer serialise — đã cover bởi patch transaction-wrap ở trên).
+
+---
+
+### Post-Implementation Code Review (2026-06-15)
+
+_Adversarial 3-layer review (Blind Hunter, Edge Case Hunter, Acceptance Auditor) trên commit `c910732`. Tất cả finding đã verify trực tiếp trên code thật. Verification độc lập: 42 test mới pass; migration chain apply sạch tới #11; full suite 1540 pass / 24 skip / 2 fail (`xai-oauth-service.test.js` — pre-existing test-pollution, pass khi chạy riêng, KHÔNG liên quan 2.31). Triage: 5 patch · 6 defer · 6 dismissed (false-positive/noise)._
+
+**Patch (fixable, unambiguous):**
+
+- [x] [Review][Patch][MAJOR] `unpublishProduct` thiếu source guard — có thể deactivate LOCAL product [`src/lib/store/markupEngine.js:143-153`] — `unpublishProduct` chỉ check `product` tồn tại rồi `SET isPublished=0, isActive=0` cho BẤT KỲ product nào. `publishProduct` được guard ngầm bởi `supplierPrice == null` throw, nhưng `unpublishProduct` không có guard tương đương. Route `publish/route.js:53-54` cũng không check source. Gọi `POST /products/{localId}/publish?action=unpublish` trên product `source='local'` → local product biến mất khỏi catalog (vi phạm AC5 backward-compat). Fix: thêm `if (product.source !== EXTERNAL_SOURCE) throw` trong `unpublishProduct`.
+- [x] [Review][Patch][MAJOR] `updateProduct` cho phép ghi `priceCredits` trực tiếp trên external product — phá invariant `priceCredits === retailPrice` [`src/lib/db/repos/productsRepo.js:223-229`] — guard `isActive` (scoped `EXTERNAL_SOURCE`) đã có, nhưng `priceCredits` thì KHÔNG. `updateProduct(extId, { priceCredits: 0 })` ghi đè giá markup; `storeCheckout` đọc `priceCredits` → charge sai (vd 0) trong khi `retailPrice` giữ giá cũ → checkout↔display lệch. Vi phạm QĐ4/QĐ6 ("priceCredits CHỈ set bởi applyMarkupToProduct"). Fix: thêm guard `if (data.priceCredits !== undefined && existing.source === EXTERNAL_SOURCE) throw` (scope giống isActive — local 2.28 không vỡ).
+- [x] [Review][Patch][MAJOR] Input numeric non-finite (Infinity/NaN) lọt qua mọi tầng validation [`src/lib/db/repos/markupRulesRepo.js:22-27`, `src/lib/store/markupEngine.js:22-28`, `src/lib/store/catalogSync.js:38`] — `markupPct <= 0` và `supplierPrice < 0` không bắt `Infinity` (`Infinity <= 0` = false). `markupPct=Infinity` → `retailPrice=Infinity` → `priceCredits=Infinity` → checkout `balance < Infinity` luôn true → INSUFFICIENT_CREDITS vĩnh viễn. Tương tự `catalogSync.js:38` `Number(normalized.priceCredits ?? 0)` cho `NaN` khi supplier gửi chuỗi non-numeric (`?? 0` chỉ bắt null/undefined). Fix: thêm `Number.isFinite()` vào `validateRuleData` + `calculateRetailPrice` (cả markupPct và supplierPrice) + sanitize coercion ở `upsertExternalProduct`.
+- [x] [Review][Patch][MINOR] `findApplicableRule` — cả 3 query `LIMIT 1` thiếu `ORDER BY` → chọn rule non-deterministic [`src/lib/db/repos/markupRulesRepo.js:118-137`] — khi có >1 active rule cùng tier (schema không có UNIQUE constraint chặn), `LIMIT 1` không `ORDER BY` trả row theo thứ tự B-tree (đổi sau VACUUM/checkpoint). Markup áp dụng đổi không lý do giữa các lần sync. Fix: thêm `ORDER BY createdAt ASC` (hoặc DESC) cho cả 3 tier query để chốt determinism.
+- [x] [Review][Patch][MINOR] T7 AC3 end-state test thiếu assert vắng khỏi catalog [`tests/unit/catalogSync-markup.test.js`] — test "poll sync does not re-activate a published-then-unpublished product" assert `isPublished=0/isActive=0` trên DB row nhưng KHÔNG gọi `listActiveProducts()` để xác nhận product vắng khỏi `/products`. T7 yêu cầu rõ "vắng khỏi `/products`" như observable state. Fix: thêm assert `listActiveProducts()` không chứa product sau sync.
+
+**Deferred (real, không actionable bây giờ / ngoài scope):**
+
+- [x] [Review][Defer] Rule có cả `productId`+`supplierId` khớp product-level cross-supplier [`src/lib/db/repos/markupRulesRepo.js:118-122`] — query product-level `WHERE productId = ?` không lọc supplierId; rule `{productId:'p1', supplierId:'s2'}` khớp lookup p1 từ supplier bất kỳ. Tuy nhiên code khớp ĐÚNG spec (QĐ lookup dòng 207-211 định nghĩa product-level = `WHERE productId = ?`). productId là unique nên rule keyed theo productId vốn đã supplier-specific; kịch bản cross-supplier đòi admin nhập data vô nghĩa. Defer: hardening data-entry, không phải bug vs spec.
+- [x] [Review][Defer] `supplierPrice=0` → `retailPrice=0` + lỗi publish gây hiểu nhầm [`src/lib/store/markupEngine.js:22,127`] — `supplierPrice<0` reject nhưng `=0` pass; `markupPct>0` cho `retailPrice=0`; `applyMarkupToProduct` ghi `priceCredits=0`; `publishProduct` chặn nhưng báo "retailPrice chưa set — cần applyMarkupToProduct" (sai, đã apply). Cần product-decision: free external product có hợp lệ không? Defer chờ quyết định, sau đó hoặc reject `supplierPrice=0` hoặc tách error message.
+- [x] [Review][Defer] `getEffectivePrice` trả `undefined` khi cả `retailPrice`+`priceCredits` null [`src/lib/store/markupEngine.js:162-164`] — `product.retailPrice ?? product.priceCredits` trả undefined nếu cả hai null/absent. Hiện KHÔNG có caller nào trong `src/` (dead code). Defer: thêm fallback `?? 0` hoặc throw khi có consumer thật.
+- [x] [Review][Defer] `listMarkupRules` không pagination [`src/lib/db/repos/markupRulesRepo.js:57-60`] — `SELECT * ... ORDER BY createdAt DESC` không LIMIT. Khớp pattern repo hiện có (listAllProducts cũng vậy); scale concern. Defer: thêm pagination khi rule table lớn.
+- [x] [Review][Defer] Deactivate markup rule không reprice product đã áp dụng [`src/lib/db/repos/markupRulesRepo.js` updateMarkupRule] — `updateMarkupRule(id,{isActive:false})` chỉ đổi row rule; product đã priced giữ `priceCredits`/`retailPrice` cũ tới sync sau (lúc đó `findApplicableRule` trả null → skip reprice). Cùng class với defer "stale margin" của design-review. Defer: cascade-reprice là enhancement, không block MVP.
+- [x] [Review][Defer] `isPublished` trả boolean `false` thay vì `null` cho local product [`src/lib/db/repos/productsRepo.js:39`] — 3 field pricing sibling (`supplierPrice/retailPrice/expectedMargin`) trả `null` cho local, nhưng `isPublished` trả `false` (lệch spec "local product null"). Tuy nhiên `false` defensible hơn cho flag publish, và đổi sang null có thể vỡ consumer mong boolean (`isActive` cũng theo pattern boolean). Test AC5 đã accept `false`. Defer: consistency note, đổi có rủi ro contract.
+
+**Dismissed (6 — false-positive / noise):**
+
+- `updateMarkupRule`/`deleteMarkupRule` "TOCTOU read-then-write" (blind) — SAI: sau `await getAdapter()` mọi call `db.get`/`db.run` là đồng bộ better-sqlite3, KHÔNG có `await` xen giữa → single-threaded Node không thể interleave. Không có race window.
+- `colExists` "SQL injection qua `PRAGMA table_info(${table})`" (blind) — SAI: SQLite KHÔNG cho bind table-name trong PRAGMA (param không hợp lệ cú pháp); `table` hardcoded `"products"`, không có user input. Không khai thác được.
+- `apply-markup` route "TOCTOU giữa applyMarkupToProduct + getProductById" (blind) — noise: single-writer serialise; re-read sau commit là behavior chấp nhận được cho admin action.
+- `publishProduct` thiếu source check (blind) — đã guard ngầm: local product `supplierPrice == null` → throw trước khi publish. (unpublishProduct mới là vấn đề thật — xem patch.)
+- Double `findApplicableRule` call trong upsert (auditor) — noise: pre-check + internal lookup chạy cùng transaction, an toàn; chỉ là micro-inefficiency.
 
 ## Dev Agent Record
 

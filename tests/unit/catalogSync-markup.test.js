@@ -149,6 +149,12 @@ describe("sync NEVER touches isActive/isPublished (QĐ6 guard)", () => {
     expect(p.isActive).toBe(0);
     expect(p.supplierPrice).toBe(110); // price still refreshed
     expect(p.retailPrice).toBe(132); // 110 * 1.20 — re-priced
+
+    // Review patch (T7 AC3 end-state): assert observable catalog absence, not just the DB row.
+    // The unpublished product must NOT appear in listActiveProducts (the /products view).
+    const { listActiveProducts } = await import("@/lib/db/repos/productsRepo.js");
+    const catalog = await listActiveProducts();
+    expect(catalog.some((c) => c.id === p.id)).toBe(false);
   });
 
   it("webhook event carrying isActive=false does NOT write isActive/isPublished", async () => {

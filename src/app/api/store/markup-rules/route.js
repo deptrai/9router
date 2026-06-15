@@ -36,7 +36,8 @@ export async function POST(request) {
   }
 
   // AC4: markupPct phải > 0 (margin dương bắt buộc). Validate sớm ở route để trả 422.
-  if (typeof body?.markupPct !== "number" || isNaN(body.markupPct) || body.markupPct <= 0) {
+  // Review patch (MAJOR): Number.isFinite bắt cả Infinity/NaN (Infinity <= 0 = false nên lọt qua isNaN cũ).
+  if (typeof body?.markupPct !== "number" || !Number.isFinite(body.markupPct) || body.markupPct <= 0) {
     return NextResponse.json(
       { error: "markupPct phải lớn hơn 0 (margin dương bắt buộc)" },
       { status: 422 }

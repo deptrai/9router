@@ -35,7 +35,11 @@ export const DEFAULT_STALE_THRESHOLD_SEC = 24 * 3600;
  * MUST be called from within a caller-managed db.transaction().
  */
 function upsertExternalProduct(db, { sourceId, syncVersion, normalized, now }) {
-  const supplierPrice = Number(normalized.priceCredits ?? 0);
+  // Review patch (MAJOR): coerce defensively — Number("abc")=NaN slips past `?? 0`
+  // (which only guards null/undefined). NaN bound to a REAL column would silently store
+  // NULL, breaking publishProduct/applyMarkupToProduct later. Clamp non-finite to 0.
+  const rawPrice = Number(normalized.priceCredits ?? 0);
+  const supplierPrice = Number.isFinite(rawPrice) && rawPrice >= 0 ? rawPrice : 0;
 
   const existing = db.get(
     `SELECT id, supplierSourceId FROM products WHERE source = ? AND supplierSourceId = ? AND supplierProductId = ?`,

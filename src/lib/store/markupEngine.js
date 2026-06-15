@@ -9,6 +9,10 @@ import { findApplicableRule } from "../db/repos/markupRulesRepo.js";
 // (e.g. 14.999999999999998 → 15). Applied even when roundingRule='none'.
 const PRECISION = 1e6;
 
+// Story 2.31: external product source marker. Defined locally (mirrors productsRepo.js)
+// to keep the publish/unpublish guard self-contained without a cross-layer import.
+const EXTERNAL_SOURCE = "external_telegram_store";
+
 /**
  * Pure function — no DB, no side effects.
  * Calculates retail price from supplier price + markup percentage + rounding rule.
@@ -19,11 +23,13 @@ const PRECISION = 1e6;
  * @returns {number} retailPrice
  */
 export function calculateRetailPrice(supplierPrice, markupPct, roundingRule = "none") {
-  if (typeof supplierPrice !== "number" || isNaN(supplierPrice) || supplierPrice < 0) {
-    throw new Error("calculateRetailPrice: supplierPrice phải là số không âm");
+  if (typeof supplierPrice !== "number" || !Number.isFinite(supplierPrice) || supplierPrice < 0) {
+    throw new Error("calculateRetailPrice: supplierPrice phải là số hữu hạn không âm");
   }
   // QĐ8: markupPct <= 0 → reject (retailPrice <= supplierPrice ⟺ markupPct <= 0 với supplierPrice dương)
-  if (typeof markupPct !== "number" || isNaN(markupPct) || markupPct <= 0) {
+  // Review patch (MAJOR): !Number.isFinite cũng bắt Infinity/NaN — Infinity <= 0 = false nên lọt
+  // qua check cũ, gây retailPrice=Infinity → priceCredits=Infinity → checkout vỡ vĩnh viễn.
+  if (typeof markupPct !== "number" || !Number.isFinite(markupPct) || markupPct <= 0) {
     throw new Error("calculateRetailPrice: markupPct phải lớn hơn 0 (margin dương bắt buộc)");
   }
 
@@ -145,6 +151,15 @@ export async function unpublishProduct(productId) {
   db.transaction(() => {
     const product = db.get(`SELECT * FROM products WHERE id = ?`, [productId]);
     if (!product) throw new Error(`unpublishProduct: product ${productId} not found`);
+    // Review patch (MAJOR): guard against deactivating LOCAL products. publishProduct is
+    // implicitly guarded by the supplierPrice==null check, but unpublishProduct had no
+    // equivalent — calling it on a local product would set isActive=0 and drop it from the
+    // catalog (AC5 backward-compat violation). Local visibility is managed via updateProduct.
+    if (product.source !== EXTERNAL_SOURCE) {
+      throw new Error(
+        "unpublishProduct: chỉ external product mới unpublish được — local product dùng updateProduct"
+      );
+    }
     db.run(
       `UPDATE products SET isPublished=0, isActive=0, updatedAt=? WHERE id=?`,
       [new Date().toISOString(), productId]

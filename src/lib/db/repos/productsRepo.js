@@ -224,6 +224,15 @@ export async function updateProduct(id, data) {
     if (typeof data.priceCredits !== "number" || isNaN(data.priceCredits) || data.priceCredits < 0) {
       throw new Error("updateProduct: priceCredits phải là số không âm");
     }
+    // Story 2.31 (Review patch MAJOR): external product priceCredits là nguồn truth của
+    // applyMarkupToProduct (= retailPrice). Cho ghi trực tiếp sẽ phá invariant
+    // priceCredits === retailPrice → checkout charge sai trong khi display giữ giá cũ.
+    // Scope hẹp theo source — local product (2.28) vẫn set priceCredits tự do.
+    if (existing.source === EXTERNAL_SOURCE) {
+      throw new Error(
+        "updateProduct: external product không được set priceCredits trực tiếp — dùng applyMarkupToProduct"
+      );
+    }
     fields.push("priceCredits = ?");
     values.push(data.priceCredits);
   }
