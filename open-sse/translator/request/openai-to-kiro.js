@@ -298,7 +298,18 @@ function convertMessages(messages, tools, model) {
           : curContent;
       }
       if (curMsg.toolUses?.length) {
-        prevMsg.toolUses = [...(prevMsg.toolUses || []), ...curMsg.toolUses];
+        // Dedup by toolUseId when combining: a truncated turn + its retry can
+        // re-emit the SAME tool call, and sending duplicate toolUseIds in one
+        // assistantResponseMessage makes Kiro execute it twice or reject the
+        // message. Keep the first occurrence (the earlier/prev side wins).
+        const seen = new Set((prevMsg.toolUses || []).map(t => t.toolUseId).filter(Boolean));
+        const merged = [...(prevMsg.toolUses || [])];
+        for (const tu of curMsg.toolUses) {
+          if (tu.toolUseId && seen.has(tu.toolUseId)) continue;
+          if (tu.toolUseId) seen.add(tu.toolUseId);
+          merged.push(tu);
+        }
+        prevMsg.toolUses = merged;
       }
     } else {
       mergedHistory.push(current);

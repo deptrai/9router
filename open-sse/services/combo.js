@@ -271,7 +271,7 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, estimateInputTokens = estimateRequestInputTokens, bufferedFallbackEnabled = false }) {
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, estimateInputTokens = estimateRequestInputTokens, bufferedFallbackEnabled = false, bufferTimeoutMs = undefined }) {
   // Apply rotation strategy if enabled
   const rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
   
@@ -320,7 +320,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
           const startIndex = i;
           return buildHeartbeatComboResponse(async (abortSignal) => {
             // First attempt: the model we already have an open response for.
-            const first = await bufferSSEResponse(result);
+            const first = await bufferSSEResponse(result, bufferTimeoutMs, abortSignal);
             if (!first.truncated && first.hasContent) {
               log.info("COMBO_BUFFER", `Model ${modelStr} buffered OK (${first.rawSSE.length} bytes)`);
               return { rawSSE: first.rawSSE };
@@ -331,6 +331,21 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
             for (let j = startIndex + 1; j < rotatedModels.length; j++) {
               if (abortSignal?.aborted) throw new Error("client disconnected during buffered fallback");
               const fbModel = rotatedModels[j];
+              // Skip models that can't fit this request, mirroring the outer
+              // combo loop. Without this the buffered loop wastes a full upstream
+              // round-trip on a guaranteed 400 context-window error.
+              const fbFit = getModelContextFit(body, fbModel, estimateInputTokens);
+              if (!fbFit.fits && fbFit.inputLimit) {
+                const fbHasLarger = hasPotentialLargerContextCandidate(
+                  rotatedModels, j + 1,
+                  fbFit.effectiveLimit || fbFit.contextWindow,
+                  fbFit.requiredTokens,
+                );
+                if (fbHasLarger) {
+                  log.warn("COMBO_BUFFER", `Skipping ${fbModel}: context window too small`);
+                  continue;
+                }
+              }
               log.info("COMBO_BUFFER", `Buffered retry with ${fbModel}`);
               let fbResult;
               try {
@@ -344,7 +359,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
                 try { await fbResult.body?.cancel?.(); } catch { /* noop */ }
                 continue;
               }
-              const fb = await bufferSSEResponse(fbResult);
+              const fb = await bufferSSEResponse(fbResult, bufferTimeoutMs, abortSignal);
               if (!fb.truncated && fb.hasContent) {
                 log.info("COMBO_BUFFER", `Fallback ${fbModel} buffered OK (${fb.rawSSE.length} bytes)`);
                 return { rawSSE: fb.rawSSE };

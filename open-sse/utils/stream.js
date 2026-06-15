@@ -54,7 +54,26 @@ export function isUpstreamTerminalChunk(parsed) {
   if (parsed.candidates?.[0]?.finishReason) return true;
   const t = parsed.type || parsed.event;
   if (t === "response.completed" || t === "response.failed" || t === "response.incomplete") return true;
+  // An explicit error event is ALSO a genuine end-of-stream: the upstream
+  // terminated (with failure) rather than being cut mid-flight. Treating it as
+  // terminal stops flush() from stacking a second truncation terminator on top
+  // of the error the client already received. NOTE: this means "ended", not
+  // "succeeded" — callers that need success-only semantics (e.g. buffered
+  // fallback) must exclude errors separately (see isSuccessfulTerminalChunk).
+  if (t === "error") return true;
   return false;
+}
+
+// Like isUpstreamTerminalChunk but EXCLUDES error terminals. A stream that
+// ended with an error (event: error / response.failed / a bare {error:...}
+// chunk) is genuinely finished but did NOT succeed, so a buffered-fallback
+// caller must keep trying the next model rather than commit the error as a
+// final answer.
+export function isSuccessfulTerminalChunk(parsed) {
+  if (!parsed || typeof parsed !== "object") return false;
+  const t = parsed.type || parsed.event;
+  if (parsed.error || t === "error" || t === "response.failed") return false;
+  return isUpstreamTerminalChunk(parsed);
 }
 
 /**
@@ -315,6 +334,18 @@ export function createSSEStream(options = {}) {
         // Translate mode
         if (!trimmed) continue;
 
+        // The bare [DONE] sentinel is not valid JSON, so parseSSELine() returns
+        // null and the line is dropped before the terminal-marker check below.
+        // Catch it explicitly so a stream whose ONLY end signal is [DONE] (a
+        // non-standard provider that omits finish_reason/message_stop) still
+        // marks upstreamFinished — otherwise flush()'s truncation guard would
+        // false-positive and emit a spurious retryable error. Mirrors the
+        // passthrough-mode [DONE] handling so the two modes stay in lockstep.
+        if (trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]") {
+          upstreamFinished = true;
+          continue;
+        }
+
         try {
         const parsed = parseSSELine(trimmed, targetFormat);
         if (!parsed) continue;
@@ -350,6 +381,20 @@ export function createSSEStream(options = {}) {
             outputState.accumulatedThinking += parsed.delta.thinking;
           }
 
+          // Claude format - tool-call output (input_json_delta args + tool_use
+          // start). These carry NO delta.text but ARE genuine semantic output.
+          // Without counting them, a truncated tool-call-only stream leaves
+          // totalContentLength at 0 and flush()'s truncation guard never fires
+          // (P1) — the client silently accepts a half-emitted tool call as
+          // complete. Count length toward the guard's "did we emit output?"
+          // signal only; do NOT append to accumulatedContent (which tracks the
+          // textual answer for logging/usage).
+          if (typeof parsed.delta?.partial_json === "string") {
+            outputState.totalContentLength += parsed.delta.partial_json.length;
+          } else if (parsed.type === "content_block_start" && parsed.content_block?.type === "tool_use") {
+            outputState.totalContentLength += (parsed.content_block?.name || "tool_call").length;
+          }
+
           // OpenAI format - content/tool calls
           if (parsed.choices?.[0]?.delta) {
             const outputParts = extractOutputForFormat(parsed, FORMATS.OPENAI);
@@ -368,6 +413,11 @@ export function createSSEStream(options = {}) {
               } else {
                 outputState.accumulatedContent += part.text;
               }
+            } else if (part.functionCall) {
+              // Gemini tool-call part: genuine semantic output with no .text.
+              // Count it toward the truncation guard (P1) so a truncated
+              // tool-call-only Gemini stream is not mistaken for empty.
+              outputState.totalContentLength += (part.functionCall.name || "tool_call").length;
             }
           }
         }
