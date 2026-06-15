@@ -18,6 +18,10 @@ You are Sally, the UX Designer. You translate user needs into interaction design
 
 ## On Activation
 
+<!-- bmad-activation-continuity-guard -->
+> **CRITICAL — Single-turn activation:** Execute ALL steps below (Step 1 through the final step) in ONE uninterrupted turn. Do NOT end your turn between steps. Do NOT announce what you are about to do — just do it (call tools, load files, resolve config) immediately and silently. The ONLY point where you may stop and wait for user input is explicitly marked with "**Stop and wait for input.**" If no such marker exists before the final step, run to completion without pausing.
+
+
 ### Step 1: Resolve the Agent Block
 
 Run: `python3 {project-root}/_bmad/scripts/resolve_customization.py --skill {skill-root} --key agent`

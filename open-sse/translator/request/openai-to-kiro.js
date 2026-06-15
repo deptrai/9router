@@ -208,12 +208,27 @@ function convertMessages(messages, tools, model) {
         if (lastMsg?.assistantResponseMessage) {
           lastMsg.assistantResponseMessage.toolUses = toolUses.map(tc => {
             if (tc.function) {
+              // arguments may be partial/invalid JSON when a previous stream was
+              // cut off mid tool-call (vuz/kiro truncation). A raw JSON.parse here
+              // would throw and crash the ENTIRE request translation, so the next
+              // "continue" turn keeps failing until the conversation is compacted
+              // or restarted. Parse defensively: fall back to {} on malformed JSON
+              // so the turn still converts and the request reaches kiro.
+              let input = {};
+              const args = tc.function.arguments;
+              if (typeof args === "string") {
+                try {
+                  input = args.trim() ? JSON.parse(args) : {};
+                } catch {
+                  input = {};
+                }
+              } else if (args && typeof args === "object") {
+                input = args;
+              }
               return {
                 toolUseId: tc.id || uuidv4(),
                 name: tc.function.name,
-                input: typeof tc.function.arguments === "string" 
-                  ? JSON.parse(tc.function.arguments) 
-                  : (tc.function.arguments || {})
+                input
               };
             } else {
               return {
@@ -260,15 +275,31 @@ function convertMessages(messages, tools, model) {
     }
   });
 
-  // Merge consecutive user messages (Kiro requires alternating user/assistant)
+  // Merge consecutive same-role messages (Kiro requires strictly alternating
+  // user/assistant). Two consecutive assistant messages can appear when a stream
+  // was cut off mid-turn (the truncated assistant turn + the model's retry turn),
+  // which Kiro rejects. Merge their content and combine toolUses so the history
+  // stays alternating.
   const mergedHistory = [];
   for (let i = 0; i < history.length; i++) {
     const current = history[i];
-    if (current.userInputMessage &&
-        mergedHistory.length > 0 &&
-        mergedHistory[mergedHistory.length - 1].userInputMessage) {
-      const prev = mergedHistory[mergedHistory.length - 1];
+    const prev = mergedHistory[mergedHistory.length - 1];
+    if (current.userInputMessage && prev?.userInputMessage) {
       prev.userInputMessage.content += "\n\n" + current.userInputMessage.content;
+    } else if (current.assistantResponseMessage && prev?.assistantResponseMessage) {
+      const prevMsg = prev.assistantResponseMessage;
+      const curMsg = current.assistantResponseMessage;
+      const prevContent = prevMsg.content || "";
+      const curContent = curMsg.content || "";
+      // Avoid stacking the "..." placeholder when one side has real content.
+      if (curContent && curContent !== "...") {
+        prevMsg.content = prevContent && prevContent !== "..."
+          ? prevContent + "\n\n" + curContent
+          : curContent;
+      }
+      if (curMsg.toolUses?.length) {
+        prevMsg.toolUses = [...(prevMsg.toolUses || []), ...curMsg.toolUses];
+      }
     } else {
       mergedHistory.push(current);
     }

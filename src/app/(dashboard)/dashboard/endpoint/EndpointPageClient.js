@@ -79,6 +79,7 @@ export default function APIPageClient({ machineId }) {
   const [kiroAutoCompactEnabled, setKiroAutoCompactEnabled] = useState(true);
   const [cavemanEnabled, setCavemanEnabled] = useState(false);
   const [cavemanLevel, setCavemanLevel] = useState("full");
+  const [bufferedFallbackEnabled, setBufferedFallbackEnabled] = useState(false);
 
   // Cloudflare Tunnel state
   const [tunnelChecking, setTunnelChecking] = useState(true);
@@ -251,6 +252,7 @@ export default function APIPageClient({ machineId }) {
         setKiroAutoCompactEnabled(!!data.kiroAutoCompactEnabled);
         setCavemanEnabled(!!data.cavemanEnabled);
         setCavemanLevel(data.cavemanLevel || "full");
+        setBufferedFallbackEnabled(!!data.bufferedFallbackEnabled);
       }
       if (statusRes.ok) {
         const data = await statusRes.json();
@@ -346,6 +348,11 @@ export default function APIPageClient({ machineId }) {
   const handleCavemanLevel = (level) => {
     setCavemanLevel(level);
     patchSetting({ cavemanLevel: level });
+  };
+
+  const handleBufferedFallbackEnabled = (value) => {
+    setBufferedFallbackEnabled(value);
+    patchSetting({ bufferedFallbackEnabled: value });
   };
 
   const fetchData = async () => {
@@ -1162,6 +1169,21 @@ export default function APIPageClient({ machineId }) {
           <Toggle
             checked={kiroAutoCompactEnabled}
             onChange={() => handleKiroAutoCompactEnabled(!kiroAutoCompactEnabled)}
+          />
+        </div>
+        <div className="flex items-center justify-between py-4 border-b border-border gap-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <p className="font-medium">Buffered fallback (combo)</p>
+              <Tooltip text="When a combo provider returns 200 then cuts the stream mid-response (e.g. vuz), 9router buffers the whole answer server-side and transparently retries the next combo model (vuz → viber) so the client never sees a truncated reply. Trade-off: the client loses real-time streaming — it waits (with a keepalive heartbeat) until the full answer is buffered. Leave OFF unless mid-stream cut-offs are a problem." />
+            </div>
+            <p className="text-sm text-text-muted">
+              Auto-retry next combo model on mid-stream cut-off — costs real-time streaming
+            </p>
+          </div>
+          <Toggle
+            checked={bufferedFallbackEnabled}
+            onChange={() => handleBufferedFallbackEnabled(!bufferedFallbackEnabled)}
           />
         </div>
         <div className="flex items-center justify-between pt-4 gap-4 flex-wrap">

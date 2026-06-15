@@ -418,8 +418,30 @@ export class KiroExecutor extends BaseExecutor {
       },
 
       flush(controller) {
-        // Emit finish chunk if not already sent
+        // A genuine end-of-turn sets finishEmitted mid-stream — it is only set
+        // true when a real terminal arrived (messageStopEvent, or the
+        // meteringEvent+contextUsageEvent pair). Reaching flush() with it still
+        // false means the upstream AWS EventStream closed WITHOUT signalling
+        // completion.
         if (!state.finishEmitted) {
+          // Truncation guard (Fix #2): real content was already emitted to the
+          // client but the upstream died before any stop event. Do NOT fabricate
+          // a finish_reason:stop chunk + [DONE] here — that terminal marker would
+          // tell the downstream SSE layer (stream.js) the turn completed normally,
+          // so its truncation guard (Fix #1) would NOT fire and the client (Claude
+          // Code) would silently accept a half-answer as complete, stopping
+          // mid-sentence. Instead close the stream WITHOUT a terminal marker:
+          // stream.js then sees content-but-no-finish and emits a retryable error
+          // terminator, so the client retries the whole turn (re-entering
+          // account/model fallback) rather than truncating.
+          if (chunkIndex > 0) {
+            return; // no fabricated finish, no [DONE] — let stream.js surface it
+          }
+
+          // No content at all (empty upstream). Preserve the existing behaviour:
+          // emit a finish + [DONE] so non-truncation paths are unchanged. The
+          // empty-upstream→retry case is handled separately (ssePeek on relay
+          // providers); a pure-kiro empty stream still terminates cleanly here.
           state.finishEmitted = true;
           if (!state.usageEmitted) {
             state.usageEmitted = true;

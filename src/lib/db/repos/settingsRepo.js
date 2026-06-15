@@ -37,6 +37,14 @@ const DEFAULT_SETTINGS = {
   kiroAutoCompactEnabled: true,
   cavemanEnabled: false,
   cavemanLevel: "full",
+  // When enabled, combo streaming requests are buffered server-side so a
+  // provider that closes mid-stream (e.g. vuz truncating after a few lines)
+  // can transparently fall through to the next combo model before any byte
+  // reaches the client. Trade-off: the client loses real-time streaming (it
+  // waits, kept alive by heartbeats, until the full answer is buffered).
+  // Default OFF — only turn on when transparent fallback matters more than
+  // streaming latency.
+  bufferedFallbackEnabled: false,
 };
 
 async function readRaw() {

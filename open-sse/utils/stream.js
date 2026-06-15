@@ -10,6 +10,53 @@ export { COLORS, formatSSE };
 // sharedEncoder is stateless — safe to share across streams
 const sharedEncoder = new TextEncoder();
 
+// Build a retryable terminal SSE event for a stream that ended mid-response —
+// the upstream socket closed (or was aborted) BEFORE emitting a real finish
+// signal (finish_reason / message_stop / [DONE]) even though content had already
+// been forwarded. Without this, flush() would emit a benign terminator and the
+// client SDK would treat a truncated half-answer as a complete one, silently
+// dropping the rest. A recognized error event makes the client throw a clear,
+// retryable upstream error instead — so e.g. Claude Code retries the whole turn
+// (which then re-enters account/model fallback) rather than stopping mid-sentence.
+//
+// Mirrors buildAbortTerminator in streamHandler.js (the stall/abort path), but is
+// reached on the clean-EOF path where flush() runs and no exception is thrown.
+function buildTruncationTerminator(sourceFormat, reason = "upstream stream ended mid-response before completion (truncated)") {
+  if (sourceFormat === FORMATS.CLAUDE) {
+    const payload = JSON.stringify({ type: "error", error: { type: "overloaded_error", message: reason } });
+    return `event: error\ndata: ${payload}\n\n`;
+  }
+  // OpenAI / OpenAI-compatible: an error chunk the SDK surfaces as a failure
+  // (NOT followed by [DONE], which would re-assert a successful completion).
+  const payload = JSON.stringify({ error: { message: reason, type: "upstream_error", code: "stream_truncated" } });
+  return `data: ${payload}\n\n`;
+}
+
+// Does this parsed upstream chunk carry a GENUINE end-of-stream marker? This is
+// the single source of truth for the truncation guard, shared by both stream
+// modes so they can never drift apart. We read the RAW upstream shape rather
+// than translator state (state.finishReason is set inconsistently across
+// translators — e.g. Claude→OpenAI leaves it null even on a clean message_stop).
+//
+// Covered terminal shapes:
+//   - OpenAI [DONE] sentinel              → parsed.done
+//   - OpenAI chat.completion finish_reason
+//   - Claude messages: message_stop / message_delta.stop_reason
+//   - OpenAI Responses API: response.completed / response.failed / response.incomplete
+//   - Gemini: candidates[].finishReason
+//   - Ollama: done:true (already parsed.done)
+export function isUpstreamTerminalChunk(parsed) {
+  if (!parsed || typeof parsed !== "object") return false;
+  if (parsed.done) return true;
+  if (parsed.type === "message_stop") return true;
+  if (parsed.delta?.stop_reason) return true;
+  if (parsed.choices?.[0]?.finish_reason) return true;
+  if (parsed.candidates?.[0]?.finishReason) return true;
+  const t = parsed.type || parsed.event;
+  if (t === "response.completed" || t === "response.failed" || t === "response.incomplete") return true;
+  return false;
+}
+
 /**
  * Stream modes
  */
@@ -145,6 +192,12 @@ export function createSSEStream(options = {}) {
   let sseLineCount = 0;
   let sseEmittedCount = 0;
   const eventTypeCounts = {};
+  // Did the UPSTREAM emit a genuine end-of-stream signal (finish_reason / [DONE]
+  // sentinel / Claude message_stop)? Distinguishes a real completion from a socket
+  // that closed mid-response. In TRANSLATE mode state.finishReason already captures
+  // this; in PASSTHROUGH mode we track it here. flush() uses this to decide between
+  // a benign terminator and a retryable truncation error.
+  let upstreamFinished = false;
 
   return new TransformStream({
     transform(chunk, controller) {
@@ -175,6 +228,7 @@ export function createSSEStream(options = {}) {
           // one terminator at stream end. Forwarding it too produces a double
           // "data: [DONE]" which can confuse strict client SDKs.
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]") {
+            upstreamFinished = true; // upstream signalled a real end-of-stream
             continue;
           }
 
@@ -205,6 +259,13 @@ export function createSSEStream(options = {}) {
                 }
               }
 
+              // Mark a genuine upstream end-of-stream from the RAW bytes BEFORE
+              // the hasValuableContent() skip below — terminal markers like the
+              // Responses API "response.completed" carry no "valuable content"
+              // and would otherwise be dropped, leaving upstreamFinished false on
+              // a healthy tool-call-only / reasoning-only stream.
+              if (isUpstreamTerminalChunk(parsed)) upstreamFinished = true;
+
               if (!hasValuableContent(parsed, FORMATS.OPENAI)) {
                 continue;
               }
@@ -219,6 +280,7 @@ export function createSSEStream(options = {}) {
               }
 
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
+              if (isFinishChunk) upstreamFinished = true;
               if (isFinishChunk && !hasValidUsage(parsed.usage)) {
                 const estimated = estimateUsage(body, outputState.totalContentLength, FORMATS.OPENAI);
                 parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
@@ -256,6 +318,14 @@ export function createSSEStream(options = {}) {
         try {
         const parsed = parseSSELine(trimmed, targetFormat);
         if (!parsed) continue;
+
+        // Mark a genuine upstream end-of-stream from the RAW bytes, before any
+        // translator state mutation. This is the truncation guard's source of
+        // truth: state.finishReason is set inconsistently across translators
+        // (e.g. Claude→OpenAI leaves it null even on a clean message_stop), so
+        // relying on it would false-positive and corrupt healthy streams. Uses
+        // the SAME detector as passthrough so the two modes never drift apart.
+        if (isUpstreamTerminalChunk(parsed)) upstreamFinished = true;
 
         // For Ollama: done=true is the final chunk with finish_reason/usage, must translate
         // For other formats: done=true is the upstream [DONE] sentinel — drop it here.
@@ -384,6 +454,26 @@ export function createSSEStream(options = {}) {
             appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
           }
           
+          // Truncation guard: content was forwarded but the upstream socket
+          // closed BEFORE any real finish signal ([DONE] / finish_reason). Emit a
+          // retryable error event instead of the benign [DONE] sentinel, so the
+          // client treats a half-answer as a failure (and retries the turn) rather
+          // than silently accepting a truncated response as complete.
+          if (outputState.totalContentLength > 0 && !upstreamFinished) {
+            const term = buildTruncationTerminator(sourceFormat);
+            reqLogger?.appendConvertedChunk?.(term);
+            controller.enqueue(sharedEncoder.encode(term));
+            terminatorEmitted = true;
+            dbg("SSE", `truncation detected (passthrough) | bytes=${outputState.totalContentLength} | no upstream finish → retryable error terminator`);
+            if (onStreamComplete) {
+              onStreamComplete({
+                content: outputState.accumulatedContent,
+                thinking: outputState.accumulatedThinking
+              }, usage, ttftAt);
+            }
+            return;
+          }
+
           // IMPORTANT: In passthrough mode we still must terminate the SSE stream.
           // Some clients (e.g. OpenClaw) expect the OpenAI-style sentinel:
           //   data: [DONE]\n\n
@@ -439,6 +529,30 @@ export function createSSEStream(options = {}) {
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
           }
+        }
+
+        // Truncation guard (translate mode): real output was emitted but the
+        // upstream never sent a finish signal. We rely ONLY on upstreamFinished,
+        // which is set in transform() the instant a genuine terminal marker is
+        // seen in the RAW upstream bytes (message_stop / [DONE] / finish_reason /
+        // stop_reason) — NOT on state.finishReason, which the translator may leave
+        // null even on a healthy stream. A closed socket mid-response leaves
+        // upstreamFinished false, so we surface a retryable error terminator
+        // instead of [DONE] and the client retries rather than accepting a
+        // truncated answer as complete.
+        if (outputState.totalContentLength > 0 && !upstreamFinished) {
+          const term = buildTruncationTerminator(sourceFormat);
+          reqLogger?.appendConvertedChunk?.(term);
+          controller.enqueue(sharedEncoder.encode(term));
+          terminatorEmitted = true;
+          dbg("SSE", `truncation detected (translate) | bytes=${outputState.totalContentLength} | no upstream finish → retryable error terminator`);
+          if (onStreamComplete) {
+            onStreamComplete({
+              content: outputState.accumulatedContent,
+              thinking: outputState.accumulatedThinking
+            }, state?.usage, ttftAt);
+          }
+          return;
         }
 
         const doneOutput = "data: [DONE]\n\n";

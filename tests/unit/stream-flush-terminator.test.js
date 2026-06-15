@@ -87,6 +87,97 @@ describe("createSSEStream — flush() terminator regression guards", () => {
     expect(lastErrorIdx).toBeLessThan(lastDoneIdx); // either no error event, or it's before [DONE] (i.e. -1 < anything)
   });
 
+  it("PASSTHROUGH truncation: content forwarded but upstream closed with NO finish → retryable error, NOT [DONE]", async () => {
+    // vuz→kiro 200-then-cut: a content delta is forwarded, then the upstream
+    // socket closes without ever sending finish_reason or [DONE]. flush() must
+    // emit a retryable error terminator (so the client retries) instead of a
+    // benign [DONE] that would make a half-answer look complete.
+    const out = await runStream(
+      {
+        mode: "passthrough",
+        provider: "test",
+        model: "test-model",
+      },
+      [
+        // content only — NO finish_reason, NO [DONE]
+        'data: {"choices":[{"delta":{"content":"half an answer"}}]}\n',
+      ]
+    );
+    expect(out).toContain("half an answer");
+    expect(out).not.toContain("data: [DONE]");
+    expect(out).toContain('"code":"stream_truncated"');
+  });
+
+  it("TRANSLATE truncation (OpenAI client): content emitted but no upstream stop → retryable error data chunk, NOT [DONE]", async () => {
+    // Claude provider streams content then the socket dies before message_delta
+    // /message_stop. upstreamFinished stays false → flush() must surface a
+    // retryable error terminator rather than [DONE]. Client format is OpenAI,
+    // so the terminator is a `data: {error...}` chunk (NOT an `event: error`,
+    // which is the Claude-client shape).
+    const out = await runStream(
+      {
+        mode: "translate",
+        targetFormat: FORMATS.CLAUDE,
+        sourceFormat: FORMATS.OPENAI,
+        provider: "test",
+        model: "test-model",
+      },
+      [
+        'event: message_start\ndata: {"type":"message_start","message":{"id":"m_1","type":"message","role":"assistant","content":[],"model":"test-model","stop_reason":null,"usage":{"input_tokens":1,"output_tokens":0}}}\n\n',
+        'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n',
+        'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"half an answer"}}\n\n',
+        // socket dies here — no message_delta/message_stop
+      ]
+    );
+    expect(out).toContain("half an answer");
+    expect(out).not.toContain("data: [DONE]");
+    expect(out).toContain('"code":"stream_truncated"');
+  });
+
+  it("TRANSLATE truncation (Claude client): emits `event: error`, NOT [DONE]", async () => {
+    // Same truncation, but the client speaks Claude format (sourceFormat=CLAUDE):
+    // the terminator must be a recognized `event: error` so the Anthropic SDK
+    // throws a retryable upstream error instead of accepting a half-answer.
+    // Provider/target is OpenAI; upstream dies after a content delta with no
+    // finish_reason / [DONE].
+    const out = await runStream(
+      {
+        mode: "translate",
+        targetFormat: FORMATS.OPENAI,
+        sourceFormat: FORMATS.CLAUDE,
+        provider: "test",
+        model: "test-model",
+      },
+      [
+        'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant"}}]}\n\n',
+        'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"half an answer"}}]}\n\n',
+        // socket dies here — no finish_reason, no [DONE]
+      ]
+    );
+    expect(out).toContain("half an answer");
+    expect(out).not.toContain("data: [DONE]");
+    expect(out).toContain("event: error");
+    expect(out).toContain("overloaded_error");
+  });
+
+  it("PASSTHROUGH no-content close (empty upstream) does NOT trigger truncation guard → [DONE]", async () => {
+    // Guard must be scoped to the truncation case only: a stream that produced
+    // zero content (handled by ssePeek elsewhere) still ends with [DONE], not an
+    // error terminator — otherwise we'd double-handle the empty-upstream case.
+    const out = await runStream(
+      {
+        mode: "passthrough",
+        provider: "test",
+        model: "test-model",
+      },
+      [
+        'data: {"choices":[{"delta":{"role":"assistant"}}]}\n',
+      ]
+    );
+    expect(out).toContain("data: [DONE]");
+    expect(out).not.toContain('"code":"stream_truncated"');
+  });
+
   it("TRANSLATE: when flush throws BEFORE [DONE] is emitted, catch DOES emit a terminator", async () => {
     // Negative case: if the throw happens before [DONE] (e.g. translateResponse
     // throws on the null flush call), the terminator must still come out.

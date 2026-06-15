@@ -119,7 +119,8 @@ export async function handleChat(request, clientRawRequest = null) {
       log,
       comboName: modelStr,
       comboStrategy,
-      comboStickyLimit
+      comboStickyLimit,
+      bufferedFallbackEnabled: !!settings.bufferedFallbackEnabled
     });
   }
 
@@ -152,7 +153,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         log,
         comboName: modelStr,
         comboStrategy,
-        comboStickyLimit
+        comboStickyLimit,
+        bufferedFallbackEnabled: !!chatSettings.bufferedFallbackEnabled
       });
     }
     log.warn("CHAT", "Invalid model format", { model: modelStr });

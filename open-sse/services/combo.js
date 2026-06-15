@@ -8,6 +8,7 @@ import { getModelContextWindow, PROVIDER_ID_TO_ALIAS } from "../config/providerM
 import { unavailableResponse } from "../utils/error.js";
 import { isContextWindowError } from "../utils/contextWindowError.js";
 import { getProviderAutoCompactLimit } from "../utils/autoCompact.js";
+import { bufferSSEResponse, buildHeartbeatComboResponse, isStreamingComboRequest } from "../utils/bufferFallback.js";
 
 export { isContextWindowError } from "../utils/contextWindowError.js";
 
@@ -270,7 +271,7 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, estimateInputTokens = estimateRequestInputTokens }) {
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, estimateInputTokens = estimateRequestInputTokens, bufferedFallbackEnabled = false }) {
   // Apply rotation strategy if enabled
   const rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
   
@@ -305,9 +306,55 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
     try {
       const result = await handleSingleModel(body, modelStr);
-      
+
       // Success (2xx) - return response
       if (result.ok) {
+        // Buffered fallback path: instead of piping the stream straight through
+        // (which commits the 200 header and makes mid-stream truncation
+        // unrecoverable), buffer the whole translated SSE body server-side. If
+        // the upstream cut off mid-response (no terminal marker), transparently
+        // try the next combo model (e.g. vuz → viber) without the client ever
+        // seeing an error. Heartbeat keeps the connection alive while buffering.
+        if (bufferedFallbackEnabled && isStreamingComboRequest(body)) {
+          log.info("COMBO_BUFFER", `Model ${modelStr} returned 200, buffering before commit`);
+          const startIndex = i;
+          return buildHeartbeatComboResponse(async (abortSignal) => {
+            // First attempt: the model we already have an open response for.
+            const first = await bufferSSEResponse(result);
+            if (!first.truncated && first.hasContent) {
+              log.info("COMBO_BUFFER", `Model ${modelStr} buffered OK (${first.rawSSE.length} bytes)`);
+              return { rawSSE: first.rawSSE };
+            }
+            log.warn("COMBO_BUFFER", `Model ${modelStr} truncated/empty, trying fallback models`);
+
+            // Fall back through the remaining models in rotation order.
+            for (let j = startIndex + 1; j < rotatedModels.length; j++) {
+              if (abortSignal?.aborted) throw new Error("client disconnected during buffered fallback");
+              const fbModel = rotatedModels[j];
+              log.info("COMBO_BUFFER", `Buffered retry with ${fbModel}`);
+              let fbResult;
+              try {
+                fbResult = await handleSingleModel(body, fbModel);
+              } catch (e) {
+                log.warn("COMBO_BUFFER", `Fallback ${fbModel} threw: ${e?.message}`);
+                continue;
+              }
+              if (!fbResult.ok) {
+                log.warn("COMBO_BUFFER", `Fallback ${fbModel} HTTP ${fbResult.status}`);
+                try { await fbResult.body?.cancel?.(); } catch { /* noop */ }
+                continue;
+              }
+              const fb = await bufferSSEResponse(fbResult);
+              if (!fb.truncated && fb.hasContent) {
+                log.info("COMBO_BUFFER", `Fallback ${fbModel} buffered OK (${fb.rawSSE.length} bytes)`);
+                return { rawSSE: fb.rawSSE };
+              }
+              log.warn("COMBO_BUFFER", `Fallback ${fbModel} also truncated/empty`);
+            }
+            throw new Error(`All combo models truncated mid-stream: ${rotatedModels.slice(startIndex).join(", ")}`);
+          });
+        }
+
         log.info("COMBO", `Model ${modelStr} succeeded`);
         return result;
       }
