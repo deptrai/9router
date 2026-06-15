@@ -254,10 +254,8 @@ export default function APIPageClient({ machineId }) {
           setBufferedFallbackEnabled(!!data.bufferedFallbackEnabled);
         }
       });
-      const [_, statusRes] = await Promise.all([
-        settingsPromise,
-        fetch("/api/tunnel/status", { cache: "no-store" })
-      ]);
+      await settingsPromise;
+      const statusRes = await fetch("/api/tunnel/status", { cache: "no-store" });
       if (statusRes.ok) {
         const data = await statusRes.json();
         const tEnabled = data.tunnel?.settingsEnabled ?? data.tunnel?.enabled ?? false;
@@ -363,8 +361,12 @@ export default function APIPageClient({ machineId }) {
     try {
       const keysPromise = fetch("/api/keys").then(async (res) => {
         if (res.ok) {
-          const data = await res.json();
-          setKeys(data.keys || []);
+          try {
+            const data = await res.json();
+            setKeys(data.keys || []);
+          } catch {
+            console.warn("[keys] failed to parse JSON response");
+          }
         }
         setKeysLoading(false);
         return res;
@@ -1323,15 +1325,16 @@ export default function APIPageClient({ machineId }) {
                       <span className="text-xs text-text-muted">
                         Last used: <span className="text-text-main">{formatRelative(key.lastUsedAt)}</span>
                       </span>
-                      {formatCost(usageByKey[key.key]) && (
+                      {usageLoading ? (
+                        <span className="h-4 w-20 rounded bg-surface-2 animate-pulse inline-block" />
+                      ) : formatCost(usageByKey[key.key]) ? (
                         <span className="text-xs bg-surface-2 text-text-muted px-1.5 py-0.5 rounded">
                           {formatCost(usageByKey[key.key])}
                           {key.creditLimit != null
                             ? <span> / ${key.creditLimit.toFixed(2)}</span>
                             : <span> / Unlimited</span>}
                         </span>
-                      )}
-                      {!formatCost(usageByKey[key.key]) && (
+                      ) : (
                         <span className="text-xs bg-surface-2 text-text-muted px-1.5 py-0.5 rounded">
                           {key.creditLimit != null
                             ? `$0.00 / $${key.creditLimit.toFixed(2)}`

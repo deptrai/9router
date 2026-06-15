@@ -19,7 +19,7 @@ const useAuthStore = create((set, get) => ({
     if (!force && lastFetched && Date.now() - lastFetched < CLIENT_STORE_TTL_MS) return;
     set({ loading: true, error: null });
     try {
-      const res = await dedupFetch("/api/auth/status");
+      const res = await dedupFetch("/api/auth/status", { cache: "no-store" });
       const data = await res.json();
       if (res.ok) {
         set({

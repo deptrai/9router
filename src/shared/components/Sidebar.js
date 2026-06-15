@@ -55,6 +55,7 @@ export default function Sidebar({ onClose }) {
   const [enableTranslator, setEnableTranslator] = useState(false);
   const role = useAuthStore((s) => s.role);
   const fetchAuthStatus = useAuthStore((s) => s.fetchAuthStatus);
+  const invalidateAuth = useAuthStore((s) => s.invalidate);
   const fetchSettings = useSettingsStore((s) => s.fetchSettings);
   useEffect(() => {
     fetchAuthStatus();
@@ -310,6 +311,7 @@ export default function Sidebar({ onClose }) {
             icon="logout"
             onClick={async () => {
               await fetch("/api/auth/logout", { method: "POST" });
+              invalidateAuth();
               window.location.href = "/login";
             }}
             className="text-text-muted hover:text-text-main"

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { LEGACY_FILES, DB_DIR, DATA_FILE } from "./paths.js";
-import { TABLES, buildCreateTableSql, SCHEMA_VERSION } from "./schema.js";
+import { TABLES, buildCreateTableSql } from "./schema.js";
 import { MIGRATIONS, latestVersion } from "./migrations/index.js";
 import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
 import { makeBackupDir, backupFile, pruneOldBackups } from "./backup.js";
@@ -84,9 +84,33 @@ function runVersionedMigrations(adapter) {
 }
 
 // ─── Auto-sync (additive only): add missing tables/columns/indexes ───────
+// Builds a deterministic fingerprint of the TABLES declaration so we can skip
+// the expensive PRAGMA / ALTER loop when nothing has changed since last boot.
+function buildTablesFingerprint() {
+  const sig = JSON.stringify(
+    Object.entries(TABLES)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([t, def]) => [t, def.columns, def.indexes || []])
+  );
+  // Simple djb2 hash — fast, no crypto import needed
+  let h = 5381;
+  for (let i = 0; i < sig.length; i++) h = ((h << 5) + h) ^ sig.charCodeAt(i);
+  return String(h >>> 0);
+}
+
 function syncSchemaFromTables(adapter) {
-  const currentSchemaVer = parseInt(getMetaSync(adapter, "schemaVersion", "0"), 10) || 0;
-  if (currentSchemaVer >= SCHEMA_VERSION) return;
+  const fingerprint = buildTablesFingerprint();
+  const alreadySynced = getMetaSync(adapter, "tablesFingerprint", "") === fingerprint;
+
+  // Indexes are cheap + idempotent — always run them so DROP→reboot re-creates missing indexes
+  for (const def of Object.values(TABLES)) {
+    for (const idx of def.indexes || []) {
+      try { adapter.exec(idx); } catch {}
+    }
+  }
+
+  if (alreadySynced) return;
+
   for (const [tableName, def] of Object.entries(TABLES)) {
     // Create table if absent
     adapter.exec(buildCreateTableSql(tableName, def));
@@ -110,12 +134,9 @@ function syncSchemaFromTables(adapter) {
         }
       }
     }
-
-    // Indexes (idempotent)
-    for (const idx of def.indexes || []) {
-      try { adapter.exec(idx); } catch {}
-    }
   }
+  // Stamp fingerprint so next boot skips the expensive column-diff loop when TABLES is unchanged
+  setMetaSync(adapter, "tablesFingerprint", fingerprint);
 }
 
 // ─── Legacy JSON import (one-time) ───────────────────────────────────────

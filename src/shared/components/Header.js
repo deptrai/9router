@@ -176,6 +176,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
   const displayName = useAuthStore((s) => s.displayName);
   const loginMethod = useAuthStore((s) => s.loginMethod);
   const fetchAuthStatus = useAuthStore((s) => s.fetchAuthStatus);
+  const invalidateAuth = useAuthStore((s) => s.invalidate);
 
   // Memoize page info to prevent unnecessary recalculations
   const pageInfo = useMemo(() => getPageInfo(pathname), [pathname]);
@@ -189,6 +190,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
     try {
       const res = await fetch("/api/auth/logout", { method: "POST" });
       if (res.ok) {
+        invalidateAuth();
         router.push("/login");
         router.refresh();
       }
