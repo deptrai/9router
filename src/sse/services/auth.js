@@ -67,6 +67,48 @@ function _acquire(connectionId) {
   return { release, connectionId };
 }
 
+// Remove a waiter from its queue (abort + timeout paths). Idempotent.
+function _removeWaiter(queueKey, waiter) {
+  const q = _waitQueue.get(queueKey);
+  if (!q) return;
+  const idx = q.indexOf(waiter);
+  if (idx !== -1) q.splice(idx, 1);
+  if (q.length === 0) _waitQueue.delete(queueKey);
+}
+
+// Enqueue a waiter for a free in-flight slot and wait up to timeoutMs.
+// Resolves (woken by release) → re-evaluate; false on timeout/abort → degrade.
+// Runs OUTSIDE selectionMutex. Single source of truth for enqueue/timeout/abort —
+// getProviderCredentials and unit tests both go through here (no duplicated logic).
+function _waitForSlot(queueKey, abortSignal, timeoutMs = QUEUE_WAIT_MAX_MS) {
+  return new Promise((resolve, reject) => {
+    const waiter = { resolve, reject };
+    if (abortSignal?.aborted) return reject(new Error("aborted"));
+    if (abortSignal) {
+      const onAbort = () => {
+        _removeWaiter(queueKey, waiter);
+        if (waiter.timer) clearTimeout(waiter.timer); // clear timer on abort — no orphan
+        reject(new Error("aborted"));
+      };
+      abortSignal.addEventListener("abort", onAbort, { once: true });
+      waiter._onAbort = onAbort;
+      waiter._signal = abortSignal;
+    }
+    if (!_waitQueue.has(queueKey)) _waitQueue.set(queueKey, []);
+    _waitQueue.get(queueKey).push(waiter);
+    // Timeout: degrade after timeoutMs — clean up before resolving to prevent leaks.
+    const timeoutId = setTimeout(() => {
+      _removeWaiter(queueKey, waiter);
+      if (waiter._signal && waiter._onAbort) {
+        waiter._signal.removeEventListener("abort", waiter._onAbort);
+      }
+      resolve(false); // timeout → degrade (not reject)
+    }, timeoutMs);
+    if (timeoutId.unref) timeoutId.unref();
+    waiter.timer = timeoutId;
+  }).catch(() => false); // abort → degrade
+}
+
 export function getInFlightCount(connectionId) {
   return _inFlight.get(connectionId) || 0;
 }
@@ -265,44 +307,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       resolveMutex(); // release mutex BEFORE awaiting — prevent deadlock
       resolveMutex = null;
 
-      const slotAwaited = await new Promise((resolve, reject) => {
-        const waiter = { resolve, reject };
-        const abortSignal = options?.signal;
-        if (abortSignal?.aborted) {
-          return reject(new Error("aborted"));
-        }
-        if (abortSignal) {
-          const onAbort = () => {
-            const q = _waitQueue.get(queueKey);
-            if (q) {
-              const idx = q.indexOf(waiter);
-              if (idx !== -1) q.splice(idx, 1);
-              if (q.length === 0) _waitQueue.delete(queueKey);
-            }
-            reject(new Error("aborted"));
-          };
-          abortSignal.addEventListener("abort", onAbort, { once: true });
-          waiter._onAbort = onAbort;
-          waiter._signal = abortSignal;
-        }
-        if (!_waitQueue.has(queueKey)) _waitQueue.set(queueKey, []);
-        _waitQueue.get(queueKey).push(waiter);
-        // Timeout: degrade after QUEUE_WAIT_MAX_MS — clean up before resolving to prevent leaks.
-        const timeoutId = setTimeout(() => {
-          const q = _waitQueue.get(queueKey);
-          if (q) {
-            const idx = q.indexOf(waiter);
-            if (idx !== -1) q.splice(idx, 1);
-            if (q.length === 0) _waitQueue.delete(queueKey);
-          }
-          if (waiter._signal && waiter._onAbort) {
-            waiter._signal.removeEventListener("abort", waiter._onAbort);
-          }
-          resolve(false); // timeout → degrade (not reject)
-        }, QUEUE_WAIT_MAX_MS);
-        if (timeoutId.unref) timeoutId.unref();
-        waiter.timer = timeoutId;
-      }).catch(() => false); // abort → degrade
+      const slotAwaited = await _waitForSlot(queueKey, options?.signal);
 
       // Re-acquire mutex for re-evaluation
       const nextMutex = selectionMutex;
@@ -587,26 +592,17 @@ export function _getWaitQueueForTest() {
   return _waitQueue;
 }
 
-// Push a waiter directly into _waitQueue for unit tests (bypasses getProviderCredentials/DB).
-export function _enqueueWaiterForTest(queueKey, resolve, signal) {
-  const waiter = { resolve };
-  if (signal) {
-    const onAbort = () => {
-      const q = _waitQueue.get(queueKey);
-      if (q) {
-        const idx = q.indexOf(waiter);
-        if (idx !== -1) q.splice(idx, 1);
-        if (q.length === 0) _waitQueue.delete(queueKey);
-      }
-      resolve(false); // degrade on abort
-    };
-    if (signal.aborted) { resolve(false); return; }
-    signal.addEventListener("abort", onAbort, { once: true });
-    waiter._onAbort = onAbort;
-    waiter._signal = signal;
-  }
-  if (!_waitQueue.has(queueKey)) _waitQueue.set(queueKey, []);
-  _waitQueue.get(queueKey).push(waiter);
+// Enqueue a waiter via the REAL _waitForSlot path (timeout + abort handled by production code).
+// Returns the same promise getProviderCredentials awaits: resolves true when woken by release(),
+// false on timeout/abort. Tests pass a short timeoutMs to exercise the timeout branch.
+export function _enqueueWaiterForTest(queueKey, signal, timeoutMs) {
+  return _waitForSlot(queueKey, signal, timeoutMs);
+}
+
+// Register a connection→queueKey mapping so release(connId) targets that key (mappedKey branch).
+// Mirrors what getProviderCredentials does for availableConnections before awaiting.
+export function _registerConnKeyForTest(connectionId, queueKey) {
+  _connectionKeyMap.set(connectionId, queueKey);
 }
 
 // Clear _waitQueue for test isolation.

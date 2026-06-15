@@ -113,6 +113,41 @@ describe("Kiro request sanitize (Fix #3 — truncated prior turn)", () => {
     expect(merged.assistantResponseMessage.content).toContain("second half");
   });
 
+  it("merging consecutive assistant turns dedups repeated toolUseId (truncate + retry re-emits same call)", () => {
+    // A cut-off assistant turn and its retry both carry the SAME tool_call id.
+    // Merging must NOT produce duplicate toolUseIds in one assistantResponseMessage
+    // (kiro would execute it twice or reject the message).
+    const body = {
+      messages: [
+        { role: "user", content: "search" },
+        {
+          role: "assistant",
+          content: "let me look",
+          tool_calls: [
+            { id: "dup_1", type: "function", function: { name: "Grep", arguments: '{"q":"x"}' } },
+          ],
+        },
+        {
+          role: "assistant",
+          content: "retrying",
+          tool_calls: [
+            { id: "dup_1", type: "function", function: { name: "Grep", arguments: '{"q":"x"}' } },
+            { id: "new_2", type: "function", function: { name: "Read", arguments: '{"path":"a"}' } },
+          ],
+        },
+        { role: "user", content: "continue" },
+      ],
+    };
+
+    const result = buildKiroPayload(MODEL, body, true, {});
+    const history = result.conversationState.history;
+    const merged = history.find((h) => h.assistantResponseMessage?.toolUses?.length);
+    const ids = merged.assistantResponseMessage.toolUses.map((t) => t.toolUseId);
+    // dup_1 appears exactly once; new_2 is preserved.
+    expect(ids.filter((id) => id === "dup_1")).toHaveLength(1);
+    expect(ids).toContain("new_2");
+  });
+
   it("does not throw on an assistant turn with tool_use but no following tool_result", () => {
     // Orphan tool_use at the very end of history (the cut-off turn) + continue.
     const body = {

@@ -160,6 +160,31 @@ describe("createSSEStream — flush() terminator regression guards", () => {
     expect(out).toContain("overloaded_error");
   });
 
+  it("TRANSLATE truncation (tool-call-only Claude provider): tool_use streamed then socket dies → retryable error, NOT [DONE]", async () => {
+    // P1 regression: a Claude provider that streams ONLY a tool call (no text)
+    // then dies before message_stop. The tool-call bytes carry no delta.text, so
+    // before the fix totalContentLength stayed 0 and the truncation guard never
+    // fired — the client silently accepted a half-emitted tool call as complete.
+    // partial_json (+ tool_use block start) must now count toward the guard.
+    const out = await runStream(
+      {
+        mode: "translate",
+        targetFormat: FORMATS.CLAUDE,
+        sourceFormat: FORMATS.OPENAI,
+        provider: "test",
+        model: "test-model",
+      },
+      [
+        'event: message_start\ndata: {"type":"message_start","message":{"id":"m_1","type":"message","role":"assistant","content":[],"model":"test-model","stop_reason":null,"usage":{"input_tokens":1,"output_tokens":0}}}\n\n',
+        'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"Bash","input":{}}}\n\n',
+        'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\"cmd\\":\\"ls"}}\n\n',
+        // socket dies mid tool-call args — no message_stop, no [DONE]
+      ]
+    );
+    expect(out).not.toContain("data: [DONE]");
+    expect(out).toContain('"code":"stream_truncated"');
+  });
+
   it("PASSTHROUGH no-content close (empty upstream) does NOT trigger truncation guard → [DONE]", async () => {
     // Guard must be scoped to the truncation case only: a stream that produced
     // zero content (handled by ssePeek elsewhere) still ends with [DONE], not an

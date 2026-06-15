@@ -275,6 +275,7 @@ import {
   _getQueueDepthForTest,
   _getWaitQueueForTest,
   _enqueueWaiterForTest,
+  _registerConnKeyForTest,
   _clearWaitQueueForTest,
 } from "@/sse/services/auth.js";
 
@@ -341,131 +342,122 @@ describe("auth.js (real module) — wait queue", () => {
   it("AC#1: _enqueueWaiterForTest increases queue depth for the key", () => {
     const key = "provider-q:model-x";
     expect(_getQueueDepthForTest(key)).toBe(0);
-    _enqueueWaiterForTest(key, () => {});
+    _enqueueWaiterForTest(key);
     expect(_getQueueDepthForTest(key)).toBe(1);
-    _enqueueWaiterForTest(key, () => {});
+    _enqueueWaiterForTest(key);
     expect(_getQueueDepthForTest(key)).toBe(2);
+    // (pending waiters time out harmlessly via unref'd timers; depth is what we assert)
   });
 
-  it("AC#5 + AC#2 no-deadlock: release() decrements inFlight synchronously while waiter is in queue", () => {
+  it("AC#5 + AC#2 no-deadlock: release() decrements inFlight synchronously while waiter is in queue", async () => {
     const connId = `nodl-${Math.random().toString(36).slice(2)}`;
     const queueKey = `nodl-provider:nodl-model`;
 
     const lease = _acquireLeaseForTest(connId);
     expect(getInFlightCount(connId)).toBe(1);
 
-    // Enqueue waiter BEFORE release — simulates a request waiting for this connection
-    let waiterWoken = false;
-    _enqueueWaiterForTest(queueKey, () => { waiterWoken = true; });
+    // Map connId → queueKey so release() targets it (exercises the mappedKey branch).
+    _registerConnKeyForTest(connId, queueKey);
+    // Enqueue a real waiter via the production _waitForSlot path.
+    const waiterPromise = _enqueueWaiterForTest(queueKey);
     expect(_getQueueDepthForTest(queueKey)).toBe(1);
 
     // release() must: (a) decrement inFlight synchronously, (b) wake waiter, (c) not deadlock
     lease.release();
     expect(getInFlightCount(connId)).toBe(0); // synchronous decrement — no mutex held
-    expect(waiterWoken).toBe(true);           // waiter woken by release()
     expect(_getQueueDepthForTest(queueKey)).toBe(0); // waiter dequeued
+
+    // Woken waiter resolves (release calls waiter.resolve() with no arg → undefined, not false).
+    const woken = await waiterPromise;
+    expect(woken).not.toBe(false);
   });
 
-  it("AC#2: FIFO — two waiters enqueued, first gets woken first", () => {
+  it("AC#2: FIFO — two waiters enqueued, first gets woken first", async () => {
     const connId = `fifo-${Math.random().toString(36).slice(2)}`;
     const queueKey = `fifo-provider:fifo-model`;
-
-    const lease = _acquireLeaseForTest(connId);
+    _registerConnKeyForTest(connId, queueKey);
 
     const order = [];
-    _enqueueWaiterForTest(queueKey, () => order.push("first"));
-    _enqueueWaiterForTest(queueKey, () => order.push("second"));
+    const p1 = _enqueueWaiterForTest(queueKey).then(() => order.push("first"));
+    const p2 = _enqueueWaiterForTest(queueKey).then(() => order.push("second"));
     expect(_getQueueDepthForTest(queueKey)).toBe(2);
 
     // First release wakes waiter #1 only (one-at-a-time)
-    lease.release();
+    _acquireLeaseForTest(connId).release();
+    await p1;
     expect(order).toEqual(["first"]);
     expect(_getQueueDepthForTest(queueKey)).toBe(1);
 
     // Second release wakes waiter #2
-    const lease2 = _acquireLeaseForTest(connId);
-    lease2.release();
+    _acquireLeaseForTest(connId).release();
+    await p2;
     expect(order).toEqual(["first", "second"]);
     expect(_getQueueDepthForTest(queueKey)).toBe(0);
   });
 
-  it("AC#3: timeout → waiter resolves false (degrade, not reject)", async () => {
+  it("AC#3: timeout → waiter resolves false (degrade, not reject) — real _waitForSlot timeout branch", async () => {
     vi.useFakeTimers();
     try {
       const queueKey = `timeout-provider:timeout-model`;
-      const WAIT_MS = 50;
+      // Short timeout passed straight into the production timeout path.
+      const waiterPromise = _enqueueWaiterForTest(queueKey, undefined, 50);
+      expect(_getQueueDepthForTest(queueKey)).toBe(1);
 
-      let resolvedValue;
-      const waiterPromise = new Promise(resolve => {
-        // Enqueue with a real timeout — mirrors actual getProviderCredentials timeout path
-        _enqueueWaiterForTest(queueKey, resolve);
-        // Timeout: remove waiter and resolve(false) after WAIT_MS (same as auth.js)
-        setTimeout(() => {
-          const q = _getWaitQueueForTest().get(queueKey);
-          if (q) {
-            const idx = q.findIndex(w => w.resolve === resolve);
-            if (idx !== -1) q.splice(idx, 1);
-            if (q.length === 0) _getWaitQueueForTest().delete(queueKey);
-          }
-          resolve(false);
-        }, WAIT_MS);
-      });
-
-      vi.advanceTimersByTime(WAIT_MS + 10);
-      resolvedValue = await waiterPromise;
-      expect(resolvedValue).toBe(false); // degrade, not throw
-      expect(_getQueueDepthForTest(queueKey)).toBe(0);
+      vi.advanceTimersByTime(60);
+      const result = await waiterPromise;
+      expect(result).toBe(false); // degrade, not throw
+      expect(_getQueueDepthForTest(queueKey)).toBe(0); // timeout dequeued the waiter
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("AC#6: abort → waiter dequeued immediately, resolves false (degrade)", async () => {
+  it("AC#6: abort → waiter dequeued immediately, resolves false (degrade) — real abort branch", async () => {
     const queueKey = `abort-provider:abort-model`;
     const controller = new AbortController();
 
-    let resolvedValue;
-    const waiterPromise = new Promise(resolve => {
-      resolvedValue = resolve; // capture for inspection
-      _enqueueWaiterForTest(queueKey, resolve, controller.signal);
-    });
-
+    const waiterPromise = _enqueueWaiterForTest(queueKey, controller.signal);
     expect(_getQueueDepthForTest(queueKey)).toBe(1);
 
-    controller.abort(); // triggers onAbort in _enqueueWaiterForTest → dequeue + resolve(false)
+    controller.abort(); // triggers onAbort in _waitForSlot → dequeue + clear timer + reject→degrade
     const result = await waiterPromise;
 
     expect(result).toBe(false);                       // degrade, not throw
     expect(_getQueueDepthForTest(queueKey)).toBe(0);  // waiter removed from queue
   });
 
-  it("AC#6: already-aborted signal → waiter not enqueued at all", () => {
+  it("AC#6: already-aborted signal → waiter not enqueued at all", async () => {
     const queueKey = `preabort-provider:model`;
     const controller = new AbortController();
     controller.abort(); // abort BEFORE enqueue
 
-    _enqueueWaiterForTest(queueKey, () => {}, controller.signal);
-    // Pre-aborted: resolve(false) called immediately, waiter never pushed
+    const waiterPromise = _enqueueWaiterForTest(queueKey, controller.signal);
+    // Pre-aborted: _waitForSlot rejects before pushing → never enqueued.
     expect(_getQueueDepthForTest(queueKey)).toBe(0);
+    expect(await waiterPromise).toBe(false);
   });
 
-  it("AC#8: release() only wakes waiters for matching queueKey (no cross-provider wakeup)", () => {
+  it("AC#8: release() only wakes the waiter for the connection's mapped queueKey (no cross-provider wakeup)", async () => {
     const connId = `scope-${Math.random().toString(36).slice(2)}`;
     const keyA = `provider-a:model-x`;
     const keyB = `provider-b:model-x`;
+    // connId belongs to pool A only.
+    _registerConnKeyForTest(connId, keyA);
 
-    const lease = _acquireLeaseForTest(connId);
+    // Enqueue keyB FIRST so it is earliest in Map iteration order. The buggy
+    // "iterate all keys, wake first non-empty" would wake keyB; only the mappedKey
+    // branch correctly targets keyA. This ordering makes the test discriminate the fix.
+    _enqueueWaiterForTest(keyB); // different pool — must NOT be woken
+    const pA = _enqueueWaiterForTest(keyA);
+    expect(_getQueueDepthForTest(keyB)).toBe(1);
+    expect(_getQueueDepthForTest(keyA)).toBe(1);
 
-    let wokeA = false, wokeB = false;
-    _enqueueWaiterForTest(keyA, () => { wokeA = true; });
-    _enqueueWaiterForTest(keyB, () => { wokeB = true; });
+    // release a connection in pool A → only pool A's waiter wakes (mappedKey branch).
+    _acquireLeaseForTest(connId).release();
+    await pA; // pool A waiter woken
 
-    // release() wakes first waiter found in _waitQueue iteration — one-at-a-time
-    lease.release();
-
-    // Exactly one waiter woken (the first key in Map iteration order)
-    const totalWoken = (wokeA ? 1 : 0) + (wokeB ? 1 : 0);
-    expect(totalWoken).toBe(1); // one-at-a-time, not all keys
+    expect(_getQueueDepthForTest(keyA)).toBe(0); // woken + dequeued
+    expect(_getQueueDepthForTest(keyB)).toBe(1); // untouched — no cross-pool wakeup
   });
 
   it("AC#4: no enqueue when queue is empty (Infinity / disabled path baseline)", () => {
