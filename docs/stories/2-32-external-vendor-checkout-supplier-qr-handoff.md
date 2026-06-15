@@ -17,7 +17,7 @@ context:
 
 # Story 2.32: External Vendor Checkout & Supplier QR Handoff
 
-Status: review
+Status: done
 
 ## Story
 
@@ -302,6 +302,31 @@ paymentModeOverride TEXT   -- override per-product; null = dùng source.paymentM
 - [Source: src/lib/store/storeCheckout.js] — checkout transaction shape reuse (recordCreditTxn + insertOrderWithItems)
 - [Source: src/lib/db/repos/ordersRepo.js] — ORDER_STATUSES, insertOrderWithItems, transitionOrderSync, getOrderByIdempotencyKeySync
 - [Source: src/lib/store/suppliers/index.js] — adapter registry (capability detection điểm mở rộng)
+
+## Code Review (2026-06-16)
+
+_Adversarial 3-layer review trên commit `0952bb9`. Blind Hunter ✅ (13 findings), Acceptance Auditor ✅ (5 findings, all minor — impl faithful to spec), Edge Case Hunter ❌ (stalled/watchdog-killed sau khi đọc xong files — dimension này được reviewer verify trực tiếp trên code thay thế). Verification độc lập: 41 test mới pass (25 externalCheckout + 10 supplierOrdersRepo + 6 migration); migration chain apply sạch tới #12. Triage: 1 patch · 3 defer · 14 dismissed (false-positive/noise sau khi verify trên code thật)._
+
+> ⚠️ **Lưu ý layer fail:** Edge Case Hunter subagent stalled (watchdog 600s) — reviewer đã đọc trực tiếp `externalCheckout.js`, `supplierOrdersRepo.js`, migration 012, `router.js` để bù coverage. Các finding dưới đã verify trên code, không chỉ dựa report agent.
+
+**Patch (fixable, unambiguous):**
+
+- [x] [Review][Patch][MINOR] Hardcode `'external_telegram_store'` thay vì dùng `EXTERNAL_SOURCE` (E8 enum drift) [`src/lib/db/repos/supplierOrdersRepo.js:167`, `src/lib/db/repos/supplierSourcesRepo.js:197`] — `findPaidExternalOrdersMissingSupplierOrder` SQL và `deleteSupplierSource` dùng string literal `'external_telegram_store'`. Mọi nơi khác (`externalCheckout.js`, `catalogSync.js`, `router.js`) import `EXTERNAL_SOURCE`. Nếu hằng số đổi tên/scope, 2 query này âm thầm sai (orphan-detection miss + cascade-delete miss). Fix: import `EXTERNAL_SOURCE` từ `catalogSync.js` và nội suy vào SQL (param hóa). Lưu ý SQL string không thể bind table/enum trực tiếp ở mọi vị trí — dùng param `WHERE p.source = ?` với `[EXTERNAL_SOURCE]`.
+
+**Deferred (real nhưng ngoài scope 2.32 / cần story sau):**
+
+- [x] [Review][Defer] `updateSupplierOrderStatus` COALESCE không cho clear field về null [`src/lib/db/repos/supplierOrdersRepo.js:108-111`] — `SET x = COALESCE(?, x)` giữ giá trị cũ khi truyền null → không thể null-out `supplierOrderId` khi supplier reject/cancel. Hiện KHÔNG có caller nào cần clear (2.32 chỉ insert + đọc). Defer: 2.33 (status sync) khi có cancel-flow sẽ cần explicit-clear semantics — giải quyết lúc đó.
+- [x] [Review][Defer] `insertSupplierOrderSync` return tổng hợp từ `data` thay vì SELECT-after-insert [`src/lib/db/repos/supplierOrdersRepo.js:65`] — `rowToSupplierOrder({...data, id, ...})` synthesize return; cột hardcode null (supplierOrderId/Invoice/qrPayload/Status) khớp INSERT nên KHÔNG sai hiện tại. Fragile nếu schema thêm cột có DB default. Defer: robustness, không phải bug.
+- [x] [Review][Defer] `handleBuyExecute` double product-load + product=null fall-through [`src/lib/telegram/router.js:188-189`] — load product 1 lần ở router (detect external), `externalCheckout` load lại; product null → `isExternal=false` → rơi xuống `storeCheckout` báo lỗi generic thay vì rõ ràng. Edge hiếm (product xoá giữa tap↔handler). Defer: minor UX, race window nhỏ.
+
+**Dismissed (false-positive / noise — đã verify trên code):**
+
+- "Orphan-recovery retry skip supplierOrders insert khi alreadyProcessed=true" (blind C-3) — SAI: `externalCheckout.js:156-178` chạy insert LUÔN (không gate theo `alreadyProcessed`), có recheck `getSupplierOrderByOrderIdSync` trong transaction. Retry bù được orphan row. Acceptance Auditor xác nhận đúng.
+- "Nested transaction hazard / cross-connection race" (blind C-4) — noise: storeCheckout commit RỒI mới mở transaction phụ (sequential, không nest); `getAdapter()` trả singleton; window đã được orphan-recovery xử lý có chủ đích (QĐ5).
+- "colExists PRAGMA SQL injection" (blind M) — SAI: SQLite KHÔNG bind được table-name trong PRAGMA; `table` hardcode (`"supplierSources"`/`"products"`), không user input. Giống dismiss ở review 2.31.
+- "SCHEMA_VERSION=14 vs migration version=12 drift" (blind M) — SAI: decoupling có chủ đích từ 2.31 (track logical schema state, không phải migration count); grep xác nhận SCHEMA_VERSION KHÔNG dùng để gate migration.
+- "supportsVendorOrder defined nhưng không gọi trong flow" (auditor) — noise: by-design, vendor_commission/separate_fee reject sớm bằng string compare; supportsVendorOrder là interface sẵn cho story sau (MVP mọi adapter=false → behavior giống hệt). Auditor tự xếp MINOR.
+- Các noise khác: LIMIT 1 no ORDER BY (idempotency chỉ cần "any row"), updateSupplierOrderStatus no affected-rows-check (2.33 concern), listSupplierOrders lexicographic createdAt sort (ISO-8601 UTC nhất quán), resolvePaymentMode silent fallback (defensive), check-order disabled-before-margin (auditor xác nhận AC outcome đúng), test vi.resetModules placement (chạy đúng do ES hoisting), alreadyProcessed message disclose orderId (minor, order id không nhạy cảm), 4 ordersRepo export thừa (additive, vô hại).
 
 ## Dev Agent Record
 

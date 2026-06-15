@@ -7,6 +7,11 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 
+// External product source marker. Defined locally (NOT imported from catalogSync.js) to keep
+// the db-layer repo free of store-layer deps and avoid a circular import. Mirrors
+// productsRepo.js / supplierSourcesRepo.js (story 2.31/2.32).
+const EXTERNAL_SOURCE = "external_telegram_store";
+
 function rowToSupplierOrder(row) {
   if (!row) return null;
   return {
@@ -164,8 +169,9 @@ export async function findPaidExternalOrdersMissingSupplierOrder() {
      JOIN products p ON p.id = oi.productId
      LEFT JOIN supplierOrders so ON so.orderId = o.id
      WHERE o.status = 'paid'
-       AND p.source = 'external_telegram_store'
-       AND so.id IS NULL`
+       AND p.source = ?
+       AND so.id IS NULL`,
+    [EXTERNAL_SOURCE]
   );
   return rows.map((r) => ({
     id: r.id,

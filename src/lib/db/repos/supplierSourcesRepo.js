@@ -14,6 +14,11 @@ export const SOURCE_STATUSES = ["active", "degraded", "unhealthy", "unsupported"
 // Min polling interval — chặn syncIntervalSec=0/âm hammer supplier ở full rate (edge-case guard).
 export const MIN_SYNC_INTERVAL_SEC = 60;
 
+// External product source marker. Defined locally (NOT imported from catalogSync.js) to keep
+// the db-layer repo free of store-layer deps and avoid a circular import
+// (catalogSync → markupEngine → markupRulesRepo). Mirrors productsRepo.js (story 2.31).
+const EXTERNAL_SOURCE = "external_telegram_store";
+
 // Health lifecycle (QĐ6): active → degraded (1st fail) → unhealthy (2nd+ consecutive fail).
 // Any sync success resets to active.
 const STATUS = Object.freeze({
@@ -194,8 +199,8 @@ export async function deleteSupplierSource(id) {
   let changes = 0;
   db.transaction(() => {
     db.run(
-      `DELETE FROM products WHERE source = 'external_telegram_store' AND supplierSourceId = ?`,
-      [id]
+      `DELETE FROM products WHERE source = ? AND supplierSourceId = ?`,
+      [EXTERNAL_SOURCE, id]
     );
     const res = db.run(`DELETE FROM supplierSources WHERE id = ?`, [id]);
     changes = res?.changes ?? 0;
