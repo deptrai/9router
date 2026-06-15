@@ -2,5 +2,6 @@
 export { default as useThemeStore } from "./themeStore";
 export { default as useUserStore } from "./userStore";
 export { default as useProviderStore } from "./providerStore";
+export { default as useAuthStore } from "./authStore";
 export { useNotificationStore } from "./notificationStore";
 

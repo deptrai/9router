@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import PropTypes from "prop-types";
@@ -8,6 +8,7 @@ import ProviderIcon from "@/shared/components/ProviderIcon";
 import HeaderMenu from "@/shared/components/HeaderMenu";
 import ThemeToggle from "@/shared/components/ThemeToggle";
 import { useHeaderSearchStore } from "@/store/headerSearchStore";
+import useAuthStore from "@/store/authStore";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS } from "@/shared/constants/providers";
 import { translate } from "@/i18n/runtime";
@@ -172,38 +173,17 @@ const getPageInfo = (pathname) => {
 export default function Header({ onMenuClick, showMenuButton = true }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [displayName, setDisplayName] = useState("");
-  const [loginMethod, setLoginMethod] = useState("");
+  const displayName = useAuthStore((s) => s.displayName);
+  const loginMethod = useAuthStore((s) => s.loginMethod);
+  const fetchAuthStatus = useAuthStore((s) => s.fetchAuthStatus);
 
   // Memoize page info to prevent unnecessary recalculations
   const pageInfo = useMemo(() => getPageInfo(pathname), [pathname]);
   const { title, description, icon, breadcrumbs } = pageInfo;
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadAuthStatus() {
-      try {
-        const res = await fetch("/api/auth/status", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!cancelled) {
-          setDisplayName(data?.displayName || data?.oidcName || data?.oidcEmail || "");
-          setLoginMethod(data?.loginMethod || "");
-        }
-      } catch {
-        if (!cancelled) {
-          setDisplayName("");
-          setLoginMethod("");
-        }
-      }
-    }
-
-    loadAuthStatus();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    fetchAuthStatus();
+  }, [fetchAuthStatus]);
 
   const handleLogout = async () => {
     try {

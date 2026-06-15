@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import useSettingsStore from "@/store/settingsStore";
 import QuotaEditor from "./QuotaEditor";
 
 const TUNNEL_BENEFITS = [
@@ -57,7 +58,8 @@ const CAVEMAN_LEVELS = [
 ];
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [keysLoading, setKeysLoading] = useState(true);
+  const [usageLoading, setUsageLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyDescription, setNewKeyDescription] = useState("");
@@ -238,22 +240,24 @@ export default function APIPageClient({ machineId }) {
   const loadSettings = async () => {
     setTunnelChecking(true);
     try {
-      const [settingsRes, statusRes] = await Promise.all([
-        fetch("/api/settings"),
+      const fetchSettingsFromStore = useSettingsStore.getState().fetchSettings;
+      const settingsPromise = fetchSettingsFromStore().then((data) => {
+        if (data) {
+          setRequireApiKey(data.requireApiKey || false);
+          setRequireLogin(data.requireLogin !== false);
+          setHasPassword(data.hasPassword || false);
+          setTunnelDashboardAccess(data.tunnelDashboardAccess || false);
+          setRtkEnabledState(data.rtkEnabled !== false);
+          setKiroAutoCompactEnabled(!!data.kiroAutoCompactEnabled);
+          setCavemanEnabled(!!data.cavemanEnabled);
+          setCavemanLevel(data.cavemanLevel || "full");
+          setBufferedFallbackEnabled(!!data.bufferedFallbackEnabled);
+        }
+      });
+      const [_, statusRes] = await Promise.all([
+        settingsPromise,
         fetch("/api/tunnel/status", { cache: "no-store" })
       ]);
-      if (settingsRes.ok) {
-        const data = await settingsRes.json();
-        setRequireApiKey(data.requireApiKey || false);
-        setRequireLogin(data.requireLogin !== false);
-        setHasPassword(data.hasPassword || false);
-        setTunnelDashboardAccess(data.tunnelDashboardAccess || false);
-        setRtkEnabledState(data.rtkEnabled !== false);
-        setKiroAutoCompactEnabled(!!data.kiroAutoCompactEnabled);
-        setCavemanEnabled(!!data.cavemanEnabled);
-        setCavemanLevel(data.cavemanLevel || "full");
-        setBufferedFallbackEnabled(!!data.bufferedFallbackEnabled);
-      }
       if (statusRes.ok) {
         const data = await statusRes.json();
         const tEnabled = data.tunnel?.settingsEnabled ?? data.tunnel?.enabled ?? false;
@@ -357,28 +361,33 @@ export default function APIPageClient({ machineId }) {
 
   const fetchData = async () => {
     try {
-      const [keysRes, usageRes] = await Promise.all([
-        fetch("/api/keys"),
-        fetch("/api/usage/stats?period=all").catch(() => null),
-      ]);
-      const keysData = await keysRes.json();
-      if (keysRes.ok) {
-        setKeys(keysData.keys || []);
-      }
-      // Build usageByKey map: keyString → total cost
-      if (usageRes?.ok) {
-        const usageData = await usageRes.json();
-        const byKey = {};
-        for (const entry of Object.values(usageData?.byApiKey || {})) {
-          const k = entry.apiKey;
-          if (k) byKey[k] = (byKey[k] || 0) + (entry.cost || 0);
+      const keysPromise = fetch("/api/keys").then(async (res) => {
+        if (res.ok) {
+          const data = await res.json();
+          setKeys(data.keys || []);
         }
-        setUsageByKey(byKey);
-      }
+        setKeysLoading(false);
+        return res;
+      }).catch(() => setKeysLoading(false));
+
+      const usagePromise = fetch("/api/usage/stats?period=all").then(async (res) => {
+        if (res.ok) {
+          const usageData = await res.json();
+          const byKey = {};
+          for (const entry of Object.values(usageData?.byApiKey || {})) {
+            const k = entry.apiKey;
+            if (k) byKey[k] = (byKey[k] || 0) + (entry.cost || 0);
+          }
+          setUsageByKey(byKey);
+        }
+        setUsageLoading(false);
+      }).catch(() => setUsageLoading(false));
+
+      await Promise.all([keysPromise, usagePromise]);
     } catch (error) {
       console.log("Error fetching data:", error);
-    } finally {
-      setLoading(false);
+      setKeysLoading(false);
+      setUsageLoading(false);
     }
   };
 
@@ -868,7 +877,7 @@ export default function APIPageClient({ machineId }) {
     }
   }, []);
 
-  if (loading) {
+  if (keysLoading) {
     return (
       <div className="flex flex-col gap-8">
         <CardSkeleton />

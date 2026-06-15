@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { LEGACY_FILES, DB_DIR, DATA_FILE } from "./paths.js";
-import { TABLES, buildCreateTableSql } from "./schema.js";
+import { TABLES, buildCreateTableSql, SCHEMA_VERSION } from "./schema.js";
 import { MIGRATIONS, latestVersion } from "./migrations/index.js";
 import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
 import { makeBackupDir, backupFile, pruneOldBackups } from "./backup.js";
@@ -85,6 +85,8 @@ function runVersionedMigrations(adapter) {
 
 // ─── Auto-sync (additive only): add missing tables/columns/indexes ───────
 function syncSchemaFromTables(adapter) {
+  const currentSchemaVer = parseInt(getMetaSync(adapter, "schemaVersion", "0"), 10) || 0;
+  if (currentSchemaVer >= SCHEMA_VERSION) return;
   for (const [tableName, def] of Object.entries(TABLES)) {
     // Create table if absent
     adapter.exec(buildCreateTableSql(tableName, def));

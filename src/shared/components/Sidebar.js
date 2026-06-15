@@ -7,6 +7,8 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
 import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
+import useAuthStore from "@/store/authStore";
+import useSettingsStore from "@/store/settingsStore";
 import Button from "./Button";
 
 // const VISIBLE_MEDIA_KINDS = ["embedding", "image", "imageToText", "tts", "stt", "webSearch", "webFetch", "video", "music"];
@@ -51,26 +53,18 @@ export default function Sidebar({ onClose }) {
   const pathname = usePathname();
   const [mediaOpen, setMediaOpen] = useState(false);
   const [enableTranslator, setEnableTranslator] = useState(false);
-  // AC5: role state — null = loading (skeleton), "admin"/"user" = loaded
-  const [role, setRole] = useState(null);
+  const role = useAuthStore((s) => s.role);
+  const fetchAuthStatus = useAuthStore((s) => s.fetchAuthStatus);
+  const fetchSettings = useSettingsStore((s) => s.fetchSettings);
   useEffect(() => {
-    fetch("/api/settings")
-      .then(res => res.json())
-      .then(data => { if (data.enableTranslator) setEnableTranslator(true); })
-      .catch(() => {});
-  }, []);
+    fetchAuthStatus();
+  }, [fetchAuthStatus]);
 
-  // AC5: Fetch role from /api/auth/status; default to "admin" on error (backward-compat)
   useEffect(() => {
-    fetch("/api/auth/status")
-      .then(res => res.json())
-      .then(data => {
-        setRole(data.role ?? "admin");
-      })
-      .catch(() => {
-        setRole("admin"); // fail-open: treat as admin
-      });
-  }, []);
+    fetchSettings().then((data) => {
+      if (data?.enableTranslator) setEnableTranslator(true);
+    });
+  }, [fetchSettings]);
 
   const isActive = (href) => {
     if (href === "/dashboard/endpoint") {
