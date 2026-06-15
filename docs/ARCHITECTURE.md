@@ -1,6 +1,6 @@
 # Kiến trúc 9Router
 
-_Cập nhật lần cuối: 2026-06-14_
+_Cập nhật lần cuối: 2026-06-16_
 
 ## Tóm tắt điều hành (Executive Summary)
 
@@ -14,8 +14,9 @@ Năng lực cốt lõi:
 - Fallback theo combo model (chuỗi nhiều model)
 - Fallback cấp account (nhiều account cho mỗi provider)
 - Quản lý kết nối provider bằng OAuth và API key
-- Lưu trữ cục bộ cho providers, keys, aliases, combos, settings, pricing
+- Lưu trữ SQLite cho providers, keys, aliases, combos, settings, pricing, products
 - Theo dõi usage/cost và ghi log request
+- Telegram Store với product catalog, markup rules, order/inventory, fulfillment
 - Cloud sync tùy chọn cho đồng bộ đa thiết bị/trạng thái
 
 Mô hình runtime chính:
@@ -56,8 +57,8 @@ flowchart LR
         API[V1 Compatibility API\n/v1/*]
         DASH[Dashboard + Management API\n/api/*]
         CORE[SSE + Translation Core\nopen-sse + src/sse]
-        DB[(db.json)]
-        UDB[(usage.json + log.txt)]
+        STORE[Store Engine\nmarkupEngine / catalogSync]
+        DB[(SQLite\nDATA_DIR/data.sqlite)]
     end
 
     subgraph Upstreams[Upstream Providers]
@@ -135,32 +136,121 @@ Các module luồng chính:
 - Stream transformations: `open-sse/utils/stream.js`, `open-sse/utils/streamHandler.js`
 - Usage extraction/normalization: `open-sse/utils/usageTracking.js`
 
-## 3) Lớp lưu trữ (Persistence Layer)
+## 3) Lớp lưu trữ (Persistence Layer — SQLite)
 
-Primary state DB:
+Primary database: SQLite via better-sqlite3 (sync driver, single-writer).
 
-- `src/lib/localDb.js`
-- file: `${DATA_DIR}/db.json` hoặc `~/.9router/db.json` khi chưa set `DATA_DIR`
-- entities: providerConnections, providerNodes, modelAliases, combos, apiKeys, settings, pricing
+- **Driver:** `src/lib/db/driver.js` — singleton adapter, `getAdapter()` trả về `better-sqlite3` instance
+- **Data file:** `${DATA_DIR}/data.sqlite`
+- **Migration + auto-sync:** `src/lib/db/migrate.js`
 
-Usage DB:
+### Schema lifecycle (`syncSchemaFromTables`)
 
-- `src/lib/usageDb.js`
-- files: `~/.9router/usage.json`, `~/.9router/log.txt`
-- ghi chú: hiện độc lập với `DATA_DIR`
+Không dùng migration framework truyền thống. Schema được khai báo tập trung trong `src/lib/db/schema.js` dưới dạng object `TABLES`:
 
-## 4) Auth + Security Surfaces
+```js
+export const TABLES = {
+  settings: {
+    columns: { id: "INTEGER PRIMARY KEY", data: "TEXT NOT NULL" },
+    indexes: [],
+  },
+  // ...
+};
+```
+
+Hai cơ chế chạy tuần tự tại boot:
+
+1. **Versioned migrations** (`runVersionedMigrations`): chạy các file trong `src/lib/db/migrations/*.js` theo số version. Mỗi migration có `version` + `name` + `up(adapter)`. Trạng thái lưu trong `_meta.schemaVersion`.
+
+2. **Auto-sync** (`syncSchemaFromTables`): dựng `buildCreateTableSql` từ `TABLES`, chạy `PRAGMA table_info` diff columns, thêm column thiếu bằng `ALTER TABLE ADD COLUMN`. Indexes được chạy idempotent mỗi boot.
+
+**Cold-start optimization**: fingerprint djb2 của `TABLES` declaration được stamp vào `_meta.tablesFingerprint`. Nếu fingerprint không đổi ở lần boot sau, auto-sync skip column-diff loop (chỉ chạy index CREATE). Xóa được ~5–10s cold start trên production.
+
+### Repository pattern
+
+Truy vấn DB được đóng gói trong `src/lib/db/repos/*Repo.js`:
+
+- `markupRulesRepo.js` — CRUD markup rules
+- `productsRepo.js` — product + external product queries
+- Các repo khác (orders, inventory, entitlements) từ Epic I
+
+Export tập trung qua `src/lib/db/index.js`.
+
+### Legacy JSON import
+
+Một lần duy nhất khi DB fresh, `src/lib/db/migrate.js` import legacy data từ `db.json` (file cũ) vào SQLite tables. Đánh dấu bằng marker file `.migrated-from-json`.
+
+## 4) Frontend State Management (Zustand Stores)
+
+Dashboard UI dùng Zustand stores (`src/store/*`) để quản lý client-side state với caching + TTL pattern:
+
+```text
+store                    TTL     nguồn                          ghi chú
+authStore                60s     GET /api/auth/status           cache + dedupFetch, invalidate() khi logout
+settingsStore            60s     GET /api/settings               read-only cache
+```
+
+### AuthStore pattern
+
+- `fetchAuthStatus()` dùng `dedupFetch` với `cache: "no-store"` (tránh Next.js HTTP cache phá TTL)
+- Zustand selector pattern: component gọi `useAuthStore(s => s.role)` — không cần `.then()`, store tự hydrate
+- `invalidate()` clear cached data + timestamp → lần đọc sau fetch lại
+
+### Request dedup (`src/shared/utils/requestDedup.js`)
+
+- Utility `dedupFetch(url, options)` — in-flight request deduplication
+- Key = `method:url:body` — concurrent identical GET requests share 1 network call
+- Callers clone response (`r.clone()`) — mỗi caller nhận response riêng
+- **GET-only safety**: POST/PUT mutations không nên dedup (different semantics, body key chỉ để tránh collision)
+
+## 5) Auth + Security Surfaces
 
 - Dashboard cookie auth: `src/proxy.js`, `src/app/api/auth/login/route.js`
 - API key generation/verification: `src/shared/utils/apiKey.js`
 - Provider secrets được lưu trong các entry `providerConnections`
 - Hỗ trợ proxy tùy chọn cho upstream calls qua env proxy variables (`open-sse/utils/proxyFetch.js`)
 
-## 5) Cloud Sync
+## 6) Cloud Sync
 
 - Scheduler init: `src/lib/initCloudSync.js`, `src/shared/services/initializeCloudSync.js`
 - Periodic task: `src/shared/services/cloudSyncScheduler.js`
 - Control route: `src/app/api/sync/cloud/route.js`
+
+## 7) Store System (Product Catalog & Markup)
+
+Store module xử lý product catalog sync từ external source, markup rules, và publishing.
+
+### Catalog sync (`src/lib/store/catalogSync.js`)
+
+- Poll external store API, sync sản phẩm vào `externalProducts` table
+- Import webhook event-based sync (real-time update từ external store)
+- Mapping: external fields → internal `products` table fields
+- **QĐ6 guard**: sync NEVER overwrites `isActive`/`isPublished` (admin decisions được tôn trọng)
+
+### Markup engine (`src/lib/store/markupEngine.js`)
+
+Áp dụng markup rules lên `supplierPrice` từ external sync để tính `priceCredits`:
+
+```
+supplierPrice → [markup rules] → priceCredits
+```
+
+Rule types:
+
+| Kind | Hành vi |
+|------|---------|
+| `fixed` | Cộng/trừ số tiền cố định: `priceCredits = supplierPrice + amount` |
+| `percentage` | Phần trăm: `priceCredits = supplierPrice * (1 + pct / 100)` |
+| `formula` | Expression-based (reserved cho tương lai) |
+
+Implementation:
+- `src/lib/db/repos/markupRulesRepo.js` — CRUD + `listActiveRules()` sort by priority
+- `src/app/api/store/markup-rules/*` — API routes cho admin CRUD
+- `src/app/api/store/products/[id]/publish/route.js` — publish product ra storefront
+
+### Markup rules migration (`011-markup-rules`)
+
+Seed mặc định: một rule percentage `50%` — supplierPrice + 50% = priceCredits. Idempotent (`ON CONFLICT(name) DO NOTHING`).
 
 ## Vòng đời request (`/v1/chat/completions`)
 
@@ -383,80 +473,38 @@ Periodic sync được kích hoạt bởi `CloudSyncScheduler` khi cloud đượ
 
 ## Data Model và Storage Map
 
-```mermaid
-erDiagram
-    SETTINGS ||--o{ PROVIDER_CONNECTION : controls
-    PROVIDER_NODE ||--o{ PROVIDER_CONNECTION : backs_compatible_provider
-    PROVIDER_CONNECTION ||--o{ USAGE_ENTRY : emits_usage
+### Core admin tables (SQLite)
 
-    SETTINGS {
-      boolean cloudEnabled
-      number stickyRoundRobinLimit
-      boolean requireLogin
-      string password_hash
-    }
+```
+settings                    id, data (JSON blob)
+providerConnections         id, provider, authType, name, email, priority, isActive, data, ...
+providerNodes               id, type, name, data, ...
+proxyPools                  id, isActive, testStatus, data, ...
+apiKeys                     id, key, name, machineId, isActive, creditLimit, ...
+combos                      id, name, kind, models, ...
+kv                          scope, key, value (generic key-value)
+_meta                       key, value (internal metadata: schemaVersion, tablesFingerprint)
+```
 
-    PROVIDER_CONNECTION {
-      string id
-      string provider
-      string authType
-      string name
-      number priority
-      boolean isActive
-      string apiKey
-      string accessToken
-      string refreshToken
-      string expiresAt
-      string testStatus
-      string lastError
-      string rateLimitedUntil
-      json providerSpecificData
-    }
+### Store tables
 
-    PROVIDER_NODE {
-      string id
-      string type
-      string name
-      string prefix
-      string apiType
-      string baseUrl
-    }
-
-    MODEL_ALIAS {
-      string alias
-      string targetModel
-    }
-
-    COMBO {
-      string id
-      string name
-      string[] models
-    }
-
-    API_KEY {
-      string id
-      string name
-      string key
-      string machineId
-      boolean isActive
-    }
-
-    USAGE_ENTRY {
-      string provider
-      string model
-      number prompt_tokens
-      number completion_tokens
-      string connectionId
-      string timestamp
-    }
+```
+products                    id, kind, name, description, priceCredits, supplierPrice,
+                            deliveryMode, targetType, targetId, stock, isActive, ...
+markupRules                 id, name, kind, priority, isActive, conditions, actions, ...
+externalProducts            id, externalId, source, rawData, isActive, isPublished, ...
+orders                      id, userId, status, totalCredits, idempotencyKey, ...
+orderItems                  id, orderId, productId, qty, unitPriceCredits, ...
+inventoryItems              id, productId, status, payloadEnc, ...
+entitlements                id, userId, productId, provider, status, ...
+creditTransactions          id, userId, type, amount, refId, idempotencyKey, ...
 ```
 
 Các file lưu trữ vật lý:
 
-- main state: `${DATA_DIR}/db.json` hoặc `~/.9router/db.json`
-- usage stats: `~/.9router/usage.json`
+- main DB: `${DATA_DIR}/data.sqlite` (SQLite, better-sqlite3)
 - request log lines: `~/.9router/log.txt`
-- translator/request debug sessions tùy chọn: `<repo>/logs/...`
+- legacy state (one-time import): `~/.9router/db.json`
 
 ## Deployment Topology
 
@@ -520,8 +568,16 @@ flowchart LR
 
 ### Persistence
 
-- `src/lib/localDb.js`: persistent config/state
-- `src/lib/usageDb.js`: usage history và rolling request logs
+- `src/lib/db/migrate.js`: schema bootstrap + migration runner + auto-sync
+- `src/lib/db/driver.js`: better-sqlite3 singleton adapter
+- `src/lib/db/schema.js`: TABLES declarations
+- `src/lib/db/index.js`: repo exports
+- `src/lib/db/repos/*.js`: per-entity query layer
+- `src/lib/db/seeds/*.js`: idempotent seed data (combos, markup rules)
+- `src/lib/db/helpers/metaStore.js`: `_meta` table read/write
+- `src/lib/cache.js`: simple TTL cache utility (shared)
+- `src/lib/store/catalogSync.js`: external product catalog sync
+- `src/lib/store/markupEngine.js`: markup rule application engine
 
 ## Phạm vi Provider Executor Coverage
 
@@ -787,7 +843,7 @@ Environment variables đang được code sử dụng:
 
 - App/auth: `JWT_SECRET`, `INITIAL_PASSWORD`
 - Storage: `DATA_DIR`
-- Security hashing: `API_KEY_SECRET`, `MACHINE_ID_SALT`
+- Security hashing: `API_KEY_SECRET`, `MACHINE_ID_SALT`, `STORE_CRED_KEY` (AES-256-GCM key cho credential encryption at-rest)
 - Logging: `ENABLE_REQUEST_LOGS`
 - Sync/cloud URLing: `NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_CLOUD_URL`
 - Outbound proxy: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` và các biến lowercase tương ứng
@@ -800,11 +856,13 @@ Environment variables đang được code sử dụng:
 
 ## Ghi chú kiến trúc đã biết (Known Architectural Notes)
 
-1. `usageDb` hiện lưu dưới `~/.9router` và không đi theo `DATA_DIR`.
+1. SQLite DB được lưu tại `${DATA_DIR}/data.sqlite`. `DATA_DIR` default là `~/.9router`.
 2. `/api/v1/route.js` trả về static model list và không phải nguồn models chính được `/v1/models` sử dụng.
 3. Request logger ghi full headers/body khi bật; cần xem log directory là dữ liệu nhạy cảm.
 4. Cloud behavior phụ thuộc vào `NEXT_PUBLIC_BASE_URL` chính xác và cloud endpoint có thể truy cập được.
 5. Auth system có in-flight semaphore (`_inFlight` Map, `_acquire`/`release` lease) — idle-first connection selection, TTL safety-net 10 phút. Migration `010-vuz2-connection.js` (vuz-2) giữ nguyên để cho phép load-balance thực sự giữa 2 connections khi concurrent requests.
+6. Schema fingerprint (djb2, lưu trong `_meta.tablesFingerprint`) skip column-diff loop khi `TABLES` không đổi. Indexes vẫn chạy mỗi boot (idempotent, cheap).
+7. Zustand stores (`src/store/authStore.js`) dùng `dedupFetch` và TTL caching — call `invalidate()` để clear cache khi cần (vd logout).
 
 ## Checklist xác minh vận hành (Operational Verification Checklist)
 
