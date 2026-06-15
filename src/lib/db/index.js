@@ -84,6 +84,15 @@ export {
   ROUNDING_RULES,
 } from "./repos/markupRulesRepo.js";
 
+// Supplier orders (Story 2.32 — external vendor checkout tracking)
+export {
+  insertSupplierOrderSync, getSupplierOrderByOrderIdSync, getSupplierOrderByOrderId,
+  updateSupplierOrderStatus, listSupplierOrders, findPaidExternalOrdersMissingSupplierOrder,
+} from "./repos/supplierOrdersRepo.js";
+
+// Orders admin extras (Story 2.32 — orphan-flag without status change)
+export { setOrderNoteSync, listAllOrders, countAllOrders, getOrderWithItems, setFulfilledAt } from "./repos/ordersRepo.js";
+
 // API key lookup by key string (Story 2.29b — userId threading)
 export { getApiKeyByKey } from "./repos/apiKeysRepo.js";
 

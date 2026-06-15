@@ -282,3 +282,17 @@ export async function getOrderWithItems(orderId) {
 export function setFulfilledAt(adapter, orderId, ts) {
   adapter.run(`UPDATE orders SET fulfilledAt = ?, updatedAt = ? WHERE id = ?`, [ts, ts, orderId]);
 }
+
+/**
+ * Set orders.note without changing status (orphan-flag for money-path recovery, QĐ5).
+ * Use when supplierOrders insert fails after storeCheckout has committed — order stays
+ * `paid` but is flagged so reconciliation sweep (2.34) can detect and retry.
+ * Sync: pass caller-owned adapter.
+ * @param {object} adapter - db adapter
+ * @param {string} orderId
+ * @param {string} note
+ */
+export function setOrderNoteSync(adapter, orderId, note) {
+  const now = new Date().toISOString();
+  adapter.run(`UPDATE orders SET note = ?, updatedAt = ? WHERE id = ?`, [note, now, orderId]);
+}

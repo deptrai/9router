@@ -40,6 +40,7 @@ function maskSource(row) {
     lastSyncError: row.lastSyncError ?? null,
     syncVersion: row.syncVersion ?? 0,
     isActive: row.isActive === 1 || row.isActive === true,
+    paymentMode: row.paymentMode ?? "proxy_checkout",
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

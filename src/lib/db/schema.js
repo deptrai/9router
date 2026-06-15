@@ -1,5 +1,5 @@
 // Latest schema version — bumped when a migration is added in ./migrations/
-export const SCHEMA_VERSION = 13;
+export const SCHEMA_VERSION = 14;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -296,6 +296,8 @@ export const TABLES = {
       retailPrice: "REAL",               // supplier price × (1 + markupPct/100)
       expectedMargin: "REAL",            // retailPrice - supplierPrice (audit snapshot)
       isPublished: "INTEGER DEFAULT 0",  // 1 = admin published; invariant isPublished=1 ⇒ isActive=1
+      // Story 2.32: per-product payment mode override (null = use supplierSources.paymentMode default)
+      paymentModeOverride: "TEXT",
       createdAt: "TEXT NOT NULL",
       updatedAt: "TEXT NOT NULL",
     },
@@ -456,12 +458,41 @@ export const TABLES = {
       lastSyncError: "TEXT",
       syncVersion: "INTEGER DEFAULT 0",
       isActive: "INTEGER DEFAULT 1",
+      // Story 2.32: default payment mode for all products from this source
+      paymentMode: "TEXT NOT NULL DEFAULT 'proxy_checkout'",
       createdAt: "TEXT NOT NULL",
       updatedAt: "TEXT NOT NULL",
     },
     indexes: [
       "CREATE INDEX IF NOT EXISTS idx_supplier_status ON supplierSources(status)",
       "CREATE INDEX IF NOT EXISTS idx_supplier_active ON supplierSources(isActive)",
+    ],
+  },
+
+  // Story 2.32: tracks supplier-side order state for external product checkout.
+  // Created atomically with the internal order (proxy_checkout path).
+  // supplierOrderId/supplierInvoiceId/qrPayload are null at creation — filled by 2.33 sync
+  // or admin after placing upstream order.
+  supplierOrders: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      orderId: "TEXT NOT NULL",              // FK-less ref orders.id
+      supplierSourceId: "TEXT NOT NULL",     // FK-less ref supplierSources.id
+      supplierProductId: "TEXT",             // snapshot products.supplierProductId
+      paymentMode: "TEXT NOT NULL",          // snapshot PAYMENT_MODES at checkout time
+      supplierOrderId: "TEXT",               // supplier-side order id (null until placed upstream)
+      supplierInvoiceId: "TEXT",             // supplier invoice id (vendor_commission — null for now)
+      qrPayload: "TEXT",                     // payment instruction from supplier (NOT wholesale QR — AC3)
+      supplierPrice: "REAL",                 // snapshot supplier price at checkout (audit)
+      retailPrice: "REAL",                   // snapshot retail price at checkout (audit)
+      expectedMargin: "REAL",               // snapshot retailPrice - supplierPrice
+      supplierStatus: "TEXT",               // raw supplier-side status (for 2.33 sync)
+      createdAt: "TEXT NOT NULL",
+      updatedAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_supplier_order_order ON supplierOrders(orderId)",
+      "CREATE INDEX IF NOT EXISTS idx_supplier_order_source ON supplierOrders(supplierSourceId)",
     ],
   },
 };

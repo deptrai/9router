@@ -11,6 +11,8 @@ import { listActiveProducts, getProductById } from "../db/repos/productsRepo.js"
 import { listOrdersByUser } from "../db/repos/ordersRepo.js";
 import { getDecryptedPayload, countAvailableCredentials, productHasInventory } from "../db/repos/credentialsRepo.js";
 import { storeCheckout, CheckoutError } from "../store/storeCheckout.js";
+import { externalCheckout, ExternalCheckoutError } from "../store/externalCheckout.js";
+import { EXTERNAL_SOURCE } from "../store/catalogSync.js";
 
 // Inline keyboard menu chính (AC1)
 const MAIN_MENU = {
@@ -163,6 +165,15 @@ const CHECKOUT_ERROR_MESSAGES = {
   INVALID_QUANTITY: "Số lượng không hợp lệ.",
 };
 
+const EXTERNAL_CHECKOUT_ERROR_MESSAGES = {
+  NOT_EXTERNAL: "Sản phẩm không hợp lệ.",
+  NOT_PUBLISHED: "Sản phẩm chưa được đăng bán hoặc đã ngừng bán.",
+  MARGIN_VIOLATION: "Sản phẩm chưa có giá bán hợp lệ — liên hệ admin.",
+  VENDOR_MODE_UNSUPPORTED: "Phương thức thanh toán chưa được hỗ trợ — liên hệ admin.",
+  PRODUCT_DISABLED: "Sản phẩm tạm ngừng bán — liên hệ admin.",
+  SUPPLIER_NOT_FOUND: "Không tìm thấy nguồn cung cấp — liên hệ admin.",
+};
+
 async function handleBuyExecute(chatId, telegramId, productId, callbackQueryId) {
   try {
     const user = await getUserByTelegramId(telegramId);
@@ -172,6 +183,35 @@ async function handleBuyExecute(chatId, telegramId, productId, callbackQueryId) 
     }
 
     const idempotencyKey = `tg:${telegramId}:${productId}:${callbackQueryId}`;
+
+    // Route external products via externalCheckout (2.32); local products use storeCheckout.
+    const product = await getProductById(productId);
+    const isExternal = product?.source === EXTERNAL_SOURCE;
+
+    if (isExternal) {
+      const { order, alreadyProcessed, paymentMode } = await externalCheckout(
+        user.id,
+        productId,
+        { idempotencyKey }
+      );
+
+      if (alreadyProcessed) {
+        await sendMessage(chatId, `Đơn <code>${order.id}</code> đã được xử lý trước đó.`);
+        return;
+      }
+
+      // proxy_checkout: order paid, awaiting admin/sync to place upstream order (QĐ9)
+      await sendMessage(
+        chatId,
+        [
+          `✅ Đơn #<code>${order.id}</code> đã tạo.`,
+          `Đang xử lý với nhà cung cấp, bạn sẽ nhận hàng sớm.`,
+          `Theo dõi tại /orders.`,
+        ].join("\n")
+      );
+      return;
+    }
+
     const { order, alreadyProcessed, deliveredCredentialIds, entitlementId } = await storeCheckout(user.id, productId, { idempotencyKey });
 
     if (alreadyProcessed) {
@@ -221,6 +261,10 @@ async function handleBuyExecute(chatId, telegramId, productId, callbackQueryId) 
       [`🎉 Mua thành công!`, `Mã đơn: <code>${order.id}</code>`, statusLine].join("\n")
     );
   } catch (e) {
+    if (e instanceof ExternalCheckoutError) {
+      await sendMessage(chatId, EXTERNAL_CHECKOUT_ERROR_MESSAGES[e.code] || "Mua hàng thất bại.").catch(() => {});
+      return;
+    }
     if (e instanceof CheckoutError) {
       await sendMessage(chatId, CHECKOUT_ERROR_MESSAGES[e.code] || "Mua hàng thất bại.").catch(() => {});
       return;
