@@ -7,6 +7,7 @@ import { checkLock, recordFail, getClientIp } from "@/lib/auth/loginLimiter";
 import { createEmailVerifyToken } from "@/lib/auth/emailVerifyToken.js";
 import { sendEmail } from "@/lib/email/sendEmail.js";
 import { escapeHtml } from "@/lib/email/escapeHtml.js";
+import { verifyTurnstile } from "@/lib/auth/turnstile.js";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -24,6 +25,17 @@ export async function POST(request) {
     const body = await request.json();
     const { password, displayName } = body;
     const email = (body.email || "").trim().toLowerCase() || null;
+
+    // Turnstile captcha — block bot account creation + bcrypt DoS (skipped when
+    // TURNSTILE_SECRET_KEY is unset, e.g. local dev). Verify before any expensive work.
+    const captcha = await verifyTurnstile(body.turnstileToken, ip);
+    if (!captcha.ok) {
+      recordFail(ip);
+      return NextResponse.json(
+        { error: "Captcha verification failed. Please try again." },
+        { status: 400 }
+      );
+    }
 
     // Validate email
     if (!email || !EMAIL_REGEX.test(email)) {

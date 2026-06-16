@@ -13,14 +13,50 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [googleEnabled, setGoogleEnabled] = useState(false);
   const [telegramBotId, setTelegramBotId] = useState(null);
+  const [turnstileSiteKey, setTurnstileSiteKey] = useState(null);
+  const [turnstileToken, setTurnstileToken] = useState("");
   const router = useRouter();
 
   useEffect(() => {
     fetch("/api/auth/social-providers")
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d) { setGoogleEnabled(!!d.googleEnabled); setTelegramBotId(d.telegramBotId || null); } })
+      .then(d => { if (d) { setGoogleEnabled(!!d.googleEnabled); setTelegramBotId(d.telegramBotId || null); setTurnstileSiteKey(d.turnstileSiteKey || null); } })
       .catch(() => {});
   }, []);
+
+  // Load Turnstile script + render widget once site key is known.
+  useEffect(() => {
+    if (!turnstileSiteKey) return;
+    const SCRIPT_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+    let widgetId = null;
+
+    const render = () => {
+      const el = document.getElementById("turnstile-widget");
+      if (!window.turnstile || !el || el.childElementCount > 0) return;
+      widgetId = window.turnstile.render(el, {
+        sitekey: turnstileSiteKey,
+        callback: (token) => setTurnstileToken(token),
+        "expired-callback": () => setTurnstileToken(""),
+        "error-callback": () => setTurnstileToken(""),
+      });
+    };
+
+    if (window.turnstile) {
+      render();
+    } else if (!document.querySelector(`script[src="${SCRIPT_SRC}"]`)) {
+      const s = document.createElement("script");
+      s.src = SCRIPT_SRC;
+      s.async = true;
+      s.defer = true;
+      s.onload = render;
+      document.head.appendChild(s);
+    } else {
+      const t = setInterval(() => { if (window.turnstile) { clearInterval(t); render(); } }, 200);
+      return () => clearInterval(t);
+    }
+
+    return () => { try { if (widgetId && window.turnstile) window.turnstile.remove(widgetId); } catch { /* noop */ } };
+  }, [turnstileSiteKey]);
 
   const handleRegister = async (e) => {
     e.preventDefault();
@@ -39,13 +75,17 @@ export default function RegisterPage() {
       setError("Passwords do not match");
       return;
     }
+    if (turnstileSiteKey && !turnstileToken) {
+      setError("Please complete the captcha");
+      return;
+    }
 
     setLoading(true);
     try {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, displayName: displayName || undefined }),
+        body: JSON.stringify({ email, password, displayName: displayName || undefined, turnstileToken: turnstileToken || undefined }),
       });
 
       if (res.ok) {
@@ -54,6 +94,8 @@ export default function RegisterPage() {
       } else {
         const data = await res.json();
         setError(data.error || "Registration failed");
+        // Reset captcha so user can retry
+        if (turnstileSiteKey && window.turnstile) { try { window.turnstile.reset(); setTurnstileToken(""); } catch { /* noop */ } }
       }
     } catch {
       setError("An error occurred. Please try again.");
@@ -118,6 +160,10 @@ export default function RegisterPage() {
             </div>
 
             {error && <p className="text-xs text-red-500">{error}</p>}
+
+            {turnstileSiteKey && (
+              <div id="turnstile-widget" className="flex justify-center" />
+            )}
 
             <Button type="submit" variant="primary" className="w-full" loading={loading}>
               Create Account

@@ -8,5 +8,6 @@ export async function GET() {
     googleEnabled: isGoogleConfigured(),
     telegramBotUsername: process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || null,
     telegramBotId: telegramBotId || null,
+    turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || null,
   });
 }
