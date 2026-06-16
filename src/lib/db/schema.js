@@ -1,5 +1,5 @@
 // Latest schema version — bumped when a migration is added in ./migrations/
-export const SCHEMA_VERSION = 14;
+export const SCHEMA_VERSION = 15;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -466,6 +466,22 @@ export const TABLES = {
     indexes: [
       "CREATE INDEX IF NOT EXISTS idx_supplier_status ON supplierSources(status)",
       "CREATE INDEX IF NOT EXISTS idx_supplier_active ON supplierSources(isActive)",
+    ],
+  },
+
+  // Story 2.33: delivery audit trail — append-only metadata, NO payload column (NFR8/D6).
+  supplierDeliveries: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      supplierOrderId: "TEXT NOT NULL",
+      orderId: "TEXT NOT NULL",
+      deliveryType: "TEXT",           // text|credential|file|message|image|unknown
+      status: "TEXT NOT NULL",        // forwarded|forward_failed|unsupported
+      note: "TEXT",                   // optional context, NEVER contains payload
+      createdAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_supplier_delivery_order ON supplierDeliveries(orderId)",
     ],
   },
 

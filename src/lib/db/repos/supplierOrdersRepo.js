@@ -86,6 +86,20 @@ export function getSupplierOrderByOrderIdSync(adapter, orderId) {
 }
 
 /**
+ * Async lookup by supplier-side order id (for mapping webhook events → internal order).
+ * @param {string} supplierOrderId - the id assigned by the supplier
+ * @returns {Promise<object|null>}
+ */
+export async function getSupplierOrderBySupplierOrderId(supplierOrderId) {
+  const adapter = await getAdapter();
+  const row = adapter.get(
+    `SELECT * FROM supplierOrders WHERE supplierOrderId = ? LIMIT 1`,
+    [supplierOrderId]
+  );
+  return rowToSupplierOrder(row);
+}
+
+/**
  * Async lookup by internal orderId.
  * @param {string} orderId
  * @returns {Promise<object|null>}

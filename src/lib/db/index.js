@@ -87,8 +87,14 @@ export {
 // Supplier orders (Story 2.32 — external vendor checkout tracking)
 export {
   insertSupplierOrderSync, getSupplierOrderByOrderIdSync, getSupplierOrderByOrderId,
+  getSupplierOrderBySupplierOrderId,
   updateSupplierOrderStatus, listSupplierOrders, findPaidExternalOrdersMissingSupplierOrder,
 } from "./repos/supplierOrdersRepo.js";
+
+// Supplier deliveries (Story 2.33 — delivery audit trail, metadata only, no payload)
+export {
+  insertDeliverySync, hasForwardedDeliverySync, listDeliveriesByOrder,
+} from "./repos/supplierDeliveriesRepo.js";
 
 // Orders admin extras (Story 2.32 — orphan-flag without status change)
 export { setOrderNoteSync, listAllOrders, countAllOrders, getOrderWithItems, setFulfilledAt } from "./repos/ordersRepo.js";

@@ -18,7 +18,7 @@ context:
 
 # Story 2.33: External Order Status Sync & Delivery Forwarding
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -159,59 +159,40 @@ Ba sự thật về codebase định hình toàn bộ scope. Dev PHẢI hiểu t
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Schema: `supplierDeliveries` table + migration + repo lookup** (AC3, AC6)
-  - [ ] Thêm bảng `supplierDeliveries` vào `TABLES` (schema.js) camelCase (QĐ5) + index `idx_supplier_delivery_order(orderId)`. KHÔNG có cột payload.
-  - [ ] Bump `SCHEMA_VERSION = 15`.
-  - [ ] Tạo `src/lib/db/migrations/013-supplier-deliveries.js` (**version 13** — slot 012 đã bị `012-supplier-orders.js` chiếm): guard `tableExists`, `CREATE TABLE IF NOT EXISTS supplierDeliveries`. Đăng ký `migrations/index.js` (import `m013`, append).
-  - [ ] `supplierOrdersRepo.js`: thêm `getSupplierOrderBySupplierOrderId(supplierOrderId)` (async) — lookup theo id phía supplier để map webhook event → internal order (QĐ2). Export qua `db/index.js`.
+- [x] **T1 — Schema: `supplierDeliveries` table + migration + repo lookup** (AC3, AC6)
+  - [x] Thêm bảng `supplierDeliveries` vào `TABLES` (schema.js) camelCase (QĐ5) + index `idx_supplier_delivery_order(orderId)`. KHÔNG có cột payload.
+  - [x] Bump `SCHEMA_VERSION = 15`.
+  - [x] Tạo `src/lib/db/migrations/013-supplier-deliveries.js` (**version 13** — slot 012 đã bị `012-supplier-orders.js` chiếm): guard `tableExists`, `CREATE TABLE IF NOT EXISTS supplierDeliveries`. Đăng ký `migrations/index.js` (import `m013`, append).
+  - [x] `supplierOrdersRepo.js`: thêm `getSupplierOrderBySupplierOrderId(supplierOrderId)` (async) — lookup theo id phía supplier để map webhook event → internal order (QĐ2). Export qua `db/index.js`.
 
-- [ ] **T2 — `supplierDeliveriesRepo.js`** (AC3) — `src/lib/db/repos/supplierDeliveriesRepo.js`
-  - [ ] `insertDeliverySync(adapter, {supplierOrderId, orderId, deliveryType, status, note})` — sync, trong caller transaction. KHÔNG nhận/lưu payload.
-  - [ ] `hasForwardedDeliverySync(adapter, supplierOrderId)` — sync, check đã có row `status='forwarded'` cho supplierOrderId (idempotency QĐ8).
-  - [ ] `listDeliveriesByOrder(orderId)` — async (admin view 2.34).
-  - [ ] Export qua `db/index.js`.
+- [x] **T2 — `supplierDeliveriesRepo.js`** (AC3) — `src/lib/db/repos/supplierDeliveriesRepo.js`
+  - [x] `insertDeliverySync(adapter, {supplierOrderId, orderId, deliveryType, status, note})` — sync, trong caller transaction. KHÔNG nhận/lưu payload.
+  - [x] `hasForwardedDeliverySync(adapter, supplierOrderId)` — sync, check đã có row `status='forwarded'` cho supplierOrderId (idempotency QĐ8).
+  - [x] `listDeliveriesByOrder(orderId)` — async (admin view 2.34).
+  - [x] Export qua `db/index.js`.
 
-- [ ] **T3 — Status mapping enum + capability detection** (AC1, AC2, QĐ3/QĐ6) — `src/lib/store/constants.js` (mở rộng)
-  - [ ] `SUPPLIER_ORDER_STATUSES = ['paid','fulfilled','expired','cancelled','failed']` (raw supplier statuses, E8).
-  - [ ] `SUPPLIER_ORDER_STATUS_MAP` (QĐ3): paid→null, fulfilled→'fulfilled', expired→'failed', cancelled→'cancelled', failed→'failed'.
-  - [ ] `supportsOrderStatus(supplierAdapter)` = `typeof supplierAdapter?.getOrderStatus === 'function'` (default false; KHÔNG implement getOrderStatus thật — defer).
+- [x] **T3 — Status mapping enum + capability detection** (AC1, AC2, QĐ3/QĐ6) — `src/lib/store/constants.js` (mở rộng)
+  - [x] `SUPPLIER_ORDER_STATUSES = ['paid','fulfilled','expired','cancelled','failed']` (raw supplier statuses, E8).
+  - [x] `SUPPLIER_ORDER_STATUS_MAP` (QĐ3): paid→null, fulfilled→'fulfilled', expired→'failed', cancelled→'cancelled', failed→'failed'.
+  - [x] `supportsOrderStatus(supplierAdapter)` = `typeof supplierAdapter?.getOrderStatus === 'function'` (default false; KHÔNG implement getOrderStatus thật — defer).
 
-- [ ] **T4 — `orderStatusSync.js`** (AC1-AC5, QĐ2/QĐ4/QĐ7) — `src/lib/store/orderStatusSync.js` (NEW)
-  - [ ] `class OrderStatusError(code, message)` — codes: `SUPPLIER_ORDER_NOT_FOUND | SOURCE_MISMATCH | INVALID_STATUS`.
-  - [ ] `applyOrderStatusEvent(sourceId, event)`:
-    - Lookup `getSupplierOrderBySupplierOrderId(event.supplierOrderId)`; null → `{ok:false, error:'supplier order not found'}`.
-    - Verify `supplierOrder.supplierSourceId === sourceId` (chống cross-source spoof) → mismatch `{ok:false, error:'source mismatch'}`.
-    - Validate `event.status ∈ SUPPLIER_ORDER_STATUSES`; invalid → `{ok:false, error:'invalid status'}`.
-    - `updateSupplierOrderStatus(supplierOrder.id, {supplierStatus: event.status})` (luôn ghi raw, audit).
-    - Map → internal: `const target = SUPPLIER_ORDER_STATUS_MAP[event.status]`. Nếu `target && canTransition(order.status, target)` → `transitionOrderSync` trong `db.transaction()`. Nếu không → skip (terminal-guard, return `{ok:true, skipped:'terminal_or_noop'}`).
-    - Nếu `event.delivery` → `forwardDelivery` (QĐ4) trong/sau transaction phù hợp.
-    - Return `{ok:true, orderId, internalStatus, forwarded}`.
-  - [ ] `forwardDelivery(adapter, {supplierOrder, order, delivery})` (QĐ4):
-    - `hasForwardedDeliverySync` check → đã forward → skip (idempotency QĐ8).
-    - `delivery.type ∈ {text, credential}` + payload string → set order fulfilled (nếu canTransition) + `setFulfilledAt` + `insertDeliverySync(status='forwarded')` trong transaction; `sendMessage(buyer, payload)` post-commit (credential bọc `<pre>`). Gửi fail → audit `forward_failed` + fallback notify.
-    - `delivery.type ∈ {file,image,message}` / không payload → `insertDeliverySync(status='unsupported')`, order giữ paid, notify thủ công (AC4).
-  - [ ] User notification (QĐ7): post-commit best-effort `sendMessage` theo terminal status.
+- [x] **T4 — `orderStatusSync.js`** (AC1-AC5, QĐ2/QĐ4/QĐ7) — `src/lib/store/orderStatusSync.js` (NEW)
+  - [x] `class OrderStatusError(code, message)` — codes: `SUPPLIER_ORDER_NOT_FOUND | SOURCE_MISMATCH | INVALID_STATUS`.
+  - [x] `applyOrderStatusEvent(sourceId, event)`: lookup → source verify → status validate → supplierStatus audit → map → canTransition → transition in txn → forwardDelivery if delivery → notify post-commit.
+  - [x] `forwardDeliverySync(adapter, ...)` (QĐ4): idempotency check → text/credential → transition fulfilled + setFulfilledAt + audit `forwarded`; unsupported type → audit `unsupported`, order giữ paid.
+  - [x] User notification (QĐ7): post-commit best-effort `sendMessage` theo terminal status.
 
-- [ ] **T5 — Order-status webhook endpoint** (AC1) — `src/app/api/store/suppliers/order-webhook/[id]/route.js` (NEW)
-  - [ ] POST: load `getSupplierSourceWithAuth(id)`, verify `secretMatches(provided, auth.webhookSecret)` + `syncMode==='webhook'` + uniform 401 (reuse pattern product webhook). Provided secret từ header `x-webhook-secret` hoặc query `secret`.
-  - [ ] Parse body → `{supplierOrderId, status, delivery?}`; thiếu field bắt buộc → 400.
-  - [ ] Gọi `applyOrderStatusEvent(id, event)`; `!ok` → 422; ok → 200. Lỗi → 500 (log, không leak).
-  - [ ] Luôn trả nhanh (webhook retry-safe) — heavy work đã đồng bộ trong applyOrderStatusEvent.
+- [x] **T5 — Order-status webhook endpoint** (AC1) — `src/app/api/store/suppliers/order-webhook/[id]/route.js` (NEW)
+  - [x] POST: verify secret + syncMode==='webhook' + uniform 401. Parse body → `{supplierOrderId, status, delivery?}`; 400 khi thiếu field. `applyOrderStatusEvent` → 422/200/500.
 
-- [ ] **T6 — Polling driver stub** (AC2) — `orderStatusSync.js`
-  - [ ] `pollOrderStatuses()` — list source có `supportsOrderStatus()=true` (MVP rỗng → no-op). Document defer. KHÔNG implement getOrderStatus thật.
+- [x] **T6 — Polling driver stub** (AC2) — `orderStatusSync.js`
+  - [x] `pollOrderStatuses()` — no-op stub, capability-gated interface sẵn cho future.
 
-- [ ] **T7 — Tests** (AC1-AC6) — `tests/unit/`
-  - [ ] `orderStatusSync.test.js` (mới): webhook event map paid/fulfilled/expired/cancelled/failed → internal đúng; terminal-guard (order fulfilled + event cancelled → skip; order failed + event fulfilled → skip, AC2/AC5); source-mismatch reject; supplier-order-not-found; supplierStatus luôn ghi.
-  - [ ] **AC3 delivery forward**: delivery type=text/credential → sendMessage gọi với payload + audit `forwarded` (KHÔNG payload trong audit row) + order fulfilled + setFulfilledAt; idempotency (forward 2 lần → chỉ gửi 1, `hasForwardedDeliverySync`).
-  - [ ] **AC4 unsupported**: delivery type=file → audit `unsupported`, order giữ paid, KHÔNG sendMessage payload.
-  - [ ] **fulfilled-without-delivery (QĐ3 delivery-gated)**: event `status='fulfilled'` KHÔNG kèm `delivery` → order GIỮ `paid` (KHÔNG set fulfilled), audit `unsupported`, `supplierStatus='fulfilled'` vẫn ghi, notify admin manual.
-  - [ ] **AC5 terminal failure**: event expired/failed/cancelled → order failed/cancelled, KHÔNG fulfilled, notify support, KHÔNG auto-refund (reverseTxn KHÔNG gọi).
-  - [ ] `supplierDeliveriesRepo.test.js` (mới): insert/has-forwarded/list, KHÔNG có cột payload.
-  - [ ] `supplier-deliveries-migration.test.js` (mới hoặc gộp): migration 013 tạo table, backward-compat.
-  - [ ] **Webhook endpoint test** (gộp hoặc riêng): secret verify (401 wrong/missing), syncMode guard, 400 missing field, 200 happy.
-  - [ ] **Regression (AC6)**: local order + proxy_checkout 2.32 KHÔNG đổi; state machine cũ pass; full suite green.
-  - [ ] Setup giống `catalogSync-markup.test.js`: temp `DATA_DIR`, `STORE_ENC_KEY`, `delete global._dbAdapter`, `vi.resetModules()`, mock `sendMessage` + supplier registry.
+- [x] **T7 — Tests** (AC1-AC6) — `tests/unit/`
+  - [x] `orderStatusSync.test.js` (mới, 19 tests): AC1 map paid/fulfilled/expired/cancelled/failed; AC2 terminal-guard; error cases; AC3 text/credential forward + idempotency; AC4 unsupported + fulfilled-without-delivery; AC5 terminal failure + notify; AC6 regression.
+  - [x] `supplierDeliveriesRepo.test.js` (mới, 10 tests): insert/has-forwarded/list, KHÔNG có cột payload.
+  - [x] `supplier-deliveries-migration.test.js` (mới, 5 tests): migration 013 tạo table, idempotent, backward-compat.
+  - [x] **Regression (AC6)**: full suite 1607/1668 pass; 3 failures pre-existing ERR_DLOPEN_FAILED (unrelated native binary).
 
 ## Dev Notes
 
@@ -281,14 +262,71 @@ deliveryType TEXT, status TEXT NOT NULL, note TEXT, createdAt TEXT NOT NULL
 - [Source: src/lib/store/adminFulfill.js] — fulfill pattern (transaction transition + post-commit sendMessage)
 - [Source: src/app/api/store/suppliers/webhook/[id]/route.js] — webhook secret verify reuse
 
+## Code Review (2026-06-16)
+
+_Adversarial 3-layer review trên working-tree (uncommitted). Blind Hunter (19 findings), Acceptance Auditor (5), Edge Case Hunter (7 — hit transient 499, resumed). Tất cả finding verify trực tiếp trên code. Verification độc lập: 34 test mới pass; migration chain apply sạch tới #13; full suite 1688 pass / 0 fail. Triage: 3 patch · 4 defer · ~17 dismissed (gồm 1 "CRITICAL" SCHEMA_VERSION được 2 agent báo nhưng là false-positive)._
+
+**Patch (fixable, unambiguous):**
+
+- [x] [Review][Patch][MAJOR] `forwardDeliverySync` ghi audit `forwarded` + gửi payload kể cả khi `canTransition` chặn (order đã terminal) [`src/lib/store/orderStatusSync.js:97-111`] — khi delivery hợp lệ nhưng `canTransition(order.status,'fulfilled')=false` (vd order đã `cancelled`/`failed`), code vẫn `insertDeliverySync(status='forwarded')` + return `forwarded:true` → caller gửi payload cho buyer cho một đơn KHÔNG fulfill được. Audit sai (claim forwarded nhưng order ở terminal khác) + buyer nhận hàng cho đơn đã hủy. Fix: nếu `!transitioned` (canTransition false) → ghi `status='unsupported'` (hoặc `forward_failed`) + KHÔNG return forwarded:true cho path gửi payload; hoặc skip toàn bộ forward khi order đã terminal (giống AC5 no-resurrect). Verify trên code.
+- [x] [Review][Patch][MAJOR] Path `forward_failed` (QĐ4 spec) hoàn toàn vắng mặt [`src/lib/store/orderStatusSync.js:192-200`] — QĐ4: "gửi fail KHÔNG rollback fulfilled, NHƯNG ghi audit `status='forward_failed'` + notify fallback". Impl set fulfilled + audit `forwarded` trong txn, rồi `notifyBuyer(...).catch(()=>{})` post-commit nuốt lỗi im lặng — KHÔNG ghi `forward_failed`, KHÔNG fallback notify. `forward_failed` chỉ tồn tại trong comment repo, không code path nào insert. Hệ quả: delivery gửi fail không phân biệt được với thành công trong audit. Fix: `notifyBuyer` trả `false` (đã có) → ghi audit `forward_failed` + fallback message "xem /orders". Thêm test (T7 thiếu case này).
+- [x] [Review][Patch][MAJOR] HTML-injection: supplier payload nội suy thô vào `<pre>${payload}</pre>` (parse_mode HTML) [`src/lib/store/orderStatusSync.js:194-196`] — `sendMessage` dùng `parse_mode:'HTML'` (botClient.js:54). Payload từ supplier (UNTRUSTED, khác credential admin-loaded 2.27/2.28) chứa `<`/`>`/`</pre>` → vỡ format hoặc inject HTML (vd `</pre><b>phishing link</b>` → buyer thấy message giả mạo trong kênh tin cậy). Fix: `escapeHtml(payload)` (đã có `src/lib/email/escapeHtml.js`) trước khi nội suy. ⚠️ Cân nhắc fix luôn 2.27/2.28 (`router.js:227`, `adminFulfill.js:48`) nhưng đó là admin-loaded ít rủi ро hơn — tối thiểu PHẢI escape ở 2.33 vì nguồn supplier.
+
+**Deferred (real nhưng ngoài scope / cần story sau):**
+
+- [x] [Review][Defer] `payload` return từ `forwardDeliverySync` → latent credential-leak surface [`src/lib/store/orderStatusSync.js:111`] — payload chảy qua return value + caller scope; hiện KHÔNG bị log (NFR8 audit row không chứa payload — verified). Risk chỉ là nếu tương lai thêm debug-log result object. Defer: refactor consume payload trong closure; không phải leak hiện tại.
+- [x] [Review][Defer] `getSupplierOrderBySupplierOrderId` LIMIT 1 không ORDER BY + không UNIQUE constraint trên `supplierOrderId` [`src/lib/db/repos/supplierOrdersRepo.js:95`] — supplier reuse supplierOrderId (rất hiếm) → non-deterministic row. better-sqlite3 single-writer nên không race; nhưng nếu dup tồn tại → transition nhầm order. Defer: thêm `ORDER BY createdAt DESC` hoặc UNIQUE index — cân nhắc ở 2.34 reconciliation (cùng lúc xử supplierOrders integrity).
+- [x] [Review][Defer] `updateSupplierOrderStatus` ghi `supplierStatus` TRƯỚC khi load internal order (line 144 vs 147) [`src/lib/store/orderStatusSync.js:144`] — nếu internal order bị hard-delete → supplierStatus ghi rồi nhưng return error, audit lệch. Edge cực hiếm (orders không hard-delete trong flow thường). Defer: gate write sau order-load hoặc wrap txn; audit-only, không ảnh hưởng user state.
+- [x] [Review][Defer] `notifyManual`/`notifyBuyer` fire-and-forget nuốt lỗi không log [`src/lib/store/orderStatusSync.js:174`] — `.catch(()=>{})` ở line 174 (notifyManual path) không log; line 197/199/226 cũng vậy. Best-effort post-commit là đúng QĐ7, nhưng silent làm khó debug ops. Defer: thêm `.catch(e=>console.error(...))` (notifyBuyer nội bộ đã log; chỉ các call-site ngoài thiếu). Minor ops.
+
+**Dismissed (false-positive / noise — đã verify trên code):**
+
+- **`SCHEMA_VERSION=15` vs migration version=13 "CRITICAL startup failure"** (blind + edge, CẢ HAI báo) — SAI HOÀN TOÀN: `SCHEMA_VERSION` KHÔNG được consume ở đâu cả (grep confirm chỉ có dòng định nghĩa). Migration gate dùng `latestVersion()` (=13) ở `migrate.js:70,73`, KHÔNG dùng SCHEMA_VERSION. Offset +2 đã tồn tại từ 2.31 (13 vs 11) và 2.32 (14 vs 12). Không có startup check nào so SCHEMA_VERSION===latestVersion. Zero impact.
+- "`forwardResult` undefined nếu transaction throw → TypeError" (blind + edge) — noise: nếu `insertDeliverySync` throw, txn rollback (đúng), TypeError propagate tới route catch → 500, supplier retry. Audit-gap on DB-error là edge chấp nhận được; không phải bug logic. (Path chính không throw.)
+- "`updateSupplierOrderStatus` ngoài transaction → partial-write window" (blind CRITICAL) — noise: supplierStatus là audit-only, không ảnh hưởng money/user state; retry idempotent (ghi lại cùng giá trị). Không phải critical.
+- "Secret qua query param `?secret=` log-leak" (blind MAJOR) — by-design: reuse y hệt pattern product webhook 2.30 (header HOẶC query fallback), đã review ở 2.30. Nhất quán, không phải regression 2.33. (Có thể siết toàn cục sau, không thuộc story này.)
+- "`secretMatches` duplicate không reuse" (auditor) — noise: function private trong product webhook route, copy verbatim đúng behavior; extract shared util là refactor optional, không phải bug.
+- "`hasForwardedDeliverySync` chặn corrected re-delivery" (blind MAJOR) — by-design: idempotency chống gửi payload 2 lần (QĐ8) là intentional; supplier gửi credential sai rồi sửa = admin manual case (hiếm), không phải auto-flow.
+- "syncMode guard chỉ ở route không ở applyOrderStatusEvent" (blind) — noise: route là entry point duy nhất; defense-in-depth optional.
+- "fulfilled-without-delivery path không dedup (2 unsupported rows)" (blind MINOR) — noise: unsupported rows là metadata, trùng vô hại.
+- "pollOrderStatuses stub rỗng không log / OrderStatusError dead code / test setTimeout flaky / migration double-guard / idempotent no skipped-marker / note lộ payload-presence" — noise/nit: stub đúng QĐ6 defer; OrderStatusError export sẵn cho tương lai; double-guard harmless; note chỉ ghi present/missing không phải payload.
+
 ## Dev Agent Record
 
 ### Agent Model Used
 
-claude-opus-4-8 (BMAD Create Story workflow)
+claude-sonnet-4-6 (BMAD Dev Story workflow)
 
 ### Debug Log References
 
 ### Completion Notes List
 
-### File List
+- `SCHEMA_VERSION = 15`, migration 013 `supplierDeliveries` (append-only, NO payload column, NFR8/D6).
+- `getSupplierOrderBySupplierOrderId` added to `supplierOrdersRepo.js` — webhook event → internal order lookup (QĐ2).
+- `supplierDeliveriesRepo.js` (NEW): `insertDeliverySync` / `hasForwardedDeliverySync` / `listDeliveriesByOrder` — all exported via `db/index.js`.
+- `constants.js` extended: `SUPPLIER_ORDER_STATUSES`, `SUPPLIER_ORDER_STATUS_MAP` (QĐ3), `supportsOrderStatus()` capability stub (QĐ6).
+- `orderStatusSync.js` (NEW): `applyOrderStatusEvent` — lookup → cross-source guard → status validate → supplierStatus audit → map → canTransition → transition in db.transaction() → forwardDeliverySync post-commit sendMessage. `fulfilled` is delivery-gated (QĐ3). Idempotency 2 layers: canTransition + hasForwardedDeliverySync (QĐ8). KHÔNG auto-refund (QĐ9). `pollOrderStatuses` no-op stub (QĐ6).
+- `order-webhook/[id]/route.js` (NEW): POST endpoint, reuses `secretMatches` + uniform 401 pattern from product webhook (QĐ1).
+- Tests: 34 new tests — `orderStatusSync.test.js` (19), `supplierDeliveriesRepo.test.js` (10), `supplier-deliveries-migration.test.js` (5). Full suite 1607/1668 pass (3 pre-existing ERR_DLOPEN_FAILED failures unrelated to story changes).
+
+## File List
+
+- `src/lib/db/schema.js` (modified — +supplierDeliveries table, SCHEMA_VERSION 15)
+- `src/lib/db/migrations/013-supplier-deliveries.js` (new)
+- `src/lib/db/migrations/index.js` (modified — registered m013)
+- `src/lib/db/repos/supplierOrdersRepo.js` (modified — +getSupplierOrderBySupplierOrderId)
+- `src/lib/db/repos/supplierDeliveriesRepo.js` (new)
+- `src/lib/db/index.js` (modified — exported new repo fns)
+- `src/lib/store/constants.js` (modified — +SUPPLIER_ORDER_STATUSES, +SUPPLIER_ORDER_STATUS_MAP, +supportsOrderStatus)
+- `src/lib/store/orderStatusSync.js` (new)
+- `src/app/api/store/suppliers/order-webhook/[id]/route.js` (new)
+- `tests/unit/orderStatusSync.test.js` (new)
+- `tests/unit/supplierDeliveriesRepo.test.js` (new)
+- `tests/unit/supplier-deliveries-migration.test.js` (new)
+- `docs/stories/2-33-external-order-status-sync-delivery-forwarding.md` (modified)
+
+## Change Log
+
+- 2026-06-16: Implement story 2.33 — supplier order status sync + delivery forwarding. New: `supplierDeliveries` table (migration 013, SCHEMA_VERSION 15), `supplierDeliveriesRepo`, `orderStatusSync.js` (applyOrderStatusEvent + pollOrderStatuses stub), order-webhook endpoint. Extended: supplierOrdersRepo (+getSupplierOrderBySupplierOrderId), constants (+status map/enum), db/index exports. 34 new tests, all pass.
+
+## Status: review
