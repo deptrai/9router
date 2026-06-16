@@ -83,10 +83,11 @@ async function seedPaidOrder(userId, productId, sourceId, opts = {}) {
   const adapter = await getAdapter();
   const orderId = uuidv4();
   const now = opts.createdAt || new Date().toISOString();
+  const status = opts.status ?? "paid";
   adapter.run(
     `INSERT INTO orders(id, userId, status, source, totalCredits, deliveryMode, note, createdAt, updatedAt)
-     VALUES(?, ?, 'paid', 'telegram', 200, 'admin_fulfill', ?, ?, ?)`,
-    [orderId, userId, opts.note ?? null, now, now]
+     VALUES(?, ?, ?, 'telegram', 200, 'admin_fulfill', ?, ?, ?)`,
+    [orderId, userId, status, opts.note ?? null, now, now]
   );
   adapter.run(
     `INSERT INTO orderItems(id, orderId, productId, productName, kind, deliveryMode, unitCredits, quantity, createdAt)
@@ -158,6 +159,23 @@ describe("detectNegativeMargins (AC5)", () => {
     const n = await detectNegativeMargins(adapter);
     expect(n).toBe(0);
     expect(getNote(adapter, orderId)).toBeNull();
+  });
+
+  // Review patch (2026-06-16): negative-margin detector must ignore resolved orders
+  // (cancelled/refunded/fulfilled) so the hourly sweep never re-flags or clobbers an
+  // admin's resolution note on an order that is no longer 'paid'.
+  it("does NOT flag negative-margin order whose status is no longer 'paid'", async () => {
+    const adapter = await getAdapter();
+    const user = await seedUser();
+    const sourceId = await seedSource();
+    const productId = await seedProduct(sourceId);
+    const cancelled = await seedPaidOrder(user.id, productId, sourceId, { margin: -20, status: "cancelled" });
+    const refunded = await seedPaidOrder(user.id, productId, sourceId, { margin: -20, status: "refunded" });
+
+    const n = await detectNegativeMargins(adapter);
+    expect(n).toBe(0);
+    expect(getNote(adapter, cancelled)).toBeNull();
+    expect(getNote(adapter, refunded)).toBeNull();
   });
 });
 

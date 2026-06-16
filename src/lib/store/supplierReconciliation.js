@@ -88,7 +88,8 @@ export async function detectNegativeMargins(adapter) {
     `SELECT so.orderId, so.expectedMargin, so.supplierPrice, so.retailPrice, o.note
      FROM supplierOrders so
      JOIN orders o ON o.id = so.orderId
-     WHERE so.expectedMargin < 0`
+     WHERE so.expectedMargin < 0
+       AND o.status = 'paid'`
   );
   let flagged = 0;
   for (const r of rows) {

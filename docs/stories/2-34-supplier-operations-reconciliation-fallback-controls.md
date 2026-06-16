@@ -170,6 +170,21 @@ so that **tôi phát hiện sớm sự cố (supplier down, margin âm, orphan o
   - [x] `tests/unit/externalCheckout-failclosed.test.js` (NEW, 4 tests): unhealthy → SUPPLIER_UNHEALTHY (no credit debit, no order) / degraded → proceed / active → proceed (regression) / ExternalCheckoutError instance
   - [x] Regression: storeCheckout/externalCheckout/catalogSync/supplierOrdersRepo (80 tests) pass; full suite **1707 pass / 0 fail / 24 skip**
 
+### Code Review (adversarial 3-layer, 2026-06-16)
+
+> Blind Hunter + Edge Case Hunter + Acceptance Auditor. 1 patch, 4 defer, 9 dismissed (false-positive: failure counter, orphan products, note field, singleton adapter, TOCTOU, CSRF, FK null-safety; pattern-match: fail-open UI, Tạm ngừng vs ẩn).
+
+#### Applied Patches
+
+- [x] [Review][Patch] ✅ APPLIED — `detectNegativeMargins` thiếu `AND o.status = 'paid'` → flags resolved orders (cancelled/refunded/fulfilled) + clobber admin notes đã ghi trước [src/lib/store/supplierReconciliation.js:88] — FIX: thêm status filter khớp 2 detector còn lại + regression test (resolved-order không bị flag). 91 regression pass.
+
+#### Deferred
+
+- [x] [Review][Defer] AC2 warning banner khi `orders.note` chứa NEEDS_ flag — không có order detail dashboard page (2.28 API-only); dual-status hiển thị inline ở supplier detail table. Deferred: implement khi có order detail page.
+- [x] [Review][Defer] `setOrderNoteSync` overwrite-not-append pattern — pre-existing utility (2.32); reconcile sweep là caller thêm. Enhancement: chuyển sang append/structured JSON notes. Pre-existing.
+- [x] [Review][Defer] `detectOrphanOrders` ignores `adapter` param for SELECT (cosmetic API inconsistency, singleton works) — maintenance trap. Fix: pass adapter qua hoặc remove param. Low priority.
+- [x] [Review][Defer] T4/AC3: catalog-hide + fail-closed gate chỉ check `status='unhealthy'`, không check `source.isActive=0` độc lập — `disableSupplierSource` luôn co-set unhealthy nên không hở; pre-existing-adjacent gap (2.30 PUT).
+
 ## Dev Notes
 
 ### Ràng buộc bắt buộc
@@ -325,5 +340,6 @@ claude-opus-4-8 (BMAD Dev Story workflow)
 ## Change Log
 
 - 2026-06-16: Implement story 2.34 — supplier operations, reconciliation & fail-closed controls. New: `supplierReconciliation.js` (orphan/negative-margin/stale sweep, flag-only no auto-refund), 5 admin API routes + dual-status order detail, 2 dashboard pages (suppliers list + detail), hourly scheduled sweep in initializeApp. Modified: externalCheckout fail-closed `unhealthy` gate, listActiveProducts hides unhealthy-source products, supplierSourcesRepo (+counts/disable/enable). No new schema columns (reused orders.note). 16 new tests; full suite 1707 pass / 0 fail.
+- 2026-06-16: Code review (3-layer adversarial). 1 patch applied — `detectNegativeMargins` thêm `AND o.status = 'paid'` (không flag/clobber resolved orders) + regression test. 4 defer (AC2 warning banner no order-detail-page, setOrderNoteSync overwrite pattern pre-existing, detectOrphanOrders adapter param cosmetic, isActive=0 gap pre-existing-adjacent). 9 dismissed (false-positives: failure-counter/orphan-products/note-field/singleton-adapter/TOCTOU/CSRF/FK-null + pattern-match fail-open-UI/Tạm-ngừng-vs-ẩn). 92 regression tests pass.
 
-## Status: review
+## Status: done
