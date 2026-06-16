@@ -94,7 +94,10 @@ function ensureRuntimeServer(bundledPath) {
 
 const SERVER_PATH = ensureRuntimeServer(resolveBundledServerPath());
 const ENCRYPT_ALGO = "aes-256-gcm";
-const ENCRYPT_SALT = "9router-mitm-pwd";
+// Legacy salt — kept ONLY to decrypt passwords encrypted by older builds (v0
+// ciphertext, no version prefix). New ciphertext uses a random per-install key
+// (see deriveKeyV1). Do NOT use this for new encryption.
+const LEGACY_ENCRYPT_SALT = "9router-mitm-pwd";
 
 function getProcessUsingPort443() {
   try {
@@ -150,30 +153,76 @@ function killProcess(pid, force = false, sudoPassword = null) {
   }
 }
 
-function deriveKey() {
+// Legacy key derivation — machineId + static salt, with a STATIC fallback when
+// machineId is unavailable (containers/CI). The static fallback is guessable
+// from source, so it is used ONLY to decrypt old (unversioned) ciphertext, never
+// to encrypt. New ciphertext uses deriveKeyV1.
+function deriveKeyLegacy() {
   try {
     const { machineIdSync } = require("node-machine-id");
     const raw = machineIdSync();
-    return crypto.createHash("sha256").update(raw + ENCRYPT_SALT).digest();
+    return crypto.createHash("sha256").update(raw + LEGACY_ENCRYPT_SALT).digest();
   } catch {
-    return crypto.createHash("sha256").update(ENCRYPT_SALT).digest();
+    return crypto.createHash("sha256").update(LEGACY_ENCRYPT_SALT).digest();
   }
 }
 
-function encryptPassword(plaintext) {
-  const key = deriveKey();
+// Per-install secret key material (32 random bytes, hex) persisted in settings.
+// This is the real secret: an attacker with the source but not the DB cannot
+// derive the key. Generated lazily on first encrypt and reused thereafter.
+async function getOrCreateKeyMaterial() {
+  if (!_getSettings || !_updateSettings) return null;
+  const settings = await _getSettings();
+  if (settings.mitmKeyMaterial && /^[0-9a-f]{64}$/i.test(settings.mitmKeyMaterial)) {
+    return settings.mitmKeyMaterial;
+  }
+  const material = crypto.randomBytes(32).toString("hex");
+  await _updateSettings({ mitmKeyMaterial: material });
+  return material;
+}
+
+// V1 key = HKDF-SHA256(keyMaterial, salt=machineId-or-empty, info="mitm-sudo").
+// Binds the key to BOTH the random per-install material (secret) and the machine
+// (so a stolen DB row alone, without the same host, is still not enough when
+// machineId is available). machineId is non-secret, so it is the salt, not the key.
+function deriveKeyV1(keyMaterial) {
+  let machineSalt = "";
+  try { machineSalt = require("node-machine-id").machineIdSync(); } catch { /* no machine id */ }
+  return Buffer.from(
+    crypto.hkdfSync("sha256", Buffer.from(keyMaterial, "hex"), Buffer.from(machineSalt), Buffer.from("mitm-sudo"), 32)
+  );
+}
+
+async function encryptPassword(plaintext) {
+  const keyMaterial = await getOrCreateKeyMaterial();
+  // No DB hooks (shouldn't happen on the save path) → cannot persist key
+  // material, so refuse rather than silently fall back to a guessable key.
+  if (!keyMaterial) throw new Error("MITM key material unavailable — cannot encrypt sudo password securely");
+  const key = deriveKeyV1(keyMaterial);
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv(ENCRYPT_ALGO, key, iv);
   const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
-  return `${iv.toString("hex")}:${tag.toString("hex")}:${encrypted.toString("hex")}`;
+  return `v1:${iv.toString("hex")}:${tag.toString("hex")}:${encrypted.toString("hex")}`;
 }
 
-function decryptPassword(stored) {
+async function decryptPassword(stored) {
   try {
+    if (stored.startsWith("v1:")) {
+      const [, ivHex, tagHex, dataHex] = stored.split(":");
+      if (!ivHex || !tagHex || !dataHex) return null;
+      const keyMaterial = await getOrCreateKeyMaterial();
+      if (!keyMaterial) return null;
+      const key = deriveKeyV1(keyMaterial);
+      const decipher = crypto.createDecipheriv(ENCRYPT_ALGO, key, Buffer.from(ivHex, "hex"));
+      decipher.setAuthTag(Buffer.from(tagHex, "hex"));
+      return decipher.update(Buffer.from(dataHex, "hex")) + decipher.final("utf8");
+    }
+    // Legacy unversioned ciphertext (iv:tag:data) — decrypt with the old key so
+    // existing installs keep working; it will be re-encrypted as v1 on next save.
     const [ivHex, tagHex, dataHex] = stored.split(":");
     if (!ivHex || !tagHex || !dataHex) return null;
-    const key = deriveKey();
+    const key = deriveKeyLegacy();
     const decipher = crypto.createDecipheriv(ENCRYPT_ALGO, key, Buffer.from(ivHex, "hex"));
     decipher.setAuthTag(Buffer.from(tagHex, "hex"));
     return decipher.update(Buffer.from(dataHex, "hex")) + decipher.final("utf8");
@@ -194,7 +243,7 @@ async function saveMitmSettings(enabled, password) {
   if (!_updateSettings) return;
   try {
     const updates = { mitmEnabled: enabled };
-    if (password) updates.mitmSudoEncrypted = encryptPassword(password);
+    if (password) updates.mitmSudoEncrypted = await encryptPassword(password);
     await _updateSettings(updates);
   } catch (e) {
     err(`Failed to save settings: ${e.message}`);
@@ -215,7 +264,7 @@ async function loadEncryptedPassword() {
   try {
     const settings = await _getSettings();
     if (!settings.mitmSudoEncrypted) return null;
-    return decryptPassword(settings.mitmSudoEncrypted);
+    return await decryptPassword(settings.mitmSudoEncrypted);
   } catch {
     return null;
   }
@@ -848,4 +897,7 @@ module.exports = {
   restoreToolDNS,
   hasDnsPrivilege,
   removeAllDNSEntriesSync,
+  // Exported for unit testing the sudo-password crypto (C9).
+  encryptPassword,
+  decryptPassword,
 };

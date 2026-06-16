@@ -14,6 +14,14 @@ const { getMitmAlias } = require("./dbReader");
 const { applyAntigravityIdeVersionOverride } = require("./antigravityIdeVersion");
 const LOCAL_PORT = 443;
 const IS_WIN = process.platform === "win32";
+
+// Upstream TLS verification. The proxy forges certs to the CLIENT (by design),
+// but the proxy→origin leg MUST verify the real server's cert — otherwise a
+// rogue Wi-Fi / DNS poisoning can MitM the proxy itself and read traffic
+// (including API keys) undetected. Default: verify (secure). Opt out only when
+// deliberately routing through a self-signed upstream relay.
+const MITM_INSECURE_UPSTREAM = process.env.MITM_INSECURE_UPSTREAM === "1";
+const UPSTREAM_REJECT_UNAUTHORIZED = !MITM_INSECURE_UPSTREAM;
 const ENABLE_FILE_LOG = IS_DEV;
 
 // Clear stale dump files on every MITM start (prevents unbounded disk usage)
@@ -168,7 +176,7 @@ async function negotiateAlpn(host) {
   return new Promise((resolve, reject) => {
     const socket = tls.connect({
       host: ip, port: 443, servername: host,
-      ALPNProtocols: ["h2", "http/1.1"], rejectUnauthorized: false,
+      ALPNProtocols: ["h2", "http/1.1"], rejectUnauthorized: UPSTREAM_REJECT_UNAUTHORIZED,
     }, () => {
       const proto = socket.alpnProtocol || "http/1.1";
       alpnCache.set(host, proto);
@@ -201,7 +209,7 @@ async function passthroughHttp2(req, res, bodyBuffer, headers, targetHost, onRes
     const client = http2.connect(`https://${targetHost}`, {
       createConnection: () => tls.connect({
         host: targetIP, port: 443, servername: targetHost,
-        ALPNProtocols: ["h2"], rejectUnauthorized: false,
+        ALPNProtocols: ["h2"], rejectUnauthorized: UPSTREAM_REJECT_UNAUTHORIZED,
       }),
     });
     client.once("error", (e) => {
@@ -263,7 +271,7 @@ async function passthroughHttps(req, res, bodyBuffer, headers, targetHost, onRes
     method: req.method,
     headers,
     servername: targetHost,
-    rejectUnauthorized: false
+    rejectUnauthorized: UPSTREAM_REJECT_UNAUTHORIZED
   }, (forwardRes) => {
     res.writeHead(forwardRes.statusCode, forwardRes.headers);
     if (dumper) dumper.writeHeader(forwardRes.statusCode, forwardRes.headers);
