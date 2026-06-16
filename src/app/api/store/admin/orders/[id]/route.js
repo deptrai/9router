@@ -10,6 +10,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth/requireRole";
 import { getOrderWithItems } from "@/lib/db/repos/ordersRepo";
+import { getSupplierOrderByOrderId } from "@/lib/db/repos/supplierOrdersRepo";
 import { fulfillOrder, cancelOrder, FulfillError } from "@/lib/store/adminFulfill";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +22,11 @@ export async function GET(request, { params }) {
   try {
     const order = await getOrderWithItems(id);
     if (!order) return NextResponse.json({ error: "Đơn hàng không tồn tại" }, { status: 404 });
-    return NextResponse.json({ order });
+    // Story 2.34 (AC2/QĐ6): for external orders, attach the supplier-side tracking row so
+    // the admin sees internal status + supplier status (dual-status) + margin side-by-side.
+    // Local orders have no supplierOrders row → supplierOrder stays null.
+    const supplierOrder = await getSupplierOrderByOrderId(id);
+    return NextResponse.json({ order, supplierOrder });
   } catch (e) {
     console.error("[api/store/admin/orders/:id] GET lỗi:", e?.message);
     return NextResponse.json({ error: "Không thể tải đơn hàng" }, { status: 500 });

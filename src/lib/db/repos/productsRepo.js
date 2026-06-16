@@ -51,11 +51,20 @@ function rowToProduct(row) {
  * isActive=1 alone is sufficient for BOTH local and external products. We do NOT
  * add `isPublished IS NOT NULL` or `source='local'` here (that would break local
  * products, whose isPublished is null). See markupEngine.publishProduct/unpublishProduct.
+ *
+ * Story 2.34 (AC3): hide external products whose supplier source is `unhealthy`
+ * (2+ consecutive sync failures) — checkout would be fail-closed anyway (QĐ2), so the
+ * catalog must not advertise them. LEFT JOIN keeps local products (no supplierSourceId,
+ * thus no joined row) and external products from healthy/degraded sources visible.
  */
 export async function listActiveProducts() {
   const db = await getAdapter();
   const rows = db.all(
-    `SELECT * FROM products WHERE isActive = 1 ORDER BY name ASC`
+    `SELECT p.* FROM products p
+     LEFT JOIN supplierSources s ON s.id = p.supplierSourceId
+     WHERE p.isActive = 1
+       AND (s.id IS NULL OR s.status != 'unhealthy')
+     ORDER BY p.name ASC`
   );
   return rows.map(rowToProduct);
 }

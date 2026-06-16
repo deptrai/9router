@@ -21,7 +21,7 @@ export class ExternalCheckoutError extends Error {
     this.name = "ExternalCheckoutError";
     this.code = code;
     // codes: NOT_EXTERNAL | NOT_PUBLISHED | MARGIN_VIOLATION | VENDOR_MODE_UNSUPPORTED
-    //        | PRODUCT_DISABLED | SUPPLIER_NOT_FOUND
+    //        | PRODUCT_DISABLED | SUPPLIER_NOT_FOUND | SUPPLIER_UNHEALTHY
   }
 }
 
@@ -101,6 +101,17 @@ export async function externalCheckout(
     throw new ExternalCheckoutError(
       "SUPPLIER_NOT_FOUND",
       "Không tìm thấy nguồn cung cấp — liên hệ admin"
+    );
+  }
+
+  // ── 2b. Fail-closed gate (Story 2.34, AC3/QĐ2) ──
+  // Never create a NEW order against an unhealthy supplier (2+ consecutive sync failures).
+  // `degraded` (1 transient fail) is allowed through — availability over zero-defect (QĐ2).
+  // Fail BEFORE storeCheckout so no credit is debited and no order row is created.
+  if (source.status === "unhealthy") {
+    throw new ExternalCheckoutError(
+      "SUPPLIER_UNHEALTHY",
+      "Nguồn cung cấp đang gặp sự cố — liên hệ admin"
     );
   }
 

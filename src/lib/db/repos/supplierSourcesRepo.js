@@ -278,3 +278,64 @@ export async function listPollableSources() {
   }).map(maskSource);
 }
 
+/**
+ * Story 2.34 (AC1) — list all sources WITH external-product counts (total + published)
+ * in a single pass. Avoids N+1 per-source count queries on the admin dashboard.
+ * Counts join products on supplierSourceId (external products only).
+ * @returns {Promise<Array<object & { productCounts: { total: number, published: number } }>>}
+ */
+export async function listSupplierSourcesWithCounts() {
+  const db = await getAdapter();
+  const sources = db.all(`SELECT * FROM supplierSources ORDER BY createdAt DESC`);
+  // One grouped query for all sources → map by supplierSourceId.
+  const counts = db.all(
+    `SELECT supplierSourceId,
+            COUNT(*) AS total,
+            SUM(CASE WHEN isPublished = 1 THEN 1 ELSE 0 END) AS published
+     FROM products
+     WHERE source = ? AND supplierSourceId IS NOT NULL
+     GROUP BY supplierSourceId`,
+    [EXTERNAL_SOURCE]
+  );
+  const countMap = new Map(
+    counts.map((c) => [c.supplierSourceId, { total: c.total ?? 0, published: c.published ?? 0 }])
+  );
+  return sources.map((row) => ({
+    ...maskSource(row),
+    productCounts: countMap.get(row.id) ?? { total: 0, published: 0 },
+  }));
+}
+
+/**
+ * Story 2.34 (AC1) — admin force-disable a source: isActive=0 + status='unhealthy'.
+ * Disabled sources are excluded from polling and their products are hidden (T4) +
+ * fail-closed on checkout (T3). Idempotent. Returns the masked source or null if not found.
+ */
+export async function disableSupplierSource(id) {
+  const db = await getAdapter();
+  const row = db.get(`SELECT * FROM supplierSources WHERE id = ?`, [id]);
+  if (!row) return null;
+  db.run(
+    `UPDATE supplierSources SET isActive = 0, status = ?, updatedAt = ? WHERE id = ?`,
+    [STATUS.UNHEALTHY, new Date().toISOString(), id]
+  );
+  return getSupplierSourceById(id);
+}
+
+/**
+ * Story 2.34 (AC1) — admin re-enable a source: isActive=1 + status reset to 'active'.
+ * Unsupported sources are NOT auto-healed (they failed validate — keep unsupported so
+ * admin must fix config first). Idempotent. Returns the masked source or null if not found.
+ */
+export async function enableSupplierSource(id) {
+  const db = await getAdapter();
+  const row = db.get(`SELECT * FROM supplierSources WHERE id = ?`, [id]);
+  if (!row) return null;
+  const nextStatus = row.status === STATUS.UNSUPPORTED ? STATUS.UNSUPPORTED : STATUS.ACTIVE;
+  db.run(
+    `UPDATE supplierSources SET isActive = 1, status = ?, lastSyncError = NULL, updatedAt = ? WHERE id = ?`,
+    [nextStatus, new Date().toISOString(), id]
+  );
+  return getSupplierSourceById(id);
+}
+

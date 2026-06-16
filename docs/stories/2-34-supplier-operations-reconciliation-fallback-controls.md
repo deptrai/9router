@@ -17,7 +17,7 @@ context:
 
 # Story 2.34: Supplier Operations, Reconciliation & Fallback Controls
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -126,57 +126,49 @@ so that **tôi phát hiện sớm sự cố (supplier down, margin âm, orphan o
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — `src/lib/store/supplierReconciliation.js`** (NEW) (AC4, AC5, AC6, QĐ1)
-  - [ ] `reconcileSupplierOrders(opts?)`: sweep toàn bộ — gọi 3 check functions bên dưới
-  - [ ] `detectOrphanOrders(adapter)`: `findPaidExternalOrdersMissingSupplierOrder()` → flag `NEEDS_RECONCILE: missing supplierOrders row`
-  - [ ] `detectNegativeMargins(adapter)`: query `supplierOrders WHERE expectedMargin < 0` → flag order `NEEDS_REVIEW: negative margin`
-  - [ ] `detectStaleOrders(adapter)`: query `orders JOIN supplierOrders WHERE orders.status='paid' AND supplierOrders.supplierStatus IS NULL AND orders.createdAt < now - STALE_THRESHOLD_MS` → flag `NEEDS_REVIEW: stale paid order`
-  - [ ] `STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000` (constant, top of file)
-  - [ ] Fail-soft per order — 1 order lỗi không chặn các order khác
-  - [ ] Idempotent — không re-flag order đã có `note` chứa `NEEDS_RECONCILE`/`NEEDS_REVIEW`
-  - [ ] Trả `{ orphans, negativeMargins, staleOrders }` counts cho logging/admin
+- [x] **T1 — `src/lib/store/supplierReconciliation.js`** (NEW) (AC4, AC5, AC6, QĐ1)
+  - [x] `reconcileSupplierOrders(opts?)`: sweep toàn bộ — gọi 3 check functions bên dưới
+  - [x] `detectOrphanOrders(adapter)`: `findPaidExternalOrdersMissingSupplierOrder()` → flag `NEEDS_RECONCILE: missing supplierOrders row`
+  - [x] `detectNegativeMargins(adapter)`: query `supplierOrders WHERE expectedMargin < 0` → flag order `NEEDS_REVIEW: negative margin`
+  - [x] `detectStaleOrders(adapter)`: query `orders JOIN supplierOrders WHERE orders.status='paid' AND supplierOrders.supplierStatus IS NULL AND orders.createdAt < now - STALE_THRESHOLD_MS` → flag `NEEDS_REVIEW: stale paid order`
+  - [x] `STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000` (constant, top of file)
+  - [x] Fail-soft per order — 1 order lỗi không chặn các order khác
+  - [x] Idempotent — không re-flag order đã có `note` chứa `NEEDS_RECONCILE`/`NEEDS_REVIEW`
+  - [x] Trả `{ orphans, negativeMargins, staleOrders }` counts cho logging/admin
 
-- [ ] **T2 — Admin API routes** (AC1, AC2, QĐ3)
-  - [ ] `GET /api/store/admin/suppliers` — list all `supplierSources` + join product counts (published/total). Admin-only.
-  - [ ] `GET /api/store/admin/suppliers/[id]` — source detail + recent `supplierOrders` (20 rows) + counts
-  - [ ] `POST /api/store/admin/suppliers/[id]/disable` — set `isActive=0` + `status='unhealthy'`. Admin-only.
-  - [ ] `POST /api/store/admin/suppliers/[id]/enable` — set `isActive=1` + `status='active'`. Admin-only.
-  - [ ] `POST /api/store/admin/reconcile` — trigger `reconcileSupplierOrders()` manual. Admin-only. Trả counts.
-  - [ ] Extend `GET /api/store/admin/orders/[id]` — thêm join `supplierOrders` vào response nếu là external order (AC2)
+- [x] **T2 — Admin API routes** (AC1, AC2, QĐ3)
+  - [x] `GET /api/store/admin/suppliers` — list all `supplierSources` + join product counts (published/total). Admin-only.
+  - [x] `GET /api/store/admin/suppliers/[id]` — source detail + recent `supplierOrders` (20 rows) + counts
+  - [x] `POST /api/store/admin/suppliers/[id]/disable` — set `isActive=0` + `status='unhealthy'`. Admin-only.
+  - [x] `POST /api/store/admin/suppliers/[id]/enable` — set `isActive=1` + `status='active'`. Admin-only.
+  - [x] `POST /api/store/admin/reconcile` — trigger `reconcileSupplierOrders()` manual. Admin-only. Trả counts.
+  - [x] Extend `GET /api/store/admin/orders/[id]` — thêm join `supplierOrders` vào response nếu là external order (AC2)
 
-- [ ] **T3 — Fail-closed gate trong `externalCheckout.js`** (AC3, QĐ2)
-  - [ ] Sau bước load `source` (line ~90), thêm check: `if (source.status === 'unhealthy') throw new ExternalCheckoutError('SUPPLIER_UNHEALTHY', ...)`
-  - [ ] `degraded` KHÔNG block (fail-soft — 1 lỗi sync, vẫn cho checkout)
-  - [ ] `isActive === 0` đã check qua `NOT_PUBLISHED` path (product.isActive=0 khi source disabled) — document rõ
+- [x] **T3 — Fail-closed gate trong `externalCheckout.js`** (AC3, QĐ2)
+  - [x] Sau bước load `source` (line ~90), thêm check: `if (source.status === 'unhealthy') throw new ExternalCheckoutError('SUPPLIER_UNHEALTHY', ...)`
+  - [x] `degraded` KHÔNG block (fail-soft — 1 lỗi sync, vẫn cho checkout)
+  - [x] `isActive === 0` đã check qua `NOT_PUBLISHED` path (product.isActive=0 khi source disabled) — document rõ
 
-- [ ] **T4 — Ẩn product từ source unhealthy trong bot/store** (AC3)
-  - [ ] Trong `GET /api/store/products` (Telegram bot + web store): filter out products từ source `status='unhealthy'` hoặc `isActive=0`
-  - [ ] Hoặc: `isActive=0` đã handle từ 2.31 publish gate — verify và document. Nếu chưa đủ thì thêm join supplierSources.status check.
+- [x] **T4 — Ẩn product từ source unhealthy trong bot/store** (AC3)
+  - [x] Trong `GET /api/store/products` (Telegram bot + web store): filter out products từ source `status='unhealthy'` hoặc `isActive=0`
+  - [x] `listActiveProducts` LEFT JOIN supplierSources, exclude `status='unhealthy'`; local products (no supplierSourceId) + healthy/degraded external vẫn hiện.
 
-- [ ] **T5 — Dashboard admin page `/dashboard/admin/suppliers`** (AC1, AC2, QĐ3)
-  - [ ] `src/app/dashboard/admin/suppliers/page.tsx` (NEW): table sources với health badge, counts, actions
-  - [ ] `src/app/dashboard/admin/suppliers/[id]/page.tsx` (NEW): source detail + supplierOrders list + reconcile button
-  - [ ] Reuse existing admin dashboard layout/components (pattern từ `/dashboard/admin/orders`)
-  - [ ] Health badge: `active`=green, `degraded`=yellow, `unhealthy`=red, `unsupported`=gray
-  - [ ] Warning banner nếu order note chứa `NEEDS_RECONCILE`/`NEEDS_REVIEW`
+- [x] **T5 — Dashboard admin page** (AC1, AC2, QĐ3)
+  - [x] `src/app/(dashboard)/dashboard/suppliers/page.js` (NEW): table sources với health badge, counts, actions (path theo convention thật của repo, KHÔNG phải `dashboard/admin/*.tsx` literal trong story)
+  - [x] `src/app/(dashboard)/dashboard/suppliers/[id]/page.js` (NEW): source detail + supplierOrders dual-status list + reconcile button (ở page list)
+  - [x] Reuse existing admin dashboard layout/components (pattern từ gift-codes page: role guard qua `/api/auth/status`)
+  - [x] Health badge: `active`=green, `degraded`=yellow, `unhealthy`=red, `unsupported`=gray
+  - [x] Margin âm highlight đỏ trong bảng supplierOrders (dual-status view)
 
-- [ ] **T6 — Scheduled reconciliation trigger** (AC4–AC6, QĐ1)
-  - [ ] Thêm `reconcileSupplierOrders()` vào scheduled jobs (cron pattern tương tự `runDuePolls` trong 2.30)
-  - [ ] Interval: 1h (hoặc admin-triggerable qua T2 route)
-  - [ ] Log kết quả counts sau mỗi run
+- [x] **T6 — Scheduled reconciliation trigger** (AC4–AC6, QĐ1)
+  - [x] Thêm `reconcileSupplierOrders()` vào scheduled jobs trong `initializeApp.js` (cùng pattern `startCreditSweep` — startup run + setInterval, unref)
+  - [x] Interval: 1h (`SUPPLIER_RECONCILE_INTERVAL_MS`); admin-triggerable qua `POST /api/store/admin/reconcile` (T2)
+  - [x] Log kết quả counts sau mỗi run
 
-- [ ] **T7 — Tests** (AC1–AC7)
-  - [ ] `tests/unit/supplierReconciliation.test.js` (NEW):
-    - orphan detection: paid external order + no supplierOrders row → flagged
-    - negative margin: expectedMargin < 0 → flagged
-    - stale order: paid + supplierStatus null + > 24h → flagged
-    - idempotent: re-run không re-flag
-    - fail-soft: 1 order lỗi không chặn sweep
-  - [ ] `tests/unit/externalCheckout-failclosed.test.js` (NEW hoặc thêm vào existing):
-    - source `unhealthy` → throw `SUPPLIER_UNHEALTHY`, không trừ credit
-    - source `degraded` → checkout vẫn proceed
-    - source `active` → checkout proceed (regression)
-  - [ ] Regression: `storeCheckout` local product không bị ảnh hưởng
+- [x] **T7 — Tests** (AC1–AC7)
+  - [x] `tests/unit/supplierReconciliation.test.js` (NEW, 12 tests): orphan / negative-margin / stale (+ injectable clock) / idempotent (no re-flag) / fail-soft (1 detector throw không chặn các detector khác) / aggregate counts
+  - [x] `tests/unit/externalCheckout-failclosed.test.js` (NEW, 4 tests): unhealthy → SUPPLIER_UNHEALTHY (no credit debit, no order) / degraded → proceed / active → proceed (regression) / ExternalCheckoutError instance
+  - [x] Regression: storeCheckout/externalCheckout/catalogSync/supplierOrdersRepo (80 tests) pass; full suite **1707 pass / 0 fail / 24 skip**
 
 ## Dev Notes
 
@@ -296,8 +288,42 @@ if (source.status === STATUS.UNHEALTHY) {
 
 ### Agent Model Used
 
-claude-sonnet-4-6 (BMAD Create Story 2026-06-16)
+claude-opus-4-8 (BMAD Dev Story workflow)
 
 ### Completion Notes List
 
-### File List
+- **T1 `supplierReconciliation.js`** (NEW): `reconcileSupplierOrders({now?})` runs 3 detectors, each independently try/catch-guarded (fail-soft per class) and returns `{orphans, negativeMargins, staleOrders}` counts. `detectOrphanOrders` reuses `findPaidExternalOrdersMissingSupplierOrder`; `detectNegativeMargins` queries `supplierOrders.expectedMargin < 0` joined to orders; `detectStaleOrders` joins orders→orderItems→products→supplierOrders for paid external orders older than `STALE_THRESHOLD_MS` (24h) with null supplierStatus. Idempotent via `alreadyFlagged()` note check (skip any `NEEDS_RECONCILE`/`NEEDS_REVIEW`). Flag-only — NEVER auto-refund (QĐ4). `RECONCILE_FLAGS` const exported for tests.
+- **T2 Admin API**: 5 new routes + 1 extended. `GET /api/store/admin/suppliers` uses new `listSupplierSourcesWithCounts` (single grouped count query, no N+1). `GET .../[id]` = source detail + 20 recent supplierOrders. `POST .../[id]/disable` (isActive=0+unhealthy) / `enable` (isActive=1+active, unsupported stays). `POST /api/store/admin/reconcile` triggers sweep. `GET /api/store/admin/orders/[id]` extended with `supplierOrder` (dual-status, AC2/QĐ6). All `requireAdmin`-gated.
+- **T3 Fail-closed gate**: `externalCheckout.js` throws `SUPPLIER_UNHEALTHY` when `source.status==='unhealthy'`, placed BEFORE `storeCheckout` so no credit debit / no order. `degraded` passes through (QĐ2 availability trade-off). New error code documented.
+- **T4 Catalog hiding**: `listActiveProducts` now LEFT JOINs `supplierSources`, excludes `status='unhealthy'`. Local products (null supplierSourceId) + healthy/degraded external products stay visible.
+- **T5 Dashboard**: `(dashboard)/dashboard/suppliers/page.js` (list + health badges + disable/enable/force-sync + run-reconcile) and `[id]/page.js` (detail + dual-status supplierOrders table, negative margin highlighted). Path follows the repo's real convention (route group + role guard via `/api/auth/status`), NOT the `dashboard/admin/*.tsx` literal in the story spec (which predated the layout). Behaviour matches AC1/AC2.
+- **T6 Scheduler**: `initializeApp.js` `startSupplierReconcile()` mirrors `startCreditSweep` — startup run + hourly `setInterval` (`SUPPLIER_RECONCILE_INTERVAL_MS`), `.unref()`, failures logged. Also exposed for manual admin trigger (T2).
+- **T7 Tests**: `supplierReconciliation.test.js` (12) + `externalCheckout-failclosed.test.js` (4) = 16 new tests, all pass. Regression: 80 tests across externalCheckout/storeCheckout/catalogSync/supplierOrdersRepo pass. Full suite **1707 pass / 0 fail / 24 skip** (AC7).
+- **Scope guards honored**: KHÔNG sửa `storeCheckout.js`, `catalogSync.js`, `creditLedgerRepo.js`; KHÔNG thêm cột schema (QĐ5 — reused `orders.note`); KHÔNG auto-refund.
+- **Story spec corrections**: (a) `updateSourceStatus` referenced in Dev Notes does not exist in `supplierSourcesRepo.js` — added purpose-built `disableSupplierSource`/`enableSupplierSource` instead. (b) Dashboard path/extension corrected to repo convention. (c) Order detail dashboard page does not exist (2.28 is API-only) — dual-status is shown inline in the supplier detail table; warning-banner-on-order-detail deferred (no such page to host it).
+
+## File List
+
+- `src/lib/store/supplierReconciliation.js` (new — sweep: orphan/negative-margin/stale detectors + reconcileSupplierOrders)
+- `src/lib/store/externalCheckout.js` (modified — fail-closed unhealthy gate + SUPPLIER_UNHEALTHY code)
+- `src/lib/db/repos/productsRepo.js` (modified — listActiveProducts excludes unhealthy-source products)
+- `src/lib/db/repos/supplierSourcesRepo.js` (modified — +listSupplierSourcesWithCounts, +disableSupplierSource, +enableSupplierSource)
+- `src/lib/db/index.js` (modified — export new supplierSources fns)
+- `src/app/api/store/admin/suppliers/route.js` (new — list sources + counts)
+- `src/app/api/store/admin/suppliers/[id]/route.js` (new — source detail + supplierOrders)
+- `src/app/api/store/admin/suppliers/[id]/disable/route.js` (new)
+- `src/app/api/store/admin/suppliers/[id]/enable/route.js` (new)
+- `src/app/api/store/admin/reconcile/route.js` (new — manual sweep trigger)
+- `src/app/api/store/admin/orders/[id]/route.js` (modified — attach supplierOrder dual-status)
+- `src/app/(dashboard)/dashboard/suppliers/page.js` (new — admin suppliers list)
+- `src/app/(dashboard)/dashboard/suppliers/[id]/page.js` (new — supplier detail + dual-status)
+- `src/shared/services/initializeApp.js` (modified — startSupplierReconcile scheduled job)
+- `tests/unit/supplierReconciliation.test.js` (new — 12 tests)
+- `tests/unit/externalCheckout-failclosed.test.js` (new — 4 tests)
+- `docs/stories/2-34-supplier-operations-reconciliation-fallback-controls.md` (modified)
+
+## Change Log
+
+- 2026-06-16: Implement story 2.34 — supplier operations, reconciliation & fail-closed controls. New: `supplierReconciliation.js` (orphan/negative-margin/stale sweep, flag-only no auto-refund), 5 admin API routes + dual-status order detail, 2 dashboard pages (suppliers list + detail), hourly scheduled sweep in initializeApp. Modified: externalCheckout fail-closed `unhealthy` gate, listActiveProducts hides unhealthy-source products, supplierSourcesRepo (+counts/disable/enable). No new schema columns (reused orders.note). 16 new tests; full suite 1707 pass / 0 fail.
+
+## Status: review

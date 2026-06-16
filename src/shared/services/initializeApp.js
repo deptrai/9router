@@ -18,6 +18,7 @@ import {
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreToolDNS, removeAllDNSEntriesSync } from "@/mitm/manager";
 import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
 import { runExpirySweep } from "@/lib/billing/creditExpirySweep.js";
+import { reconcileSupplierOrders } from "@/lib/store/supplierReconciliation.js";
 
 // Inject correct paths and DB hooks into manager.js (CJS) from ESM context
 (function bootstrapMitm() {
@@ -35,6 +36,8 @@ import { runExpirySweep } from "@/lib/billing/creditExpirySweep.js";
 process.setMaxListeners(20);
 
 const CREDIT_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+// Story 2.34 (T6/QĐ1) — supplier order reconciliation sweep cadence (orphan/margin/stale).
+const SUPPLIER_RECONCILE_INTERVAL_MS = 60 * 60 * 1000;
 
 // Survive Next.js hot reload
 const g = global.__appSingleton ??= {
@@ -48,6 +51,7 @@ const g = global.__appSingleton ??= {
   tunnelAutoResumed: false,
   tailscaleAutoResumed: false,
   creditSweepInterval: null,
+  supplierReconcileInterval: null,
 };
 
 export async function initializeApp() {
@@ -83,6 +87,7 @@ export async function initializeApp() {
 
     ensureCloudflared().catch(() => {});
     startCreditSweep();
+    startSupplierReconcile();
 
     // Sync mitmAlias DB → JSON cache so standalone MITM server can read it
     syncMitmAliasCache().catch(() => {});
@@ -224,6 +229,22 @@ function startCreditSweep() {
     runExpirySweep().catch((e) => console.error("[creditSweep] sweep failed:", e?.message || e));
   }, CREDIT_SWEEP_INTERVAL_MS);
   if (g.creditSweepInterval.unref) g.creditSweepInterval.unref();
+}
+
+// ─── Supplier reconciliation sweep (Story 2.34): flag orphan/negative-margin/stale orders ─
+
+function startSupplierReconcile() {
+  if (g.supplierReconcileInterval) return;
+  // Out-of-band (QĐ1): flag-only, never auto-refund. Log failures instead of swallowing.
+  reconcileSupplierOrders().catch((e) =>
+    console.error("[supplierReconciliation] startup sweep failed:", e?.message || e)
+  );
+  g.supplierReconcileInterval = setInterval(() => {
+    reconcileSupplierOrders().catch((e) =>
+      console.error("[supplierReconciliation] sweep failed:", e?.message || e)
+    );
+  }, SUPPLIER_RECONCILE_INTERVAL_MS);
+  if (g.supplierReconcileInterval.unref) g.supplierReconcileInterval.unref();
 }
 
 // ─── Watchdog: 60s tick check both services ──────────────────────────────────

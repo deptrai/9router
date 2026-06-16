@@ -329,4 +329,4 @@ claude-sonnet-4-6 (BMAD Dev Story workflow)
 
 - 2026-06-16: Implement story 2.33 — supplier order status sync + delivery forwarding. New: `supplierDeliveries` table (migration 013, SCHEMA_VERSION 15), `supplierDeliveriesRepo`, `orderStatusSync.js` (applyOrderStatusEvent + pollOrderStatuses stub), order-webhook endpoint. Extended: supplierOrdersRepo (+getSupplierOrderBySupplierOrderId), constants (+status map/enum), db/index exports. 34 new tests, all pass.
 
-## Status: review
+## Status: done

@@ -74,6 +74,7 @@ export {
   createSupplierSource, listSupplierSources, getSupplierSourceById,
   updateSupplierSource, deleteSupplierSource,
   recordSyncSuccess, recordSyncFailure, markSourceUnsupported, listPollableSources,
+  listSupplierSourcesWithCounts, disableSupplierSource, enableSupplierSource,
   ADAPTER_TYPES, SYNC_MODES, SOURCE_STATUSES,
 } from "./repos/supplierSourcesRepo.js";
 
