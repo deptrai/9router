@@ -95,6 +95,7 @@ so that **tôi không cần mua key riêng từng provider, chỉ nạp credit v
 **And** có section "Setup" hướng dẫn đổi base URL (như v98store/prices)
 **And** CTA "Bắt đầu dùng" → link dashboard
 **And** trang render nhanh (ISR hoặc static, không block trên API call)
+**And** với 450+ models: dùng virtualization (react-window/virtual) hoặc pagination để tránh render 450 DOM rows cùng lúc (perf perception)
 
 ### AC6 — Dashboard user: v98store balance + usage
 **Given** user đã login và có v98 balance
@@ -110,6 +111,13 @@ so that **tôi không cần mua key riêng từng provider, chỉ nạp credit v
 **Then** routing hiện có (kiro, openai direct, plan quota) không thay đổi
 **And** storeCheckout, entitlement, external-store sync không bị ảnh hưởng
 **And** user không có v98 balance vẫn dùng 9Router bình thường (chỉ không dùng được model v98store)
+
+### AC8 — v98store upstream 429/throttle + error handling (FR81a)
+**Given** user có balance > 0 và gọi model v98store
+**When** v98store upstream trả `429` (rate-limit master key) hoặc 5xx/timeout
+**Then** `429` → propagate về user với `Retry-After`, KHÔNG deduct credit cho request bị reject, KHÔNG mark balance cạn (đây là throttle phía v98store, không phải user hết tiền)
+**And** 5xx/timeout → trả `503` rõ ràng (fail-soft, NFR18), KHÔNG deduct
+**And** chỉ deduct v98 balance khi stream thành công (có usage thật)
 
 ## Tasks / Subtasks
 
@@ -131,10 +139,11 @@ so that **tôi không cần mua key riêng từng provider, chỉ nạp credit v
   - [ ] `deductV98storeCost(userId, inputTokens, outputTokens, modelId, db)`: tính cost từ pricing, ghi txn type=`v98_usage`, atomic
   - [ ] `checkV98storeBalance(userId, db)`: trả `{ sufficient, balance }` — dùng trước mỗi request
 
-- [ ] **T4 — Routing hook** (AC3, QĐ4)
+- [ ] **T4 — Routing hook** (AC3, AC8, QĐ4)
   - [ ] Trong request handler (`open-sse/` hoặc `src/app/api/`): nếu model tồn tại trong v98store model list → check v98 balance → route sang v98store provider
-  - [ ] Sau stream: gọi `deductV98storeCost`
+  - [ ] Sau stream: gọi `deductV98storeCost` — CHỈ khi stream thành công (có usage thật)
   - [ ] 402 nếu balance không đủ (trước khi gọi v98store — tránh lãng phí)
+  - [ ] 429 từ v98store → propagate + `Retry-After`, KHÔNG deduct, KHÔNG mark balance cạn (AC8/FR81a); 5xx/timeout → 503, KHÔNG deduct
 
 - [ ] **T5 — API routes** (AC2, AC4, AC6)
   - [ ] `GET /api/v98store/models` — public, trả model list từ cache
@@ -164,9 +173,10 @@ so that **tôi không cần mua key riêng từng provider, chỉ nạp credit v
   - [ ] `creditTransactions.txnType`: thêm enum values `v98_credit`, `v98_usage`, `margin_v98`
   - [ ] Migration nếu cần (D1 migration file)
 
-- [ ] **T9 — Tests** (AC1–AC7)
+- [ ] **T9 — Tests** (AC1–AC8)
   - [ ] `tests/unit/v98storeBilling.test.js` (NEW): topup ghi đúng txn; deduct tính đúng cost; balance = sum txn; check balance sufficient/insufficient
   - [ ] `tests/unit/v98storeModels.test.js` (NEW): mock fetch /v1/models; cache hit/miss; TTL refresh; pricing lookup
+  - [ ] `tests/unit/v98storeRouting.test.js` (NEW): 429 upstream → propagate + KHÔNG deduct + KHÔNG mark cạn (AC8); 5xx/timeout → 503 + KHÔNG deduct; stream OK → deduct đúng usage
   - [ ] Regression: routing existing providers không đổi; storeCheckout không đổi
 
 ## Dev Notes

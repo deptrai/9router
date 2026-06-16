@@ -17,6 +17,9 @@ function UserProfileCard() {
   const [role, setRole] = useState(null);
   const [sendVerifyLoading, setSendVerifyLoading] = useState(false);
   const [sendVerifyStatus, setSendVerifyStatus] = useState({ type: "", message: "" });
+  const [newEmail, setNewEmail] = useState("");
+  const [emailUpdateLoading, setEmailUpdateLoading] = useState(false);
+  const [emailUpdateStatus, setEmailUpdateStatus] = useState({ type: "", message: "" });
 
   useEffect(() => {
     async function loadProfile() {
@@ -95,6 +98,32 @@ function UserProfileCard() {
     }
   };
 
+  const handleEmailUpdate = async (e) => {
+    e.preventDefault();
+    setEmailUpdateLoading(true);
+    setEmailUpdateStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/users/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: newEmail }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setProfile(data);
+        setNewEmail("");
+        setEmailUpdateStatus({ type: "success", message: "Email đã được cập nhật và xác minh" });
+      } else {
+        const data = await res.json();
+        setEmailUpdateStatus({ type: "error", message: data.error || "Cập nhật thất bại" });
+      }
+    } catch {
+      setEmailUpdateStatus({ type: "error", message: "Đã xảy ra lỗi" });
+    } finally {
+      setEmailUpdateLoading(false);
+    }
+  };
+
   const handleUserPassChange = async (e) => {
     e.preventDefault();
     if (userPass.new !== userPass.confirm) {
@@ -141,6 +170,32 @@ function UserProfileCard() {
           <div className="p-3 rounded-lg bg-bg border border-border">
             <p className="text-sm"><span className="text-text-muted">Email:</span> {profile.email}</p>
             <p className="text-sm"><span className="text-text-muted">Credits:</span> {profile.creditsBalance}</p>
+
+            {/* Telegram placeholder email → prompt for real email */}
+            {/^telegram_\d+@placeholder\.local$/.test(profile.email) && (
+              <form onSubmit={handleEmailUpdate} className="mt-3 pt-3 border-t border-border/50 flex flex-col gap-2">
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  ⚠️ Bạn đăng nhập qua Telegram với email tạm. Vui lòng đặt email thật để deposit credits.
+                </p>
+                <Input
+                  type="email"
+                  placeholder="your.real.email@example.com"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  required
+                  className="text-sm"
+                />
+                <Button type="submit" variant="primary" loading={emailUpdateLoading} className="w-full sm:w-auto text-xs">
+                  Cập nhật email
+                </Button>
+                {emailUpdateStatus.message && (
+                  <p className={`text-xs ${emailUpdateStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
+                    {emailUpdateStatus.message}
+                  </p>
+                )}
+              </form>
+            )}
+
             <div className="flex items-center gap-2 mt-2">
               {profile.isEmailVerified ? (
                 <span className="inline-flex items-center gap-1 text-xs bg-green-500/10 text-green-600 dark:text-green-400 px-2 py-0.5 rounded-full">

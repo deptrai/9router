@@ -67,7 +67,7 @@ POST /api/auth/refresh                → refresh JWT
 - **QĐ2 — viber JWT của 9Router là service account**: 9Router có 1 viber account (epsilonai đã login). JWT lưu trong env (`VIBER_JWT`, `VIBER_REFRESH_TOKEN`). Auto-refresh khi hết hạn (POST /api/auth/refresh). KHÔNG phải mỗi user có viber account riêng.
 - **QĐ3 — Catalog sync định kỳ**: `GET /api-packages` → upsert vào `viberPackages` table local (name, price_vnd, stock_count, in_stock, viberPackageId). Sync mỗi 15 phút hoặc on-demand. Tương tự `runDuePolls` pattern của 2.30.
 - **QĐ4 — Pricing: VND → credit 9Router**: Admin config tỷ lệ VND→credit (vd 1 VND = X credit hoặc admin set giá riêng). Mặc định: map 1:1 với giá VND của viber + markup admin. Lưu trong `viberPackages.priceCredits`.
-- **QĐ5 — Expiry tracking**: Viber không trả `expiresAt` trực tiếp trong purchase response. Tính từ `purchased_at` + duration (ngày/tuần/tháng parse từ package name). Lưu vào `viberEntitlements.expiresAt`. Entitlement routing check expiry.
+- **QĐ5 — Expiry tracking**: Viber không trả `expiresAt` trực tiếp trong purchase response. Tính từ `purchased_at` + duration (ngày/tuần/tháng parse từ package name). Lưu vào `entitlements.expiresAt` (REUSE 2.29a — xem T1). Entitlement routing (2.29b) check expiry.
 - **QĐ6 — Không sửa storeCheckout.js**: Viber plan mua qua flow riêng (viberCheckout), không phải credential FIFO. Checkout viber = gọi API viber + tạo entitlement, không phải reserve credential từ kho.
 - **QĐ7 — Fallback khi viber hết stock**: Nếu `POST /purchase` trả lỗi (out of stock) sau khi user đã trừ credit → rollback credit (reverseTxn) + notify user. Idempotent: không charge nếu purchase thất bại.
 - **QĐ8 — Trang `/plans` public**: Next.js page hiển thị gói viber hiện có, giá, quota. Sync từ local cache. CTA mua → Telegram bot hoặc web checkout.
@@ -140,12 +140,20 @@ POST /api/auth/refresh                → refresh JWT
 **And** storeCheckout credential flow 2.27 không thay đổi
 **And** v98store provider (2.35a) không bị ảnh hưởng
 
+### AC9 — Routing priority viber > v98store (FR91 — owner: story này)
+**Given** user request Claude model và CÓ cả viber entitlement active LẪN v98store balance > 0
+**When** routing engine chọn đường
+**Then** ưu tiên viber entitlement (plan đã trả trước) — dùng viber connection
+**And** nếu viber 429 (hết quota) hoặc hết hạn → fallback sang v98store balance (nếu có)
+**And** **guard độc lập**: nếu CHỈ 1 layer tồn tại (chỉ viber HOẶC chỉ v98store) → dùng layer đó, KHÔNG cần layer kia hiện diện (story 2.35a và 2.35b ship độc lập được — không hard-depend lẫn nhau)
+**And** nếu KHÔNG có cả hai → đi đường billing hiện tại (plan quota / credit, story 2.4/2.14 — KHÔNG regression)
+
 ## Tasks / Subtasks
 
-- [ ] **T1 — Schema** (QĐ1, QĐ3)
-  - [ ] `viberPackages` table: `id, viberPackageId, name, description, priceVnd, priceCredits, stockCount, inStock, durationDays, quotaDayUsd, quotaWeekUsd, lastSyncedAt, isActive`
-  - [ ] `viberEntitlements` table: `id, userId, connectionId, viberPackageId, orderId, expiresAt, status(active|expired|refunded), purchasedAt`
-  - [ ] Hoặc tái dùng `entitlements` table từ 2.29a với `type='viber_plan'` — evaluate khi đọc schema
+- [ ] **T1 — Schema** (QĐ1, QĐ3) — **CHỐT: tái dùng `entitlements`, KHÔNG tạo `viberEntitlements`**
+  - [ ] `viberPackages` table (NEW — catalog cache): `id, viberPackageId, name, description, priceVnd, priceCredits, stockCount, inStock, durationDays, quotaDayUsd, quotaWeekUsd, lastSyncedAt, isActive`
+  - [ ] **Viber plan = `entitlements` row** (REUSE 2.29a, KHÔNG bảng mới): `provider='viber'`, `productId`=product viber tương ứng, `providerConnectionId`=connection chứa `sk-vibervn-...`, `expiresAt` (parse từ tên gói), `status` (`active|expired|revoked`), `routePolicy='owned_only'`. Lý do: `entitlements` đã giải đúng bài "user sở hữu connection-backed product có expiry" (2.29a/2.29b) — thêm `viberEntitlements` = duplicate, vi phạm Rule of Three.
+  - [ ] KHÔNG cần migration cho entitlements (cột đã đủ). Chỉ migration thêm `viberPackages` table.
 
 - [ ] **T2 — `src/lib/store/viberClient.js`** (NEW) (AC1, AC2, AC5, QĐ2)
   - [ ] `getViberJwt()`: đọc từ env/DB, auto-refresh nếu hết hạn (`POST /api/auth/refresh`)
@@ -162,11 +170,12 @@ POST /api/auth/refresh                → refresh JWT
   - [ ] Idempotent: check order đã exist trước khi tạo mới
   - [ ] `parseExpiresAt(packageName, purchasedAt)`: parse "Ngày/Tuần/Tháng" từ tên gói → tính expiresAt
 
-- [ ] **T4 — Routing integration** (AC3, AC4, QĐ1)
+- [ ] **T4 — Routing integration** (AC3, AC4, AC9, QĐ1, FR91)
   - [ ] Trong entitlement routing (2.29b): thêm case `type='viber_plan'`, check `expiresAt`
   - [ ] Khi route sang viber: dùng `baseUrl=https://fallback.viber.vn`, `apiKey=sk-vibervn-...`
   - [ ] 429 từ viber → trả lỗi quota exceeded rõ ràng (không retry)
   - [ ] Hết hạn → mark entitlement expired, trả lỗi
+  - [ ] **Priority resolver (FR91, owner story này)**: viber active > v98store balance > plan/credit hiện tại. Guard độc lập: chỉ 1 layer tồn tại → dùng layer đó; KHÔNG hard-depend 2.35a (nếu v98store chưa ship, viber vẫn route được, fallback về plan/credit). viber 429/expired → thử v98store (nếu có) → plan/credit.
 
 - [ ] **T5 — API routes** (AC1, AC6, AC7)
   - [ ] `GET /api/store/viber/packages` — public, trả danh sách gói từ cache
@@ -187,9 +196,10 @@ POST /api/auth/refresh                → refresh JWT
   - [ ] Section "Cách dùng": proxy endpoint, setup Cursor/Claude Code với key
   - [ ] CTA "Mua qua Telegram" → `t.me/9routerbot?start=buy_viber_{packageId}`
 
-- [ ] **T8 — Tests** (AC1–AC8)
+- [ ] **T8 — Tests** (AC1–AC9)
   - [ ] `tests/unit/viberClient.test.js` (NEW): mock fetch; syncPackages upsert; purchasePackage success/fail; JWT refresh; balance
   - [ ] `tests/unit/viberCheckout.test.js` (NEW): checkout success (credit deduct + connection + entitlement + order); rollback khi purchase fail; idempotent; parseExpiresAt ngày/tuần/tháng
+  - [ ] `tests/unit/viberRouting.test.js` (NEW, AC9/FR91): viber active + v98store balance → chọn viber; viber 429/expired → fallback v98store; chỉ viber → dùng viber; chỉ v98store → dùng v98store; không có cả hai → plan/credit (no regression)
   - [ ] Regression: entitlement routing 2.29b không thay đổi với non-viber entitlements
 
 ## Dev Notes
@@ -229,7 +239,7 @@ Khi user request Claude model và có cả viber entitlement active + v98store b
 
 ### Files sẽ chạm
 
-- `src/lib/db/schema.js` — MODIFY (viberPackages, viberEntitlements tables)
+- `src/lib/db/schema.js` — MODIFY (CHỈ thêm `viberPackages` table; `entitlements` REUSE 2.29a, KHÔNG thêm bảng mới)
 - `src/lib/store/viberClient.js` — NEW
 - `src/lib/store/viberCheckout.js` — NEW
 - `src/app/api/store/viber/packages/route.js` — NEW

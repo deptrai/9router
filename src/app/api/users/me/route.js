@@ -46,7 +46,49 @@ export async function PATCH(request) {
 
   try {
     const body = await request.json();
-    const { displayName, currentPassword, newPassword, allowCreditOverflow } = body;
+    const { displayName, currentPassword, newPassword, allowCreditOverflow, email } = body;
+
+    // Email update flow (Telegram users setting real email)
+    if (email !== undefined) {
+      const userFull = await getUserById(session.userId);
+      if (!userFull) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+
+      // Only allow email update when current email is a placeholder
+      const isPlaceholder = /^telegram_\d+@placeholder\.local$/.test(userFull.email);
+      if (!isPlaceholder) {
+        return NextResponse.json(
+          { error: "Email can only be changed for Telegram placeholder accounts" },
+          { status: 403 }
+        );
+      }
+
+      // Validate new email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
+      }
+
+      // Check email uniqueness
+      const existing = await getUserByEmail(email);
+      if (existing) {
+        return NextResponse.json({ error: "Email already in use" }, { status: 409 });
+      }
+
+      // Update email + mark verified (trust chain: Telegram auth → email set)
+      await updateUser(session.userId, { email, isEmailVerified: true });
+      const updated = await getUserById(session.userId);
+      return NextResponse.json({
+        id: updated.id,
+        email: updated.email,
+        displayName: updated.displayName,
+        creditsBalance: updated.creditsBalance,
+        isEmailVerified: updated.isEmailVerified,
+        allowCreditOverflow: updated.allowCreditOverflow ?? false,
+        createdAt: updated.createdAt,
+      });
+    }
 
     // Password change flow
     if (currentPassword || newPassword) {
