@@ -5,15 +5,20 @@
 import { saveRequestUsage, appendRequestLog } from "@/lib/usageDb.js";
 import { FORMATS } from "../translator/formats.js";
 
-// ANSI color codes
-export const COLORS = {
-  reset: "\x1b[0m",
-  red: "\x1b[31m",
-  green: "\x1b[32m",
-  yellow: "\x1b[33m",
-  blue: "\x1b[34m",
-  cyan: "\x1b[36m"
-};
+// ANSI color codes — only emitted on an interactive TTY. In production (Docker,
+// no TTY) these resolve to empty strings so logs shipped to Loki/Grafana stay
+// clean text (no `\x1b[..m` escape noise). Honors the NO_COLOR convention too.
+const USE_COLOR = !!process.stdout.isTTY && process.env.NO_COLOR !== "1";
+export const COLORS = USE_COLOR
+  ? {
+      reset: "\x1b[0m",
+      red: "\x1b[31m",
+      green: "\x1b[32m",
+      yellow: "\x1b[33m",
+      blue: "\x1b[34m",
+      cyan: "\x1b[36m",
+    }
+  : { reset: "", red: "", green: "", yellow: "", blue: "", cyan: "" };
 
 // Buffer tokens to prevent context errors
 const BUFFER_TOKENS = 2000;
