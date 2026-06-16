@@ -68,8 +68,16 @@ describe("MITM sudo-password crypto (C9)", () => {
     expect(store.mitmKeyMaterial).toBe(material1);
   });
 
+  it("round-trip với mật khẩu non-ASCII (UTF-8 đa byte) — không hỏng", async () => {
+    const pw = "mật-khẩu-π-🔑-Ω";
+    const enc = await manager.encryptPassword(pw);
+    expect(await manager.decryptPassword(enc)).toBe(pw);
+  });
+
   it("ciphertext KHÔNG giải mã được khi key material bị thay (DB row lẻ là không đủ)", async () => {
     const enc = await manager.encryptPassword("victim-pw");
+    // Chốt: key material đã thực sự được tạo trước khi thay (nếu null thì test vô nghĩa).
+    expect(store.mitmKeyMaterial).toMatch(/^[0-9a-f]{64}$/i);
     // Kẻ tấn công lấy được ciphertext nhưng không có key material gốc.
     store.mitmKeyMaterial = crypto.randomBytes(32).toString("hex");
     const dec = await manager.decryptPassword(enc);
@@ -93,5 +101,11 @@ describe("MITM sudo-password crypto (C9)", () => {
     expect(await manager.decryptPassword("v1:nothex:bad")).toBeNull();
     expect(await manager.decryptPassword("garbage")).toBeNull();
     expect(await manager.decryptPassword("")).toBeNull();
+  });
+
+  it("decrypt trả null (không throw) cho input null/undefined/non-string", async () => {
+    expect(await manager.decryptPassword(null)).toBeNull();
+    expect(await manager.decryptPassword(undefined)).toBeNull();
+    expect(await manager.decryptPassword(12345)).toBeNull();
   });
 });

@@ -170,15 +170,32 @@ function deriveKeyLegacy() {
 // Per-install secret key material (32 random bytes, hex) persisted in settings.
 // This is the real secret: an attacker with the source but not the DB cannot
 // derive the key. Generated lazily on first encrypt and reused thereafter.
+// A module-level promise guards against a race where two concurrent encrypts
+// each generate + persist different material (the second write would orphan the
+// first ciphertext, making it undecryptable). All callers share one in-flight
+// create.
+let _keyMaterialPromise = null;
 async function getOrCreateKeyMaterial() {
   if (!_getSettings || !_updateSettings) return null;
   const settings = await _getSettings();
   if (settings.mitmKeyMaterial && /^[0-9a-f]{64}$/i.test(settings.mitmKeyMaterial)) {
     return settings.mitmKeyMaterial;
   }
-  const material = crypto.randomBytes(32).toString("hex");
-  await _updateSettings({ mitmKeyMaterial: material });
-  return material;
+  // Serialize generation so concurrent callers agree on a single material.
+  if (!_keyMaterialPromise) {
+    _keyMaterialPromise = (async () => {
+      // Re-read inside the critical section: another caller may have written
+      // it between our check above and acquiring this promise.
+      const fresh = await _getSettings();
+      if (fresh.mitmKeyMaterial && /^[0-9a-f]{64}$/i.test(fresh.mitmKeyMaterial)) {
+        return fresh.mitmKeyMaterial;
+      }
+      const material = crypto.randomBytes(32).toString("hex");
+      await _updateSettings({ mitmKeyMaterial: material });
+      return material;
+    })().finally(() => { _keyMaterialPromise = null; });
+  }
+  return _keyMaterialPromise;
 }
 
 // V1 key = HKDF-SHA256(keyMaterial, salt=machineId-or-empty, info="mitm-sudo").
@@ -207,6 +224,7 @@ async function encryptPassword(plaintext) {
 }
 
 async function decryptPassword(stored) {
+  if (typeof stored !== "string" || !stored) return null;
   try {
     if (stored.startsWith("v1:")) {
       const [, ivHex, tagHex, dataHex] = stored.split(":");
@@ -216,7 +234,9 @@ async function decryptPassword(stored) {
       const key = deriveKeyV1(keyMaterial);
       const decipher = crypto.createDecipheriv(ENCRYPT_ALGO, key, Buffer.from(ivHex, "hex"));
       decipher.setAuthTag(Buffer.from(tagHex, "hex"));
-      return decipher.update(Buffer.from(dataHex, "hex")) + decipher.final("utf8");
+      // Decode as utf8 over the full buffer (Buffer + string concat would coerce
+      // the update() Buffer via toString and corrupt multi-byte UTF-8 passwords).
+      return Buffer.concat([decipher.update(Buffer.from(dataHex, "hex")), decipher.final()]).toString("utf8");
     }
     // Legacy unversioned ciphertext (iv:tag:data) — decrypt with the old key so
     // existing installs keep working; it will be re-encrypted as v1 on next save.
@@ -225,7 +245,7 @@ async function decryptPassword(stored) {
     const key = deriveKeyLegacy();
     const decipher = crypto.createDecipheriv(ENCRYPT_ALGO, key, Buffer.from(ivHex, "hex"));
     decipher.setAuthTag(Buffer.from(tagHex, "hex"));
-    return decipher.update(Buffer.from(dataHex, "hex")) + decipher.final("utf8");
+    return Buffer.concat([decipher.update(Buffer.from(dataHex, "hex")), decipher.final()]).toString("utf8");
   } catch {
     return null;
   }

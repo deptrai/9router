@@ -100,7 +100,10 @@ export async function POST(request) {
   try {
     const { env } = await request.json();
 
-    if (!env || typeof env !== "object") {
+    // Must be a plain object — reject null, arrays, and other non-plain types
+    // (an Array passes `typeof === "object"` with no own keys, so it would slip
+    // past the whitelist and still flip hasCompletedOnboarding).
+    if (!env || typeof env !== "object" || Array.isArray(env)) {
       return NextResponse.json(
         { error: "Invalid env object" },
         { status: 400 }
@@ -116,6 +119,17 @@ export async function POST(request) {
         { error: `Disallowed env keys: ${unknownKeys.join(", ")}` },
         { status: 400 }
       );
+    }
+
+    // Reject empty/blank values for known keys — an empty ANTHROPIC_BASE_URL
+    // would overwrite a valid URL and silently break the Claude CLI.
+    for (const [k, v] of Object.entries(env)) {
+      if (typeof v !== "string" || v.trim() === "") {
+        return NextResponse.json(
+          { error: `Env key ${k} must be a non-empty string` },
+          { status: 400 }
+        );
+      }
     }
 
     const settingsPath = getClaudeSettingsPath();
