@@ -18,6 +18,7 @@ import {
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreToolDNS, removeAllDNSEntriesSync } from "@/mitm/manager";
 import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
 import { runExpirySweep } from "@/lib/billing/creditExpirySweep.js";
+import { runPaymentExpirySweep } from "@/lib/billing/paymentExpirySweep.js";
 import { reconcileSupplierOrders } from "@/lib/store/supplierReconciliation.js";
 
 // Inject correct paths and DB hooks into manager.js (CJS) from ESM context
@@ -86,6 +87,7 @@ export async function initializeApp() {
     }
 
     ensureCloudflared().catch(() => {});
+    warnMissingWebhookSecrets();
     startCreditSweep();
     startSupplierReconcile();
 
@@ -225,8 +227,10 @@ function startCreditSweep() {
   if (g.creditSweepInterval) return;
   // Review patch (P4): log startup/interval sweep failures instead of swallowing silently.
   runExpirySweep().catch((e) => console.error("[creditSweep] startup sweep failed:", e?.message || e));
+  runPaymentExpirySweep().catch((e) => console.error("[paymentSweep] startup sweep failed:", e?.message || e));
   g.creditSweepInterval = setInterval(() => {
     runExpirySweep().catch((e) => console.error("[creditSweep] sweep failed:", e?.message || e));
+    runPaymentExpirySweep().catch((e) => console.error("[paymentSweep] sweep failed:", e?.message || e));
   }, CREDIT_SWEEP_INTERVAL_MS);
   if (g.creditSweepInterval.unref) g.creditSweepInterval.unref();
 }
@@ -316,6 +320,17 @@ function startNetworkMonitor() {
   }, NETWORK_CHECK_INTERVAL_MS);
 
   if (g.networkMonitorInterval.unref) g.networkMonitorInterval.unref();
+}
+
+function warnMissingWebhookSecrets() {
+  const provider = (process.env.CRYPTO_PAYMENT_PROVIDER || "").toLowerCase();
+  if (!provider || provider === "none") return;
+  if ((provider === "nowpayments" || provider === "auto") && !process.env.NOWPAYMENTS_IPN_SECRET) {
+    console.warn("[InitApp] WARNING: NOWPAYMENTS_IPN_SECRET is not set — all NOWPayments IPNs will be rejected");
+  }
+  if ((provider === "bitcart" || provider === "auto") && !process.env.BITCART_WEBHOOK_SECRET) {
+    console.warn("[InitApp] WARNING: BITCART_WEBHOOK_SECRET is not set — all Bitcart webhook calls will be rejected");
+  }
 }
 
 export default initializeApp;

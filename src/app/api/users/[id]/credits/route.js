@@ -20,7 +20,11 @@ export async function PUT(request, { params }) {
   try {
     const body = await request.json();
     amount = Number(body?.amount);
-    note = body?.note || null;
+    // Clamp note length and strip control characters to prevent DB bloat / log injection.
+    const rawNote = body?.note;
+    note = rawNote
+      ? String(rawNote).replace(/[\x00-\x1f\x7f]/g, "").slice(0, 500) || null
+      : null;
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
