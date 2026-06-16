@@ -9,6 +9,20 @@ import os from "os";
 
 const execAsync = promisify(exec);
 
+// Whitelist of env keys this endpoint is allowed to write into the host's
+// ~/.claude/settings.json. The POST body is attacker-controllable if the
+// dashboard guard is ever bypassed (or in requireLogin=false local mode), so we
+// refuse to write arbitrary env — only the Anthropic/9router integration keys
+// the feature actually manages. Mirrors RESET_ENV_KEYS (the keys DELETE clears).
+const ALLOWED_ENV_KEYS = new Set([
+  "ANTHROPIC_BASE_URL",
+  "ANTHROPIC_AUTH_TOKEN",
+  "ANTHROPIC_DEFAULT_OPUS_MODEL",
+  "ANTHROPIC_DEFAULT_SONNET_MODEL",
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+  "API_TIMEOUT_MS",
+]);
+
 // Get claude settings path based on OS
 const getClaudeSettingsPath = () => {
   const homeDir = os.homedir();
@@ -85,10 +99,21 @@ export async function GET() {
 export async function POST(request) {
   try {
     const { env } = await request.json();
-    
+
     if (!env || typeof env !== "object") {
       return NextResponse.json(
         { error: "Invalid env object" },
+        { status: 400 }
+      );
+    }
+
+    // Reject arbitrary env keys — only the managed integration keys may be
+    // written to the host settings file (prevents injecting unrelated env into
+    // the user's Claude CLI). Unknown keys cause a hard 400, not a silent drop.
+    const unknownKeys = Object.keys(env).filter((k) => !ALLOWED_ENV_KEYS.has(k));
+    if (unknownKeys.length > 0) {
+      return NextResponse.json(
+        { error: `Disallowed env keys: ${unknownKeys.join(", ")}` },
         { status: 400 }
       );
     }

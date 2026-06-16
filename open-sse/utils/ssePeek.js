@@ -246,9 +246,16 @@ export async function peekStreamForEmptyUpstream(response, { log, provider, sign
     async pull(controller) {
       try {
         const { done, value } = await upstreamReader.read();
-        if (done) { controller.close(); return; }
+        if (done) {
+          // Release the reader lock on clean EOF — the upstream body is exhausted.
+          // (Only cancel() released it before; the happy path leaked the lock.)
+          try { upstreamReader.releaseLock(); } catch { /* noop */ }
+          controller.close();
+          return;
+        }
         controller.enqueue(value);
       } catch (e) {
+        try { upstreamReader.releaseLock(); } catch { /* noop */ }
         controller.error(e);
       }
     },
