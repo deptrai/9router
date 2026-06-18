@@ -66,9 +66,17 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
   };
 
   const handleImportToken = async () => {
-    if (!refreshToken.trim()) {
+    const raw = refreshToken.trim();
+    if (!raw) {
       setError("Please enter a refresh token");
       return;
+    }
+
+    let payload;
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      payload = { refreshToken: raw };
     }
 
     setImporting(true);
@@ -78,7 +86,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
       const res = await fetch("/api/oauth/kiro/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken: refreshToken.trim() }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
