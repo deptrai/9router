@@ -29,16 +29,23 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
 
       try {
         const res = await fetch("/api/oauth/kiro/auto-import");
+
+        if (!res.ok) {
+          // 403/error from server (e.g. remote host) — silently fall back to manual input
+          setAutoDetected(false);
+          return;
+        }
+
         const data = await res.json();
 
         if (data.found) {
           setRefreshToken(data.refreshToken);
           setAutoDetected(true);
         } else {
-          setError(data.error || "Could not auto-detect token");
+          setAutoDetected(false);
         }
       } catch (err) {
-        setError("Failed to auto-detect token");
+        setAutoDetected(false);
       } finally {
         setAutoDetecting(false);
       }

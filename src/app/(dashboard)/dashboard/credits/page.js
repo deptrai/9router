@@ -363,7 +363,7 @@ export default function CreditsPage() {
             </div>
             {activePayment.paymentUrl && (
               <a href={activePayment.paymentUrl} target="_blank" rel="noopener noreferrer" className="block text-center text-sm text-primary hover:underline">
-                Open NOWPayments checkout →
+                Open {activePayment.provider === 'bitcart' ? 'Bitcart' : 'NOWPayments'} checkout →
               </a>
             )}
             <button onClick={() => setActivePayment(null)} className="w-full text-center text-xs text-text-muted hover:text-text-main mt-2">
