@@ -45,6 +45,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
           setAutoDetected(false);
         }
       } catch (err) {
+        console.warn("Kiro auto-detect failed:", err);
         setAutoDetected(false);
       } finally {
         setAutoDetecting(false);
