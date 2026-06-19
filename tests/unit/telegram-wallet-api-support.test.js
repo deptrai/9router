@@ -84,7 +84,9 @@ describe("handleUpdate /wallet — AC1, AC2", () => {
     expect(text).toContain("Resource:");
     expect(text).toContain("admin_topup");
     expect(text).toContain("Chưa có gói");
-    expect(opts?.reply_markup?.inline_keyboard[0][0].url).toContain("/dashboard/credits");
+    const buttons = opts?.reply_markup?.inline_keyboard?.flat() ?? [];
+    expect(buttons.some((b) => b.url?.includes("/dashboard/credits"))).toBe(true);
+    expect(buttons.some((b) => b.callback_data === "cmd:menu")).toBe(true);
   });
 
   it("AC2: user mới chưa có giao dịch → hiển thị 0 và thông báo", async () => {
@@ -254,8 +256,10 @@ describe("handleUpdate /support — AC6", () => {
     const [, text, opts] = sendMessage.mock.calls[0];
     expect(text).toContain("Hỗ trợ");
     expect(text).toContain("/products");
-    // Không có buttons khi env chưa set
-    expect(opts?.reply_markup).toBeUndefined();
+    // Khi env chưa set, vẫn có menu button
+    const buttons = opts?.reply_markup?.inline_keyboard?.flat() ?? [];
+    expect(buttons.some((b) => b.callback_data === "cmd:menu")).toBe(true);
+    expect(buttons.some((b) => b.url?.includes("t.me/"))).toBe(false);
   });
 });
 

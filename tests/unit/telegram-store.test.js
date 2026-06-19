@@ -237,8 +237,8 @@ describe("handleUpdate /products — AC2 active filter + AC3 error fallback", ()
     await handleUpdate(productsUpdate());
 
     const calls = vi.mocked(sendMessage).mock.calls;
-    // 2 active products → 2 sendMessage calls (inactive filtered)
-    expect(calls.length).toBe(2);
+    // 2 active products + 1 "back to menu" message → 3 sendMessage calls
+    expect(calls.length).toBe(3);
 
     // "Active No Stock" (stock=0) → không có nút mua
     const noStockCall = calls.find((c) => c[1].includes("Active No Stock"));

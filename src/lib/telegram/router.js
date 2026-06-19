@@ -32,6 +32,8 @@ const MAIN_MENU = {
   ],
 };
 
+const BACK_TO_MENU_ROW = [{ text: "🏠 Menu", callback_data: "cmd:menu" }];
+
 // ─── /start handler (AC1, D3=A auto-create) ──────────────────────────────────
 
 async function handleStart(update) {
@@ -110,6 +112,8 @@ async function handleProducts(chatId) {
 
       await sendMessage(chatId, lines.join("\n"), keyboard ? { reply_markup: keyboard } : {});
     }
+    // Sau danh sách sản phẩm, hiện nút quay về menu
+    await sendMessage(chatId, "⬆️ Chọn sản phẩm hoặc quay về menu:", { reply_markup: { inline_keyboard: [BACK_TO_MENU_ROW] } });
   } catch (e) {
     console.error("[telegram/router] /products lỗi:", e?.message);
     // AC3: không leak stack — chỉ gửi thông báo ngắn gợi ý /support
@@ -349,11 +353,14 @@ async function handleWallet(chatId, telegramId) {
     }
 
     const baseUrl = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "";
-    const keyboard = baseUrl
-      ? { inline_keyboard: [[{ text: "💳 Nạp tiền", url: `${baseUrl}/dashboard/credits` }]] }
-      : undefined;
+    const keyboard = {
+      inline_keyboard: [
+        ...(baseUrl ? [[{ text: "💳 Nạp tiền", url: `${baseUrl}/dashboard/credits` }]] : []),
+        BACK_TO_MENU_ROW,
+      ],
+    };
 
-    await sendMessage(chatId, lines.join("\n"), keyboard ? { reply_markup: keyboard } : {});
+    await sendMessage(chatId, lines.join("\n"), { reply_markup: keyboard });
   } catch (e) {
     console.error("[telegram/router] /wallet lỗi:", e?.message);
     await sendMessage(chatId, "Có lỗi xảy ra. Thử lại hoặc /support.").catch(() => {});
@@ -395,8 +402,9 @@ async function handleApi(chatId, telegramId) {
     } else {
       lines.push("", "⚠️ Đã đạt giới hạn 10 API key.");
     }
+    buttons.push(BACK_TO_MENU_ROW);
 
-    await sendMessage(chatId, lines.join("\n"), buttons.length ? { reply_markup: { inline_keyboard: buttons } } : {});
+    await sendMessage(chatId, lines.join("\n"), { reply_markup: { inline_keyboard: buttons } });
   } catch (e) {
     console.error("[telegram/router] /api lỗi:", e?.message);
     await sendMessage(chatId, "Có lỗi xảy ra. Thử lại hoặc /support.").catch(() => {});
@@ -487,8 +495,9 @@ async function handleSupport(chatId) {
     if (faqUrl) {
       buttons.push([{ text: "📖 FAQ", url: faqUrl }]);
     }
+    buttons.push(BACK_TO_MENU_ROW);
 
-    await sendMessage(chatId, lines.join("\n"), buttons.length ? { reply_markup: { inline_keyboard: buttons } } : {});
+    await sendMessage(chatId, lines.join("\n"), { reply_markup: { inline_keyboard: buttons } });
   } catch (e) {
     console.error("[telegram/router] /support lỗi:", e?.message);
     await sendMessage(chatId, "Có lỗi xảy ra. Thử lại sau.").catch(() => {});
@@ -530,7 +539,8 @@ async function handleOrders(chatId, telegramId) {
     });
     await sendMessage(
       chatId,
-      [`<b>📦 Đơn hàng gần đây</b>`, ...lines].join("\n")
+      [`<b>📦 Đơn hàng gần đây</b>`, ...lines].join("\n"),
+      { reply_markup: { inline_keyboard: [BACK_TO_MENU_ROW] } }
     );
   } catch (e) {
     console.error("[telegram/router] orders lỗi:", e?.message);
@@ -592,6 +602,10 @@ export async function handleUpdate(update) {
     // Dừng spinner loading trên client ngay; fail-soft nếu lỗi.
     await answerCallbackQuery(cq.id).catch(() => {});
 
+    if (data === "cmd:menu") {
+      await sendMessage(chatId, "Chọn chức năng bên dưới:", { reply_markup: MAIN_MENU });
+      return;
+    }
     if (data === "cmd:products") {
       await handleProducts(chatId);
       return;
