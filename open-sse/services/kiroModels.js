@@ -169,6 +169,10 @@ async function fetchKiroCatalogRaw(credentials, signal) {
     "Authorization": `Bearer ${credentials?.accessToken || ""}`
   };
 
+  if (credentials?.providerSpecificData?.authMethod === "external_idp") {
+    headers["TokenType"] = "EXTERNAL_IDP";
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort("timeout"), FETCH_TIMEOUT_MS);
   // Forward outer cancellation if any.

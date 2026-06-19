@@ -325,18 +325,23 @@ export class KiroService {
   /**
    * List available models from CodeWhisperer API
    */
-  async listAvailableModels(accessToken, profileArn) {
+  async listAvailableModels(accessToken, profileArn, authMethod) {
     const endpoint = "https://codewhisperer.us-east-1.amazonaws.com";
     const target = "AmazonCodeWhispererService.ListAvailableModels";
 
+    const headers = {
+      "Content-Type": "application/x-amz-json-1.0",
+      "x-amz-target": target,
+      "Authorization": `Bearer ${accessToken}`,
+      "Accept": "application/json",
+    };
+    if (authMethod === "external_idp") {
+      headers["TokenType"] = "EXTERNAL_IDP";
+    }
+
     const response = await fetch(endpoint, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/x-amz-json-1.0",
-        "x-amz-target": target,
-        "Authorization": `Bearer ${accessToken}`,
-        "Accept": "application/json",
-      },
+      headers,
       body: JSON.stringify({
         origin: "AI_EDITOR",
         profileArn,

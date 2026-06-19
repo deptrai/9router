@@ -25,6 +25,11 @@ export class KiroExecutor extends BaseExecutor {
       headers["Authorization"] = `Bearer ${credentials.accessToken}`;
     }
 
+    const authMethod = credentials?.providerSpecificData?.authMethod;
+    if (authMethod === "external_idp") {
+      headers["TokenType"] = "EXTERNAL_IDP";
+    }
+
     return headers;
   }
 

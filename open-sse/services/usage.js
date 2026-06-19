@@ -769,6 +769,8 @@ async function getKiroUsage(accessToken, providerSpecificData, proxyOptions = nu
   });
 
   // For compatibility, try multiple known Kiro usage endpoints
+  const externalIdpHeader = authMethod === "external_idp" ? { "TokenType": "EXTERNAL_IDP" } : {};
+
   const attempts = [
     {
       name: "codewhisperer-get",
@@ -781,6 +783,7 @@ async function getKiroUsage(accessToken, providerSpecificData, proxyOptions = nu
             "Accept": "application/json",
             "x-amz-user-agent": "aws-sdk-js/1.0.0 KiroIDE",
             "user-agent": "aws-sdk-js/1.0.0 KiroIDE",
+            ...externalIdpHeader,
           },
         },
         proxyOptions
@@ -795,6 +798,7 @@ async function getKiroUsage(accessToken, providerSpecificData, proxyOptions = nu
           "Content-Type": "application/x-amz-json-1.0",
           "x-amz-target": "AmazonCodeWhispererService.GetUsageLimits",
           "Accept": "application/json",
+          ...externalIdpHeader,
         },
         body: JSON.stringify({
           origin: "AI_EDITOR",
@@ -816,6 +820,7 @@ async function getKiroUsage(accessToken, providerSpecificData, proxyOptions = nu
           headers: {
             "Authorization": `Bearer ${accessToken}`,
             "Accept": "application/json",
+            ...externalIdpHeader,
           },
         }, proxyOptions);
       },
