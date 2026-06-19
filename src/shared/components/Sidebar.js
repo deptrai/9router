@@ -29,6 +29,7 @@ const adminNavItems = [
   { href: "/dashboard/users", label: "Users", icon: "group" },
   { href: "/dashboard/plans", label: "Plans", icon: "workspace_premium" },
   { href: "/dashboard/gift-codes", label: "Gift Codes", icon: "confirmation_number" },
+  { href: "/dashboard/store", label: "Store", icon: "storefront" },
 ];
 
 // AC5: User-visible nav items (limited view for role=user)
