@@ -13,6 +13,9 @@ import { getDecryptedPayload, countAvailableCredentials, productHasInventory } f
 import { storeCheckout, CheckoutError } from "../store/storeCheckout.js";
 import { externalCheckout, ExternalCheckoutError } from "../store/externalCheckout.js";
 import { EXTERNAL_SOURCE } from "../store/catalogSync.js";
+import { getBalanceByBucket, getLedgerByUser } from "../db/repos/creditLedgerRepo.js";
+import { getApiKeysByUser, createApiKey, updateApiKey } from "../db/repos/apiKeysRepo.js";
+import { getPlanById } from "../db/repos/plansRepo.js";
 
 // Inline keyboard menu chính (AC1)
 const MAIN_MENU = {
@@ -212,10 +215,38 @@ async function handleBuyExecute(chatId, telegramId, productId, callbackQueryId) 
       return;
     }
 
-    const { order, alreadyProcessed, deliveredCredentialIds, entitlementId } = await storeCheckout(user.id, productId, { idempotencyKey });
+    const { order, alreadyProcessed, deliveredCredentialIds, entitlementId, planActivation, planActivationError } = await storeCheckout(user.id, productId, { idempotencyKey });
 
     if (alreadyProcessed) {
       await sendMessage(chatId, `Đơn <code>${order.id}</code> đã được xử lý trước đó.`);
+      return;
+    }
+
+    // Plan activation message (Story 2.36, AC8)
+    if (planActivation) {
+      const planName = planActivation.plan?.displayName || planActivation.plan?.name || "gói cước";
+      const expires = planActivation.expiresAt ? planActivation.expiresAt.slice(0, 10) : "";
+      await sendMessage(
+        chatId,
+        [
+          `🎉 Mua thành công!`,
+          `Mã đơn: <code>${order.id}</code>`,
+          ``,
+          `✅ Gói cước <b>${planName}</b> đã kích hoạt.`,
+          expires ? `📅 Hết hạn: ${expires}` : "",
+          `Kiểm tra /wallet để xem chi tiết.`,
+        ].filter(Boolean).join("\n")
+      );
+      return;
+    }
+    if (planActivationError) {
+      const errMsg = planActivationError.code === "PLAN_NOT_FOUND"
+        ? "Gói cước không hợp lệ — liên hệ /support."
+        : "Có lỗi khi kích hoạt gói cước — liên hệ /support.";
+      await sendMessage(
+        chatId,
+        [`🎉 Đã thanh toán!`, `Mã đơn: <code>${order.id}</code>`, `⚠️ ${errMsg}`].join("\n")
+      );
       return;
     }
 
@@ -274,13 +305,194 @@ async function handleBuyExecute(chatId, telegramId, productId, callbackQueryId) 
   }
 }
 
-// ─── Stub handlers cho các command sẽ làm ở story sau ────────────────────────
+// ─── /wallet handler (Story 2.36, AC1, AC2) ─────────────────────────────────
 
-async function handleStub(chatId, command) {
-  await sendMessage(
-    chatId,
-    `Chức năng <b>${command}</b> sẽ sớm ra mắt.\nDùng /products để xem sản phẩm.`
-  ).catch(() => {});
+async function handleWallet(chatId, telegramId) {
+  try {
+    const user = await getUserByTelegramId(telegramId);
+    if (!user) {
+      await sendMessage(chatId, "Vui lòng /start trước.");
+      return;
+    }
+
+    const balances = await getBalanceByBucket(user.id);
+    const ledger = await getLedgerByUser(user.id, { limit: 5 });
+
+    const lines = [
+      "<b>💰 Ví của bạn</b>",
+      "",
+      `Standard: <b>${(balances.standard ?? 0).toLocaleString()}</b> cr`,
+      `Bonus: <b>${(balances.bonus ?? 0).toLocaleString()}</b> cr`,
+      `Resource: <b>${(balances.resource ?? 0).toLocaleString()}</b> cr`,
+    ];
+
+    // Plan status
+    if (user.planId) {
+      const plan = await getPlanById(user.planId).catch(() => null);
+      const planName = plan?.displayName || plan?.name || user.planId;
+      const expires = user.planExpiresAt ? user.planExpiresAt.slice(0, 10) : "∞";
+      lines.push("", `📦 Gói cước: <b>${planName}</b> (hết hạn ${expires})`);
+    } else {
+      lines.push("", "📦 Gói cước: <i>Chưa có gói</i>");
+    }
+
+    // Recent transactions
+    lines.push("", "<b>📋 Giao dịch gần đây:</b>");
+    if (!ledger.length) {
+      lines.push("<i>Chưa có giao dịch gần đây</i>");
+    } else {
+      for (const tx of ledger) {
+        const sign = tx.amount >= 0 ? "+" : "";
+        const date = tx.createdAt ? tx.createdAt.slice(0, 10) : "";
+        lines.push(`• ${tx.type} | ${sign}${tx.amount} cr | ${date}`);
+      }
+    }
+
+    const baseUrl = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "";
+    const keyboard = baseUrl
+      ? { inline_keyboard: [[{ text: "💳 Nạp tiền", url: `${baseUrl}/dashboard/credits` }]] }
+      : undefined;
+
+    await sendMessage(chatId, lines.join("\n"), keyboard ? { reply_markup: keyboard } : {});
+  } catch (e) {
+    console.error("[telegram/router] /wallet lỗi:", e?.message);
+    await sendMessage(chatId, "Có lỗi xảy ra. Thử lại hoặc /support.").catch(() => {});
+  }
+}
+
+// ─── /api handler (Story 2.36, AC3, AC4, AC5) ───────────────────────────────
+
+async function handleApi(chatId, telegramId) {
+  try {
+    const user = await getUserByTelegramId(telegramId);
+    if (!user) {
+      await sendMessage(chatId, "Vui lòng /start trước.");
+      return;
+    }
+
+    const keys = await getApiKeysByUser(user.id);
+    const lines = ["<b>🔑 API Keys của bạn</b>", ""];
+
+    if (!keys.length) {
+      lines.push("<i>Chưa có API key nào.</i>");
+    } else {
+      for (const k of keys) {
+        const status = k.isActive ? "✅" : "⛔";
+        const masked = `****${k.key.slice(-8)}`;
+        const name = k.name || "unnamed";
+        lines.push(`${status} <code>${masked}</code> — ${name}`);
+      }
+    }
+
+    const buttons = [];
+    for (const k of keys) {
+      const label = k.isActive ? `⛔ Tắt ${k.key.slice(-4)}` : `✅ Bật ${k.key.slice(-4)}`;
+      buttons.push([{ text: label, callback_data: `apitog:${k.id}` }]);
+    }
+
+    if (keys.length < 10) {
+      buttons.push([{ text: "➕ Tạo key mới", callback_data: "apicreate" }]);
+    } else {
+      lines.push("", "⚠️ Đã đạt giới hạn 10 API key.");
+    }
+
+    await sendMessage(chatId, lines.join("\n"), buttons.length ? { reply_markup: { inline_keyboard: buttons } } : {});
+  } catch (e) {
+    console.error("[telegram/router] /api lỗi:", e?.message);
+    await sendMessage(chatId, "Có lỗi xảy ra. Thử lại hoặc /support.").catch(() => {});
+  }
+}
+
+async function handleApiCreate(chatId, telegramId) {
+  try {
+    const user = await getUserByTelegramId(telegramId);
+    if (!user) {
+      await sendMessage(chatId, "Vui lòng /start trước.");
+      return;
+    }
+
+    const name = `tg-${telegramId}`;
+    const apiKey = await createApiKey(name, String(telegramId), user.id);
+
+    await sendMessage(
+      chatId,
+      [
+        "✅ API key mới đã tạo:",
+        "",
+        `<code>${apiKey.key}</code>`,
+        "",
+        "⚠️ <b>Lưu lại key này ngay</b> — sẽ không hiển thị đầy đủ lần sau.",
+      ].join("\n")
+    );
+  } catch (e) {
+    if (e?.code === "KEY_LIMIT") {
+      await sendMessage(chatId, "❌ Đã đạt giới hạn 10 API key. Tắt hoặc xóa key cũ trên dashboard.").catch(() => {});
+      return;
+    }
+    console.error("[telegram/router] api create lỗi:", e?.message);
+    await sendMessage(chatId, "Có lỗi khi tạo key. Thử lại hoặc /support.").catch(() => {});
+  }
+}
+
+async function handleApiToggle(chatId, telegramId, keyId) {
+  try {
+    const user = await getUserByTelegramId(telegramId);
+    if (!user) {
+      await sendMessage(chatId, "Vui lòng /start trước.");
+      return;
+    }
+
+    const keys = await getApiKeysByUser(user.id);
+    const key = keys.find((k) => k.id === keyId);
+    if (!key) {
+      await sendMessage(chatId, "Không tìm thấy key.");
+      return;
+    }
+
+    await updateApiKey(keyId, { isActive: !key.isActive });
+    const action = key.isActive ? "tắt" : "bật";
+    const masked = `****${key.key.slice(-8)}`;
+    await sendMessage(chatId, `✅ Key <code>${masked}</code> đã được <b>${action}</b>.`);
+  } catch (e) {
+    console.error("[telegram/router] api toggle lỗi:", e?.message);
+    await sendMessage(chatId, "Có lỗi xảy ra. Thử lại hoặc /support.").catch(() => {});
+  }
+}
+
+// ─── /support handler (Story 2.36, AC6) ──────────────────────────────────────
+
+async function handleSupport(chatId) {
+  try {
+    const supportUser = process.env.TELEGRAM_SUPPORT_USERNAME;
+    const faqUrl = process.env.FAQ_URL;
+
+    const lines = [
+      "<b>🆘 Hỗ trợ</b>",
+      "",
+      "📌 <b>Hướng dẫn sử dụng:</b>",
+      "• /products — Xem và mua sản phẩm",
+      "• /wallet — Kiểm tra số dư ví",
+      "• /orders — Xem đơn hàng",
+      "• /api — Quản lý API key",
+    ];
+
+    if (supportUser) {
+      lines.push("", `💬 Liên hệ admin: @${supportUser}`);
+    }
+
+    const buttons = [];
+    if (supportUser) {
+      buttons.push([{ text: "💬 Chat admin", url: `https://t.me/${supportUser}` }]);
+    }
+    if (faqUrl) {
+      buttons.push([{ text: "📖 FAQ", url: faqUrl }]);
+    }
+
+    await sendMessage(chatId, lines.join("\n"), buttons.length ? { reply_markup: { inline_keyboard: buttons } } : {});
+  } catch (e) {
+    console.error("[telegram/router] /support lỗi:", e?.message);
+    await sendMessage(chatId, "Có lỗi xảy ra. Thử lại sau.").catch(() => {});
+  }
 }
 
 // ─── /orders — danh sách đơn hàng của user (AC4, T6) ─────────────────────────
@@ -353,9 +565,13 @@ export async function handleUpdate(update) {
         await handleOrders(chatId, String(update.message.from?.id));
         return;
       case "/wallet":
+        await handleWallet(chatId, String(update.message.from?.id));
+        return;
       case "/api":
+        await handleApi(chatId, String(update.message.from?.id));
+        return;
       case "/support":
-        await handleStub(chatId, command);
+        await handleSupport(chatId);
         return;
       default:
         await sendMessage(
@@ -382,6 +598,27 @@ export async function handleUpdate(update) {
     }
     if (data === "cmd:orders") {
       await handleOrders(chatId, String(cq.from.id));
+      return;
+    }
+    if (data === "cmd:wallet") {
+      await handleWallet(chatId, String(cq.from.id));
+      return;
+    }
+    if (data === "cmd:api") {
+      await handleApi(chatId, String(cq.from.id));
+      return;
+    }
+    if (data === "cmd:support") {
+      await handleSupport(chatId);
+      return;
+    }
+    if (data === "apicreate") {
+      await handleApiCreate(chatId, String(cq.from.id));
+      return;
+    }
+    if (data?.startsWith("apitog:")) {
+      const keyId = data.slice("apitog:".length);
+      await handleApiToggle(chatId, String(cq.from.id), keyId);
       return;
     }
     if (data === "buyx") {

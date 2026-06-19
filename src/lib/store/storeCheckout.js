@@ -26,6 +26,7 @@ import {
   productHasInventorySync,
 } from "../db/repos/credentialsRepo.js";
 import { createEntitlementSync, ENTITLEMENT_STATUS } from "../db/repos/entitlementsRepo.js";
+import { purchasePlanForUser, PlanPurchaseError } from "../plans/planPurchase.js";
 
 export class CheckoutError extends Error {
   constructor(code, message) {
@@ -216,6 +217,28 @@ export async function storeCheckout(userId, productId, { quantity = 1, idempoten
     result.deliveredCredentialIds = deliveredCredentialIds;
   } else {
     result.deliveredCredentialIds = null;
+  }
+
+  // ── Post-commit plan activation (Story 2.36, AC8): product kind=plan → activate plan ──
+  if (!result.alreadyProcessed) {
+    const product = adapter.get(`SELECT * FROM products WHERE id = ?`, [productId]);
+    if (product?.kind === "plan" && product?.targetType === "9router_plan" && product?.targetId) {
+      try {
+        const planResult = await purchasePlanForUser({
+          userId,
+          planId: product.targetId,
+          idempotencyKey: `plan:${result.order.id}`,
+        });
+        result.planActivation = planResult;
+      } catch (e) {
+        if (e instanceof PlanPurchaseError) {
+          result.planActivation = null;
+          result.planActivationError = { code: e.code, message: e.message };
+        } else {
+          throw e;
+        }
+      }
+    }
   }
 
   return result;
