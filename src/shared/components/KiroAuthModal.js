@@ -190,6 +190,22 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
               </div>
             </button>
 
+            {/* Enterprise SSO - Microsoft 365 */}
+            <button
+              onClick={() => onMethodSelect("enterprise-sso")}
+              className="w-full p-4 text-left border border-border rounded-lg hover:bg-sidebar transition-colors"
+            >
+              <div className="flex items-start gap-3">
+                <span className="material-symbols-outlined text-primary mt-0.5">badge</span>
+                <div className="flex-1">
+                  <h3 className="font-semibold mb-1">Enterprise SSO - Microsoft 365</h3>
+                  <p className="text-sm text-text-muted">
+                    For enterprise users with Azure AD / Entra ID.
+                  </p>
+                </div>
+              </div>
+            </button>
+
             {/* Import Token */}
             <button
               onClick={() => handleMethodSelect("import")}

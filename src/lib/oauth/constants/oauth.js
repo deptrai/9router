@@ -178,8 +178,15 @@ export const KIRO_CONFIG = {
   socialTokenUrl: "https://prod.us-east-1.auth.desktop.kiro.dev/oauth/token",
   socialRefreshUrl: "https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken",
   // Auth methods
-  authMethods: ["builder-id", "idc", "google", "github", "import"],
+  authMethods: ["builder-id", "idc", "google", "github", "import", "enterprise-sso"],
 };
+
+// Enterprise SSO allow-list: only these IdP hosts are trusted for the enterprise OIDC flow
+export const ALLOWED_EXTERNAL_IDP_ISSUER_SUFFIXES = [
+  ".microsoftonline.com",
+  ".microsoftonline.us",
+  ".microsoftonline.cn",
+];
 
 // Cursor OAuth Configuration (Import Token from Cursor IDE)
 // Cursor stores credentials in SQLite database: state.vscdb

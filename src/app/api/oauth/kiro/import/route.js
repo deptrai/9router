@@ -33,6 +33,9 @@ export async function POST(request) {
         clientId: body.clientId || body.client_id,
         clientSecret: body.clientSecret || body.client_secret,
         startUrl: body.startUrl || body.start_url,
+        tokenEndpoint: body.tokenEndpoint || body.token_endpoint,
+        issuerURL: body.issuerURL || body.issuer_url,
+        scopes: body.scopes,
       };
 
       if (!refreshToken || typeof refreshToken !== "string") {
@@ -78,7 +81,14 @@ export async function POST(request) {
           clientId: providerSpecificData.clientId,
           clientSecret: providerSpecificData.clientSecret,
           startUrl: providerSpecificData.startUrl,
-          provider: providerSpecificData.authMethod === "idc" ? "IDC" : "Imported",
+          tokenEndpoint: providerSpecificData.tokenEndpoint,
+          issuerURL: providerSpecificData.issuerURL,
+          scopes: providerSpecificData.scopes,
+          provider: providerSpecificData.authMethod === "external_idp"
+            ? "AzureAD"
+            : providerSpecificData.authMethod === "idc"
+              ? "IDC"
+              : "Imported",
         },
         testStatus: "active",
       });

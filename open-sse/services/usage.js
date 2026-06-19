@@ -760,7 +760,7 @@ async function getKiroUsage(accessToken, providerSpecificData, proxyOptions = nu
   const authMethod = providerSpecificData?.authMethod || "builder-id";
   // For IDC/Enterprise accounts, do NOT send placeholder ARN — it causes 403
   const isPlaceholderArn = !storedProfileArn || storedProfileArn === DEFAULT_PROFILE_ARN;
-  const profileArn = (authMethod === "idc" && isPlaceholderArn) ? null : (storedProfileArn || DEFAULT_PROFILE_ARN);
+  const profileArn = ((authMethod === "idc" || authMethod === "external_idp") && isPlaceholderArn) ? null : (storedProfileArn || DEFAULT_PROFILE_ARN);
 
   const getUsageParams = new URLSearchParams({
     isEmailRequired: "true",
@@ -847,6 +847,16 @@ async function getKiroUsage(accessToken, providerSpecificData, proxyOptions = nu
   if (sawAuthError && authMethod === "idc") {
     return {
       message: "Kiro quota API is unavailable for the current AWS IAM Identity Center session. Chat may still work. If this persists after renewing your session, reconnect Kiro.",
+      quotas: {},
+    };
+  }
+
+  // Enterprise SSO (M365 / Azure AD) — token is Microsoft-issued, not AWS CodeWhisperer,
+  // so AWS quota endpoints always reject it. This is expected — usage tracking is not
+  // available through this auth method.
+  if (sawAuthError && authMethod === "external_idp") {
+    return {
+      message: "Kiro quota is not available for Azure AD Enterprise SSO connections. Chat may still work.",
       quotas: {},
     };
   }

@@ -351,6 +351,39 @@ export async function refreshCodexToken(refreshToken, log) {
   }, log);
 }
 
+// Allow-list of external IdP (enterprise SSO) token-endpoint hosts. Mirrors
+// ALLOWED_EXTERNAL_IDP_ISSUER_SUFFIXES in src/lib/oauth/constants/oauth.js. The
+// leading dot anchors each suffix to a real subdomain boundary so a host like
+// "evilmicrosoftonline.com" cannot match.
+const ALLOWED_EXTERNAL_IDP_HOST_SUFFIXES = [
+  ".microsoftonline.com",
+  ".microsoftonline.us",
+  ".microsoftonline.cn",
+];
+
+function safeHost(rawUrl) {
+  try {
+    return new URL(rawUrl).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function isAllowedExternalIdpEndpoint(rawUrl) {
+  let u;
+  try {
+    u = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== "https:") return false;
+  const host = u.hostname.toLowerCase();
+  if (!host) return false;
+  // Reject IP literals (IPv4 and bracketed IPv6).
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(host) || rawUrl.includes("//[")) return false;
+  return ALLOWED_EXTERNAL_IDP_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix));
+}
+
 /**
  * Specialized refresh for Kiro (AWS CodeWhisperer) tokens
  * Supports both AWS SSO OIDC (Builder ID/IDC) and Social Auth (Google/GitHub)
@@ -362,6 +395,80 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
   const clientId = providerSpecificData?.clientId;
   const clientSecret = providerSpecificData?.clientSecret;
   const region = providerSpecificData?.region;
+
+  // External IdP (Enterprise SSO - Microsoft 365 / Azure AD)
+  // These tokens refresh against the IdP token endpoint (OAuth2 refresh_token grant,
+  // public client, form-encoded), NOT the AWS SSO OIDC or Kiro social endpoints.
+  // Must be checked before the AWS SSO branch because an external_idp account has a
+  // clientId but no clientSecret.
+  if (authMethod === "external_idp") {
+    const tokenEndpoint = providerSpecificData?.tokenEndpoint;
+    const scopes = providerSpecificData?.scopes;
+    if (!clientId || !tokenEndpoint) {
+      log?.error?.("TOKEN_REFRESH", "External IdP refresh missing clientId or tokenEndpoint");
+      return null;
+    }
+    // Re-validate the persisted token endpoint against the allow-list (SSRF guard):
+    // never POST the refresh token to an endpoint outside the trusted IdP hosts.
+    if (!isAllowedExternalIdpEndpoint(tokenEndpoint)) {
+      log?.error?.("TOKEN_REFRESH", "External IdP token endpoint not allow-listed", {
+        host: safeHost(tokenEndpoint),
+      });
+      return null;
+    }
+
+    const form = new URLSearchParams({
+      client_id: clientId,
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+    });
+    if (scopes) form.set("scope", scopes);
+
+    const response = await proxyAwareFetch(tokenEndpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: form.toString(),
+      redirect: "manual",
+    }, proxyOptions);
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      log?.error?.("TOKEN_REFRESH", "Failed to refresh Kiro external IdP token", {
+        status: response.status,
+        error: errorText,
+      });
+      return null;
+    }
+
+    let tokens;
+    try {
+      tokens = await response.json();
+    } catch {
+      log?.error?.("TOKEN_REFRESH", "External IdP refresh returned non-JSON response");
+      return null;
+    }
+
+    if (!tokens.access_token) {
+      log?.error?.("TOKEN_REFRESH", "External IdP refresh response missing access_token");
+      return null;
+    }
+
+    log?.info?.("TOKEN_REFRESH", "Successfully refreshed Kiro external IdP token", {
+      hasNewAccessToken: !!tokens.access_token,
+      expiresIn: tokens.expires_in,
+    });
+
+    return {
+      accessToken: tokens.access_token,
+      // Azure AD rotates (single-use) refresh tokens; keep the old one only if the
+      // response omits a new one.
+      refreshToken: tokens.refresh_token || refreshToken,
+      expiresIn: tokens.expires_in,
+    };
+  }
 
   // AWS SSO OIDC (Builder ID or IDC)
   // If clientId and clientSecret exist, assume AWS SSO OIDC (default to builder-id if authMethod not specified)

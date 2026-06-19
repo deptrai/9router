@@ -13,6 +13,106 @@ import {
 } from "../../config/kiroConstants.js";
 
 /**
+ * Normalize a JSON Schema to be compliant with JSON Schema draft 2020-12
+ * as required by the Kiro/AWS CodeWhisperer API.
+ *
+ * Common fixes applied:
+ *  - Ensures `type: "object"` at root when properties exist
+ *  - Ensures `properties` exists
+ *  - Filters `required` to only reference existing property keys
+ *  - Strips invalid empty entries from properties
+ *  - Removes `$schema` to avoid version conflicts
+ *  - Converts `definitions` → `$defs` (draft-07 → 2020-12) and rewrites `$ref`s
+ *  - Operates on a deep copy so the caller's tool definitions are never mutated
+ */
+function rewriteDefinitionRefs(node) {
+  // Recursively rewrite "#/definitions/..." $ref pointers to "#/$defs/..." so
+  // they remain resolvable after the definitions → $defs rename.
+  if (Array.isArray(node)) {
+    for (const item of node) rewriteDefinitionRefs(item);
+    return;
+  }
+  if (!node || typeof node !== "object") return;
+  if (typeof node.$ref === "string" && node.$ref.startsWith("#/definitions/")) {
+    node.$ref = node.$ref.replace("#/definitions/", "#/$defs/");
+  }
+  for (const value of Object.values(node)) {
+    if (value && typeof value === "object") rewriteDefinitionRefs(value);
+  }
+}
+
+function normalizeToolSchema(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw) || Object.keys(raw).length === 0) {
+    return { type: "object", properties: {}, required: [] };
+  }
+
+  // Deep copy so we never mutate the caller's tool object (it may be reused
+  // across retries / multi-turn requests).
+  let schema;
+  try {
+    schema = structuredClone(raw);
+  } catch {
+    schema = JSON.parse(JSON.stringify(raw));
+  }
+
+  // Remove $schema to avoid version conflicts between draft-07 and 2020-12
+  delete schema.$schema;
+
+  // Rename definitions → $defs for 2020-12 compat, then rewrite any $ref pointers
+  // that referenced the old #/definitions/ path.
+  if (schema.definitions && !schema.$defs) {
+    schema.$defs = schema.definitions;
+    delete schema.definitions;
+    rewriteDefinitionRefs(schema);
+  }
+
+  // Ensure properties exists
+  if (!schema.properties || typeof schema.properties !== "object") {
+    schema.properties = {};
+  }
+
+  // Track required keys so a genuinely-required property is not silently dropped.
+  const requiredKeys = Array.isArray(schema.required)
+    ? schema.required.filter((k) => typeof k === "string")
+    : [];
+  const requiredSet = new Set(requiredKeys);
+
+  // Strip empty/invalid entries from properties and validate each
+  const cleaned = {};
+  for (const [key, val] of Object.entries(schema.properties)) {
+    if (!val || typeof val !== "object" || Object.keys(val).length === 0) {
+      // A required property cannot just be dropped — replace it with a permissive
+      // string schema so it stays declared and stays in `required`.
+      if (requiredSet.has(key)) {
+        cleaned[key] = { type: "string" };
+      }
+      continue;
+    }
+    // Ensure the property has at least a type or $ref
+    if (!val.type && !val.$ref && !val.anyOf && !val.oneOf && !val.enum) {
+      val.type = "string";
+    }
+    cleaned[key] = val;
+  }
+  schema.properties = cleaned;
+
+  // Ensure type is "object" when there are properties
+  if (Object.keys(schema.properties).length > 0 && !schema.type) {
+    schema.type = "object";
+  }
+
+  // Filter required to only include keys that exist in properties
+  schema.required = requiredKeys.filter((k) => k in schema.properties);
+
+  // Ensure additionalProperties is not set to false (often causes issues)
+  if (schema.additionalProperties === false) {
+    delete schema.additionalProperties;
+  }
+
+  return schema;
+}
+
+/**
  * Convert OpenAI messages to Kiro format
  * Rules: system/tool/user -> user role, merge consecutive same roles
  */
@@ -63,11 +163,9 @@ function convertMessages(messages, tools, model) {
             description = `Tool: ${name}`;
           }
           
-          const schema = t.function?.parameters || t.parameters || t.input_schema || {};
-          // Normalize schema: Kiro requires required[] and proper type/properties
-          const normalizedSchema = Object.keys(schema).length === 0
-            ? { type: "object", properties: {}, required: [] }
-            : { ...schema, required: schema.required ?? [] };
+          const normalizedSchema = normalizeToolSchema(
+            t.function?.parameters || t.parameters || t.input_schema
+          );
 
           return {
             toolSpecification: {
