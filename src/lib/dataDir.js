@@ -15,10 +15,12 @@ export function getDataDir() {
   let configured = process.env.DATA_DIR;
   if (!configured) return defaultDir();
   configured = configured.split("\n")[0].split("\r")[0].trim();
-  if (!configured || configured.length > 512) return defaultDir();
 
-  const candidates = [configured];
-  if (process.platform !== "win32" && configured !== "/app/data") {
+  const candidates = [];
+  if (configured && configured.length <= 512 && configured !== "/app/data") {
+    candidates.push(configured);
+  }
+  if (process.platform !== "win32") {
     candidates.push("/app/data");
   }
 
