@@ -33,7 +33,7 @@ export default function StorePage() {
         setRole(r);
         if (r === "user") router.replace("/dashboard/credits");
       })
-      .catch(() => setRole("admin"));
+      .catch(() => setRole(null));
   }, [router]);
 
   const loadProducts = useCallback(async () => {
@@ -98,26 +98,44 @@ export default function StorePage() {
   };
 
   const toggleProduct = async (id, isActive) => {
-    await fetch(`/api/store/admin/products/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isActive: !isActive }),
-    });
+    try {
+      const res = await fetch(`/api/store/admin/products/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: !isActive }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Failed to update product");
+      }
+    } catch { setError("Network error"); }
     await loadProducts();
   };
 
   const deleteProduct = async (id) => {
     if (!confirm("Xóa sản phẩm này?")) return;
-    await fetch(`/api/store/admin/products/${id}`, { method: "DELETE" });
+    try {
+      const res = await fetch(`/api/store/admin/products/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Failed to delete product");
+      }
+    } catch { setError("Network error"); }
     await loadProducts();
   };
 
   const fulfillOrder = async (id) => {
-    await fetch(`/api/store/admin/orders/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "fulfilled" }),
-    });
+    try {
+      const res = await fetch(`/api/store/admin/orders/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "fulfill" }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Failed to fulfill order");
+      }
+    } catch { setError("Network error"); }
     await loadOrders();
   };
 
@@ -190,7 +208,7 @@ export default function StorePage() {
                       value={form.priceCredits}
                       onChange={(e) => setForm({ ...form, priceCredits: e.target.value })}
                       className="w-full px-3 py-2 rounded-lg bg-surface-1 border border-border-subtle text-sm text-text-main"
-                      required min="0"
+                      required min="0" step="1"
                     />
                   </div>
                   <div>
@@ -272,7 +290,7 @@ export default function StorePage() {
                         {p.source !== "local" && <span className="px-2 py-0.5 rounded text-xs bg-blue-500/10 text-blue-600">external</span>}
                       </div>
                       <div className="text-xs text-text-muted mt-1">
-                        {p.priceCredits.toLocaleString()} credits · {p.deliveryMode}
+                        {(p.priceCredits ?? 0).toLocaleString()} credits · {p.deliveryMode}
                         {p.stock !== null && ` · stock: ${p.stock}`}
                         {p.description && ` · ${p.description.slice(0, 60)}`}
                       </div>
