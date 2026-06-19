@@ -5,10 +5,26 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 
-const DATA_DIR = process.env.DATA_DIR
-  || (process.platform === "win32"
+function resolveDataDir() {
+  const raw = (process.env.DATA_DIR || "").split("\n")[0].split("\r")[0].trim();
+  if (raw && raw.length <= 512) {
+    try {
+      fs.mkdirSync(raw, { recursive: true });
+      return raw;
+    } catch {}
+  }
+  if (process.platform !== "win32") {
+    try {
+      fs.mkdirSync("/app/data", { recursive: true });
+      return "/app/data";
+    } catch {}
+  }
+  return process.platform === "win32"
     ? path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "9router")
-    : path.join(os.homedir(), ".9router"));
+    : path.join(os.homedir(), ".9router");
+}
+
+const DATA_DIR = resolveDataDir();
 
 const CACHE_FILE = path.join(DATA_DIR, "mitm", "aliases.json");
 

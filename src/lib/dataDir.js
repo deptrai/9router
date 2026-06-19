@@ -12,18 +12,32 @@ function defaultDir() {
 }
 
 export function getDataDir() {
-  const configured = process.env.DATA_DIR;
+  let configured = process.env.DATA_DIR;
   if (!configured) return defaultDir();
-  try {
-    fs.mkdirSync(configured, { recursive: true });
-    return configured;
-  } catch (e) {
-    if (e?.code === "EACCES" || e?.code === "EPERM") {
-      console.warn(`[DATA_DIR] '${configured}' not writable → fallback ~/.${APP_NAME}`);
-      return defaultDir();
-    }
-    throw e;
+  configured = configured.split("\n")[0].split("\r")[0].trim();
+
+  const candidates = [];
+  if (configured && configured.length <= 512 && configured !== "/app/data") {
+    candidates.push(configured);
   }
+  if (process.platform !== "win32") {
+    candidates.push("/app/data");
+  }
+
+  for (const dir of candidates) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      return dir;
+    } catch (e) {
+      if (e?.code !== "EACCES" && e?.code !== "EPERM" && e?.code !== "ENOENT" && e?.code !== "ENAMETOOLONG") {
+        throw e;
+      }
+      console.warn(`[DATA_DIR] '${dir}' not usable`);
+    }
+  }
+
+  console.warn(`[DATA_DIR] all paths failed → fallback ~/.${APP_NAME}`);
+  return defaultDir();
 }
 
 export const DATA_DIR = getDataDir();
