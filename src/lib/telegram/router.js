@@ -17,19 +17,14 @@ import { getBalanceByBucket, getLedgerByUser } from "../db/repos/creditLedgerRep
 import { getApiKeysByUser, createApiKey, updateApiKey } from "../db/repos/apiKeysRepo.js";
 import { getPlanById } from "../db/repos/plansRepo.js";
 
-// Inline keyboard menu chính (AC1)
-const MAIN_MENU = {
-  inline_keyboard: [
-    [
-      { text: "🛍 Sản phẩm", callback_data: "cmd:products" },
-      { text: "💰 Ví", callback_data: "cmd:wallet" },
-    ],
-    [
-      { text: "📦 Đơn hàng", callback_data: "cmd:orders" },
-      { text: "🔑 API", callback_data: "cmd:api" },
-      { text: "🆘 Hỗ trợ", callback_data: "cmd:support" },
-    ],
+// Persistent reply keyboard — luôn hiện ở bottom (như các bot shop khác)
+const PERSISTENT_MENU = {
+  keyboard: [
+    [{ text: "🛍 Sản phẩm" }, { text: "💰 Ví" }],
+    [{ text: "📦 Đơn hàng" }, { text: "🔑 API" }, { text: "🆘 Hỗ trợ" }],
   ],
+  resize_keyboard: true,
+  is_persistent: true,
 };
 
 const BACK_TO_MENU_ROW = [{ text: "🏠 Menu", callback_data: "cmd:menu" }];
@@ -58,7 +53,7 @@ async function handleStart(update) {
     await sendMessage(
       chatId,
       `${greeting} 👋\n\nChọn chức năng bên dưới:`,
-      { reply_markup: MAIN_MENU }
+      { reply_markup: PERSISTENT_MENU }
     );
   } catch (e) {
     console.error("[telegram/router] /start lỗi:", e?.message);
@@ -557,12 +552,23 @@ async function handleOrders(chatId, telegramId) {
 export async function handleUpdate(update) {
   if (!update || typeof update !== "object") return;
 
-  // ── Xử lý message text (lệnh bot) ──
+  // ── Xử lý message text (lệnh bot + reply keyboard) ──
   if (update.message?.text) {
     const rawText = update.message.text.trim();
-    // Cắt bot-name suffix và arguments: /start@MyBot arg → /start
-    const command = rawText.split("@")[0].split(" ")[0].toLowerCase();
     const chatId = update.message.chat.id;
+    const telegramId = String(update.message.from?.id);
+
+    // Reply keyboard text mapping
+    const replyKeyboardMap = {
+      "🛍 Sản phẩm": "/products",
+      "💰 Ví": "/wallet",
+      "📦 Đơn hàng": "/orders",
+      "🔑 API": "/api",
+      "🆘 Hỗ trợ": "/support",
+    };
+    const mapped = replyKeyboardMap[rawText];
+    // Cắt bot-name suffix và arguments: /start@MyBot arg → /start
+    const command = mapped || rawText.split("@")[0].split(" ")[0].toLowerCase();
 
     switch (command) {
       case "/start":
@@ -572,13 +578,13 @@ export async function handleUpdate(update) {
         await handleProducts(chatId);
         return;
       case "/orders":
-        await handleOrders(chatId, String(update.message.from?.id));
+        await handleOrders(chatId, telegramId);
         return;
       case "/wallet":
-        await handleWallet(chatId, String(update.message.from?.id));
+        await handleWallet(chatId, telegramId);
         return;
       case "/api":
-        await handleApi(chatId, String(update.message.from?.id));
+        await handleApi(chatId, telegramId);
         return;
       case "/support":
         await handleSupport(chatId);
@@ -603,7 +609,7 @@ export async function handleUpdate(update) {
     await answerCallbackQuery(cq.id).catch(() => {});
 
     if (data === "cmd:menu") {
-      await sendMessage(chatId, "Chọn chức năng bên dưới:", { reply_markup: MAIN_MENU });
+      await sendMessage(chatId, "Chọn chức năng bên dưới:", { reply_markup: PERSISTENT_MENU });
       return;
     }
     if (data === "cmd:products") {

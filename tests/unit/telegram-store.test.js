@@ -179,9 +179,9 @@ describe("handleUpdate /start — AC1 user linking", () => {
     expect(user.email).toBe("telegram_111@placeholder.local");
     expect(user.displayName).toBe("Alice");
     expect(sendMessage).toHaveBeenCalled();
-    // Menu chính phải có inline_keyboard
+    // Menu chính dùng persistent reply keyboard
     const callArgs = vi.mocked(sendMessage).mock.calls[0];
-    expect(callArgs[2]?.reply_markup?.inline_keyboard).toBeTruthy();
+    expect(callArgs[2]?.reply_markup?.keyboard).toBeTruthy();
   });
 
   it("link user hiện có khi telegramId đã tồn tại", async () => {
@@ -208,12 +208,14 @@ describe("handleUpdate /start — AC1 user linking", () => {
 
     const calls = vi.mocked(sendMessage).mock.calls;
     expect(calls.length).toBeGreaterThan(0);
-    const keyboard = calls[0][2]?.reply_markup?.inline_keyboard;
+    const keyboard = calls[0][2]?.reply_markup?.keyboard;
     expect(keyboard).toBeTruthy();
-    const allButtons = keyboard.flat();
-    const cbData = allButtons.map((b) => b.callback_data);
-    expect(cbData).toContain("cmd:products");
-    expect(cbData).toContain("cmd:wallet");
+    const allButtons = keyboard.flat().map((b) => b.text);
+    expect(allButtons).toContain("🛍 Sản phẩm");
+    expect(allButtons).toContain("💰 Ví");
+    expect(allButtons).toContain("📦 Đơn hàng");
+    expect(allButtons).toContain("🔑 API");
+    expect(allButtons).toContain("🆘 Hỗ trợ");
   });
 });
 
