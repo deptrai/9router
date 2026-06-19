@@ -12,13 +12,15 @@ function defaultDir() {
 }
 
 function getDataDir() {
-  const configured = process.env.DATA_DIR;
+  let configured = process.env.DATA_DIR;
   if (!configured) return defaultDir();
+  configured = configured.split("\n")[0].split("\r")[0].trim();
+  if (!configured || configured.length > 512) return defaultDir();
   try {
     fs.mkdirSync(configured, { recursive: true });
     return configured;
   } catch (e) {
-    if (e?.code === "EACCES" || e?.code === "EPERM") {
+    if (e?.code === "EACCES" || e?.code === "EPERM" || e?.code === "ENAMETOOLONG") {
       console.warn(`[DATA_DIR] '${configured}' not writable → fallback ~/.${APP_NAME}`);
       return defaultDir();
     }

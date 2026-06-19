@@ -5,7 +5,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 
-const DATA_DIR = process.env.DATA_DIR
+const DATA_DIR = (process.env.DATA_DIR || "").split("\n")[0].split("\r")[0].trim()
   || (process.platform === "win32"
     ? path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "9router")
     : path.join(os.homedir(), ".9router"));
