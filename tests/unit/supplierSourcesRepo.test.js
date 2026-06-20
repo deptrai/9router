@@ -41,7 +41,7 @@ afterEach(() => {
 
 describe("supplierSourcesRepo — enums + create/validate (AC1)", () => {
   it("exports canonical enums", () => {
-    expect(repo.ADAPTER_TYPES).toEqual(["supplier_api", "channel_feed", "polling_feed", "webhook"]);
+    expect(repo.ADAPTER_TYPES).toEqual(["supplier_api", "channel_feed", "polling_feed", "webhook", "telegram_bot_scraper"]);
     expect(repo.SYNC_MODES).toEqual(["webhook", "polling"]);
     expect(repo.SOURCE_STATUSES).toEqual(["active", "degraded", "unhealthy", "unsupported"]);
   });

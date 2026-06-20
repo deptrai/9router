@@ -38,10 +38,15 @@ let accounts = [];
 let currentIndex = 0;
 
 function loadAccounts() {
-  if (process.env.RELAY_ACCOUNTS) {
-    accounts = JSON.parse(process.env.RELAY_ACCOUNTS);
-  } else if (fs.existsSync(ACCOUNTS_FILE)) {
-    accounts = JSON.parse(fs.readFileSync(ACCOUNTS_FILE, "utf8"));
+  try {
+    if (process.env.RELAY_ACCOUNTS) {
+      accounts = JSON.parse(process.env.RELAY_ACCOUNTS);
+    } else if (fs.existsSync(ACCOUNTS_FILE)) {
+      accounts = JSON.parse(fs.readFileSync(ACCOUNTS_FILE, "utf8"));
+    }
+  } catch (e) {
+    console.error("[relay] Failed to parse accounts config:", e.message);
+    accounts = [];
   }
   for (const acc of accounts) {
     acc.healthy = acc.healthy !== false;
@@ -75,38 +80,46 @@ function markUnhealthy(acc, reason) {
 
 async function initClient(acc) {
   if (acc.client) return acc.client;
+  if (acc._initPromise) return acc._initPromise;
 
-  const { TelegramClient } = await import("telegram");
-  const { StringSession } = await import("telegram/sessions/index.js");
+  acc._initPromise = (async () => {
+    const { TelegramClient } = await import("telegram");
+    const { StringSession } = await import("telegram/sessions/index.js");
 
-  const session = new StringSession(acc.session || "");
-  const client = new TelegramClient(session, API_ID, API_HASH, {
-    connectionRetries: 3,
-  });
-
-  if (!acc.session) {
-    // Interactive login — chỉ cần lần đầu
-    const readline = await import("node:readline");
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    const ask = (q) => new Promise((r) => rl.question(q, r));
-
-    await client.start({
-      phoneNumber: () => Promise.resolve(acc.phone),
-      password: () => ask(`[${acc.phone}] 2FA password: `),
-      phoneCode: () => ask(`[${acc.phone}] OTP code: `),
-      onError: (e) => console.error("[relay] login error:", e.message),
+    const session = new StringSession(acc.session || "");
+    const client = new TelegramClient(session, API_ID, API_HASH, {
+      connectionRetries: 3,
     });
-    rl.close();
 
-    acc.session = client.session.save();
-    saveAccounts();
-    console.log(`[relay] ${acc.phone} logged in, session saved.`);
-  } else {
-    await client.connect();
-  }
+    if (!acc.session) {
+      const readline = await import("node:readline");
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      const ask = (q) => new Promise((r) => rl.question(q, r));
 
-  acc.client = client;
-  return client;
+      await client.start({
+        phoneNumber: () => Promise.resolve(acc.phone),
+        password: () => ask(`[${acc.phone}] 2FA password: `),
+        phoneCode: () => ask(`[${acc.phone}] OTP code: `),
+        onError: (e) => console.error("[relay] login error:", e.message),
+      });
+      rl.close();
+
+      acc.session = client.session.save();
+      saveAccounts();
+      console.log(`[relay] ${acc.phone} logged in, session saved.`);
+    } else {
+      await client.connect();
+    }
+
+    acc.client = client;
+    try {
+      const me = await client.getMe();
+      acc.userId = String(me.id);
+    } catch {}
+    return client;
+  })();
+
+  return acc._initPromise;
 }
 
 function saveAccounts() {
@@ -119,13 +132,15 @@ async function sendAndReceive(acc, botUsername, command) {
   acc.lastUsed = Date.now();
 
   const entity = await client.getEntity(botUsername);
+  const sendTime = Math.floor(Date.now() / 1000); // Unix seconds (Telegram message date format)
   await client.sendMessage(entity, { message: command });
 
+  // D2 fix: wait then filter by timestamp — only messages after sendTime
   await new Promise((r) => setTimeout(r, WAIT_RESPONSE_MS));
 
-  const messages = await client.getMessages(entity, { limit: 5 });
+  const messages = await client.getMessages(entity, { limit: 10 });
   const botMessages = messages
-    .filter((m) => m.fromId?.userId?.toString() !== acc.userId && m.message)
+    .filter((m) => m.date >= sendTime && m.fromId?.userId?.toString() !== acc.userId && m.message)
     .map((m) => m.message);
 
   return botMessages;

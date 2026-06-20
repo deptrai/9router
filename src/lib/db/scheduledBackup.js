@@ -1,13 +1,14 @@
 /**
  * scheduledBackup.js — Daily SQLite database backup
  *
- * Copies the live database to BACKUPS_DIR with timestamped filename.
+ * Uses SQLite VACUUM INTO for WAL-safe consistent snapshots.
  * Retains last N backups (BACKUP_KEEP_COUNT env, default 7).
  * Called from setInterval in initializeApp (24h cadence).
  */
 
 import fs from "node:fs";
 import { DATA_FILE, BACKUPS_DIR, ensureDirs } from "./paths.js";
+import { getAdapter } from "./driver.js";
 
 const KEEP_COUNT = () => Number(process.env.BACKUP_KEEP_COUNT || 7);
 
@@ -24,7 +25,10 @@ export async function runScheduledBackup() {
   const backupName = `data.sqlite.daily-${stamp}`;
   const dest = `${BACKUPS_DIR}/${backupName}`;
 
-  fs.copyFileSync(DATA_FILE, dest);
+  // F3 fix: Use VACUUM INTO for WAL-safe consistent snapshot
+  // (copyFileSync misses uncommitted WAL data)
+  const db = await getAdapter();
+  db.exec(`VACUUM INTO '${dest.replace(/'/g, "''")}'`);
   console.log(`[scheduledBackup] Backup created: ${backupName}`);
 
   // Prune old daily backups

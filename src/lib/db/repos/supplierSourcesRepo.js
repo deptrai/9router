@@ -7,7 +7,7 @@ import { encrypt, decrypt } from "../../crypto/secretBox.js";
 import { getAdapter as getSupplierAdapter } from "../../store/suppliers/index.js";
 
 // Enum tập trung (E8) — single source of truth, import thay vì hardcode string.
-export const ADAPTER_TYPES = ["supplier_api", "channel_feed", "polling_feed", "webhook"];
+export const ADAPTER_TYPES = ["supplier_api", "channel_feed", "polling_feed", "webhook", "telegram_bot_scraper"];
 export const SYNC_MODES = ["webhook", "polling"];
 export const SOURCE_STATUSES = ["active", "degraded", "unhealthy", "unsupported"];
 

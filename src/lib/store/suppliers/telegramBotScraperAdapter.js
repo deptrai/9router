@@ -62,6 +62,11 @@ export async function fetchCatalog(source, auth = {}) {
       vndPerCredit: auth.vndPerCredit || 1000,
     });
 
+    // D1: 0 products parsed → return error to trigger health degradation
+    if (!products.length) {
+      return { products: [], error: "Parser returned 0 products from bot response (format mismatch or empty catalog)" };
+    }
+
     return { products };
   } catch (err) {
     return { products: [], error: err.message };
@@ -76,6 +81,9 @@ export function normalizeProduct(raw) {
     stock: raw.stock ?? null,
     description: raw.description || null,
     isActive: raw.isActive !== false,
+    deliveryMode: raw.deliveryMode || "admin_fulfill",
+    targetType: raw.targetType || "telegram_bot_scraper",
+    targetId: raw.targetId || null,
   };
 }
 
@@ -123,7 +131,7 @@ export function parseTelegramCatalog(text, { botUsername = "", vndPerCredit = 10
     // Description: everything between name line and price line
     const descLines = trimmed.split("\n").slice(1);
     const descEnd = descLines.findIndex((l) => /💵|📦\s*(⛔|🟡|✅|Còn)|🎁|┄/.test(l));
-    const description = descLines.slice(0, descEnd > 0 ? descEnd : undefined)
+    const description = descLines.slice(0, descEnd >= 0 ? descEnd : undefined)
       .filter((l) => l.trim() && !l.match(/^[-─┄━]+$/))
       .join("\n").trim() || null;
 
