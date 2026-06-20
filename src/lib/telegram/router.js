@@ -16,6 +16,7 @@ import { EXTERNAL_SOURCE } from "../store/catalogSync.js";
 import { getBalanceByBucket, getLedgerByUser } from "../db/repos/creditLedgerRepo.js";
 import { getApiKeysByUser, createApiKey, updateApiKey } from "../db/repos/apiKeysRepo.js";
 import { getPlanById } from "../db/repos/plansRepo.js";
+import { isConfigured as isVndConfigured, generateMemo, creditsToVnd, generateVietQRUrl, getBankInfo, getPaymentTimeoutMs } from "../payment/vndBank.js";
 
 // Persistent reply keyboard — luôn hiện ở bottom (như các bot shop khác)
 const PERSISTENT_MENU = {
@@ -313,6 +314,15 @@ async function handleBuyExecute(chatId, telegramId, productId, callbackQueryId) 
       return;
     }
     if (e instanceof CheckoutError) {
+      if (e.code === "INSUFFICIENT_CREDITS") {
+        await sendMessage(chatId, "💸 Số dư không đủ. Chọn phương thức nạp:", {
+          reply_markup: { inline_keyboard: [
+            [{ text: "🏦 Nạp VND", callback_data: "topup:vnd" }, { text: "💰 Nạp Crypto", callback_data: "topup:crypto" }],
+            BACK_TO_MENU_ROW,
+          ] },
+        }).catch(() => {});
+        return;
+      }
       await sendMessage(chatId, CHECKOUT_ERROR_MESSAGES[e.code] || "Mua hàng thất bại.").catch(() => {});
       return;
     }
@@ -600,6 +610,100 @@ async function handleRefList(chatId, telegramId) {
   }
 }
 
+// ─── /topup handler (Story 2.39, AC5, AC6) ───────────────────────────────────
+
+async function handleTopup(chatId, telegramId) {
+  try {
+    const user = await getUserByTelegramId(telegramId);
+    if (!user) { await sendMessage(chatId, "Vui lòng /start trước."); return; }
+
+    const buttons = [];
+    if (isVndConfigured()) buttons.push([{ text: "🏦 Nạp VND (chuyển khoản)", callback_data: "topup:vnd" }]);
+    buttons.push([{ text: "💰 Nạp Crypto", callback_data: "topup:crypto" }]);
+    buttons.push(BACK_TO_MENU_ROW);
+
+    await sendMessage(chatId, "<b>💳 Nạp tiền</b>\n\nChọn phương thức:", {
+      reply_markup: { inline_keyboard: buttons },
+    });
+  } catch (e) {
+    console.error("[telegram/router] /topup lỗi:", e?.message);
+    await sendMessage(chatId, "Có lỗi xảy ra. Thử lại hoặc /support.").catch(() => {});
+  }
+}
+
+async function handleTopupVnd(chatId, telegramId, creditsAmount) {
+  try {
+    const user = await getUserByTelegramId(telegramId);
+    if (!user) { await sendMessage(chatId, "Vui lòng /start trước."); return; }
+
+    if (!isVndConfigured()) {
+      await sendMessage(chatId, "Phương thức VND chưa được cấu hình. Dùng Crypto hoặc liên hệ /support.");
+      return;
+    }
+
+    const credits = creditsAmount || 100;
+    const amountVnd = creditsToVnd(credits);
+    const memo = generateMemo();
+
+    // Create payment record
+    const { v4: uuidv4 } = await import("uuid");
+    const { getAdapter } = await import("../db/driver.js");
+    const db = await getAdapter();
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + getPaymentTimeoutMs()).toISOString();
+
+    db.run(
+      `INSERT INTO payments (id, userId, method, status, credits, amountVnd, memo, network, coin, amountExpected, expiresAt, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, user.id, "vnd_bank", "pending", credits, amountVnd, memo, "VND", "VND", amountVnd, expiresAt, now, now]
+    );
+
+    const bankInfo = getBankInfo();
+    const qrUrl = generateVietQRUrl({ amount: amountVnd, memo });
+
+    const lines = [
+      "<b>🏦 Nạp VND — Chuyển khoản ngân hàng</b>",
+      "",
+      `💰 Số credits: <b>${credits}</b>`,
+      `💵 Số tiền: <b>${amountVnd.toLocaleString()}đ</b>`,
+      "",
+      `🏦 Ngân hàng: <b>${bankInfo.bankName}</b>`,
+      `💳 STK: <code>${bankInfo.accountNumber}</code>`,
+      `📝 Nội dung CK: <code>${memo}</code>`,
+      "",
+      `⏱ Hết hạn sau 30 phút.`,
+      `✅ Credits sẽ được cộng tự động sau khi xác nhận.`,
+    ];
+
+    await sendMessage(chatId, lines.join("\n"));
+    // Send QR as URL button
+    await sendMessage(chatId, "👇 Quét mã QR bên dưới để chuyển khoản:", {
+      reply_markup: { inline_keyboard: [
+        [{ text: "📱 Mở QR Code", url: qrUrl }],
+        BACK_TO_MENU_ROW,
+      ] },
+    });
+  } catch (e) {
+    console.error("[telegram/router] topup:vnd lỗi:", e?.message);
+    await sendMessage(chatId, "Có lỗi khi tạo lệnh nạp. Thử lại hoặc /support.").catch(() => {});
+  }
+}
+
+async function handleTopupCrypto(chatId, telegramId) {
+  try {
+    const baseUrl = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "";
+    await sendMessage(chatId, "💰 Nạp Crypto — vui lòng truy cập dashboard để thanh toán:", {
+      reply_markup: { inline_keyboard: [
+        [{ text: "🌐 Mở Dashboard Nạp Tiền", url: `${baseUrl}/dashboard/credits` }],
+        BACK_TO_MENU_ROW,
+      ] },
+    });
+  } catch (e) {
+    console.error("[telegram/router] topup:crypto lỗi:", e?.message);
+    await sendMessage(chatId, "Có lỗi xảy ra. Thử lại hoặc /support.").catch(() => {});
+  }
+}
+
 // ─── /orders — danh sách đơn hàng của user (AC4, T6) ─────────────────────────
 
 const ORDER_STATUS_LABEL = {
@@ -667,6 +771,7 @@ export async function handleUpdate(update) {
       "🔑 API": "/api",
       "🆘 Hỗ trợ": "/support",
       "👥 Giới thiệu": "/ref",
+      "💳 Nạp tiền": "/topup",
     };
     const mapped = replyKeyboardMap[rawText];
     // Cắt bot-name suffix và arguments: /start@MyBot arg → /start
@@ -693,6 +798,9 @@ export async function handleUpdate(update) {
         return;
       case "/ref":
         await handleRef(chatId, telegramId);
+        return;
+      case "/topup":
+        await handleTopup(chatId, telegramId);
         return;
       default:
         await sendMessage(
@@ -739,6 +847,14 @@ export async function handleUpdate(update) {
     }
     if (data === "ref:list") {
       await handleRefList(chatId, String(cq.from.id));
+      return;
+    }
+    if (data === "topup:vnd") {
+      await handleTopupVnd(chatId, String(cq.from.id), 100);
+      return;
+    }
+    if (data === "topup:crypto") {
+      await handleTopupCrypto(chatId, String(cq.from.id));
       return;
     }
     if (data === "apicreate") {

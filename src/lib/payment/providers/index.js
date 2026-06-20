@@ -1,14 +1,13 @@
 /**
- * Payment provider registry — Story 2.9 Task 2 (AC1)
+ * Payment provider registry — Story 2.9 Task 2 (AC1), Story 2.39 (VND bank)
  */
 import * as nowpaymentsAdapter from "../nowpayments-adapter.js";
 import * as bitcart from "../bitcart.js";
+import * as vndBank from "../vndBank.js";
 
-const KNOWN_PROVIDERS = new Set(["auto", "nowpayments", "bitcart"]);
+const KNOWN_PROVIDERS = new Set(["auto", "nowpayments", "bitcart", "vnd_bank"]);
 
 function bitcartConfigured() {
-  // Require the webhook secret too: without it createInvoice throws and IPNs are
-  // rejected 401, so a "configured" Bitcart that can't settle is not really usable.
   return Boolean(
     process.env.BITCART_BASE_URL &&
     process.env.BITCART_API_KEY &&
@@ -19,8 +18,6 @@ function bitcartConfigured() {
 
 /**
  * Select the active crypto payment provider.
- * @param {string} [override] - optional provider name (e.g. from cryptoPayment KV config)
- *   that takes precedence over the CRYPTO_PAYMENT_PROVIDER env var.
  */
 export function getActiveProvider(override) {
   const raw = (override || process.env.CRYPTO_PAYMENT_PROVIDER || "auto").toLowerCase();
@@ -30,7 +27,29 @@ export function getActiveProvider(override) {
 
   if (explicit === "nowpayments") return nowpaymentsAdapter;
   if (explicit === "bitcart") return bitcart;
+  if (explicit === "vnd_bank") return vndBank;
   if (process.env.NOWPAYMENTS_API_KEY) return nowpaymentsAdapter;
   if (bitcartConfigured()) return bitcart;
   return null;
+}
+
+/**
+ * Get VND bank provider (independent of crypto provider selection).
+ */
+export function getVndBankProvider() {
+  return vndBank.isConfigured() ? vndBank : null;
+}
+
+/**
+ * Get available payment methods for topup.
+ */
+export function getAvailableMethods() {
+  const methods = [];
+  if (bitcartConfigured() || process.env.NOWPAYMENTS_API_KEY) {
+    methods.push("crypto");
+  }
+  if (vndBank.isConfigured()) {
+    methods.push("vnd_bank");
+  }
+  return methods;
 }
