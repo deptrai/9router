@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
+import crypto from "node:crypto";
 import { getAdapter } from "../driver.js";
 import { recordCreditTxn } from "./creditLedgerRepo.js";
 
@@ -20,6 +21,8 @@ function rowToUser(row, includePasswordHash = false) {
     allowCreditOverflow: row.allowCreditOverflow === 1 || row.allowCreditOverflow === true,
     googleSub: row.googleSub ?? null,
     telegramId: row.telegramId ?? null,
+    refCode: row.refCode ?? null,
+    referredBy: row.referredBy ?? null,
     authProviders: [
       (row.passwordHash && row.passwordHash !== "!") ? "password" : null,
       row.googleSub ? "google" : null,
@@ -50,12 +53,13 @@ export async function createUser(email, passwordHash, displayName) {
   const id = uuidv4();
   const now = new Date().toISOString();
   const effectiveHash = passwordHash || "!"; // "!" = social-only sentinel (not a valid bcrypt hash)
+  const refCode = crypto.randomBytes(4).toString("hex");
   db.run(
-    `INSERT INTO users(id, email, passwordHash, displayName, isActive, isEmailVerified, creditsBalance, createdAt, updatedAt)
-     VALUES(?, ?, ?, ?, 1, 0, 0, ?, ?)`,
-    [id, email, effectiveHash, displayName || null, now, now]
+    `INSERT INTO users(id, email, passwordHash, displayName, isActive, isEmailVerified, creditsBalance, refCode, createdAt, updatedAt)
+     VALUES(?, ?, ?, ?, 1, 0, 0, ?, ?, ?)`,
+    [id, email, effectiveHash, displayName || null, refCode, now, now]
   );
-  return { id, email, displayName: displayName || null, isActive: true, isEmailVerified: false, creditsBalance: 0, hasPassword: !!passwordHash, createdAt: now, updatedAt: now };
+  return { id, email, displayName: displayName || null, isActive: true, isEmailVerified: false, creditsBalance: 0, refCode, hasPassword: !!passwordHash, createdAt: now, updatedAt: now };
 }
 
 export async function getUserByEmail(email) {
@@ -87,8 +91,8 @@ export async function updateUser(id, data) {
 
     const merged = { ...row, ...clean, updatedAt: now };
     db.run(
-      `UPDATE users SET email = ?, passwordHash = ?, displayName = ?, isActive = ?, isEmailVerified = ?, creditsBalance = ?, planId = ?, planExpiresAt = ?, allowCreditOverflow = ?, googleSub = ?, telegramId = ?, authProviders = ?, updatedAt = ? WHERE id = ?`,
-      [merged.email, merged.passwordHash, merged.displayName, merged.isActive ? 1 : 0, merged.isEmailVerified ? 1 : 0, merged.creditsBalance, merged.planId ?? null, merged.planExpiresAt ?? null, merged.allowCreditOverflow ? 1 : 0, merged.googleSub ?? null, merged.telegramId ?? null, merged.authProviders ?? null, merged.updatedAt, id]
+      `UPDATE users SET email = ?, passwordHash = ?, displayName = ?, isActive = ?, isEmailVerified = ?, creditsBalance = ?, planId = ?, planExpiresAt = ?, allowCreditOverflow = ?, googleSub = ?, telegramId = ?, authProviders = ?, refCode = ?, referredBy = ?, updatedAt = ? WHERE id = ?`,
+      [merged.email, merged.passwordHash, merged.displayName, merged.isActive ? 1 : 0, merged.isEmailVerified ? 1 : 0, merged.creditsBalance, merged.planId ?? null, merged.planExpiresAt ?? null, merged.allowCreditOverflow ? 1 : 0, merged.googleSub ?? null, merged.telegramId ?? null, merged.authProviders ?? null, merged.refCode ?? null, merged.referredBy ?? null, merged.updatedAt, id]
     );
     result = rowToUser({ ...merged, isActive: merged.isActive }, false);
   });
@@ -129,4 +133,25 @@ export async function getUserByTelegramId(telegramId) {
   const db = await getAdapter();
   const row = db.get(`SELECT * FROM users WHERE telegramId = ?`, [telegramId]);
   return rowToUser(row, true);
+}
+
+export async function getUserByRefCode(refCode) {
+  if (!refCode) return null;
+  const db = await getAdapter();
+  const row = db.get(`SELECT * FROM users WHERE refCode = ?`, [refCode]);
+  return rowToUser(row, false);
+}
+
+export async function getReferrals(userId, { limit = 10, offset = 0 } = {}) {
+  const db = await getAdapter();
+  return db.all(
+    `SELECT id, displayName, email, createdAt FROM users WHERE referredBy = ? ORDER BY createdAt DESC LIMIT ? OFFSET ?`,
+    [userId, limit, offset]
+  );
+}
+
+export async function getReferralCount(userId) {
+  const db = await getAdapter();
+  const row = db.get(`SELECT COUNT(*) as count FROM users WHERE referredBy = ?`, [userId]);
+  return row?.count ?? 0;
 }

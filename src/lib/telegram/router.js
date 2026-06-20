@@ -6,7 +6,7 @@
  */
 
 import { sendMessage, answerCallbackQuery } from "./botClient.js";
-import { getUserByTelegramId, createUser, updateUser } from "../db/repos/usersRepo.js";
+import { getUserByTelegramId, createUser, updateUser, getUserByRefCode, getReferrals, getReferralCount } from "../db/repos/usersRepo.js";
 import { listActiveProducts, getProductById } from "../db/repos/productsRepo.js";
 import { listOrdersByUser } from "../db/repos/ordersRepo.js";
 import { getDecryptedPayload, countAvailableCredentials, productHasInventory } from "../db/repos/credentialsRepo.js";
@@ -22,6 +22,7 @@ const PERSISTENT_MENU = {
   keyboard: [
     [{ text: "🛍 Sản phẩm" }, { text: "💰 Ví" }],
     [{ text: "📦 Đơn hàng" }, { text: "🔑 API" }, { text: "🆘 Hỗ trợ" }],
+    [{ text: "👥 Giới thiệu" }],
   ],
   resize_keyboard: true,
   is_persistent: true,
@@ -36,17 +37,33 @@ async function handleStart(update) {
   const telegramId = String(from.id);
   const chatId = chat.id;
 
+  // Extract ref deeplink: /start ref_ABCD1234
+  const rawText = update.message.text || "";
+  const refMatch = rawText.match(/\/start\s+ref_([a-f0-9]+)/i);
+  const refCode = refMatch?.[1] || null;
+
   try {
     let user = await getUserByTelegramId(telegramId);
+    let isNewUser = false;
 
     if (!user) {
-      // Auto-create placeholder user — reuse pattern story 2.22 (D3=A)
+      isNewUser = true;
       const displayName =
         [from.first_name, from.last_name].filter(Boolean).join(" ").trim() ||
         `tg_${telegramId}`;
       const placeholderEmail = `telegram_${telegramId}@placeholder.local`;
       user = await createUser(placeholderEmail, null, displayName);
       await updateUser(user.id, { telegramId });
+    }
+
+    // Set referredBy only for new users with valid refCode
+    if (isNewUser && refCode && !user.referredBy) {
+      try {
+        const referrer = await getUserByRefCode(refCode);
+        if (referrer && referrer.id !== user.id) {
+          await updateUser(user.id, { referredBy: referrer.id });
+        }
+      } catch {}
     }
 
     const greeting = user.displayName ? `Xin chào <b>${user.displayName}</b>!` : "Xin chào!";
@@ -499,6 +516,90 @@ async function handleSupport(chatId) {
   }
 }
 
+// ─── /ref handler (Story 2.37, AC6, AC9) ─────────────────────────────────────
+
+async function handleRef(chatId, telegramId) {
+  try {
+    const user = await getUserByTelegramId(telegramId);
+    if (!user) {
+      await sendMessage(chatId, "Vui lòng /start trước.");
+      return;
+    }
+
+    const referredCount = await getReferralCount(user.id);
+    const { getLedgerByUser } = await import("../db/repos/creditLedgerRepo.js");
+    const commissionTxns = await getLedgerByUser(user.id, { type: "affiliate_commission", limit: 1000 });
+    const storeCommTxns = await getLedgerByUser(user.id, { type: "affiliate_store_commission", limit: 1000 });
+    const totalCommission = [...commissionTxns, ...storeCommTxns].reduce((sum, t) => sum + (t.amount || 0), 0);
+
+    const baseUrl = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "";
+    const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || "";
+
+    const lines = [
+      "<b>👥 Chương trình giới thiệu</b>",
+      "",
+      `🔗 Link giới thiệu:`,
+      baseUrl ? `<code>${baseUrl}/register?ref=${user.refCode}</code>` : "",
+      botUsername ? `<code>https://t.me/${botUsername}?start=ref_${user.refCode}</code>` : "",
+      "",
+      `👤 Đã giới thiệu: <b>${referredCount}</b> người`,
+      `💰 Tổng hoa hồng: <b>${totalCommission.toLocaleString()}</b> credits`,
+      "",
+      `📌 Chia sẻ link trên → bạn nhận hoa hồng khi họ nạp tiền hoặc mua hàng!`,
+    ].filter(Boolean);
+
+    const buttons = [
+      [{ text: "📋 Danh sách người giới thiệu", callback_data: "ref:list" }],
+      BACK_TO_MENU_ROW,
+    ];
+
+    await sendMessage(chatId, lines.join("\n"), { reply_markup: { inline_keyboard: buttons } });
+  } catch (e) {
+    console.error("[telegram/router] /ref lỗi:", e?.message);
+    await sendMessage(chatId, "Có lỗi xảy ra. Thử lại hoặc /support.").catch(() => {});
+  }
+}
+
+async function handleRefList(chatId, telegramId) {
+  try {
+    const user = await getUserByTelegramId(telegramId);
+    if (!user) {
+      await sendMessage(chatId, "Vui lòng /start trước.");
+      return;
+    }
+
+    const referrals = await getReferrals(user.id, { limit: 10 });
+    if (!referrals.length) {
+      await sendMessage(chatId, "Chưa có ai đăng ký qua link giới thiệu của bạn.", { reply_markup: { inline_keyboard: [BACK_TO_MENU_ROW] } });
+      return;
+    }
+
+    const { getLedgerByUser } = await import("../db/repos/creditLedgerRepo.js");
+    const lines = ["<b>📋 Người bạn giới thiệu</b>", ""];
+
+    for (let i = 0; i < referrals.length; i++) {
+      const r = referrals[i];
+      const name = r.displayName || r.email?.split("@")[0] || "Ẩn danh";
+      const date = r.createdAt ? r.createdAt.slice(0, 10) : "";
+      // Sum commission from this referred user
+      const allComm = await getLedgerByUser(user.id, { type: "affiliate_commission", limit: 1000 });
+      const allStoreComm = await getLedgerByUser(user.id, { type: "affiliate_store_commission", limit: 1000 });
+      const fromThisUser = [...allComm, ...allStoreComm].filter((t) => t.note?.includes(name)).reduce((s, t) => s + t.amount, 0);
+      lines.push(`${i + 1}. <b>${name}</b> — ${date} — +${fromThisUser.toLocaleString()} cr`);
+    }
+
+    const referredCount = await getReferralCount(user.id);
+    if (referredCount > 10) {
+      lines.push("", `<i>...và ${referredCount - 10} người khác</i>`);
+    }
+
+    await sendMessage(chatId, lines.join("\n"), { reply_markup: { inline_keyboard: [BACK_TO_MENU_ROW] } });
+  } catch (e) {
+    console.error("[telegram/router] ref:list lỗi:", e?.message);
+    await sendMessage(chatId, "Có lỗi xảy ra. Thử lại hoặc /support.").catch(() => {});
+  }
+}
+
 // ─── /orders — danh sách đơn hàng của user (AC4, T6) ─────────────────────────
 
 const ORDER_STATUS_LABEL = {
@@ -565,6 +666,7 @@ export async function handleUpdate(update) {
       "📦 Đơn hàng": "/orders",
       "🔑 API": "/api",
       "🆘 Hỗ trợ": "/support",
+      "👥 Giới thiệu": "/ref",
     };
     const mapped = replyKeyboardMap[rawText];
     // Cắt bot-name suffix và arguments: /start@MyBot arg → /start
@@ -588,6 +690,9 @@ export async function handleUpdate(update) {
         return;
       case "/support":
         await handleSupport(chatId);
+        return;
+      case "/ref":
+        await handleRef(chatId, telegramId);
         return;
       default:
         await sendMessage(
@@ -630,6 +735,10 @@ export async function handleUpdate(update) {
     }
     if (data === "cmd:support") {
       await handleSupport(chatId);
+      return;
+    }
+    if (data === "ref:list") {
+      await handleRefList(chatId, String(cq.from.id));
       return;
     }
     if (data === "apicreate") {

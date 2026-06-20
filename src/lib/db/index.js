@@ -36,7 +36,7 @@ export {
 // Users
 export {
   createUser, getUserByEmail, getUserById, updateUser, addCredits, listUsers, deactivateUser,
-  getUserByTelegramId,
+  getUserByTelegramId, getUserByRefCode, getReferrals, getReferralCount,
 } from "./repos/usersRepo.js";
 
 // Products (Story 2.25 — Telegram Store catalog; Story 2.31 — external markup/publish)

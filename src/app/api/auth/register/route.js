@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
-import { getUserByEmail, createUser } from "@/lib/db/index.js";
+import { getUserByEmail, createUser, getUserByRefCode, updateUser } from "@/lib/db/index.js";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
 import { checkLock, recordFail, getClientIp } from "@/lib/auth/loginLimiter";
 import { createEmailVerifyToken } from "@/lib/auth/emailVerifyToken.js";
@@ -78,6 +78,17 @@ export async function POST(request) {
         );
       }
       throw err; // re-throw other errors to outer catch
+    }
+
+    // Affiliate: link referrer if valid ref code provided
+    const ref = body.ref || null;
+    if (ref) {
+      try {
+        const referrer = await getUserByRefCode(ref);
+        if (referrer && referrer.id !== user.id) {
+          await updateUser(user.id, { referredBy: referrer.id });
+        }
+      } catch {}
     }
 
     // Set auth cookie with user claims
