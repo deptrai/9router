@@ -41,6 +41,113 @@ function rewriteDefinitionRefs(node) {
   }
 }
 
+/**
+ * Recursively clean a schema node for draft 2020-12 compliance.
+ * Mutates in-place.
+ */
+function cleanSchemaNode(node) {
+  if (!node || typeof node !== "object" || Array.isArray(node)) return;
+
+  // Strip meta-keywords that conflict with Bedrock/Kiro's 2020-12 validator
+  delete node.$schema;
+  delete node.$id;
+  delete node.$anchor;
+  delete node.$comment;
+  delete node.$recursiveAnchor;
+  delete node.$recursiveRef;
+  // Strip draft-04/06/07 `id` alias (no `$` prefix)
+  if ("id" in node && typeof node.id === "string" && !node.$id) {
+    delete node.id;
+  }
+  // Strip deprecated keywords
+  delete node.additionalItems;
+  // Strip UI hints (Bedrock treat them as unknown keywords)
+  delete node.default;
+  delete node.examples;
+  delete node.readOnly;
+  delete node.writeOnly;
+  delete node.deprecated;
+  // Strip format if it exists (Bedrock has no format validator and may reject
+  // unknown format strings like "uuid", "file-path", etc.)
+  delete node.format;
+
+  // additionalProperties: false — most common failure. Strip at all levels.
+  if (node.additionalProperties === false) {
+    delete node.additionalProperties;
+  }
+
+  // items as array = tuple form (valid in draft-07). In draft 2020-12 the
+  // tuple form uses prefixItems + items.<schema>. Bedrock/Kiro may reject
+  // the array form. Normalise: keep it but ensure the validator doesn't choke.
+  if (Array.isArray(node.items)) {
+    // If items is an array, the schema defines tuple validation. 2020-12
+    // expects prefixItems for tuples and items as the additional-items schema.
+    // Non-array items stays as-is (value schema for all elements).
+    if (!node.prefixItems) {
+      node.prefixItems = node.items;
+    }
+    delete node.items;
+  }
+
+  // If the entire node is an empty object or has no meaningful constraints,
+  // make sure it has at least a permissive type (Bedrock may reject {} for
+  // some fields).
+  if (Object.keys(node).length === 0) {
+    node.type = "string";
+  }
+
+  // Recurse into all known schema-containing keywords
+  if (node.properties && typeof node.properties === "object") {
+    for (const val of Object.values(node.properties)) {
+      cleanSchemaNode(val);
+    }
+  }
+  if (node.patternProperties && typeof node.patternProperties === "object") {
+    for (const val of Object.values(node.patternProperties)) {
+      cleanSchemaNode(val);
+    }
+  }
+  if (node.additionalProperties && typeof node.additionalProperties === "object") {
+    cleanSchemaNode(node.additionalProperties);
+  }
+  if (node.unevaluatedProperties && typeof node.unevaluatedProperties === "object") {
+    cleanSchemaNode(node.unevaluatedProperties);
+  }
+  if (node.prefixItems && Array.isArray(node.prefixItems)) {
+    for (const item of node.prefixItems) cleanSchemaNode(item);
+  }
+  if (Array.isArray(node.items)) {
+    for (const item of node.items) cleanSchemaNode(item);
+  }
+  if (Array.isArray(node.allOf)) {
+    for (const s of node.allOf) cleanSchemaNode(s);
+  }
+  if (Array.isArray(node.anyOf)) {
+    for (const s of node.anyOf) cleanSchemaNode(s);
+  }
+  if (Array.isArray(node.oneOf)) {
+    for (const s of node.oneOf) cleanSchemaNode(s);
+  }
+  if (node.not && typeof node.not === "object") cleanSchemaNode(node.not);
+  if (node.if && typeof node.if === "object") cleanSchemaNode(node.if);
+  if (node.then && typeof node.then === "object") cleanSchemaNode(node.then);
+  if (node.else && typeof node.else === "object") cleanSchemaNode(node.else);
+  if (node.contains && typeof node.contains === "object") cleanSchemaNode(node.contains);
+  if (node.propertyNames && typeof node.propertyNames === "object") cleanSchemaNode(node.propertyNames);
+  if (node.dependentSchemas && typeof node.dependentSchemas === "object") {
+    for (const val of Object.values(node.dependentSchemas)) cleanSchemaNode(val);
+  }
+  // $defs entries (converted from definitions below)
+  if (node.$defs && typeof node.$defs === "object") {
+    for (const val of Object.values(node.$defs)) cleanSchemaNode(val);
+  }
+  if (node.definitions && typeof node.definitions === "object") {
+    for (const val of Object.values(node.definitions)) cleanSchemaNode(val);
+  }
+  // contentSchema (rare but can appear in document-oriented MCP tools)
+  if (node.contentSchema && typeof node.contentSchema === "object") cleanSchemaNode(node.contentSchema);
+}
+
 function normalizeToolSchema(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw) || Object.keys(raw).length === 0) {
     return { type: "object", properties: {}, required: [] };
@@ -66,6 +173,10 @@ function normalizeToolSchema(raw) {
     rewriteDefinitionRefs(schema);
   }
 
+  // Recursively clean the entire schema tree for 2020-12 compliance.
+  // This handles nested additionalProperties, $id, $comment, tuple items, etc.
+  cleanSchemaNode(schema);
+
   // Ensure properties exists
   if (!schema.properties || typeof schema.properties !== "object") {
     schema.properties = {};
@@ -81,14 +192,11 @@ function normalizeToolSchema(raw) {
   const cleaned = {};
   for (const [key, val] of Object.entries(schema.properties)) {
     if (!val || typeof val !== "object" || Object.keys(val).length === 0) {
-      // A required property cannot just be dropped — replace it with a permissive
-      // string schema so it stays declared and stays in `required`.
       if (requiredSet.has(key)) {
         cleaned[key] = { type: "string" };
       }
       continue;
     }
-    // Ensure the property has at least a type or $ref
     if (!val.type && !val.$ref && !val.anyOf && !val.oneOf && !val.enum) {
       val.type = "string";
     }
@@ -104,7 +212,8 @@ function normalizeToolSchema(raw) {
   // Filter required to only include keys that exist in properties
   schema.required = requiredKeys.filter((k) => k in schema.properties);
 
-  // Ensure additionalProperties is not set to false (often causes issues)
+  // Ensure additionalProperties is not set to false (also handled recursively
+  // by cleanSchemaNode, but keep this as a belt-and-suspenders check at root)
   if (schema.additionalProperties === false) {
     delete schema.additionalProperties;
   }
