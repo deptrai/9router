@@ -20,6 +20,7 @@ import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
 import { runExpirySweep } from "@/lib/billing/creditExpirySweep.js";
 import { runPaymentExpirySweep } from "@/lib/billing/paymentExpirySweep.js";
 import { reconcileSupplierOrders } from "@/lib/store/supplierReconciliation.js";
+import { runScheduledBackup } from "@/lib/db/scheduledBackup.js";
 
 // Inject correct paths and DB hooks into manager.js (CJS) from ESM context
 (function bootstrapMitm() {
@@ -39,6 +40,7 @@ process.setMaxListeners(20);
 const CREDIT_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 // Story 2.34 (T6/QĐ1) — supplier order reconciliation sweep cadence (orphan/margin/stale).
 const SUPPLIER_RECONCILE_INTERVAL_MS = 60 * 60 * 1000;
+const DAILY_BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 // Survive Next.js hot reload
 const g = global.__appSingleton ??= {
@@ -53,6 +55,7 @@ const g = global.__appSingleton ??= {
   tailscaleAutoResumed: false,
   creditSweepInterval: null,
   supplierReconcileInterval: null,
+  dailyBackupInterval: null,
 };
 
 export async function initializeApp() {
@@ -90,6 +93,7 @@ export async function initializeApp() {
     warnMissingWebhookSecrets();
     startCreditSweep();
     startSupplierReconcile();
+    startDailyBackup();
 
     // Sync mitmAlias DB → JSON cache so standalone MITM server can read it
     syncMitmAliasCache().catch(() => {});
@@ -239,7 +243,6 @@ function startCreditSweep() {
 
 function startSupplierReconcile() {
   if (g.supplierReconcileInterval) return;
-  // Out-of-band (QĐ1): flag-only, never auto-refund. Log failures instead of swallowing.
   reconcileSupplierOrders().catch((e) =>
     console.error("[supplierReconciliation] startup sweep failed:", e?.message || e)
   );
@@ -249,6 +252,21 @@ function startSupplierReconcile() {
     );
   }, SUPPLIER_RECONCILE_INTERVAL_MS);
   if (g.supplierReconcileInterval.unref) g.supplierReconcileInterval.unref();
+}
+
+// ─── Daily database backup ──────────────────────────────────────────────────
+
+function startDailyBackup() {
+  if (g.dailyBackupInterval) return;
+  runScheduledBackup().catch((e) =>
+    console.error("[dailyBackup] startup backup failed:", e?.message || e)
+  );
+  g.dailyBackupInterval = setInterval(() => {
+    runScheduledBackup().catch((e) =>
+      console.error("[dailyBackup] backup failed:", e?.message || e)
+    );
+  }, DAILY_BACKUP_INTERVAL_MS);
+  if (g.dailyBackupInterval.unref) g.dailyBackupInterval.unref();
 }
 
 // ─── Watchdog: 60s tick check both services ──────────────────────────────────

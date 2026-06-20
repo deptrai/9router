@@ -3,12 +3,14 @@ import * as supplierApiAdapter from "./supplierApiAdapter.js";
 import * as channelFeedAdapter from "./channelFeedAdapter.js";
 import * as pollingFeedAdapter from "./pollingFeedAdapter.js";
 import * as webhookAdapter from "./webhookAdapter.js";
+import * as telegramBotScraperAdapter from "./telegramBotScraperAdapter.js";
 
 export const REGISTRY = {
   supplier_api: supplierApiAdapter,
   channel_feed: channelFeedAdapter,
   polling_feed: pollingFeedAdapter,
   webhook: webhookAdapter,
+  telegram_bot_scraper: telegramBotScraperAdapter,
 };
 
 /**

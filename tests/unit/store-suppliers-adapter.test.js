@@ -7,9 +7,9 @@ import { describe, it, expect } from "vitest";
 import { getAdapter, REGISTRY } from "@/lib/store/suppliers/index.js";
 
 describe("adapter registry", () => {
-  it("maps all 4 adapter types", () => {
+  it("maps all 5 adapter types", () => {
     expect(Object.keys(REGISTRY).sort()).toEqual(
-      ["channel_feed", "polling_feed", "supplier_api", "webhook"].sort()
+      ["channel_feed", "polling_feed", "supplier_api", "telegram_bot_scraper", "webhook"].sort()
     );
   });
 
