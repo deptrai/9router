@@ -27,6 +27,7 @@ export default function StorePage() {
 
   // Admin state
   const [showForm, setShowForm] = useState(false);
+  const [editingProduct, setEditingProduct] = useState(null);
   const [form, setForm] = useState({
     name: "", kind: "plan", priceCredits: "", deliveryMode: "instant",
     description: "", targetType: "", targetId: "", isActive: true,
@@ -89,7 +90,7 @@ export default function StorePage() {
   }, [role, tab, loadProducts, loadOrders, loadBalance]);
 
   // Admin actions
-  const createProduct = async (e) => {
+  const saveProduct = async (e) => {
     e.preventDefault();
     setSaving(true);
     setError("");
@@ -104,20 +105,44 @@ export default function StorePage() {
         targetId: form.targetId || undefined,
         isActive: form.isActive,
       };
-      const res = await fetch("/api/store/admin/products", {
-        method: "POST",
+
+      const url = editingProduct
+        ? `/api/store/admin/products/${editingProduct.id}`
+        : "/api/store/admin/products";
+
+      const method = editingProduct ? "PATCH" : "POST";
+
+      const res = await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) setError(data.error || "Failed to create product");
+      if (!res.ok) setError(data.error || "Failed to save product");
       else {
         setForm({ name: "", kind: "plan", priceCredits: "", deliveryMode: "instant", description: "", targetType: "", targetId: "", isActive: true });
         setShowForm(false);
+        setEditingProduct(null);
         await loadProducts();
       }
     } catch { setError("Network error"); }
     setSaving(false);
+  };
+
+  const startEdit = (product) => {
+    setEditingProduct(product);
+    setForm({
+      name: product.name || "",
+      kind: product.kind || "plan",
+      priceCredits: product.priceCredits ?? "",
+      deliveryMode: product.deliveryMode || "instant",
+      description: product.description || "",
+      targetType: product.targetType || "",
+      targetId: product.targetId || "",
+      isActive: product.isActive !== false,
+    });
+    setShowForm(true);
   };
 
   const toggleProduct = async (id, isActive) => {
@@ -133,6 +158,21 @@ export default function StorePage() {
       }
     } catch { setError("Network error"); }
     await loadProducts();
+  };
+
+  const publishAction = async (id, publish) => {
+    try {
+      const action = publish ? "publish" : "unpublish";
+      const res = await fetch(`/api/store/products/${id}/publish?action=${action}`, {
+        method: "POST"
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || `Failed to ${action} product`);
+      } else {
+        await loadProducts();
+      }
+    } catch { setError("Network error"); }
   };
 
   const deleteProduct = async (id) => {
@@ -283,7 +323,11 @@ export default function StorePage() {
           {role === "admin" && (
             <div className="flex justify-end">
               <button
-                onClick={() => setShowForm(!showForm)}
+                onClick={() => {
+                  setEditingProduct(null);
+                  setForm({ name: "", kind: "plan", priceCredits: "", deliveryMode: "instant", description: "", targetType: "", targetId: "", isActive: true });
+                  setShowForm(!showForm);
+                }}
                 className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
               >
                 <span className="material-symbols-outlined text-[18px]">add</span>
@@ -294,8 +338,7 @@ export default function StorePage() {
 
           {showForm && role === "admin" && (
             <Card>
-              <form onSubmit={createProduct} className="p-4 space-y-4">
-                {/* Form fields same as original */}
+              <form onSubmit={saveProduct} className="p-4 space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-medium text-text-muted mb-1">Name *</label>
@@ -312,6 +355,7 @@ export default function StorePage() {
                       value={form.kind}
                       onChange={(e) => setForm({ ...form, kind: e.target.value })}
                       className="w-full px-3 py-2 rounded-lg bg-surface-1 border border-border-subtle text-sm text-text-main"
+                      disabled={editingProduct && editingProduct.source !== "local"}
                     >
                       {PRODUCT_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
                     </select>
@@ -332,6 +376,7 @@ export default function StorePage() {
                       value={form.deliveryMode}
                       onChange={(e) => setForm({ ...form, deliveryMode: e.target.value })}
                       className="w-full px-3 py-2 rounded-lg bg-surface-1 border border-border-subtle text-sm text-text-main"
+                      disabled={editingProduct && editingProduct.source !== "local"}
                     >
                       {DELIVERY_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
                     </select>
@@ -343,6 +388,7 @@ export default function StorePage() {
                       onChange={(e) => setForm({ ...form, targetType: e.target.value })}
                       placeholder="e.g. 9router_plan"
                       className="w-full px-3 py-2 rounded-lg bg-surface-1 border border-border-subtle text-sm text-text-main"
+                      disabled={editingProduct && editingProduct.source !== "local"}
                     />
                   </div>
                   <div>
@@ -352,6 +398,7 @@ export default function StorePage() {
                       onChange={(e) => setForm({ ...form, targetId: e.target.value })}
                       placeholder="Plan ID or resource ID"
                       className="w-full px-3 py-2 rounded-lg bg-surface-1 border border-border-subtle text-sm text-text-main"
+                      disabled={editingProduct && editingProduct.source !== "local"}
                     />
                   </div>
                   <div className="md:col-span-2">
@@ -375,11 +422,11 @@ export default function StorePage() {
                     Active
                   </label>
                   <div className="flex-1" />
-                  <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-text-muted hover:text-text-main">
+                  <button type="button" onClick={() => { setShowForm(false); setEditingProduct(null); }} className="px-4 py-2 text-sm text-text-muted hover:text-text-main">
                     Cancel
                   </button>
                   <button type="submit" disabled={saving} className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
-                    {saving ? "Saving..." : "Create Product"}
+                    {saving ? "Saving..." : (editingProduct ? "Update Product" : "Create Product")}
                   </button>
                 </div>
               </form>
@@ -438,16 +485,49 @@ export default function StorePage() {
                         <span className={`px-2 py-0.5 rounded text-xs font-medium ${p.isActive ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-500"}`}>
                           {p.isActive ? "Active" : "Inactive"}
                         </span>
+                        {p.source !== "local" && (
+                          <>
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${p.isPublished ? "bg-blue-500/10 text-blue-600" : "bg-yellow-500/10 text-yellow-600"}`}>
+                              {p.isPublished ? "Published" : "Draft"}
+                            </span>
+                            <span className="px-2 py-0.5 rounded text-xs bg-blue-500/10 text-blue-600">external</span>
+                          </>
+                        )}
                         <span className="px-2 py-0.5 rounded text-xs bg-surface-2 text-text-muted">{p.kind}</span>
-                        {p.source !== "local" && <span className="px-2 py-0.5 rounded text-xs bg-blue-500/10 text-blue-600">external</span>}
                       </div>
                       <div className="text-xs text-text-muted mt-1">
-                        {(p.priceCredits ?? 0).toLocaleString()} credits · {p.deliveryMode}
+                        {(p.priceCredits ?? 0).toLocaleString()} credits
+                        {p.supplierPrice !== null && ` (Supplier: ${p.supplierPrice} credits)`}
+                        {` · ${p.deliveryMode}`}
                         {p.stock !== null && ` · stock: ${p.stock}`}
-                        {p.description && ` · ${p.description.slice(0, 60)}`}
+                        {p.description && ` · ${p.description}`}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
+                      {/* Publish / Unpublish action for external products */}
+                      {p.source !== "local" && (
+                        <button
+                          onClick={() => publishAction(p.id, !p.isPublished)}
+                          className={`px-2 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                            p.isPublished
+                              ? "border-yellow-500/20 text-yellow-600 hover:bg-yellow-500/10"
+                              : "border-green-500/20 text-green-600 hover:bg-green-500/10"
+                          }`}
+                          title={p.isPublished ? "Unpublish (Hạ xuống)" : "Publish (Duyệt bán)"}
+                        >
+                          {p.isPublished ? "Unpublish" : "Publish"}
+                        </button>
+                      )}
+
+                      {/* Edit button */}
+                      <button
+                        onClick={() => startEdit(p)}
+                        className="p-1.5 rounded-lg hover:bg-surface-2 text-text-muted hover:text-text-main transition-colors"
+                        title="Edit (Sửa)"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">edit</span>
+                      </button>
+
                       <button
                         onClick={() => toggleProduct(p.id, p.isActive)}
                         className="p-1.5 rounded-lg hover:bg-surface-2 text-text-muted hover:text-text-main transition-colors"
@@ -455,6 +535,7 @@ export default function StorePage() {
                       >
                         <span className="material-symbols-outlined text-[18px]">{p.isActive ? "toggle_on" : "toggle_off"}</span>
                       </button>
+
                       <button
                         onClick={() => deleteProduct(p.id)}
                         className="p-1.5 rounded-lg hover:bg-red-500/10 text-text-muted hover:text-red-500 transition-colors"

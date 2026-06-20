@@ -42,27 +42,44 @@ function upsertExternalProduct(db, { sourceId, syncVersion, normalized, now }) {
   const supplierPrice = Number.isFinite(rawPrice) && rawPrice >= 0 ? rawPrice : 0;
 
   const existing = db.get(
-    `SELECT id, supplierSourceId FROM products WHERE source = ? AND supplierSourceId = ? AND supplierProductId = ?`,
+    `SELECT id, supplierSourceId, isPublished FROM products WHERE source = ? AND supplierSourceId = ? AND supplierProductId = ?`,
     [EXTERNAL_SOURCE, sourceId, normalized.supplierProductId]
   );
 
   let productId;
   if (existing) {
-    // UPDATE path: write supplierPrice + metadata. NEVER touch priceCredits/isActive/isPublished.
-    db.run(
-      `UPDATE products SET name=?, description=?, supplierPrice=?, stock=?,
-         syncVersion=?, lastSyncedAt=?, updatedAt=? WHERE id=?`,
-      [
-        normalized.name,
-        normalized.description ?? null,
-        supplierPrice,
-        normalized.stock ?? null,
-        syncVersion,
-        now,
-        now,
-        existing.id,
-      ]
-    );
+    const isPublished = existing.isPublished === 1 || existing.isPublished === true;
+    if (isPublished) {
+      // Published/approved product: do NOT overwrite custom name & description, only update supplierPrice/stock
+      db.run(
+        `UPDATE products SET supplierPrice=?, stock=?,
+           syncVersion=?, lastSyncedAt=?, updatedAt=? WHERE id=?`,
+        [
+          supplierPrice,
+          normalized.stock ?? null,
+          syncVersion,
+          now,
+          now,
+          existing.id,
+        ]
+      );
+    } else {
+      // Draft/unpublished product: update name/description from source
+      db.run(
+        `UPDATE products SET name=?, description=?, supplierPrice=?, stock=?,
+           syncVersion=?, lastSyncedAt=?, updatedAt=? WHERE id=?`,
+        [
+          normalized.name,
+          normalized.description ?? null,
+          supplierPrice,
+          normalized.stock ?? null,
+          syncVersion,
+          now,
+          now,
+          existing.id,
+        ]
+      );
+    }
     productId = existing.id;
 
     // Re-apply markup inline if a rule exists (keeps priceCredits = retailPrice atomic).
