@@ -27,6 +27,7 @@ import {
 } from "../db/repos/credentialsRepo.js";
 import { createEntitlementSync, ENTITLEMENT_STATUS } from "../db/repos/entitlementsRepo.js";
 import { purchasePlanForUser, PlanPurchaseError } from "../plans/planPurchase.js";
+import { payAffiliateStoreCommission } from "../affiliate/affiliateCommission.js";
 
 export class CheckoutError extends Error {
   constructor(code, message) {
@@ -239,6 +240,17 @@ export async function storeCheckout(userId, productId, { quantity = 1, idempoten
         }
       }
     }
+  }
+
+  // ── Post-commit affiliate store commission (Story 2.37, AC10) ──
+  if (!result.alreadyProcessed && result.order) {
+    try {
+      await payAffiliateStoreCommission({
+        buyerUserId: userId,
+        orderId: result.order.id,
+        totalCredits: result.order.totalCredits,
+      });
+    } catch {}
   }
 
   return result;
