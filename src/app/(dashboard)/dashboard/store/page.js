@@ -13,11 +13,19 @@ export default function StorePage() {
   const [role, setRole] = useState(null);
   const [tab, setTab] = useState("products");
 
-  // Products state
+  // Shared state
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // User state
+  const [balance, setBalance] = useState(0);
+  const [buyingProduct, setBuyingProduct] = useState(null);
+  const [purchasing, setPurchasing] = useState(false);
+  const [purchaseResult, setPurchaseResult] = useState(null);
+
+  // Admin state
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
     name: "", kind: "plan", priceCredits: "", deliveryMode: "instant",
@@ -31,41 +39,56 @@ export default function StorePage() {
       .then((d) => {
         const r = d.role ?? "admin";
         setRole(r);
-        if (r === "user") router.replace("/dashboard/credits");
       })
       .catch(() => setRole(null));
-  }, [router]);
+  }, []);
+
+  const loadBalance = useCallback(async () => {
+    try {
+      const res = await fetch("/api/users/me/balance");
+      if (res.ok) {
+        const data = await res.json();
+        setBalance(data.total ?? 0);
+      }
+    } catch {}
+  }, []);
 
   const loadProducts = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/store/admin/products");
+      const endpoint = role === "admin" ? "/api/store/admin/products" : "/api/store/products";
+      const res = await fetch(endpoint);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) setError(data.error || "Failed to load products");
       else setProducts(data.products || []);
     } catch { setError("Network error"); }
     setLoading(false);
-  }, []);
+  }, [role]);
 
   const loadOrders = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/store/admin/orders");
+      const endpoint = role === "admin" ? "/api/store/admin/orders" : "/api/store/orders";
+      const res = await fetch(endpoint);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) setError(data.error || "Failed to load orders");
       else setOrders(data.orders || []);
     } catch { setError("Network error"); }
     setLoading(false);
-  }, []);
+  }, [role]);
 
   useEffect(() => {
-    if (role !== "admin") return;
+    if (!role) return;
+    if (role === "user") {
+      loadBalance();
+    }
     if (tab === "products") loadProducts();
     else if (tab === "orders") loadOrders();
-  }, [role, tab, loadProducts, loadOrders]);
+  }, [role, tab, loadProducts, loadOrders, loadBalance]);
 
+  // Admin actions
   const createProduct = async (e) => {
     e.preventDefault();
     setSaving(true);
@@ -139,13 +162,42 @@ export default function StorePage() {
     await loadOrders();
   };
 
+  // User actions
+  const buyProduct = async (productId) => {
+    setPurchasing(true);
+    setError("");
+    try {
+      const res = await fetch("/api/store/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId, quantity: 1 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Mua hàng thất bại.");
+      } else {
+        setPurchaseResult(data);
+        setBuyingProduct(null);
+        await loadBalance();
+      }
+    } catch { setError("Network error"); }
+    setPurchasing(false);
+  };
+
   if (role === null) return <div className="p-6"><div className="h-8 rounded bg-surface-2 animate-pulse w-48" /></div>;
-  if (role === "user") return null;
 
   return (
     <div className="p-6 space-y-6 max-w-6xl">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-text-main">Store Management</h1>
+        <h1 className="text-2xl font-bold text-text-main">
+          {role === "admin" ? "Store Management" : "Cửa hàng"}
+        </h1>
+        {role === "user" && (
+          <div className="flex items-center gap-4 bg-surface-1 border border-border-subtle rounded-lg px-4 py-2">
+            <span className="text-sm text-text-muted">Số dư:</span>
+            <span className="font-bold text-primary">{balance.toLocaleString()} credits</span>
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
@@ -158,29 +210,92 @@ export default function StorePage() {
               tab === t ? "bg-white dark:bg-surface-3 text-text-main shadow-sm" : "text-text-muted hover:text-text-main"
             }`}
           >
-            {t === "products" ? "Products" : "Orders"}
+            {t === "products" ? (role === "admin" ? "Products" : "Sản phẩm") : (role === "admin" ? "Orders" : "Đơn hàng")}
           </button>
         ))}
       </div>
 
       {error && <div className="text-red-500 text-sm bg-red-500/10 px-4 py-2 rounded-lg">{error}</div>}
 
+      {/* Purchase Result Modal for User */}
+      {purchaseResult && (
+        <Card className="p-6 max-w-md mx-auto space-y-4 border-green-500 bg-green-500/5">
+          <div className="flex items-center gap-3 text-green-600">
+            <span className="material-symbols-outlined text-[24px]">check_circle</span>
+            <span className="font-bold text-lg">{purchaseResult.message}</span>
+          </div>
+          <div className="text-sm text-text-muted">
+            Mã đơn: <code className="font-mono">{purchaseResult.order?.id}</code>
+          </div>
+          {purchaseResult.credentials && purchaseResult.credentials.length > 0 && (
+            <div className="space-y-2">
+              <span className="font-medium text-sm text-text-main">Thông tin tài khoản/khóa nhận được:</span>
+              {purchaseResult.credentials.map((cred, idx) => (
+                <pre key={idx} className="bg-surface-2 border border-border-subtle p-3 rounded-lg font-mono text-xs overflow-x-auto whitespace-pre-wrap select-all">
+                  {cred}
+                </pre>
+              ))}
+            </div>
+          )}
+          <div className="flex justify-end">
+            <button onClick={() => setPurchaseResult(null)} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium">
+              Đóng
+            </button>
+          </div>
+        </Card>
+      )}
+
+      {/* Confirm Buy Modal for User */}
+      {buyingProduct && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <Card className="p-6 max-w-md w-full space-y-4">
+            <h3 className="text-lg font-bold text-text-main">Xác nhận mua</h3>
+            <p className="text-sm text-text-muted">
+              Bạn có chắc chắn muốn mua <b>{buyingProduct.name}</b> với giá <b>{buyingProduct.priceCredits} credits</b>?
+            </p>
+            <div className="text-xs text-text-muted space-y-1">
+              <div>Số dư hiện tại: {balance.toLocaleString()} credits</div>
+              <div>Số dư sau khi mua: {(balance - buyingProduct.priceCredits).toLocaleString()} credits</div>
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => setBuyingProduct(null)}
+                className="px-4 py-2 text-sm text-text-muted hover:text-text-main"
+                disabled={purchasing}
+              >
+                Hủy
+              </button>
+              <button
+                onClick={() => buyProduct(buyingProduct.id)}
+                className="px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg text-sm font-medium disabled:opacity-50"
+                disabled={purchasing}
+              >
+                {purchasing ? "Đang xử lý..." : "Xác nhận mua"}
+              </button>
+            </div>
+          </Card>
+        </div>
+      )}
+
       {/* Products Tab */}
       {tab === "products" && (
         <div className="space-y-4">
-          <div className="flex justify-end">
-            <button
-              onClick={() => setShowForm(!showForm)}
-              className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
-            >
-              <span className="material-symbols-outlined text-[18px]">add</span>
-              New Product
-            </button>
-          </div>
+          {role === "admin" && (
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowForm(!showForm)}
+                className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+              >
+                <span className="material-symbols-outlined text-[18px]">add</span>
+                New Product
+              </button>
+            </div>
+          )}
 
-          {showForm && (
+          {showForm && role === "admin" && (
             <Card>
               <form onSubmit={createProduct} className="p-4 space-y-4">
+                {/* Form fields same as original */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-medium text-text-muted mb-1">Name *</label>
@@ -274,8 +389,45 @@ export default function StorePage() {
           {loading ? (
             <div className="space-y-2">{[1, 2, 3].map((i) => <div key={i} className="h-16 rounded-lg bg-surface-2 animate-pulse" />)}</div>
           ) : products.length === 0 ? (
-            <Card><div className="p-8 text-center text-text-muted">No products yet. Create one to get started.</div></Card>
+            <Card><div className="p-8 text-center text-text-muted">Chưa có sản phẩm nào.</div></Card>
+          ) : role === "user" ? (
+            /* User Catalog Grid */
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {products.map((p) => {
+                const canAfford = balance >= p.priceCredits;
+                const isOutOfStock = p.stock !== null && p.stock <= 0;
+                return (
+                  <Card key={p.id} className="p-4 flex flex-col justify-between h-48 border border-border-subtle bg-surface-1 hover:shadow-md transition-shadow">
+                    <div className="space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="font-semibold text-text-main text-sm truncate" title={p.name}>{p.name}</span>
+                        <span className="px-2 py-0.5 rounded text-xs bg-surface-2 text-text-muted whitespace-nowrap">{p.kind}</span>
+                      </div>
+                      <p className="text-xs text-text-muted line-clamp-2 h-8">{p.description || "Không có mô tả."}</p>
+                      <div className="font-bold text-lg text-primary">{p.priceCredits.toLocaleString()} credits</div>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-border-subtle mt-2">
+                      <span className="text-xs text-text-muted">
+                        {p.stock !== null ? `Tồn kho: ${p.stock}` : "Tồn kho: Không giới hạn"}
+                      </span>
+                      {isOutOfStock ? (
+                        <button disabled className="px-3 py-1.5 bg-red-500/10 text-red-500 rounded-lg text-xs font-medium">Hết hàng</button>
+                      ) : !canAfford ? (
+                        <button onClick={() => router.push("/dashboard/credits")} className="px-3 py-1.5 bg-yellow-500/10 text-yellow-600 rounded-lg text-xs font-medium hover:bg-yellow-500/20 transition-colors">
+                          Nạp credits
+                        </button>
+                      ) : (
+                        <button onClick={() => setBuyingProduct(p)} className="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors">
+                          Mua ngay
+                        </button>
+                      )}
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
           ) : (
+            /* Admin list view */
             <div className="space-y-2">
               {products.map((p) => (
                 <Card key={p.id}>
@@ -325,7 +477,7 @@ export default function StorePage() {
           {loading ? (
             <div className="space-y-2">{[1, 2, 3].map((i) => <div key={i} className="h-16 rounded-lg bg-surface-2 animate-pulse" />)}</div>
           ) : orders.length === 0 ? (
-            <Card><div className="p-8 text-center text-text-muted">No orders yet.</div></Card>
+            <Card><div className="p-8 text-center text-text-muted">Chưa có đơn hàng nào.</div></Card>
           ) : (
             <div className="space-y-2">
               {orders.map((o) => (
@@ -344,10 +496,11 @@ export default function StorePage() {
                         </span>
                       </div>
                       <div className="text-xs text-text-muted mt-1">
-                        User: {o.userId?.slice(0, 8)} · {o.totalCredits?.toLocaleString()} credits · {new Date(o.createdAt).toLocaleDateString()}
+                        {role === "admin" && `User: ${o.userId?.slice(0, 8)} · `}
+                        {o.totalCredits?.toLocaleString()} credits · {new Date(o.createdAt).toLocaleDateString()}
                       </div>
                     </div>
-                    {o.status === "paid" && (
+                    {role === "admin" && o.status === "paid" && (
                       <button
                         onClick={() => fulfillOrder(o.id)}
                         className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 transition-colors"
