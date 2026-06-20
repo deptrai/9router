@@ -13,7 +13,7 @@ context:
 
 # Story 2-38: Telegram Bot Scraper Supplier Adapter
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
