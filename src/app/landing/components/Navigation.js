@@ -49,6 +49,7 @@ export default function Navigation() {
           <a className="text-gray-300 hover:text-white text-sm font-medium transition-colors" href="#features">Features</a>
           <a className="text-gray-300 hover:text-white text-sm font-medium transition-colors" href="#how-it-works">How it Works</a>
           <a className="text-gray-300 hover:text-white text-sm font-medium transition-colors" href="/models">Models</a>
+          <a className="text-gray-300 hover:text-white text-sm font-medium transition-colors" href="/store">Store</a>
         </div>
 
         {/* Controls + CTA */}
@@ -101,6 +102,7 @@ export default function Navigation() {
             <a className="text-gray-300 hover:text-white text-sm font-medium" href="#features" onClick={() => setMobileMenuOpen(false)}>Features</a>
             <a className="text-gray-300 hover:text-white text-sm font-medium" href="#how-it-works" onClick={() => setMobileMenuOpen(false)}>How it Works</a>
             <a className="text-gray-300 hover:text-white text-sm font-medium" href="/models" onClick={() => setMobileMenuOpen(false)}>Models</a>
+            <a className="text-gray-300 hover:text-white text-sm font-medium" href="/store" onClick={() => setMobileMenuOpen(false)}>Store</a>
             <div className="flex gap-3">
               <button onClick={handleLocaleToggle} className="text-xs text-gray-400 border border-[#3a2f27] rounded px-2 py-1">{locale === "vi" ? "EN" : "VI"}</button>
               <button onClick={toggleTheme} className="text-gray-400">{isDark ? "☀️" : "🌙"}</button>

@@ -23,6 +23,7 @@ export default function Footer() {
             <h4 className="font-bold text-white">Product</h4>
             <a className="text-gray-400 hover:text-[#f97815] text-sm transition-colors" href="#features">Features</a>
             <a className="text-gray-400 hover:text-[#f97815] text-sm transition-colors" href="/dashboard">Dashboard</a>
+            <a className="text-gray-400 hover:text-[#f97815] text-sm transition-colors" href="/store">Store</a>
           </div>
 
           {/* Resources */}
