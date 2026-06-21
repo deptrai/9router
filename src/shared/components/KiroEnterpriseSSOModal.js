@@ -36,11 +36,11 @@ export default function KiroEnterpriseSSOModal({ isOpen, onSuccess, onClose }) {
   const portalTabRef = useRef(null);
 
   // Direct mode fields
-  const [directEmail, setDirectEmail] = useState("del.ferry@cheaprouter.uk");
-  const [directIssuerUrl, setDirectIssuerUrl] = useState("https://login.microsoftonline.com/5fbc183e-3d09-4043-b36f-0c49d3665977/v2.0");
-  const [directClientId, setDirectClientId] = useState("35dc7c45-a4bc-4fd9-8ea3-5eaf1a733589");
+  const [directEmail, setDirectEmail] = useState("");
+  const [directIssuerUrl, setDirectIssuerUrl] = useState("");
+  const [directClientId, setDirectClientId] = useState("");
   const [directScopes, setDirectScopes] = useState(
-    "openid api://35dc7c45-a4bc-4fd9-8ea3-5eaf1a733589/codewhisperer:conversations api://35dc7c45-a4bc-4fd9-8ea3-5eaf1a733589/codewhisperer:completions offline_access"
+    "openid profile email offline_access"
   );
 
   // Reset state when modal opens
