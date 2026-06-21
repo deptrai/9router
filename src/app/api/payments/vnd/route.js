@@ -5,7 +5,8 @@ import { isConfigured, generateMemo, creditsToVnd, generateVietQRUrl, getBankInf
 import { getAdapter } from "@/lib/db/driver.js";
 
 export async function POST(request) {
-  const session = await getDashboardAuthSession(request);
+  const token = request.cookies.get("auth_token")?.value;
+  const session = await getDashboardAuthSession(token);
   if (!session?.userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

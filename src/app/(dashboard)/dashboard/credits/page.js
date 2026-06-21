@@ -36,6 +36,13 @@ export default function CreditsPage() {
   const [bonusPercent, setBonusPercent] = useState(15);
   const [timeLeft, setTimeLeft] = useState(null); // seconds until expiry, or null
 
+  // VND topup state
+  const [vndCredits, setVndCredits] = useState(10);
+  const [vndLoading, setVndLoading] = useState(false);
+  const [vndError, setVndError] = useState("");
+  const [activeVndPayment, setActiveVndPayment] = useState(null); // {paymentId, qrUrl, bankInfo, memo, amountVnd, expiresAt}
+  const [vndTimeLeft, setVndTimeLeft] = useState(null);
+
   // Payment history
   const [payments, setPayments] = useState([]);
   const [giftCode, setGiftCode] = useState("");
@@ -76,7 +83,7 @@ export default function CreditsPage() {
     load();
   }, []);
 
-  // Poll active payment status
+  // Poll active payment status (crypto)
   useEffect(() => {
     if (!activePayment?.paymentId) return;
     const interval = setInterval(async () => {
@@ -100,6 +107,29 @@ export default function CreditsPage() {
     return () => clearInterval(interval);
   }, [activePayment?.paymentId]);
 
+  // Poll active VND payment status
+  useEffect(() => {
+    if (!activeVndPayment?.paymentId) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/payments/${activeVndPayment.paymentId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setActiveVndPayment((prev) => ({ ...prev, ...data }));
+        if (["settled", "expired", "failed"].includes(data.status)) {
+          clearInterval(interval);
+          if (data.status === "settled") {
+            const statusRes = await fetch("/api/auth/status");
+            if (statusRes.ok) { const s = await statusRes.json(); setBalance(s.creditsBalance ?? null); }
+            const hRes = await fetch("/api/payments?limit=10");
+            if (hRes.ok) setPayments(await hRes.json());
+          }
+        }
+      } catch {}
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [activeVndPayment?.paymentId]);
+
   // Expiry countdown — ticks every 1s while an active payment has an expiry in the future.
   useEffect(() => {
     const expiresAt = activePayment?.expiresAt;
@@ -112,6 +142,19 @@ export default function CreditsPage() {
     const t = setInterval(tick, 1000);
     return () => clearInterval(t);
   }, [activePayment?.expiresAt, activePayment?.status]);
+
+  // VND payment expiry countdown
+  useEffect(() => {
+    const expiresAt = activeVndPayment?.expiresAt;
+    const terminal = ["settled", "expired", "failed"].includes(activeVndPayment?.status);
+    if (!expiresAt || terminal) { setVndTimeLeft(null); return; }
+    const expiryMs = new Date(expiresAt).getTime();
+    if (!Number.isFinite(expiryMs)) { setVndTimeLeft(null); return; }
+    const tick = () => setVndTimeLeft(Math.max(0, Math.floor((expiryMs - Date.now()) / 1000)));
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [activeVndPayment?.expiresAt, activeVndPayment?.status]);
 
   const handleTopup = useCallback(async () => {
     setTopupLoading(true);
@@ -128,6 +171,22 @@ export default function CreditsPage() {
     } catch (e) { setTopupError(e.message); }
     finally { setTopupLoading(false); }
   }, [topupAmount, topupCoin, topupNetwork]);
+
+  const handleVndTopup = useCallback(async () => {
+    setVndLoading(true);
+    setVndError("");
+    try {
+      const res = await fetch("/api/payments/vnd", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credits: vndCredits }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setVndError(data.error || "Failed"); return; }
+      setActiveVndPayment({ ...data, status: "pending" });
+    } catch (e) { setVndError(e.message); }
+    finally { setVndLoading(false); }
+  }, [vndCredits]);
 
   const handleRedeemGiftCode = useCallback(async () => {
     setGiftRedeemLoading(true);
@@ -324,6 +383,101 @@ export default function CreditsPage() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+      </Card>
+
+      {/* VND Bank Transfer Topup Section */}
+      <Card className="p-5">
+        <p className="text-sm font-semibold text-text-main mb-1">Nạp tiền qua chuyển khoản ngân hàng (VND)</p>
+        {!isEmailVerified ? (
+          <p className="text-sm text-yellow-600 mt-2">⚠️ Xác minh email trước để nạp tiền qua ngân hàng.</p>
+        ) : activeVndPayment && !["settled", "expired", "failed"].includes(activeVndPayment.status) ? (
+          /* Active VND payment — show bank info + QR */
+          <div className="mt-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-text-muted uppercase">Trạng thái</span>
+              <span className="text-sm font-medium text-yellow-500">Chờ thanh toán…</span>
+            </div>
+            {vndTimeLeft != null && (
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-text-muted uppercase">Hết hạn sau</span>
+                <span className={`text-sm font-mono font-medium ${vndTimeLeft <= 60 ? "text-red-500" : "text-text-main"}`}>
+                  {vndTimeLeft > 0
+                    ? `${String(Math.floor(vndTimeLeft / 60)).padStart(2, "0")}:${String(vndTimeLeft % 60).padStart(2, "0")}`
+                    : "expired"}
+                </span>
+              </div>
+            )}
+            <div className="p-4 bg-surface-2 rounded-lg space-y-2 text-sm">
+              {activeVndPayment.bankInfo && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">Ngân hàng</span>
+                    <span className="font-medium text-text-main">{activeVndPayment.bankInfo.bankName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">Số tài khoản</span>
+                    <span className="font-mono font-medium text-text-main select-all">{activeVndPayment.bankInfo.accountNumber}</span>
+                  </div>
+                </>
+              )}
+              <div className="flex justify-between">
+                <span className="text-text-muted">Số tiền</span>
+                <span className="font-semibold text-text-main">{activeVndPayment.amountVnd?.toLocaleString("vi-VN")}đ</span>
+              </div>
+              <div className="flex justify-between items-start">
+                <span className="text-text-muted">Nội dung CK</span>
+                <span className="font-mono font-semibold text-primary select-all">{activeVndPayment.memo}</span>
+              </div>
+            </div>
+            {activeVndPayment.qrUrl && (
+              <div className="text-center">
+                <p className="text-xs text-text-muted mb-2">Quét mã QR để chuyển khoản nhanh</p>
+                <div className="mx-auto w-fit rounded-lg bg-white p-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={activeVndPayment.qrUrl} alt="VietQR" width={200} height={200} className="rounded" />
+                </div>
+              </div>
+            )}
+            <p className="text-xs text-text-muted text-center">⚠️ Nhập <strong>đúng nội dung chuyển khoản</strong> để hệ thống tự xác nhận</p>
+            <button onClick={() => setActiveVndPayment(null)} className="w-full text-center text-xs text-text-muted hover:text-text-main mt-1">
+              Huỷ / Tạo lệnh mới
+            </button>
+          </div>
+        ) : activeVndPayment?.status === "settled" || activeVndPayment?.status === "confirmed" ? (
+          <div className="mt-3 text-center">
+            <p className="text-green-500 font-semibold">✓ Thanh toán xác nhận!</p>
+            <p className="text-sm text-text-muted">+{activeVndPayment.credits} credits đã được cộng.</p>
+            <button onClick={() => setActiveVndPayment(null)} className="mt-2 text-sm text-primary hover:underline">Quay lại</button>
+          </div>
+        ) : activeVndPayment?.status === "expired" || activeVndPayment?.status === "failed" ? (
+          <div className="mt-3 text-center">
+            <p className="text-red-500 font-semibold">{activeVndPayment.status === "expired" ? "⏱ Hết hạn" : "✕ Thất bại"}</p>
+            <button onClick={() => setActiveVndPayment(null)} className="mt-2 text-sm text-primary hover:underline">Thử lại</button>
+          </div>
+        ) : (
+          /* VND topup form */
+          <div className="mt-3 space-y-3">
+            <div>
+              <label className="text-xs text-text-muted">Số credits</label>
+              <div className="flex gap-1 mt-1 flex-wrap">
+                {[10, 25, 50, 100, 200].map((a) => (
+                  <button key={a} onClick={() => setVndCredits(a)}
+                    className={`px-3 py-1 rounded text-sm ${vndCredits === a ? "bg-primary text-white" : "bg-surface-2 text-text-muted hover:bg-surface-3"}`}
+                  >{a}</button>
+                ))}
+              </div>
+            </div>
+            <p className="text-sm text-text-muted">
+              Tương đương: <span className="font-semibold text-text-main">{(vndCredits * 1000).toLocaleString("vi-VN")}đ</span>
+              <span className="text-xs ml-1">(1 credit = 1.000đ)</span>
+            </p>
+            {vndError && <p className="text-sm text-red-500">{vndError}</p>}
+            <button onClick={handleVndTopup} disabled={vndLoading}
+              className="w-full py-2 rounded bg-primary text-white font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors">
+              {vndLoading ? "Đang tạo…" : "Chuyển khoản ngân hàng →"}
+            </button>
           </div>
         )}
       </Card>

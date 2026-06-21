@@ -78,10 +78,10 @@ export function getBankInfo() {
 export function verifyWebhookSecret(incomingSecret) {
   const expected = WEBHOOK_SECRET();
   if (!expected || !incomingSecret) return false;
-  return crypto.timingSafeEqual(
-    Buffer.from(incomingSecret),
-    Buffer.from(expected)
-  );
+  const a = Buffer.from(String(incomingSecret));
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }
 
 export function getPaymentTimeoutMs() {
