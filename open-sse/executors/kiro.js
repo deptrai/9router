@@ -26,7 +26,7 @@ export class KiroExecutor extends BaseExecutor {
     if (isApiKey && apiKey) {
       headers["Authorization"] = `Bearer ${apiKey}`;
       headers["tokentype"] = "API_KEY";
-    } else if (credentials.accessToken) {
+    } else if (credentials?.accessToken) {
       headers["Authorization"] = `Bearer ${credentials.accessToken}`;
     }
 

@@ -625,6 +625,23 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
+      case "kiro": {
+        // API keys are stored in accessToken (not apiKey) by the import route
+        const apiKey = connection.accessToken || connection.apiKey;
+        if (!apiKey) return { valid: false, error: "Missing API key" };
+        const region = connection.providerSpecificData?.region || "us-east-1";
+        const res = await fetchWithConnectionProxy(`https://codewhisperer.${region}.amazonaws.com`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-amz-json-1.0",
+            "x-amz-target": "AmazonCodeWhispererService.ListAvailableProfiles",
+            "Authorization": `Bearer ${apiKey}`,
+            "Accept": "application/json",
+          },
+          body: JSON.stringify({ maxResults: 1 }),
+        }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid or expired API key" };
+      }
       default:
         return { valid: false, error: "Provider test not supported" };
     }

@@ -58,10 +58,14 @@ export async function POST(request) {
     });
   } catch (error) {
     console.log("Kiro API key import error:", error);
-    // Do not reflect upstream response body to the client (SSRF hardening)
+    // Invalid/rejected key is a client error (422); anything else is a 500.
+    // Do not reflect upstream response body to the client (SSRF hardening).
+    const isValidationError =
+      typeof error?.message === "string" &&
+      error.message.startsWith("Profile listing failed");
     return NextResponse.json(
       { error: "API key validation failed" },
-      { status: 500 }
+      { status: isValidationError ? 422 : 500 }
     );
   }
 }

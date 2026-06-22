@@ -308,14 +308,10 @@ export class KiroService {
     }
     const trimmed = apiKey.trim();
 
-    let profileArn = null;
-    try {
-      profileArn = await this.listAvailableProfiles(trimmed, region);
-    } catch {
-      // ListAvailableProfiles may fail for API keys (empty profiles array,
-      // insufficient permissions, etc.) — the key is still valid for chat.
-      // Proceed without profileArn.
-    }
+    // Validate the key against CodeWhisperer. A non-OK HTTP response (401/403/etc.)
+    // means the key is invalid and MUST reject. An empty profiles array is a valid
+    // key without an assigned profile — proceed with profileArn=null.
+    const profileArn = await this.listAvailableProfiles(trimmed, region);
 
     return {
       accessToken: trimmed,
@@ -330,7 +326,7 @@ export class KiroService {
    * List available profiles from CodeWhisperer API (validates API key)
    */
   async listAvailableProfiles(apiKey, region = "us-east-1") {
-    const endpoint = "https://codewhisperer.us-east-1.amazonaws.com";
+    const endpoint = `https://codewhisperer.${region}.amazonaws.com`;
     const target = "AmazonCodeWhispererService.ListAvailableProfiles";
 
     const response = await fetch(endpoint, {

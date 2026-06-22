@@ -752,12 +752,22 @@ function parseKiroQuotaData(data) {
 }
 
 async function getKiroUsage(accessToken, providerSpecificData, proxyOptions = null) {
+  const authMethod = providerSpecificData?.authMethod || "builder-id";
+
+  // API keys (ksk_) are validated by AWS at request time — no CodeWhisperer usage
+  // quota API available. Skip the AWS calls (they always 403) and show a friendly message.
+  if (authMethod === "api_key") {
+    return {
+      message: "Kiro API key — usage is tracked per-request via 9Router's quota system.",
+      quotas: {},
+    };
+  }
+
   // Default profileArn fallback — NOTE: do NOT use placeholder ARN for IDC/Enterprise accounts
   // Community finding (Kiro-account-manager v1.7.3): placeholder ARN "profile/AAAACCCCXXXX"
   // triggers 403 for IDC/Enterprise users. Only use profileArn if explicitly set by user.
   const DEFAULT_PROFILE_ARN = "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
   const storedProfileArn = providerSpecificData?.profileArn;
-  const authMethod = providerSpecificData?.authMethod || "builder-id";
   // For IDC/Enterprise accounts, do NOT send placeholder ARN — it causes 403
   const isPlaceholderArn = !storedProfileArn || storedProfileArn === DEFAULT_PROFILE_ARN;
   const profileArn = ((authMethod === "idc" || authMethod === "external_idp") && isPlaceholderArn) ? null : (storedProfileArn || DEFAULT_PROFILE_ARN);
