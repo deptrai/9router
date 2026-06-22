@@ -39,7 +39,7 @@ vi.mock("@/lib/affiliate/affiliateCommission.js", () => ({
 
 // ─── module handles (populated in beforeEach) ────────────────────────────────
 
-let vndPOST, webhookPOST;
+let vndPOST, vndGET, webhookPOST;
 let getDashboardAuthSession;
 let isConfigured, verifyWebhookSecret, creditsToVnd, vndToCredits, createVndPayment;
 let recordCreditTxn;
@@ -88,6 +88,7 @@ beforeEach(async () => {
 
   const vndMod = await import("@/app/api/payments/vnd/route.js");
   vndPOST = vndMod.POST;
+  vndGET = vndMod.GET;
 
   const webhookMod = await import("@/app/api/payments/vnd-webhook/route.js");
   webhookPOST = webhookMod.POST;
@@ -175,6 +176,22 @@ describe("POST /api/payments/vnd", () => {
     expect(res.status).toBe(400);
   });
 
+  it("400 when credits is a float (not integer)", async () => {
+    const req = makeJsonRequest({ credits: 1.5 });
+    const res = await vndPOST(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("integer");
+  });
+
+  it("400 when credits exceeds MAX_VND_CREDITS (1,000,000)", async () => {
+    const req = makeJsonRequest({ credits: 1_000_001 });
+    const res = await vndPOST(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("1000000");
+  });
+
   it("200 happy path — calls createVndPayment and returns correct shape", async () => {
     const req = makeJsonRequest({ credits: 50 });
     const res = await vndPOST(req);
@@ -212,6 +229,26 @@ describe("POST /api/payments/vnd", () => {
     const body = await res.json();
     expect(body.amountVnd).toBe(25000);
     expect(body.paymentId).toBe("pay-custom");
+  });
+});
+
+// ─── GET /api/payments/vnd ───────────────────────────────────────────────────
+
+describe("GET /api/payments/vnd", () => {
+  it("returns configured=true and vndPerCredit from getBankInfo", async () => {
+    isConfigured.mockReturnValue(true);
+    const res = await vndGET();
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({ configured: true, vndPerCredit: 1000 });
+  });
+
+  it("returns configured=false when VND not configured", async () => {
+    isConfigured.mockReturnValue(false);
+    const res = await vndGET();
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.configured).toBe(false);
   });
 });
 

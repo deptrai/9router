@@ -1,5 +1,5 @@
 // Tests for src/lib/payment/vndBank.js (Story 2-39)
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const ENV_KEYS = ["VND_PER_CREDIT", "VND_BANK_ACCOUNT", "VND_BANK_BIN", "VND_BANK_NAME", "SEPAY_WEBHOOK_SECRET"];
 let saved = {};
@@ -248,5 +248,65 @@ describe("getPaymentTimeoutMs", () => {
   it("returns 30 minutes in ms", async () => {
     const { getPaymentTimeoutMs } = await import("@/lib/payment/vndBank.js");
     expect(getPaymentTimeoutMs()).toBe(30 * 60 * 1000);
+  });
+});
+
+// ─── createVndPayment ────────────────────────────────────────────────────────
+
+const { mockDb: createMockDb } = vi.hoisted(() => {
+  const mockDb = { run: vi.fn(), get: vi.fn() };
+  return { mockDb };
+});
+
+vi.mock("uuid", () => ({ v4: () => "uuid-fixed-test" }));
+vi.mock("@/lib/db/driver.js", () => ({ getAdapter: () => Promise.resolve(createMockDb) }));
+
+describe("createVndPayment", () => {
+  beforeEach(() => {
+    process.env.VND_BANK_ACCOUNT = "0123456789";
+    process.env.VND_BANK_BIN = "970436";
+    process.env.VND_BANK_NAME = "MB Bank";
+    process.env.VND_PER_CREDIT = "1000";
+    createMockDb.run.mockReset();
+  });
+
+  it("returns payment object with correct fields", async () => {
+    const { createVndPayment } = await import("@/lib/payment/vndBank.js?create=1");
+    const result = await createVndPayment({ userId: "user-1", credits: 25 });
+
+    expect(result.id).toBe("uuid-fixed-test");
+    expect(result.credits).toBe(25);
+    expect(result.amountVnd).toBe(25000);
+    expect(result.memo).toMatch(/^9R[A-F0-9]{8}$/);
+    expect(result.qrUrl).toContain("img.vietqr.io");
+    expect(result.bankInfo.bankName).toBe("MB Bank");
+    expect(result.expiresAt).toBeTruthy();
+  });
+
+  it("calls db.run with correct INSERT structure", async () => {
+    const { createVndPayment } = await import("@/lib/payment/vndBank.js?create=2");
+    await createVndPayment({ userId: "user-42", credits: 10 });
+
+    expect(createMockDb.run).toHaveBeenCalledTimes(1);
+    const [sql, params] = createMockDb.run.mock.calls[0];
+    expect(sql).toContain("INSERT INTO payments");
+    expect(params[1]).toBe("user-42");       // userId
+    expect(params[2]).toBe("vnd");           // network sentinel
+    expect(params[3]).toBe("VND");           // coin sentinel
+    expect(params[4]).toBe(0);              // amountExpected sentinel
+    expect(params[5]).toBe("vnd_bank");     // method
+    expect(params[6]).toBe("pending");      // status
+    expect(params[7]).toBe(10);             // credits
+    expect(params[8]).toBe(10000);          // amountVnd
+  });
+
+  it("expiresAt is ~30 minutes in the future", async () => {
+    const { createVndPayment } = await import("@/lib/payment/vndBank.js?create=3");
+    const before = Date.now();
+    const result = await createVndPayment({ userId: "user-1", credits: 5 });
+    const expiresMs = new Date(result.expiresAt).getTime();
+    const diff = expiresMs - before;
+    expect(diff).toBeGreaterThan(29 * 60 * 1000);
+    expect(diff).toBeLessThan(31 * 60 * 1000);
   });
 });
