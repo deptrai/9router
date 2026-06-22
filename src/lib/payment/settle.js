@@ -4,6 +4,7 @@
  */
 import { getAdapter } from "@/lib/db/driver";
 import { recordCreditTxn } from "@/lib/db/repos/creditLedgerRepo";
+import { notifyAdminPaymentSettled } from "@/lib/admin/notifyAdmin.js";
 
 const TERMINAL_STATUSES = new Set(["settled", "failed", "expired"]);
 
@@ -53,4 +54,14 @@ export async function settlePayment(payment, { amountReceived, txHash, confirmat
       }, adapter);
     }
   });
+
+  // Admin Telegram notification (fire-and-forget)
+  notifyAdminPaymentSettled({
+    type: "crypto",
+    userEmail: payment.userId,
+    credits: creditsToAward,
+    amount: amountReceived,
+    currency: `${payment.coin || "CRYPTO"}/${payment.network || ""}`,
+    paymentId: payment.id,
+  }).catch(() => {});
 }

@@ -3,6 +3,7 @@ import { verifyWebhookSecret } from "@/lib/payment/vndBank.js";
 import { getAdapter } from "@/lib/db/driver.js";
 import { recordCreditTxn } from "@/lib/db/repos/creditLedgerRepo.js";
 import { payAffiliateCommission } from "@/lib/affiliate/affiliateCommission.js";
+import { notifyAdminPaymentSettled } from "@/lib/admin/notifyAdmin.js";
 
 export async function POST(request) {
   const secret = request.headers.get("X-Sepay-Secret") || request.headers.get("Authorization")?.replace("Bearer ", "");
@@ -80,6 +81,16 @@ export async function POST(request) {
   try {
     await payAffiliateCommission({ userId: payment.userId, txnId: txn?.id, type: "vnd_topup", amount: credits });
   } catch {}
+
+  // Admin Telegram notification (fire-and-forget)
+  notifyAdminPaymentSettled({
+    type: "vnd",
+    userEmail: payment.userId,
+    credits,
+    amount: transferAmount,
+    currency: "VND",
+    paymentId: payment.id,
+  }).catch(() => {});
 
   return NextResponse.json({ ok: true, credited: credits });
 }
