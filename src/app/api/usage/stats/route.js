@@ -16,8 +16,14 @@ export async function GET(request) {
     }
 
     // AC2 — role-aware userId filter: user sees only own data, admin sees all
+    // M.4: admin can pass ?userId=xxx to drill-down a specific user
     const { session, role } = await getSessionRole(request);
-    const userId = role === "user" ? (session?.userId ?? null) : null;
+    let userId;
+    if (role === "admin") {
+      userId = searchParams.get("userId") || null;
+    } else {
+      userId = session?.userId ?? null;
+    }
 
     const stats = await getUsageStats(period, userId);
     return NextResponse.json(stats);
