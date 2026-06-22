@@ -88,17 +88,19 @@ afterEach(() => {
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-function makeJsonRequest(body, headers = {}) {
+function makeJsonRequest(body, headers = {}, cookies = {}) {
   return {
     json: () => (body instanceof Error ? Promise.reject(body) : Promise.resolve(body)),
     headers: { get: (name) => headers[name] ?? null },
+    cookies: { get: (name) => cookies[name] ? { value: cookies[name] } : undefined },
   };
 }
 
-function makeBadJsonRequest(headers = {}) {
+function makeBadJsonRequest(headers = {}, cookies = {}) {
   return {
     json: () => Promise.reject(new SyntaxError("bad json")),
     headers: { get: (name) => headers[name] ?? null },
+    cookies: { get: (name) => cookies[name] ? { value: cookies[name] } : undefined },
   };
 }
 
@@ -186,9 +188,12 @@ describe("POST /api/payments/vnd", () => {
     const [sql, params] = mockDb.run.mock.calls[0];
     expect(sql).toContain("INSERT INTO payments");
     expect(params[1]).toBe("user-42"); // userId
-    expect(params[2]).toBe("vnd_bank"); // method
-    expect(params[3]).toBe("pending");  // status
-    expect(params[4]).toBe(10);         // credits
+    expect(params[2]).toBe("vnd");     // network (sentinel)
+    expect(params[3]).toBe("VND");     // coin (sentinel)
+    expect(params[4]).toBe(0);         // amountExpected (sentinel)
+    expect(params[5]).toBe("vnd_bank"); // method
+    expect(params[6]).toBe("pending");  // status
+    expect(params[7]).toBe(10);         // credits
   });
 
   it("200 happy path — amountVnd = creditsToVnd(credits)", async () => {
