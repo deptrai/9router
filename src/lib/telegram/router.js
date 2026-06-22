@@ -6,6 +6,11 @@
  */
 
 import { sendMessage, answerCallbackQuery } from "./botClient.js";
+
+function escapeHtml(str) {
+  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 import { getUserByTelegramId, createUser, updateUser, getUserByRefCode, getReferrals, getReferralCount } from "../db/repos/usersRepo.js";
 import { listActiveProducts, getProductById } from "../db/repos/productsRepo.js";
 import { listOrdersByUser } from "../db/repos/ordersRepo.js";
@@ -67,7 +72,7 @@ async function handleStart(update) {
       } catch {}
     }
 
-    const greeting = user.displayName ? `Xin chào <b>${user.displayName}</b>!` : "Xin chào!";
+    const greeting = user.displayName ? `Xin chào <b>${escapeHtml(user.displayName)}</b>!` : "Xin chào!";
     await sendMessage(
       chatId,
       `${greeting} 👋\n\nChọn chức năng bên dưới:`,
@@ -594,7 +599,7 @@ async function handleRefList(chatId, telegramId) {
 
     for (let i = 0; i < referrals.length; i++) {
       const r = referrals[i];
-      const name = r.displayName || r.email?.split("@")[0] || "Ẩn danh";
+      const name = escapeHtml(r.displayName || r.email?.split("@")[0] || "Ẩn danh");
       const date = r.createdAt ? r.createdAt.slice(0, 10) : "";
       // Sum commission from this referred user
       const allComm = await getLedgerByUser(user.id, { type: "affiliate_commission", limit: 1000 });
@@ -680,8 +685,8 @@ async function handleTopupVnd(chatId, telegramId, creditsAmount) {
     }
 
     const credits = Number(creditsAmount);
-    if (!Number.isInteger(credits) || credits < 1) {
-      await sendMessage(chatId, "Số credits không hợp lệ. Dùng /topup để chọn lại.");
+    if (!Number.isInteger(credits) || credits < 1 || credits > 1_000_000) {
+      await sendMessage(chatId, "Số credits không hợp lệ (1–1.000.000). Dùng /topup để chọn lại.");
       return;
     }
 

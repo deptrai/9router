@@ -78,9 +78,8 @@ export function getBankInfo() {
 export function verifyWebhookSecret(incomingSecret) {
   const expected = WEBHOOK_SECRET();
   if (!expected || !incomingSecret) return false;
-  const a = Buffer.from(String(incomingSecret));
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
+  const a = crypto.createHash("sha256").update(String(incomingSecret)).digest();
+  const b = crypto.createHash("sha256").update(expected).digest();
   return crypto.timingSafeEqual(a, b);
 }
 

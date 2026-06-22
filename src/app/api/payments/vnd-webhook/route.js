@@ -42,6 +42,11 @@ export async function POST(request) {
     return NextResponse.json({ ok: true, note: "amount_mismatch" });
   }
 
+  // Reject late transfers for expired payments (sweep may not have run yet)
+  if (payment.expiresAt && new Date(payment.expiresAt) < new Date()) {
+    return NextResponse.json({ ok: true, note: "payment_expired" });
+  }
+
   // Credit the AGREED amount, not the transferred one — overpay does not bonus credits (P4).
   // Use canonical 'settled' status to align with settle.js TERMINAL_STATUSES + paymentExpirySweep (P3).
   const credits = Number(payment.credits);
