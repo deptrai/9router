@@ -315,9 +315,14 @@ async function handleBuyExecute(chatId, telegramId, productId, callbackQueryId) 
     }
     if (e instanceof CheckoutError) {
       if (e.code === "INSUFFICIENT_CREDITS") {
+        // P9: only offer VND when it is actually configured (mirror handleTopup's guard).
+        const topupRow = [{ text: "💰 Nạp Crypto", callback_data: "topup:crypto" }];
+        if (isVndConfigured()) {
+          topupRow.unshift({ text: "🏦 Nạp VND", callback_data: "topup:vnd" });
+        }
         await sendMessage(chatId, "💸 Số dư không đủ. Chọn phương thức nạp:", {
           reply_markup: { inline_keyboard: [
-            [{ text: "🏦 Nạp VND", callback_data: "topup:vnd" }, { text: "💰 Nạp Crypto", callback_data: "topup:crypto" }],
+            topupRow,
             BACK_TO_MENU_ROW,
           ] },
         }).catch(() => {});
@@ -631,6 +636,39 @@ async function handleTopup(chatId, telegramId) {
   }
 }
 
+// Preset credit amounts offered in the bot topup flow (AC5/AC6: bot asks for amount).
+const VND_TOPUP_PRESETS = [10, 25, 50, 100, 200];
+
+/**
+ * Step 1 of VND topup: ask the user how many credits (AC5/AC6).
+ * The bot has no multi-step text-input state, so we present preset amounts as inline
+ * buttons (topup:vnd:<credits>) which are handled by handleTopupVnd.
+ */
+async function handleTopupVndMenu(chatId, telegramId) {
+  try {
+    const user = await getUserByTelegramId(telegramId);
+    if (!user) { await sendMessage(chatId, "Vui lòng /start trước."); return; }
+
+    if (!isVndConfigured()) {
+      await sendMessage(chatId, "Phương thức VND chưa được cấu hình. Dùng Crypto hoặc liên hệ /support.");
+      return;
+    }
+
+    const rate = creditsToVnd(1);
+    const rows = VND_TOPUP_PRESETS.map((c) => [
+      { text: `${c} credits — ${creditsToVnd(c).toLocaleString()}đ`, callback_data: `topup:vnd:${c}` },
+    ]);
+    rows.push(BACK_TO_MENU_ROW);
+
+    await sendMessage(chatId, `<b>🏦 Nạp VND</b>\n\nChọn số credits (1 credit = ${rate.toLocaleString()}đ):`, {
+      reply_markup: { inline_keyboard: rows },
+    });
+  } catch (e) {
+    console.error("[telegram/router] topup:vnd menu lỗi:", e?.message);
+    await sendMessage(chatId, "Có lỗi xảy ra. Thử lại hoặc /support.").catch(() => {});
+  }
+}
+
 async function handleTopupVnd(chatId, telegramId, creditsAmount) {
   try {
     const user = await getUserByTelegramId(telegramId);
@@ -641,7 +679,11 @@ async function handleTopupVnd(chatId, telegramId, creditsAmount) {
       return;
     }
 
-    const credits = creditsAmount || 100;
+    const credits = Number(creditsAmount);
+    if (!Number.isInteger(credits) || credits < 1) {
+      await sendMessage(chatId, "Số credits không hợp lệ. Dùng /topup để chọn lại.");
+      return;
+    }
     const amountVnd = creditsToVnd(credits);
     const memo = generateMemo();
 
@@ -850,7 +892,12 @@ export async function handleUpdate(update) {
       return;
     }
     if (data === "topup:vnd") {
-      await handleTopupVnd(chatId, String(cq.from.id), 100);
+      await handleTopupVndMenu(chatId, String(cq.from.id));
+      return;
+    }
+    if (data?.startsWith("topup:vnd:")) {
+      const credits = Number(data.slice("topup:vnd:".length));
+      await handleTopupVnd(chatId, String(cq.from.id), credits);
       return;
     }
     if (data === "topup:crypto") {

@@ -42,6 +42,7 @@ export default function CreditsPage() {
   const [vndError, setVndError] = useState("");
   const [activeVndPayment, setActiveVndPayment] = useState(null); // {paymentId, qrUrl, bankInfo, memo, amountVnd, expiresAt}
   const [vndTimeLeft, setVndTimeLeft] = useState(null);
+  const [vndPerCredit, setVndPerCredit] = useState(1000); // AC8: rate from VND_PER_CREDIT env, fetched at mount
 
   // Payment history
   const [payments, setPayments] = useState([]);
@@ -77,6 +78,14 @@ export default function CreditsPage() {
         if (redRes.ok) {
           const data = await redRes.json();
           setGiftRedemptions(data.redemptions || []);
+        }
+      } catch {}
+      // AC8: load VND conversion rate so the form displays the real rate, not a hardcoded one
+      try {
+        const rateRes = await fetch("/api/payments/vnd");
+        if (rateRes.ok) {
+          const cfg = await rateRes.json();
+          if (cfg.vndPerCredit) setVndPerCredit(cfg.vndPerCredit);
         }
       } catch {}
     }
@@ -470,8 +479,8 @@ export default function CreditsPage() {
               </div>
             </div>
             <p className="text-sm text-text-muted">
-              Tương đương: <span className="font-semibold text-text-main">{(vndCredits * 1000).toLocaleString("vi-VN")}đ</span>
-              <span className="text-xs ml-1">(1 credit = 1.000đ)</span>
+              Tương đương: <span className="font-semibold text-text-main">{(vndCredits * vndPerCredit).toLocaleString("vi-VN")}đ</span>
+              <span className="text-xs ml-1">(1 credit = {vndPerCredit.toLocaleString("vi-VN")}đ)</span>
             </p>
             {vndError && <p className="text-sm text-red-500">{vndError}</p>}
             <button onClick={handleVndTopup} disabled={vndLoading}

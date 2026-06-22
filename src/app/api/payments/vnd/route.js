@@ -4,6 +4,20 @@ import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
 import { isConfigured, generateMemo, creditsToVnd, generateVietQRUrl, getBankInfo, getPaymentTimeoutMs } from "@/lib/payment/vndBank.js";
 import { getAdapter } from "@/lib/db/driver.js";
 
+// Upper bound on a single VND topup request (P6) — guards against float/overflow/abuse.
+const MAX_VND_CREDITS = 1_000_000;
+
+/**
+ * GET /api/payments/vnd — VND topup config (rate + availability) for the topup form.
+ * Lets the client render the conversion rate from VND_PER_CREDIT instead of hardcoding it (P8/AC8).
+ */
+export async function GET() {
+  return NextResponse.json({
+    configured: isConfigured(),
+    vndPerCredit: getBankInfo().vndPerCredit,
+  });
+}
+
 export async function POST(request) {
   try {
     const token = request.cookies.get("auth_token")?.value;
@@ -22,8 +36,9 @@ export async function POST(request) {
     }
 
     const credits = Number(body.credits);
-    if (!credits || credits < 1 || !Number.isFinite(credits)) {
-      return NextResponse.json({ error: "credits must be a positive number" }, { status: 400 });
+    // P6: must be a positive integer with an upper bound (reject float / overflow / abuse).
+    if (!Number.isInteger(credits) || credits < 1 || credits > MAX_VND_CREDITS) {
+      return NextResponse.json({ error: `credits must be an integer between 1 and ${MAX_VND_CREDITS}` }, { status: 400 });
     }
 
     const amountVnd = creditsToVnd(credits);

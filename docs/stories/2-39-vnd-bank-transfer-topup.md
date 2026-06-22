@@ -221,6 +221,44 @@ CRC (ID 63): CRC-16/CCITT-FALSE checksum
 - `src/lib/telegram/router.js` (modify — topup flow)
 - `src/lib/db/migrations/015-payment-method.js` (NEW)
 
+## Review Findings
+
+> Code review 2026-06-22 (opus-4.8). 3 lớp: Blind Hunter + Edge Case Hunter + Acceptance Auditor. Diff `f45d9b32`..HEAD scoped story 2-39 (~1475 dòng). Lưu ý: KHÔNG chạy được unit test (`/tmp/node_modules` broken symlink) — verification dựa trên đọc code trực tiếp.
+
+### Patch (đã sửa — code review 2026-06-22, all tests pass 1824/1824)
+
+- [x] [Review][Patch] Xóa orphan dead-code `webhooks/sepay/route.js` (crash 100%: bảng `credit_ledger`→`creditTransactions`, cột `bucketType`→`bucket`, `webhookData`→`rawWebhook`, `crypto.randomUUID()` không import; không idempotent → double-credit). Tạo Jun 23 SAU story done, không test/ref nào trỏ tới. Canonical là `payments/vnd-webhook/route.js` — ĐÃ XÓA
+- [x] [Review][Patch] Xóa dead-code `vndExpirySweep.js` + test `vndExpirySweep.test.js` — `expireVndPayments()` KHÔNG có caller; AC7 đã được cover bởi `runPaymentExpirySweep` (initializeApp.js:234/237) sweep mọi pending payment không lọc method — ĐÃ XÓA
+- [x] [Review][Patch] Status mismatch: webhook đổi `'confirmed'`→`'settled'` (khớp settle.js TERMINAL_STATUSES + client polling terminal-states sẵn có) — FIXED [vnd-webhook/route.js:60]
+- [x] [Review][Patch] Overpayment cấp dư credits: webhook đổi sang dùng `payment.credits` thay vì `vndToCredits(transferAmount)` — FIXED [vnd-webhook/route.js:47]
+- [x] [Review][Patch] `transferAmount` coerce `Number()` + check `Number.isFinite` trước so sánh — FIXED [vnd-webhook/route.js:20]
+- [x] [Review][Patch] `credits` validate `Number.isInteger` + upper-bound `MAX_VND_CREDITS=1_000_000` — FIXED [vnd/route.js:35,40]
+- [x] [Review][Patch] Bot: thêm `handleTopupVndMenu` hỏi số credits (preset 10/25/50/100/200) qua `topup:vnd:<n>`, bỏ hardcode 100 — FIXED [router.js]
+- [x] [Review][Patch] Dashboard fetch rate từ GET `/api/payments/vnd` (`vndPerCredit`), render động thay hardcode 1000 — FIXED [credits/page.js:473, vnd/route.js GET]
+- [x] [Review][Patch] Nhánh INSUFFICIENT_CREDITS thêm guard `isVndConfigured()` trước khi hiện nút VND — FIXED [router.js:317]
+- [x] [Review][Patch] Webhook UPDATE + recordCreditTxn bọc `db.transaction()` đồng bộ (pattern settle.js BP-5) — FIXED [vnd-webhook/route.js:57]
+
+### Decision-needed (đã giải quyết qua điều tra)
+
+- [x] [Review][Decision] Hai webhook route song song → RESOLVED: `vnd-webhook` là canonical (commit Jun 21, có test, trong File List, verified prod); `webhooks/sepay` là orphan tạo Jun 23 → xóa (xem Patch trên)
+
+### Defer (real nhưng không chặn)
+
+- [x] [Review][Defer] `getActiveProvider("vnd_bank")` trả vndBank trong chain crypto — footgun nếu `CRYPTO_PAYMENT_PROVIDER=vnd_bank` thì thay thế crypto. Đã có `getVndBankProvider()` riêng đúng thiết kế song song [src/lib/payment/providers/index.js] — deferred, low-risk
+- [x] [Review][Defer] `generateMemo` 4-byte (2^32) không có UNIQUE index trên `payments.memo` → collision lý thuyết ~65k pending đồng thời, webhook match nhầm row [src/lib/payment/vndBank.js:22, migration 015] — deferred, scale thấp
+- [x] [Review][Defer] Raw `db.run INSERT` ở `vnd/route.js` + `router.js` bypass `paymentsRepo.createPayment()` và trùng lặp logic 13-cột giữa 2 nơi [src/app/api/payments/vnd/route.js:37, src/lib/telegram/router.js] — deferred, DRY
+- [x] [Review][Defer] `verifyWebhookSecret` trả false ngay khi length khác → lộ độ dài secret (timing) [src/lib/payment/vndBank.js:83] — deferred, low-risk
+- [x] [Review][Defer] `PAYMENT_TIMEOUT_MS` hardcode 30min không có env override; message bot hardcode "30 phút" [src/lib/payment/vndBank.js:15] — deferred
+- [x] [Review][Defer] `isConfigured()` không check `SEPAY_WEBHOOK_SECRET` → form VND hoạt động nhưng webhook reject hết, payment kẹt pending [src/lib/payment/vndBank.js:17] — deferred, cần startup warning
+- [x] [Review][Defer] `getBankInfo()` trả `vndPerCredit` ra client — lộ rate nội bộ [src/app/api/payments/vnd/route.js:41] — deferred, minor
+
+### Dismissed (false positive, đã verify)
+
+- Auditor F10 "rowToPayment drop status field": SAI — `rowToPayment` line 18 map `status`, polling nhận đúng status
+- Blind/Edge bug EMVCo TLV byte-length + CRC ở `generateVietQR`: dead code — không caller nào dùng (chỉ `generateVietQRUrl` được dùng)
+- `vnd-webhook` đã có expiry check qua SQL `WHERE status='pending'` + better-sqlite3 single-writer → race sweep/webhook risk thấp
+- qrUrl vs qrDataUrl: internally consistent, chỉ lệch tên field spec — cosmetic
+
 ## Dev Agent Record
 ### Agent Model Used
 claude-sonnet-4-6 (claude-code)
@@ -237,12 +275,16 @@ claude-sonnet-4-6 (claude-code)
 
 ### File List
 - `src/lib/payment/vndBank.js` (NEW)
-- `src/lib/payment/vndExpirySweep.js` (NEW)
-- `src/app/api/payments/vnd/route.js` (NEW)
-- `src/app/api/payments/vnd-webhook/route.js` (NEW)
+- `src/app/api/payments/vnd/route.js` (NEW — GET rate config + POST create payment)
+- `src/app/api/payments/vnd-webhook/route.js` (NEW — canonical SePay webhook)
 - `src/lib/db/migrations/015-vnd-bank-payment.js` (NEW)
 - `src/app/(dashboard)/dashboard/credits/page.js` (modified — VND topup UI)
 - `src/app/api/auth/login/route.js` (modified — admin user row fix)
+- `src/lib/telegram/router.js` (modified — bot topup flow)
 - `tests/unit/vndBank.test.js` (NEW)
-- `tests/unit/vndExpirySweep.test.js` (NEW)
 - `tests/unit/vndRoutes.test.js` (NEW)
+
+### Code Review Cleanup (2026-06-22)
+- Xóa `src/app/api/webhooks/sepay/route.js` — orphan dead-code crash 100% (sai tên bảng/cột, thiếu import, không idempotent). Canonical webhook là `payments/vnd-webhook/route.js`.
+- Xóa `src/lib/payment/vndExpirySweep.js` + `tests/unit/vndExpirySweep.test.js` — dead code không caller; AC7 cover bởi `runPaymentExpirySweep` hiện hữu.
+- 10 patch findings đã sửa (xem Review Findings); full suite 1824/1824 pass.

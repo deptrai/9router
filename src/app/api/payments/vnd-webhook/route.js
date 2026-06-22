@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { verifyWebhookSecret, vndToCredits } from "@/lib/payment/vndBank.js";
+import { verifyWebhookSecret } from "@/lib/payment/vndBank.js";
 import { getAdapter } from "@/lib/db/driver.js";
 import { recordCreditTxn } from "@/lib/db/repos/creditLedgerRepo.js";
 import { payAffiliateCommission } from "@/lib/affiliate/affiliateCommission.js";
@@ -15,8 +15,10 @@ export async function POST(request) {
     return NextResponse.json({ ok: true });
   }
 
-  const { transferType, transferAmount, content } = body;
-  if (transferType !== "in" || !transferAmount || !content) {
+  const { transferType, content } = body;
+  // Coerce transferAmount to Number — SePay may send string; comparison would be type-unsafe otherwise (P5)
+  const transferAmount = Number(body.transferAmount);
+  if (transferType !== "in" || !Number.isFinite(transferAmount) || transferAmount <= 0 || !content) {
     return NextResponse.json({ ok: true });
   }
 
@@ -40,25 +42,38 @@ export async function POST(request) {
     return NextResponse.json({ ok: true, note: "amount_mismatch" });
   }
 
-  // Settle: confirm payment + credit user
+  // Credit the AGREED amount, not the transferred one — overpay does not bonus credits (P4).
+  // Use canonical 'settled' status to align with settle.js TERMINAL_STATUSES + paymentExpirySweep (P3).
+  const credits = Number(payment.credits);
+  if (!Number.isFinite(credits) || credits <= 0) {
+    return NextResponse.json({ ok: true, note: "credits_zero" });
+  }
   const now = new Date().toISOString();
-  db.run(`UPDATE payments SET status = 'confirmed', confirmedAt = ?, rawWebhook = ? WHERE id = ?`,
-    [now, JSON.stringify(body).slice(0, 2000), payment.id]);
 
-  const credits = vndToCredits(transferAmount);
-  const txn = await recordCreditTxn({
-    userId: payment.userId,
-    type: "vnd_topup",
-    bucket: "standard",
-    amount: credits,
-    refId: payment.id,
-    idempotencyKey: `vnd:${payment.id}`,
-    note: `Nạp ${transferAmount.toLocaleString()}đ → ${credits} credits`,
+  // P10: UPDATE + recordCreditTxn in one synchronous transaction so a partial failure
+  // does not leave a settled payment row with no ledger entry. recordCreditTxn runs
+  // inline (synchronous) when passed the adapter — matches settle.js (BP-5).
+  // Idempotency is guaranteed by recordCreditTxn's idempotencyKey (BP-4): a duplicate
+  // webhook re-runs the UPDATE harmlessly and gets the existing ledger row back.
+  let txn;
+  db.transaction(() => {
+    db.run(`UPDATE payments SET status = 'settled', confirmedAt = ?, settledAt = ?, rawWebhook = ? WHERE id = ?`,
+      [now, now, JSON.stringify(body).slice(0, 2000), payment.id]);
+
+    txn = recordCreditTxn({
+      userId: payment.userId,
+      type: "vnd_topup",
+      bucket: "standard",
+      amount: credits,
+      refId: payment.id,
+      idempotencyKey: `vnd:${payment.id}`,
+      note: `Nạp ${transferAmount.toLocaleString()}đ → ${credits} credits`,
+    }, db);
   });
 
-  // Affiliate commission
+  // Affiliate commission (best-effort)
   try {
-    await payAffiliateCommission({ userId: payment.userId, txnId: txn.id, type: "vnd_topup", amount: credits });
+    await payAffiliateCommission({ userId: payment.userId, txnId: txn?.id, type: "vnd_topup", amount: credits });
   } catch {}
 
   return NextResponse.json({ ok: true, credited: credits });

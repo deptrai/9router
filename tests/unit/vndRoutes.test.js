@@ -270,8 +270,7 @@ describe("POST /api/payments/vnd-webhook", () => {
   it("happy path — settles payment, credits user, returns { ok: true, credited: N }", async () => {
     const payment = { id: "pay-99", userId: "user-7", credits: 20, amountVnd: 20000 };
     mockDb.get.mockReturnValue(payment);
-    vndToCredits.mockReturnValue(20);
-    recordCreditTxn.mockResolvedValue({ id: "txn-99" });
+    recordCreditTxn.mockReturnValue({ id: "txn-99" });
 
     const req = makeJsonRequest({ transferType: "in", transferAmount: 20000, content: "Ma GD 9RAABBCCDD XYZ" });
     const res = await webhookPOST(req);
@@ -281,24 +280,39 @@ describe("POST /api/payments/vnd-webhook", () => {
     expect(body).toEqual({ ok: true, credited: 20 });
   });
 
-  it("happy path — calls db.run to UPDATE payment to confirmed", async () => {
+  it("happy path — calls db.run to UPDATE payment to settled", async () => {
     const payment = { id: "pay-99", userId: "user-7", credits: 20, amountVnd: 20000 };
     mockDb.get.mockReturnValue(payment);
-    vndToCredits.mockReturnValue(20);
 
     const req = makeJsonRequest({ transferType: "in", transferAmount: 20000, content: "9RAABBCCDD" });
     await webhookPOST(req);
 
     const updateCall = mockDb.run.mock.calls.find(([sql]) => sql.includes("UPDATE payments"));
     expect(updateCall).toBeTruthy();
-    expect(updateCall[0]).toContain("status = 'confirmed'");
-    expect(updateCall[1][2]).toBe("pay-99");
+    expect(updateCall[0]).toContain("status = 'settled'");
+    expect(updateCall[1][updateCall[1].length - 1]).toBe("pay-99"); // last param = id
+  });
+
+  it("credits the AGREED amount (payment.credits), not the transferred amount — overpay gives no bonus", async () => {
+    const payment = { id: "pay-op", userId: "user-7", credits: 20, amountVnd: 20000 };
+    mockDb.get.mockReturnValue(payment);
+    recordCreditTxn.mockReturnValue({ id: "txn-op" });
+
+    // User overpays: sends 50000đ against a 20000đ (20-credit) invoice.
+    const req = makeJsonRequest({ transferType: "in", transferAmount: 50000, content: "9RAABBCCDD" });
+    const res = await webhookPOST(req);
+    const body = await res.json();
+    expect(body).toEqual({ ok: true, credited: 20 }); // still 20, not 50
+    expect(recordCreditTxn).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: 20 }),
+      expect.anything()
+    );
   });
 
   it("happy path — calls recordCreditTxn with correct idempotencyKey", async () => {
     const payment = { id: "pay-42", userId: "user-7", credits: 10, amountVnd: 10000 };
     mockDb.get.mockReturnValue(payment);
-    vndToCredits.mockReturnValue(10);
+    recordCreditTxn.mockReturnValue({ id: "txn-42" });
 
     const req = makeJsonRequest({ transferType: "in", transferAmount: 10000, content: "9RAABBCCDD" });
     await webhookPOST(req);
@@ -311,15 +325,15 @@ describe("POST /api/payments/vnd-webhook", () => {
         amount: 10,
         refId: "pay-42",
         idempotencyKey: "vnd:pay-42",
-      })
+      }),
+      expect.anything() // adapter passed for in-transaction (BP-5) execution
     );
   });
 
   it("happy path — calls payAffiliateCommission", async () => {
     const payment = { id: "pay-5", userId: "user-5", credits: 5, amountVnd: 5000 };
     mockDb.get.mockReturnValue(payment);
-    vndToCredits.mockReturnValue(5);
-    recordCreditTxn.mockResolvedValue({ id: "txn-5" });
+    recordCreditTxn.mockReturnValue({ id: "txn-5" });
 
     const req = makeJsonRequest({ transferType: "in", transferAmount: 5000, content: "9RAABBCCDD" });
     await webhookPOST(req);
@@ -332,8 +346,7 @@ describe("POST /api/payments/vnd-webhook", () => {
   it("affiliate error does NOT break the response", async () => {
     const payment = { id: "pay-6", userId: "user-6", credits: 5, amountVnd: 5000 };
     mockDb.get.mockReturnValue(payment);
-    vndToCredits.mockReturnValue(5);
-    recordCreditTxn.mockResolvedValue({ id: "txn-6" });
+    recordCreditTxn.mockReturnValue({ id: "txn-6" });
     payAffiliateCommission.mockRejectedValue(new Error("affiliate down"));
 
     const req = makeJsonRequest({ transferType: "in", transferAmount: 5000, content: "9RAABBCCDD" });
@@ -347,7 +360,7 @@ describe("POST /api/payments/vnd-webhook", () => {
     verifyWebhookSecret.mockImplementation((s) => s === "bearer-secret");
     const payment = { id: "pay-7", userId: "user-7", credits: 10, amountVnd: 10000 };
     mockDb.get.mockReturnValue(payment);
-    vndToCredits.mockReturnValue(10);
+    recordCreditTxn.mockReturnValue({ id: "txn-7" });
 
     const req = makeJsonRequest(
       { transferType: "in", transferAmount: 10000, content: "9RAABBCCDD" },
@@ -361,7 +374,7 @@ describe("POST /api/payments/vnd-webhook", () => {
   it("memo lookup is case-insensitive (lowercase 9r in content)", async () => {
     const payment = { id: "pay-8", userId: "user-8", credits: 10, amountVnd: 10000 };
     mockDb.get.mockReturnValue(payment);
-    vndToCredits.mockReturnValue(10);
+    recordCreditTxn.mockReturnValue({ id: "txn-8" });
 
     const req = makeJsonRequest({ transferType: "in", transferAmount: 10000, content: "thanh toan 9raabbccdd ok" });
     const res = await webhookPOST(req);
