@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdapter } from "@/lib/db/driver.js";
+import { getSemaphoreMetrics } from "@/sse/services/auth.js";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -19,7 +20,7 @@ export async function GET() {
 
   const status = dbOk ? 200 : 503;
   return NextResponse.json(
-    { ok: dbOk, db: dbOk, uptime: Math.floor((Date.now() - startedAt) / 1000) },
+    { ok: dbOk, db: dbOk, uptime: Math.floor((Date.now() - startedAt) / 1000), semaphore: getSemaphoreMetrics() },
     { status, headers: CORS_HEADERS },
   );
 }

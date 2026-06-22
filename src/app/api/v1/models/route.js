@@ -8,6 +8,9 @@ import {
 } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
+
+const MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
+let _modelsCache = { data: null, expiry: 0 };
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { getProviderAutoCompactLimit } from "open-sse/utils/autoCompact.js";
@@ -490,7 +493,13 @@ export async function OPTIONS() {
  */
 export async function GET() {
   try {
+    if (_modelsCache.data && Date.now() < _modelsCache.expiry) {
+      return Response.json({ object: "list", data: _modelsCache.data }, {
+        headers: { "Access-Control-Allow-Origin": "*" },
+      });
+    }
     const data = await buildModelsList([LLM_KIND]);
+    _modelsCache = { data, expiry: Date.now() + MODELS_CACHE_TTL_MS };
     return Response.json({ object: "list", data }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });

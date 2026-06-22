@@ -113,6 +113,14 @@ export function getInFlightCount(connectionId) {
   return _inFlight.get(connectionId) || 0;
 }
 
+export function getSemaphoreMetrics() {
+  let totalInFlight = 0;
+  for (const count of _inFlight.values()) totalInFlight += count;
+  let totalWaiters = 0;
+  for (const q of _waitQueue.values()) totalWaiters += q.length;
+  return { totalInFlight, totalWaiters, connections: _inFlight.size };
+}
+
 // Exported for unit tests — acquire an in-flight lease for a connection.
 export function _acquireLeaseForTest(connectionId) {
   return _acquire(connectionId);

@@ -12,7 +12,7 @@ import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse, normalizeUnavailableStatus } from "open-sse/utils/error.js";
-import { handleComboChat } from "open-sse/services/combo.js";
+import { handleComboChat, getModelContextFit, estimateRequestInputTokens } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
@@ -98,6 +98,18 @@ export async function handleChat(request, clientRawRequest = null) {
       if (schema) sanitizeSchemaForBedrock(schema);
     }
   }
+
+  // Early-reject: if estimated input tokens exceed model's effective context limit by >10%,
+  // reject immediately instead of wasting a 2-3s network roundtrip to upstream.
+  const fit = getModelContextFit(body, body.model, estimateRequestInputTokens);
+  if (fit && fit.effectiveLimit && !fit.fits) {
+    log.warn("CONTEXT", `Early-reject: ~${fit.estimatedTokens} tokens > ${fit.effectiveLimit} limit (model=${body.model})`);
+    return NextResponse.json(
+      { error: { message: `Request too large: estimated ${fit.estimatedTokens} tokens exceeds model context limit of ${fit.effectiveLimit}`, type: "invalid_request_error", code: "context_length_exceeded" } },
+      { status: 400, headers: { "Access-Control-Allow-Origin": "*" } }
+    );
+  }
+
   // Log API key (masked)
   const authHeader = request.headers.get("Authorization");
   const apiKey = extractApiKey(request);

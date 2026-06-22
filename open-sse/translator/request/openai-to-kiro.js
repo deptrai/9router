@@ -162,10 +162,18 @@ function cleanSchemaNode(node) {
   if (node.contentSchema && typeof node.contentSchema === "object") cleanSchemaNode(node.contentSchema);
 }
 
+const _schemaCache = new Map();
+const SCHEMA_CACHE_MAX = 200;
+
 function normalizeToolSchema(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw) || Object.keys(raw).length === 0) {
     return { type: "object", properties: {}, required: [] };
   }
+
+  // Memoize: same tool schema JSON → same sanitized output (saves ~1-3ms per repeated tool set)
+  let cacheKey;
+  try { cacheKey = JSON.stringify(raw); } catch { cacheKey = null; }
+  if (cacheKey && _schemaCache.has(cacheKey)) return structuredClone(_schemaCache.get(cacheKey));
 
   // Deep copy so we never mutate the caller's tool object (it may be reused
   // across retries / multi-turn requests).
@@ -232,6 +240,11 @@ function normalizeToolSchema(raw) {
     delete schema.additionalProperties;
   }
 
+  // Cache result for future requests with same tools
+  if (cacheKey) {
+    if (_schemaCache.size >= SCHEMA_CACHE_MAX) _schemaCache.delete(_schemaCache.keys().next().value);
+    _schemaCache.set(cacheKey, structuredClone(schema));
+  }
   return schema;
 }
 
