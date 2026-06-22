@@ -34,8 +34,8 @@ export async function POST(request) {
 
     const db = await getAdapter();
     db.run(
-      `INSERT INTO payments (id, userId, method, status, credits, amountVnd, memo, expiresAt, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      [id, session.userId, "vnd_bank", "pending", credits, amountVnd, memo, expiresAt, now, now]
+      `INSERT INTO payments (id, userId, network, coin, amountExpected, method, status, credits, amountVnd, memo, expiresAt, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, session.userId, "vnd", "VND", 0, "vnd_bank", "pending", credits, amountVnd, memo, expiresAt, now, now]
     );
 
     const bankInfo = getBankInfo();
