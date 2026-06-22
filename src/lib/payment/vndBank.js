@@ -88,6 +88,33 @@ export function getPaymentTimeoutMs() {
   return PAYMENT_TIMEOUT_MS;
 }
 
+/**
+ * Create a pending VND bank transfer payment record.
+ * Shared by the web API route and the Telegram bot topup flow (DRY).
+ * Returns { id, memo, amountVnd, expiresAt, qrUrl, bankInfo }.
+ */
+export async function createVndPayment({ userId, credits }) {
+  const { v4: uuidv4 } = await import("uuid");
+  const { getAdapter } = await import("@/lib/db/driver.js");
+
+  const amountVnd = creditsToVnd(credits);
+  const memo = generateMemo();
+  const id = uuidv4();
+  const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + PAYMENT_TIMEOUT_MS).toISOString();
+
+  const db = await getAdapter();
+  db.run(
+    `INSERT INTO payments (id, userId, network, coin, amountExpected, method, status, credits, amountVnd, memo, expiresAt, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, userId, "vnd", "VND", 0, "vnd_bank", "pending", credits, amountVnd, memo, expiresAt, now, now]
+  );
+
+  const bankInfo = getBankInfo();
+  const qrUrl = generateVietQRUrl({ amount: amountVnd, memo });
+
+  return { id, memo, amountVnd, credits, expiresAt, qrUrl, bankInfo };
+}
+
 // ─── TLV helpers (EMVCo format) ──────────────────────────────────────────────
 
 function buildTLV(id, value) {

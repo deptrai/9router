@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { v4 as uuidv4 } from "uuid";
 import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
-import { isConfigured, generateMemo, creditsToVnd, generateVietQRUrl, getBankInfo, getPaymentTimeoutMs } from "@/lib/payment/vndBank.js";
-import { getAdapter } from "@/lib/db/driver.js";
+import { isConfigured, getBankInfo, createVndPayment } from "@/lib/payment/vndBank.js";
 
 // Upper bound on a single VND topup request (P6) — guards against float/overflow/abuse.
 const MAX_VND_CREDITS = 1_000_000;
@@ -36,34 +34,20 @@ export async function POST(request) {
     }
 
     const credits = Number(body.credits);
-    // P6: must be a positive integer with an upper bound (reject float / overflow / abuse).
     if (!Number.isInteger(credits) || credits < 1 || credits > MAX_VND_CREDITS) {
       return NextResponse.json({ error: `credits must be an integer between 1 and ${MAX_VND_CREDITS}` }, { status: 400 });
     }
 
-    const amountVnd = creditsToVnd(credits);
-    const memo = generateMemo();
-    const id = uuidv4();
-    const now = new Date().toISOString();
-    const expiresAt = new Date(Date.now() + getPaymentTimeoutMs()).toISOString();
-
-    const db = await getAdapter();
-    db.run(
-      `INSERT INTO payments (id, userId, network, coin, amountExpected, method, status, credits, amountVnd, memo, expiresAt, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [id, session.userId, "vnd", "VND", 0, "vnd_bank", "pending", credits, amountVnd, memo, expiresAt, now, now]
-    );
-
-    const bankInfo = getBankInfo();
-    const qrUrl = generateVietQRUrl({ amount: amountVnd, memo });
+    const payment = await createVndPayment({ userId: session.userId, credits });
 
     return NextResponse.json({
-      paymentId: id,
-      qrUrl,
-      bankInfo,
-      memo,
-      credits,
-      amountVnd,
-      expiresAt,
+      paymentId: payment.id,
+      qrUrl: payment.qrUrl,
+      bankInfo: payment.bankInfo,
+      memo: payment.memo,
+      credits: payment.credits,
+      amountVnd: payment.amountVnd,
+      expiresAt: payment.expiresAt,
     });
   } catch (err) {
     console.error("[VND payment]", err);

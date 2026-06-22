@@ -684,44 +684,28 @@ async function handleTopupVnd(chatId, telegramId, creditsAmount) {
       await sendMessage(chatId, "Số credits không hợp lệ. Dùng /topup để chọn lại.");
       return;
     }
-    const amountVnd = creditsToVnd(credits);
-    const memo = generateMemo();
 
-    // Create payment record
-    const { v4: uuidv4 } = await import("uuid");
-    const { getAdapter } = await import("../db/driver.js");
-    const db = await getAdapter();
-    const id = uuidv4();
-    const now = new Date().toISOString();
-    const expiresAt = new Date(Date.now() + getPaymentTimeoutMs()).toISOString();
-
-    db.run(
-      `INSERT INTO payments (id, userId, network, coin, amountExpected, method, status, credits, amountVnd, memo, expiresAt, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [id, user.id, "vnd", "VND", 0, "vnd_bank", "pending", credits, amountVnd, memo, expiresAt, now, now]
-    );
-
-    const bankInfo = getBankInfo();
-    const qrUrl = generateVietQRUrl({ amount: amountVnd, memo });
+    const { createVndPayment } = await import("../payment/vndBank.js");
+    const payment = await createVndPayment({ userId: user.id, credits });
 
     const lines = [
       "<b>🏦 Nạp VND — Chuyển khoản ngân hàng</b>",
       "",
       `💰 Số credits: <b>${credits}</b>`,
-      `💵 Số tiền: <b>${amountVnd.toLocaleString()}đ</b>`,
+      `💵 Số tiền: <b>${payment.amountVnd.toLocaleString()}đ</b>`,
       "",
-      `🏦 Ngân hàng: <b>${bankInfo.bankName}</b>`,
-      `💳 STK: <code>${bankInfo.accountNumber}</code>`,
-      `📝 Nội dung CK: <code>${memo}</code>`,
+      `🏦 Ngân hàng: <b>${payment.bankInfo.bankName}</b>`,
+      `💳 STK: <code>${payment.bankInfo.accountNumber}</code>`,
+      `📝 Nội dung CK: <code>${payment.memo}</code>`,
       "",
       `⏱ Hết hạn sau 30 phút.`,
       `✅ Credits sẽ được cộng tự động sau khi xác nhận.`,
     ];
 
     await sendMessage(chatId, lines.join("\n"));
-    // Send QR as URL button
     await sendMessage(chatId, "👇 Quét mã QR bên dưới để chuyển khoản:", {
       reply_markup: { inline_keyboard: [
-        [{ text: "📱 Mở QR Code", url: qrUrl }],
+        [{ text: "📱 Mở QR Code", url: payment.qrUrl }],
         BACK_TO_MENU_ROW,
       ] },
     });

@@ -26,6 +26,7 @@ vi.mock("@/lib/payment/vndBank.js", () => ({
   getBankInfo: vi.fn(() => ({ bankName: "VCB", bankBin: "970436", accountNumber: "111", vndPerCredit: 1000 })),
   getPaymentTimeoutMs: vi.fn(() => 30 * 60 * 1000),
   verifyWebhookSecret: vi.fn(),
+  createVndPayment: vi.fn(),
 }));
 
 vi.mock("@/lib/db/repos/creditLedgerRepo.js", () => ({
@@ -40,7 +41,7 @@ vi.mock("@/lib/affiliate/affiliateCommission.js", () => ({
 
 let vndPOST, webhookPOST;
 let getDashboardAuthSession;
-let isConfigured, verifyWebhookSecret, creditsToVnd, vndToCredits;
+let isConfigured, verifyWebhookSecret, creditsToVnd, vndToCredits, createVndPayment;
 let recordCreditTxn;
 let payAffiliateCommission;
 
@@ -59,6 +60,7 @@ beforeEach(async () => {
   verifyWebhookSecret = bankMod.verifyWebhookSecret;
   creditsToVnd = bankMod.creditsToVnd;
   vndToCredits = bankMod.vndToCredits;
+  createVndPayment = bankMod.createVndPayment;
 
   const ledgerMod = await import("@/lib/db/repos/creditLedgerRepo.js");
   recordCreditTxn = ledgerMod.recordCreditTxn;
@@ -72,7 +74,16 @@ beforeEach(async () => {
   verifyWebhookSecret.mockReturnValue(true);
   creditsToVnd.mockImplementation((c) => c * 1000);
   vndToCredits.mockImplementation((v) => Math.floor(v / 1000));
-  recordCreditTxn.mockResolvedValue({ id: "txn-1" });
+  createVndPayment.mockImplementation(async ({ userId, credits }) => ({
+    id: "pay-mock-id",
+    memo: "9RAABBCCDD",
+    amountVnd: credits * 1000,
+    credits,
+    expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+    qrUrl: "https://img.vietqr.io/image/mock.png",
+    bankInfo: { bankName: "VCB", bankBin: "970436", accountNumber: "111", vndPerCredit: 1000 },
+  }));
+  recordCreditTxn.mockReturnValue({ id: "txn-1" });
   payAffiliateCommission.mockResolvedValue(undefined);
 
   const vndMod = await import("@/app/api/payments/vnd/route.js");
@@ -164,7 +175,7 @@ describe("POST /api/payments/vnd", () => {
     expect(res.status).toBe(400);
   });
 
-  it("200 happy path — inserts payment and returns correct shape", async () => {
+  it("200 happy path — calls createVndPayment and returns correct shape", async () => {
     const req = makeJsonRequest({ credits: 50 });
     const res = await vndPOST(req);
     expect(res.status).toBe(200);
@@ -179,29 +190,28 @@ describe("POST /api/payments/vnd", () => {
       expiresAt: expect.any(String),
       bankInfo: expect.objectContaining({ bankBin: expect.any(String) }),
     });
+    expect(createVndPayment).toHaveBeenCalledWith({ userId: "user-42", credits: 50 });
   });
 
-  it("200 happy path — calls db.run to INSERT payment", async () => {
+  it("200 happy path — delegates INSERT to createVndPayment (no direct db.run)", async () => {
     const req = makeJsonRequest({ credits: 10 });
     await vndPOST(req);
-    expect(mockDb.run).toHaveBeenCalledTimes(1);
-    const [sql, params] = mockDb.run.mock.calls[0];
-    expect(sql).toContain("INSERT INTO payments");
-    expect(params[1]).toBe("user-42"); // userId
-    expect(params[2]).toBe("vnd");     // network (sentinel)
-    expect(params[3]).toBe("VND");     // coin (sentinel)
-    expect(params[4]).toBe(0);         // amountExpected (sentinel)
-    expect(params[5]).toBe("vnd_bank"); // method
-    expect(params[6]).toBe("pending");  // status
-    expect(params[7]).toBe(10);         // credits
+    expect(createVndPayment).toHaveBeenCalledWith({ userId: "user-42", credits: 10 });
+    // Route no longer calls db.run directly — createVndPayment does that internally.
+    expect(mockDb.run).not.toHaveBeenCalled();
   });
 
-  it("200 happy path — amountVnd = creditsToVnd(credits)", async () => {
-    creditsToVnd.mockReturnValue(25000);
+  it("200 happy path — amountVnd comes from createVndPayment result", async () => {
+    createVndPayment.mockResolvedValue({
+      id: "pay-custom", memo: "9RCUSTOM01", amountVnd: 25000, credits: 25,
+      expiresAt: "2026-01-01T00:30:00.000Z", qrUrl: "https://img.vietqr.io/image/custom.png",
+      bankInfo: { bankName: "VCB", bankBin: "970436", accountNumber: "111", vndPerCredit: 1000 },
+    });
     const req = makeJsonRequest({ credits: 25 });
     const res = await vndPOST(req);
     const body = await res.json();
     expect(body.amountVnd).toBe(25000);
+    expect(body.paymentId).toBe("pay-custom");
   });
 });
 
