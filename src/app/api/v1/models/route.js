@@ -1,4 +1,5 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS, getModelContextWindow } from "@/shared/constants/models";
+import { validateBaseUrl } from "@/shared/utils/validateBaseUrl.js";
 import {
   AI_PROVIDERS,
   getProviderAlias,
@@ -82,6 +83,8 @@ async function fetchCompatibleModelIds(connection) {
     : "";
 
   if (!baseUrl) return [];
+  const check = validateBaseUrl(baseUrl);
+  if (!check.valid) return [];
 
   let url = `${baseUrl}/models`;
   const headers = {

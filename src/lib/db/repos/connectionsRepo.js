@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { validateBaseUrl } from "@/shared/utils/validateBaseUrl.js";
 import { canTransitionEntitlement, ENTITLEMENT_STATUS } from "./entitlementsRepo.js";
 
 const OPTIONAL_FIELDS = [
@@ -99,6 +100,15 @@ function reorderInTx(db, providerId) {
 }
 
 export async function createProviderConnection(data) {
+  // SSRF gate: validate baseUrl before persisting (multi-tenant SaaS protection)
+  const baseUrl = data.providerSpecificData?.baseUrl;
+  if (baseUrl) {
+    const check = validateBaseUrl(baseUrl);
+    if (!check.valid) {
+      throw Object.assign(new Error(check.error), { code: "INVALID_BASE_URL", status: 400 });
+    }
+  }
+
   const db = await getAdapter();
   const now = new Date().toISOString();
   let result;
@@ -167,6 +177,15 @@ export async function createProviderConnection(data) {
 
 // Critical: OAuth refresh token race — atomic merge inside transaction
 export async function updateProviderConnection(id, data) {
+  // SSRF gate: validate baseUrl on update too
+  const baseUrl = data.providerSpecificData?.baseUrl;
+  if (baseUrl) {
+    const check = validateBaseUrl(baseUrl);
+    if (!check.valid) {
+      throw Object.assign(new Error(check.error), { code: "INVALID_BASE_URL", status: 400 });
+    }
+  }
+
   const db = await getAdapter();
   let result;
   db.transaction(() => {

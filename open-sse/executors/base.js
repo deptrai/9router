@@ -1,6 +1,7 @@
 import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { dbg } from "../utils/debugLog.js";
+import { validateBaseUrl } from "../../src/shared/utils/validateBaseUrl.js";
 
 /**
  * BaseExecutor - Base class for provider executors
@@ -27,17 +28,26 @@ export class BaseExecutor {
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     if (this.provider?.startsWith?.("openai-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "https://api.openai.com/v1";
+      this._assertSafeUrl(baseUrl);
       const normalized = baseUrl.replace(/\/$/, "");
       const path = this.provider.includes("responses") ? "/responses" : "/chat/completions";
       return `${normalized}${path}`;
     }
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "https://api.anthropic.com/v1";
+      this._assertSafeUrl(baseUrl);
       const normalized = baseUrl.replace(/\/$/, "");
       return `${normalized}/messages`;
     }
     const baseUrls = this.getBaseUrls();
     return baseUrls[urlIndex] || baseUrls[0] || this.config.baseUrl;
+  }
+
+  _assertSafeUrl(url) {
+    const check = validateBaseUrl(url);
+    if (!check.valid) {
+      throw Object.assign(new Error(`SSRF blocked: ${check.error}`), { status: 400 });
+    }
   }
 
   buildHeaders(credentials, stream = true) {
