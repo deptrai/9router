@@ -37,11 +37,9 @@ describe("apiKeysRepo ownership", () => {
     ).rejects.toThrow("Key limit reached: max 10 keys per user");
 
     // Verify error has code
-    try {
-      await createApiKey("key-11b", "machine-1", "user-123");
-    } catch (e) {
-      expect(e.code).toBe("KEY_LIMIT");
-    }
+    await expect(
+      createApiKey("key-11b", "machine-1", "user-123")
+    ).rejects.toMatchObject({ code: "KEY_LIMIT" });
   });
 
   it("createApiKey without userId (legacy/admin): no limit", async () => {

@@ -92,18 +92,10 @@ describe("saveRequestUsage — credit deduction", () => {
   });
 
   it("cost = 0 → balance unchanged", async () => {
-    const { user, key } = await seedUserAndKey("zero@example.com", 5.0);
+    const { user } = await seedUserAndKey("zero@example.com", 5.0);
     const { getUserById } = await import("@/lib/db/repos/usersRepo.js");
-    const { getAdapter } = await import("@/lib/db/driver.js");
-    const db = await getAdapter();
 
-    // cost=0 → skip deduction
-    const cost = 0;
-    if (key.key && typeof key.key === "string" && cost > 0) {
-      // This block should NOT execute
-      db.run(`UPDATE users SET creditsBalance = creditsBalance - ? WHERE id = ?`, [cost, user.id]);
-    }
-
+    // cost=0 means no deduction occurs — balance must remain unchanged
     const after = await getUserById(user.id);
     expect(after.creditsBalance).toBeCloseTo(5.0, 6);
   });

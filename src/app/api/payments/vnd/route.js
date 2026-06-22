@@ -39,11 +39,12 @@ export async function POST(request) {
     }
 
     const payment = await createVndPayment({ userId: session.userId, credits });
+    const { vndPerCredit: _, ...clientBankInfo } = payment.bankInfo;
 
     return NextResponse.json({
       paymentId: payment.id,
       qrUrl: payment.qrUrl,
-      bankInfo: payment.bankInfo,
+      bankInfo: clientBankInfo,
       memo: payment.memo,
       credits: payment.credits,
       amountVnd: payment.amountVnd,

@@ -12,7 +12,7 @@ const BANK_ACCOUNT = () => process.env.VND_BANK_ACCOUNT || "";
 const BANK_BIN = () => process.env.VND_BANK_BIN || "";
 const BANK_NAME = () => process.env.VND_BANK_NAME || "";
 const WEBHOOK_SECRET = () => process.env.SEPAY_WEBHOOK_SECRET || "";
-const PAYMENT_TIMEOUT_MS = 30 * 60 * 1000;
+const PAYMENT_TIMEOUT_MS = () => Number(process.env.VND_PAYMENT_TIMEOUT_MIN || 30) * 60 * 1000;
 
 export function isConfigured() {
   return !!(BANK_ACCOUNT() && BANK_BIN());
@@ -84,7 +84,7 @@ export function verifyWebhookSecret(incomingSecret) {
 }
 
 export function getPaymentTimeoutMs() {
-  return PAYMENT_TIMEOUT_MS;
+  return PAYMENT_TIMEOUT_MS();
 }
 
 /**
@@ -100,7 +100,7 @@ export async function createVndPayment({ userId, credits }) {
   const memo = generateMemo();
   const id = uuidv4();
   const now = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + PAYMENT_TIMEOUT_MS).toISOString();
+  const expiresAt = new Date(Date.now() + PAYMENT_TIMEOUT_MS()).toISOString();
 
   const db = await getAdapter();
   db.run(
