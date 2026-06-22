@@ -370,6 +370,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
       const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
 
+      // Diagnostic: log tool names when Bedrock rejects schema (helps identify which MCP tool is invalid)
+      if (result.status === 400 && result.error?.includes?.("TOOL_SCHEMA_INVALID") && body.tools?.length) {
+        const toolNames = body.tools.map((t, i) => `${i}:${t.name || t.function?.name || t.custom?.name || "?"}`).join(", ");
+        log.warn("TOOL_SCHEMA", `Bedrock rejected tool schema | model=${model} | tools=[${toolNames}]`);
+      }
+
       if (shouldFallback) {
         log.warn("AUTH", `Account ${credentials.connectionName} unavailable (${result.status}), trying fallback`);
         excludeConnectionIds.add(credentials.connectionId);
