@@ -314,6 +314,7 @@ export async function getUsageHistory(filter = {}) {
   const conds = [];
   const params = [];
 
+  if (filter.userId) { conds.push("apiKey IN (SELECT key FROM apiKeys WHERE userId=?)"); params.push(filter.userId); }
   if (filter.provider) { conds.push("provider = ?"); params.push(filter.provider); }
   if (filter.model) { conds.push("model = ?"); params.push(filter.model); }
   if (filter.startDate) { conds.push("timestamp >= ?"); params.push(new Date(filter.startDate).toISOString()); }
@@ -718,9 +719,11 @@ export async function getUsageStats(period = "all", userId = null) {
   return stats;
 }
 
-export async function getChartData(period = "7d") {
+export async function getChartData(period = "7d", userId = null) {
   const db = await getAdapter();
   const now = Date.now();
+  const userFilter = userId ? " AND apiKey IN (SELECT key FROM apiKeys WHERE userId=?)" : "";
+  const userParams = userId ? [userId] : [];
 
   if (period === "today") {
     const bucketCount = 24;
@@ -733,8 +736,8 @@ export async function getChartData(period = "7d") {
     const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0 }));
 
     const rows = db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
-      [new Date(startTime).toISOString()]
+      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?${userFilter}`,
+      [new Date(startTime).toISOString(), ...userParams]
     );
     for (const r of rows) {
       const t = new Date(r.timestamp).getTime();
@@ -756,8 +759,8 @@ export async function getChartData(period = "7d") {
     const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0 }));
 
     const rows = db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
-      [new Date(startTime).toISOString()]
+      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?${userFilter}`,
+      [new Date(startTime).toISOString(), ...userParams]
     );
     for (const r of rows) {
       const t = new Date(r.timestamp).getTime();
@@ -773,7 +776,32 @@ export async function getChartData(period = "7d") {
   const today = new Date();
   const labelFn = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
-  // Build map of dateKey → day data
+  if (userId) {
+    // userId scope: query usageHistory directly (usageDaily is not per-user)
+    const startTime = new Date(today);
+    startTime.setDate(startTime.getDate() - bucketCount + 1);
+    startTime.setHours(0, 0, 0, 0);
+    const rows = db.all(
+      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? AND apiKey IN (SELECT key FROM apiKeys WHERE userId=?)`,
+      [startTime.toISOString(), userId]
+    );
+    const dayMap = {};
+    for (const r of rows) {
+      const d = new Date(r.timestamp);
+      const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      if (!dayMap[dateKey]) dayMap[dateKey] = { tokens: 0, cost: 0 };
+      dayMap[dateKey].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
+      dayMap[dateKey].cost += r.cost || 0;
+    }
+    return Array.from({ length: bucketCount }, (_, i) => {
+      const d = new Date(today);
+      d.setDate(d.getDate() - (bucketCount - 1 - i));
+      const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      return { label: labelFn(d), tokens: dayMap[dateKey]?.tokens || 0, cost: dayMap[dateKey]?.cost || 0 };
+    });
+  }
+
+  // Admin/no-filter: use pre-aggregated usageDaily (fast)
   const dayRows = loadDaysInRange(db, bucketCount);
   const dayMap = {};
   for (const r of dayRows) dayMap[r.dateKey] = parseJson(r.data, {});
@@ -799,13 +827,18 @@ function formatLogDate(date = new Date()) {
 // No-op: request log is now derived from usageHistory table on read.
 export async function appendRequestLog() {}
 
-export async function getRecentLogs(limit = 200) {
+export async function getRecentLogs(limit = 200, userId = null) {
   try {
     const db = await getAdapter();
-    const rows = db.all(
-      `SELECT timestamp, provider, model, connectionId, promptTokens, completionTokens, status, tokens FROM usageHistory ORDER BY id DESC LIMIT ?`,
-      [limit],
-    );
+    const rows = userId
+      ? db.all(
+          `SELECT timestamp, provider, model, connectionId, promptTokens, completionTokens, status, tokens FROM usageHistory WHERE apiKey IN (SELECT key FROM apiKeys WHERE userId=?) ORDER BY id DESC LIMIT ?`,
+          [userId, limit],
+        )
+      : db.all(
+          `SELECT timestamp, provider, model, connectionId, promptTokens, completionTokens, status, tokens FROM usageHistory ORDER BY id DESC LIMIT ?`,
+          [limit],
+        );
     if (!rows.length) return [];
 
     const connMap = {};
