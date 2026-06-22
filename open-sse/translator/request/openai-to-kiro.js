@@ -55,21 +55,35 @@ function cleanSchemaNode(node) {
   delete node.$comment;
   delete node.$recursiveAnchor;
   delete node.$recursiveRef;
+  delete node.$vocabulary;
   // Strip draft-04/06/07 `id` alias (no `$` prefix)
   if ("id" in node && typeof node.id === "string" && !node.$id) {
     delete node.id;
   }
   // Strip deprecated keywords
   delete node.additionalItems;
-  // Strip UI hints (Bedrock treat them as unknown keywords)
+  // Strip UI hints (Bedrock treat them as unknown keywords — thinking models especially)
   delete node.default;
   delete node.examples;
   delete node.readOnly;
   delete node.writeOnly;
   delete node.deprecated;
+  delete node.title;
+  delete node.markdownDescription;
+  delete node.$comment;
   // Strip format if it exists (Bedrock has no format validator and may reject
   // unknown format strings like "uuid", "file-path", etc.)
   delete node.format;
+
+  // type: "null" standalone → strip node to empty (Bedrock thinking models reject)
+  if (node.type === "null") {
+    node.type = "string";
+  }
+  // type: ["T", "null"] → "T" (also handled in chat.js but belt-and-suspenders)
+  if (Array.isArray(node.type)) {
+    const nonNull = node.type.filter(t => t !== "null");
+    node.type = nonNull.length === 1 ? nonNull[0] : nonNull.length > 1 ? nonNull[0] : "string";
+  }
 
   // additionalProperties: false — most common failure. Strip at all levels.
   if (node.additionalProperties === false) {
