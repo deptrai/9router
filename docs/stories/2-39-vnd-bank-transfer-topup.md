@@ -13,7 +13,7 @@ context:
 
 # Story 2-39: VND Bank Transfer Payment + Unified Topup Flow (Web + Telegram)
 
-Status: ready-for-dev
+Status: in-progress
 
 ## Story
 
@@ -120,34 +120,34 @@ Env `VND_PER_CREDIT` default 1000 (1 credit = 1000 VND).
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — VND payment provider module** (AC1)
-  - [ ] Create `src/lib/payment/vndBank.js` — createPayment, generateVietQR, verifyWebhook
-  - [ ] VietQR encoding theo EMVCo spec (bank BIN, account, amount, memo)
-  - [ ] Register trong `providers/index.js`
-  - [ ] Config: `VND_BANK_ACCOUNT`, `VND_BANK_BIN`, `VND_BANK_NAME`, `VND_PER_CREDIT`, `SEPAY_WEBHOOK_SECRET`
+- [x] **T1 — VND payment provider module** (AC1)
+  - [x] Create `src/lib/payment/vndBank.js` — createPayment, generateVietQR, verifyWebhook
+  - [x] VietQR encoding theo EMVCo spec (bank BIN, account, amount, memo)
+  - [x] Register trong `providers/index.js`
+  - [x] Config: `VND_BANK_ACCOUNT`, `VND_BANK_BIN`, `VND_BANK_NAME`, `VND_PER_CREDIT`, `SEPAY_WEBHOOK_SECRET`
 
-- [ ] **T2 — SePay webhook route** (AC3)
-  - [ ] Create `src/app/api/payments/vnd-webhook/route.js`
-  - [ ] Verify secret header
-  - [ ] Match pending payment by memo
-  - [ ] Call `settle.js` to credit user
-  - [ ] Idempotent (payment already confirmed → 200 no-op)
+- [x] **T2 — SePay webhook route** (AC3)
+  - [x] Create `src/app/api/payments/vnd-webhook/route.js`
+  - [x] Verify secret header
+  - [x] Match pending payment by memo
+  - [x] Call `settle.js` to credit user
+  - [x] Idempotent (payment already confirmed → 200 no-op)
 
-- [ ] **T3 — Migration: payments.method field** (AC7)
-  - [ ] Add `method TEXT DEFAULT 'crypto'` to payments table
-  - [ ] SCHEMA_VERSION bump
+- [x] **T3 — Migration: payments.method field** (AC7)
+  - [x] Add `method TEXT DEFAULT 'crypto'` to payments table
+  - [x] SCHEMA_VERSION bump
 
-- [ ] **T4 — Web dashboard topup VND** (AC4, AC8)
-  - [ ] Update `/dashboard/credits` page: add VND tab/option
-  - [ ] Form: input credits amount → POST `/api/payments/vnd` → receive QR data
-  - [ ] Display QR image + bank info + memo + amount VND
-  - [ ] Poll payment status until confirmed or expired
+- [x] **T4 — Web dashboard topup VND** (AC4, AC8)
+  - [x] Update `/dashboard/credits` page: add VND tab/option
+  - [x] Form: input credits amount → POST `/api/payments/vnd` → receive QR data
+  - [x] Display QR image + bank info + memo + amount VND
+  - [x] Poll payment status until confirmed or expired
 
-- [ ] **T5 — API: POST /api/payments/vnd** (AC2)
-  - [ ] Create route: auth required, accepts `{ credits }`
-  - [ ] Calculate amountVnd = credits * VND_PER_CREDIT
-  - [ ] Generate memo, create payment record, generate VietQR
-  - [ ] Return `{ paymentId, qrDataUrl, bankInfo, memo, amountVnd, expiresAt }`
+- [x] **T5 — API: POST /api/payments/vnd** (AC2)
+  - [x] Create route: auth required, accepts `{ credits }`
+  - [x] Calculate amountVnd = credits * VND_PER_CREDIT
+  - [x] Generate memo, create payment record, generate VietQR
+  - [x] Return `{ paymentId, qrDataUrl, bankInfo, memo, amountVnd, expiresAt }`
 
 - [ ] **T6 — Bot inline topup flow** (AC5, AC6)
   - [ ] Update `handleBuyExecute`: khi INSUFFICIENT_CREDITS → hiện nút nạp thay vì chỉ thông báo
@@ -155,15 +155,15 @@ Env `VND_PER_CREDIT` default 1000 (1 credit = 1000 VND).
   - [ ] `handleTopup`: chọn method → VND: hỏi amount → generate QR → sendPhoto/sendMessage with QR URL
   - [ ] Crypto path: reuse existing Bitcart createInvoice flow
 
-- [ ] **T7 — Payment expiry sweep** (AC7)
-  - [ ] Extend existing payment sweep hoặc thêm vnd_bank sweep
-  - [ ] Pending VND payments > 30min → expired
+- [x] **T7 — Payment expiry sweep** (AC7)
+  - [x] Extend existing payment sweep hoặc thêm vnd_bank sweep
+  - [x] Pending VND payments > 30min → expired
 
-- [ ] **T8 — Tests**
-  - [ ] Unit: VietQR encoding + memo generation
-  - [ ] Unit: webhook verify + settle
-  - [ ] Unit: bot topup flow
-  - [ ] Integration: create payment → webhook → credit
+- [x] **T8 — Tests**
+  - [x] Unit: VietQR encoding + memo generation
+  - [x] Unit: webhook verify + settle
+  - [ ] Unit: bot topup flow (T6 chưa implement)
+  - [x] Integration: create payment → webhook → credit
 
 ## Dev Notes
 
@@ -223,5 +223,24 @@ CRC (ID 63): CRC-16/CCITT-FALSE checksum
 
 ## Dev Agent Record
 ### Agent Model Used
+claude-sonnet-4-6 (claude-code)
+
 ### Completion Notes List
+- T1–T5, T7, T8 hoàn thành và verified trên production (2026-06-22)
+- Production test: `POST /api/payments/vnd` trả HTTP 200 với QR URL, memo, bankInfo
+- Fix thực: INSERT cần sentinel `network="vnd"`, `coin="VND"`, `amountExpected=0` vì schema cũ NOT NULL
+- Fix auth: admin login cần user row để session có `userId`
+- `verifyWebhookSecret` fix: buffer length check trước `timingSafeEqual`
+- T6 (bot inline topup) chưa implement — AC5/AC6 còn pending
+
 ### File List
+- `src/lib/payment/vndBank.js` (NEW)
+- `src/lib/payment/vndExpirySweep.js` (NEW)
+- `src/app/api/payments/vnd/route.js` (NEW)
+- `src/app/api/payments/vnd-webhook/route.js` (NEW)
+- `src/lib/db/migrations/015-vnd-bank-payment.js` (NEW)
+- `src/app/(dashboard)/dashboard/credits/page.js` (modified — VND topup UI)
+- `src/app/api/auth/login/route.js` (modified — admin user row fix)
+- `tests/unit/vndBank.test.js` (NEW)
+- `tests/unit/vndExpirySweep.test.js` (NEW)
+- `tests/unit/vndRoutes.test.js` (NEW)
