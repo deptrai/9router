@@ -51,6 +51,7 @@ export async function POST(request) {
       expiresAt,
     });
   } catch (err) {
-    return NextResponse.json({ error: err.message, stack: err.stack?.split("\n").slice(0, 5) }, { status: 500 });
+    console.error("[VND payment]", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
