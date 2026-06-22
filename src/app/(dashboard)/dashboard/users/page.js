@@ -175,11 +175,29 @@ export default function UsersPage() {
   const [topupUser, setTopupUser] = useState(null);
   const [planUser, setPlanUser] = useState(null);
 
+  const [search, setSearch] = useState("");
+  const [planFilter, setPlanFilter] = useState("");
+  const [balanceFilter, setBalanceFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const limit = 20;
+
   const loadUsers = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const [usersRes, plansRes] = await Promise.all([fetch("/api/users"), fetch("/api/plans")]);
+      const params = new URLSearchParams();
+      params.set("page", page);
+      params.set("limit", limit);
+      if (search) params.set("search", search);
+      if (planFilter) params.set("planId", planFilter);
+      if (balanceFilter) params.set("balanceFilter", balanceFilter);
+
+      const [usersRes, plansRes] = await Promise.all([
+        fetch(`/api/users?${params}`),
+        fetch("/api/plans"),
+      ]);
       if (!usersRes.ok) {
         setError(usersRes.status === 403 ? "Access denied — admin only." : "Failed to load users.");
         setLoading(false);
@@ -187,6 +205,8 @@ export default function UsersPage() {
       }
       const usersData = await usersRes.json();
       setUsers(usersData.users || []);
+      setTotal(usersData.total || 0);
+      setTotalPages(usersData.totalPages || 1);
       if (plansRes.ok) {
         const plansData = await plansRes.json();
         setPlans(plansData.plans || []);
@@ -195,12 +215,14 @@ export default function UsersPage() {
       setError("Network error");
     }
     setLoading(false);
-  }, []);
+  }, [page, search, planFilter, balanceFilter]);
 
   useEffect(() => {
     const timer = setTimeout(loadUsers, 0);
     return () => clearTimeout(timer);
   }, [loadUsers]);
+
+  useEffect(() => { setPage(1); }, [search, planFilter, balanceFilter]);
 
   const handleTopupSuccess = (userId, newBalance) => {
     setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, creditsBalance: newBalance } : u)));
@@ -210,11 +232,58 @@ export default function UsersPage() {
     setUsers((prev) => prev.map((u) => (u.id === updatedUser.id ? updatedUser : u)));
   };
 
+  const handleToggleStatus = async (user) => {
+    const newActive = !user.isActive;
+    if (!newActive && !window.confirm(`Disable user ${user.email}?`)) return;
+    try {
+      const res = await fetch(`/api/users/${user.id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: newActive }),
+      });
+      if (res.ok) {
+        setUsers((prev) => prev.map((u) => u.id === user.id ? { ...u, isActive: newActive } : u));
+      }
+    } catch { /* ignore */ }
+  };
+
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-text-main">Users</h1>
-        <Button variant="secondary" icon="refresh" onClick={loadUsers}>Refresh</Button>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-text-muted">{total} users found</span>
+          <Button variant="secondary" icon="refresh" onClick={loadUsers}>Refresh</Button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search email or name..."
+          className="px-3 py-2 rounded-lg border border-border-subtle bg-surface-1 text-text-main text-sm w-64 focus:outline-none focus:ring-2 focus:ring-primary/50"
+        />
+        <select
+          value={planFilter}
+          onChange={(e) => setPlanFilter(e.target.value)}
+          className="px-3 py-2 rounded-lg border border-border-subtle bg-surface-1 text-text-main text-sm"
+        >
+          <option value="">All Plans</option>
+          <option value="none">Credit only</option>
+          {plans.map((p) => <option key={p.id} value={p.id}>{p.displayName || p.name}</option>)}
+        </select>
+        <select
+          value={balanceFilter}
+          onChange={(e) => setBalanceFilter(e.target.value)}
+          className="px-3 py-2 rounded-lg border border-border-subtle bg-surface-1 text-text-main text-sm"
+        >
+          <option value="">All Balances</option>
+          <option value="zero">Zero (≤ 0)</option>
+          <option value="low">Low (&lt; $1)</option>
+          <option value="normal">Normal (≥ $1)</option>
+        </select>
       </div>
 
       <Card className="p-0 overflow-hidden">
@@ -247,9 +316,12 @@ export default function UsersPage() {
                     <td className="px-4 py-3 text-center"><span className="text-xs font-semibold text-text-main">{user.allowCreditOverflow ? "ON" : "OFF"}</span></td>
                     <td className="px-4 py-3 text-right"><BalanceBadge balance={user.creditsBalance} /></td>
                     <td className="px-4 py-3 text-center">
-                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${user.isActive ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"}`}>
+                      <button
+                        onClick={() => handleToggleStatus(user)}
+                        className={`inline-block px-2 py-0.5 rounded text-xs font-medium cursor-pointer hover:opacity-80 ${user.isActive ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"}`}
+                      >
                         {user.isActive ? "Active" : "Disabled"}
-                      </span>
+                      </button>
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex gap-2">
@@ -264,6 +336,14 @@ export default function UsersPage() {
           </div>
         )}
       </Card>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-3">
+          <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</Button>
+          <span className="text-sm text-text-muted">Page {page} / {totalPages}</span>
+          <Button size="sm" variant="secondary" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Next</Button>
+        </div>
+      )}
 
       {topupUser && <TopupModal user={topupUser} onClose={() => setTopupUser(null)} onSuccess={handleTopupSuccess} />}
       {planUser && <AssignPlanModal user={planUser} plans={plans} onClose={() => setPlanUser(null)} onSuccess={handlePlanSuccess} />}

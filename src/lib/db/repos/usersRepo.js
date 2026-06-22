@@ -105,16 +105,43 @@ export async function addCredits(id, amount, db = null, { type = "admin_topup", 
   await recordCreditTxn({ userId: id, type, bucket: "standard", amount, refId, idempotencyKey, note }, db);
 }
 
-export async function listUsers({ offset = 0, limit = 50 } = {}) {
+export async function listUsers({ offset = 0, limit = 50, search, planId, balanceFilter, sort = "createdAt", order = "asc" } = {}) {
   const db = await getAdapter();
+  const conds = [];
+  const params = [];
+
+  if (search) {
+    conds.push("(users.email LIKE ? OR users.displayName LIKE ?)");
+    params.push(`%${search}%`, `%${search}%`);
+  }
+  if (planId === "none") {
+    conds.push("users.planId IS NULL");
+  } else if (planId) {
+    conds.push("users.planId = ?");
+    params.push(planId);
+  }
+  if (balanceFilter === "zero") conds.push("users.creditsBalance <= 0");
+  else if (balanceFilter === "low") conds.push("users.creditsBalance > 0 AND users.creditsBalance < 1.0");
+  else if (balanceFilter === "normal") conds.push("users.creditsBalance >= 1.0");
+
+  const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
+  const sortCol = sort === "balance" ? "users.creditsBalance" : "users.createdAt";
+  const sortOrder = order === "desc" ? "DESC" : "ASC";
+
+  const total = db.get(
+    `SELECT COUNT(*) as n FROM users LEFT JOIN plans ON plans.id = users.planId ${where}`,
+    params
+  )?.n ?? 0;
+
   const rows = db.all(
     `SELECT users.*, plans.name AS planName, plans.displayName AS planDisplayName, plans.isActive AS planIsActive
      FROM users
      LEFT JOIN plans ON plans.id = users.planId
-     ORDER BY users.createdAt ASC LIMIT ? OFFSET ?`,
-    [limit, offset]
+     ${where}
+     ORDER BY ${sortCol} ${sortOrder} LIMIT ? OFFSET ?`,
+    [...params, limit, offset]
   );
-  return rows.map((row) => rowToUser(row, false));
+  return { users: rows.map((row) => rowToUser(row, false)), total };
 }
 
 export async function deactivateUser(id) {

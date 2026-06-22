@@ -120,7 +120,8 @@ describe("usersRepo", () => {
     await createUser("b@example.com", "$2a$10$h", "B");
     await createUser("c@example.com", "$2a$10$h", "C");
 
-    const list = await listUsers();
+    const { users: list, total } = await listUsers();
+    expect(total).toBe(3);
     expect(list.length).toBe(3);
     expect(list[0].email).toBe("a@example.com");
     expect(list[2].email).toBe("c@example.com");
@@ -135,7 +136,8 @@ describe("usersRepo", () => {
     await createUser("u2@example.com", "$2a$10$h", "U2");
     await createUser("u3@example.com", "$2a$10$h", "U3");
 
-    const page = await listUsers({ offset: 1, limit: 1 });
+    const { users: page, total } = await listUsers({ offset: 1, limit: 1 });
+    expect(total).toBe(3);
     expect(page.length).toBe(1);
     expect(page[0].email).toBe("u2@example.com");
   });
