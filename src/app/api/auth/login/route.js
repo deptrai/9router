@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
 import { isOidcConfigured } from "@/lib/auth/oidc";
 import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
-import { getUserByEmail } from "@/lib/db/index.js";
+import { getUserByEmail, createUser } from "@/lib/db/index.js";
 
 const RESET_HINT = "Forgot password? Reset to default via 9Router CLI → Settings → Reset Password to Default.";
 
@@ -97,8 +97,20 @@ export async function POST(request) {
 
     if (isValid) {
       recordSuccess(ip);
+
+      // Get or create admin user row (Story 2-39 fix: admin needs userId for payment endpoints)
+      const ADMIN_EMAIL = "admin@9router.local";
+      let adminUser = await getUserByEmail(ADMIN_EMAIL);
+      if (!adminUser) {
+        adminUser = await createUser(ADMIN_EMAIL, storedHash || "!", "Admin");
+      }
+
       const cookieStore = await cookies();
-      await setDashboardAuthCookie(cookieStore, request, { role: "admin" });
+      await setDashboardAuthCookie(cookieStore, request, {
+        role: "admin",
+        userId: adminUser.id,
+        email: adminUser.email,
+      });
 
       return NextResponse.json({ success: true });
     }
