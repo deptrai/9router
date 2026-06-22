@@ -93,10 +93,14 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Sanitize tool schemas for Bedrock compatibility (draft 2020-12)
   if (body.tools?.length) {
+    let sanitized = 0;
     for (const tool of body.tools) {
-      const schema = tool.input_schema || tool.custom?.input_schema;
-      if (schema) sanitizeSchemaForBedrock(schema);
+      // Handle all possible schema locations
+      if (tool.input_schema) { sanitizeSchemaForBedrock(tool.input_schema); sanitized++; }
+      if (tool.custom?.input_schema) { sanitizeSchemaForBedrock(tool.custom.input_schema); sanitized++; }
+      if (tool.function?.parameters) { sanitizeSchemaForBedrock(tool.function.parameters); sanitized++; }
     }
+    if (sanitized > 0) log.info("SANITIZE", `Sanitized ${sanitized}/${body.tools.length} tool schemas for Bedrock compatibility`);
   }
 
   // Early-reject: if estimated input tokens exceed model's effective context limit by >10%,
