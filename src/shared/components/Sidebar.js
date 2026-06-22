@@ -18,6 +18,7 @@ const COMBINED_WEB_ITEM = { id: "web", label: "Web Fetch & Search", icon: "trave
 
 // AC5: Admin-only nav items (hidden from role=user)
 const adminNavItems = [
+  { href: "/dashboard/admin", label: "Overview", icon: "dashboard" },
   { href: "/dashboard/endpoint", label: "Endpoint", icon: "api" },
   { href: "/dashboard/providers", label: "Providers", icon: "dns" },
   // { href: "/dashboard/basic-chat", label: "Basic Chat", icon: "chat" }, // Hidden
