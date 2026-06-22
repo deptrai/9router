@@ -308,10 +308,20 @@ export class KiroService {
     }
     const trimmed = apiKey.trim();
 
-    // Validate the key against CodeWhisperer. A non-OK HTTP response (401/403/etc.)
-    // means the key is invalid and MUST reject. An empty profiles array is a valid
-    // key without an assigned profile — proceed with profileArn=null.
-    const profileArn = await this.listAvailableProfiles(trimmed, region);
+    // Validate the key against CodeWhisperer. Only an auth-class response
+    // (401/403) proves the key is invalid → reject. Transient failures
+    // (429/5xx/network) must NOT reject a possibly-valid key — proceed with
+    // profileArn=null and let chat-time requests surface real auth errors.
+    // An empty profiles array is a valid key without a profile → profileArn=null.
+    let profileArn = null;
+    try {
+      profileArn = await this.listAvailableProfiles(trimmed, region);
+    } catch (error) {
+      if (error?.status === 401 || error?.status === 403) {
+        throw error;
+      }
+      // Transient/non-auth failure — accept the key without a profile.
+    }
 
     return {
       accessToken: trimmed,
@@ -326,7 +336,11 @@ export class KiroService {
    * List available profiles from CodeWhisperer API (validates API key)
    */
   async listAvailableProfiles(apiKey, region = "us-east-1") {
-    const endpoint = `https://codewhisperer.${region}.amazonaws.com`;
+    // CodeWhisperer runtime (executor, model listing, usage) only targets
+    // us-east-1, so validation must hit the same host. The region param is
+    // retained for signature compatibility but intentionally NOT interpolated
+    // into the URL (avoids SSRF via attacker-controlled region).
+    const endpoint = "https://codewhisperer.us-east-1.amazonaws.com";
     const target = "AmazonCodeWhispererService.ListAvailableProfiles";
 
     const response = await fetch(endpoint, {
@@ -342,7 +356,9 @@ export class KiroService {
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`Profile listing failed: ${error}`);
+      const err = new Error(`Profile listing failed: ${error}`);
+      err.status = response.status;
+      throw err;
     }
 
     const data = await response.json();

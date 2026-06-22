@@ -626,11 +626,11 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "kiro": {
-        // API keys are stored in accessToken (not apiKey) by the import route
+        // API keys are stored in accessToken (not apiKey) by the import route.
+        // CodeWhisperer runtime only targets us-east-1 — keep the host fixed.
         const apiKey = connection.accessToken || connection.apiKey;
         if (!apiKey) return { valid: false, error: "Missing API key" };
-        const region = connection.providerSpecificData?.region || "us-east-1";
-        const res = await fetchWithConnectionProxy(`https://codewhisperer.${region}.amazonaws.com`, {
+        const res = await fetchWithConnectionProxy("https://codewhisperer.us-east-1.amazonaws.com", {
           method: "POST",
           headers: {
             "Content-Type": "application/x-amz-json-1.0",

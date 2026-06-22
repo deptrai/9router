@@ -64,6 +64,11 @@ curl -X POST http://localhost:20128/v1/chat/completions \
 - [x] [Review][Decision] `validateApiKey` nuốt mọi lỗi qua `catch {}` — key sai/403 vẫn được lưu thành connection `active`, vi phạm AC2. Key Decision chỉ cho phép bỏ qua trường hợp empty-profiles, nhưng `catch {}` nuốt luôn lỗi `!ok` từ `listAvailableProfiles`. [src/lib/oauth/services/kiro.js:312-318] — **FIXED**: removed try/catch, let HTTP errors throw
 - [x] [Review][Patch] `testApiKeyConnection` thiếu `case "kiro"` + key lưu ở `accessToken` chứ không phải `apiKey` → re-test connection luôn fail và lật `testStatus` thành `error` dù key chạy được [src/app/api/providers/[id]/test/testUtils.js:629,662] — **FIXED**: added case "kiro", reads from accessToken
 - [x] [Review][Patch] `listAvailableProfiles`/`validateApiKey` bỏ qua tham số `region` — endpoint hardcode `us-east-1`, nhưng `region` user nhập vẫn được lưu vào `providerSpecificData.region` gây sai lệch [src/lib/oauth/services/kiro.js:332-333] — **FIXED**: endpoint now uses `${region}`
+
+### Re-review (round 2)
+
+- [x] [Review][Patch] **SSRF regression** — patch round 1 interpolate `${region}` (user-controlled) vào URL host → có thể leak Bearer key ra host của attacker. [kiro.js, testUtils.js] — **FIXED**: revert về hardcode `us-east-1` (runtime chỉ hỗ trợ region này), bỏ region khỏi URL hoàn toàn
+- [x] [Review][Patch] Bỏ try/catch làm AWS 429/5xx transient reject key hợp lệ — **FIXED**: chỉ reject trên 401/403 (`error.status`), transient/network thì proceed với `profileArn=null`
 - [x] [Review][Patch] Nhánh fallback `else if (credentials.accessToken)` thiếu optional chaining trong khi nhánh trên dùng `credentials?.` → TypeError nếu `credentials` null [open-sse/executors/kiro.js:26] — **FIXED**: changed to `credentials?.accessToken`
 - [x] [Review][Patch] Lỗi validation key (client error) trả về HTTP 500 thay vì 4xx [src/app/api/oauth/kiro/api-key/route.js:62-65] — **FIXED**: validation errors return 422
 
