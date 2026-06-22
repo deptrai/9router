@@ -342,9 +342,8 @@ describe("AC3 — delivery forwarding (text/credential)", () => {
     expect(result.forwarded).toBe(true);
     expect(result.internalStatus).toBe("fulfilled");
 
-    // Give async notification time
-    await new Promise(r => setTimeout(r, 50));
-    expect(mockSendMessage).toHaveBeenCalled();
+    // Wait for async notification (fire-and-forget)
+    await vi.waitFor(() => { expect(mockSendMessage).toHaveBeenCalled(); });
     const [chatId, msgText] = mockSendMessage.mock.calls[0];
     expect(chatId).toBe("tg-buyer-123");
     expect(msgText).toContain("ABC123");
@@ -372,7 +371,7 @@ describe("AC3 — delivery forwarding (text/credential)", () => {
       delivery: { type: "credential", payload: "user:pass@host" },
     });
 
-    await new Promise(r => setTimeout(r, 50));
+    await vi.waitFor(() => { expect(mockSendMessage).toHaveBeenCalled(); });
     const [, msgText] = mockSendMessage.mock.calls[0];
     expect(msgText).toContain("<pre>");
     expect(msgText).toContain("user:pass@host");
@@ -393,11 +392,12 @@ describe("AC3 — delivery forwarding (text/credential)", () => {
     };
 
     await applyOrderStatusEvent(source.id, event);
-    await new Promise(r => setTimeout(r, 50));
+    await vi.waitFor(() => { expect(mockSendMessage).toHaveBeenCalled(); });
     mockSendMessage.mockClear();
 
     await applyOrderStatusEvent(source.id, event);
-    await new Promise(r => setTimeout(r, 50));
+    // Brief yield to let any async fire-and-forget settle
+    await new Promise(r => setImmediate(r));
 
     // sendMessage NOT called second time (idempotent)
     expect(mockSendMessage).not.toHaveBeenCalled();
@@ -437,7 +437,7 @@ describe("Review patch — delivery on non-fulfillable order + HTML escape + for
     expect(deliveries.some(d => d.status === "forwarded")).toBe(false);
     expect(deliveries.some(d => d.status === "unsupported")).toBe(true);
 
-    await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setImmediate(r));
     const sentPayload = mockSendMessage.mock.calls.some(
       ([, text]) => typeof text === "string" && text.includes("should-not-be-sent")
     );
@@ -458,7 +458,7 @@ describe("Review patch — delivery on non-fulfillable order + HTML escape + for
       delivery: { type: "credential", payload: "</pre><b>x</b>" },
     });
 
-    await new Promise(r => setTimeout(r, 50));
+    await vi.waitFor(() => { expect(mockSendMessage).toHaveBeenCalled(); });
     const [, msgText] = mockSendMessage.mock.calls[0];
     // Raw injection markup must NOT appear verbatim; it is HTML-escaped.
     expect(msgText).not.toContain("</pre><b>x</b>");
@@ -587,9 +587,7 @@ describe("AC5 — terminal failure", () => {
     await seedSupplierOrder(adapter, order.id, source.id, "sup-ord-F2");
 
     await applyOrderStatusEvent(source.id, { supplierOrderId: "sup-ord-F2", status: "failed" });
-    await new Promise(r => setTimeout(r, 50));
-
-    expect(mockSendMessage).toHaveBeenCalled();
+    await vi.waitFor(() => { expect(mockSendMessage).toHaveBeenCalled(); });
     const [, msg] = mockSendMessage.mock.calls[0];
     expect(msg).toContain("/support");
   });

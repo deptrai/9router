@@ -1,14 +1,18 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import crypto from "node:crypto";
 import { verifyTelegramPayload, isTelegramAuthFresh } from "@/lib/auth/telegramAuth.js";
 
 const BOT_TOKEN = "test_bot_token_123";
+const FIXED_NOW = 1700000000000; // pinned timestamp for deterministic tests
+
+beforeEach(() => { vi.useFakeTimers({ now: FIXED_NOW }); });
+afterEach(() => { vi.useRealTimers(); });
 
 function makePayload(overrides = {}) {
   const data = {
     id: "12345678",
     first_name: "Test",
-    auth_date: String(Math.floor(Date.now() / 1000) - 30),
+    auth_date: String(Math.floor(FIXED_NOW / 1000) - 30),
     ...overrides,
   };
   delete data.hash;
@@ -45,24 +49,26 @@ describe("verifyTelegramPayload", () => {
 });
 
 describe("isTelegramAuthFresh", () => {
+  const nowSec = Math.floor(FIXED_NOW / 1000);
+
   it("auth 30s ago → fresh (true)", () => {
-    expect(isTelegramAuthFresh(Math.floor(Date.now() / 1000) - 30)).toBe(true);
+    expect(isTelegramAuthFresh(nowSec - 30)).toBe(true);
   });
 
   it("auth exactly at maxAge (300s) → true", () => {
-    expect(isTelegramAuthFresh(Math.floor(Date.now() / 1000) - 300)).toBe(true);
+    expect(isTelegramAuthFresh(nowSec - 300)).toBe(true);
   });
 
   it("auth 301s ago → stale (false)", () => {
-    expect(isTelegramAuthFresh(Math.floor(Date.now() / 1000) - 301)).toBe(false);
+    expect(isTelegramAuthFresh(nowSec - 301)).toBe(false);
   });
 
   it("future auth_date → false", () => {
-    expect(isTelegramAuthFresh(Math.floor(Date.now() / 1000) + 60)).toBe(false);
+    expect(isTelegramAuthFresh(nowSec + 60)).toBe(false);
   });
 
   it("custom maxAge honored", () => {
-    expect(isTelegramAuthFresh(Math.floor(Date.now() / 1000) - 50, 60)).toBe(true);
-    expect(isTelegramAuthFresh(Math.floor(Date.now() / 1000) - 61, 60)).toBe(false);
+    expect(isTelegramAuthFresh(nowSec - 50, 60)).toBe(true);
+    expect(isTelegramAuthFresh(nowSec - 61, 60)).toBe(false);
   });
 });

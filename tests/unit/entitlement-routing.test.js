@@ -9,6 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import crypto from "node:crypto";
 import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -36,13 +37,14 @@ afterEach(() => {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-async function insertConnection({ provider = "anthropic", isActive = true, ownerUserId = null, priority = 1 } = {}) {
+async function insertConnection({ provider = "anthropic", isActive = true, ownerUserId = null, priority = 1, suffix = "" } = {}) {
   const { createProviderConnection } = await import("@/lib/db/repos/connectionsRepo.js");
+  const id = crypto.randomUUID();
   return createProviderConnection({
     provider,
     authType: "apiKey",
-    name: `conn-${Math.random().toString(36).slice(2, 7)}`,
-    apiKey: `sk-test-${Math.random().toString(36).slice(2)}`,
+    name: `conn-${id.slice(0, 7)}${suffix}`,
+    apiKey: `sk-test-${id}`,
     isActive,
     ownerUserId,
     priority,
