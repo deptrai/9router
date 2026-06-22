@@ -283,6 +283,7 @@ export const USAGE_SUPPORTED_PROVIDERS = [
 export const USAGE_APIKEY_PROVIDERS = [
   "glm",
   "glm-cn",
+  "kiro",
   "minimax",
   "minimax-cn",
 ];

@@ -298,6 +298,66 @@ export class KiroService {
   }
 
   /**
+   * Validate a long-lived Kiro API key by calling ListAvailableProfiles.
+   * Returns a credential object (accessToken=the raw key, profileArn, region)
+   * ready to persist as a "kiro" connection with authMethod="api_key".
+   */
+  async validateApiKey(apiKey, region = "us-east-1") {
+    if (!apiKey || typeof apiKey !== "string" || !apiKey.trim()) {
+      throw new Error("API key is required");
+    }
+    const trimmed = apiKey.trim();
+
+    let profileArn = null;
+    try {
+      profileArn = await this.listAvailableProfiles(trimmed, region);
+    } catch {
+      // ListAvailableProfiles may fail for API keys (empty profiles array,
+      // insufficient permissions, etc.) — the key is still valid for chat.
+      // Proceed without profileArn.
+    }
+
+    return {
+      accessToken: trimmed,
+      refreshToken: null,
+      profileArn,
+      region,
+      authMethod: "api_key",
+    };
+  }
+
+  /**
+   * List available profiles from CodeWhisperer API (validates API key)
+   */
+  async listAvailableProfiles(apiKey, region = "us-east-1") {
+    const endpoint = "https://codewhisperer.us-east-1.amazonaws.com";
+    const target = "AmazonCodeWhispererService.ListAvailableProfiles";
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-amz-json-1.0",
+        "x-amz-target": target,
+        "Authorization": `Bearer ${apiKey}`,
+        "Accept": "application/json",
+      },
+      body: JSON.stringify({ maxResults: 1 }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Profile listing failed: ${error}`);
+    }
+
+    const data = await response.json();
+    const profiles = data.profiles || [];
+    if (profiles.length === 0) {
+      return null;
+    }
+    return profiles[0].profileArn;
+  }
+
+  /**
    * Validate and import refresh token
    */
   async validateImportToken(refreshToken, providerSpecificData = {}) {

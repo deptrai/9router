@@ -21,7 +21,12 @@ export class KiroExecutor extends BaseExecutor {
       "Amz-Sdk-Invocation-Id": uuidv4()
     };
 
-    if (credentials.accessToken) {
+    const isApiKey = credentials?.providerSpecificData?.authMethod === "api_key";
+    const apiKey = credentials?.apiKey || (isApiKey ? credentials?.accessToken : null);
+    if (isApiKey && apiKey) {
+      headers["Authorization"] = `Bearer ${apiKey}`;
+      headers["tokentype"] = "API_KEY";
+    } else if (credentials.accessToken) {
       headers["Authorization"] = `Bearer ${credentials.accessToken}`;
     }
 
@@ -33,6 +38,20 @@ export class KiroExecutor extends BaseExecutor {
     return headers;
   }
 
+  getOrderedBaseUrls(credentials) {
+    const baseUrls = this.getBaseUrls();
+    const isApiKey = credentials?.providerSpecificData?.authMethod === "api_key";
+    if (!isApiKey) return baseUrls;
+    const amazon = baseUrls.filter((u) => u.includes("amazonaws.com"));
+    const others = baseUrls.filter((u) => !u.includes("amazonaws.com"));
+    return amazon.length > 0 ? [...amazon, ...others] : baseUrls;
+  }
+
+  buildUrl(model, stream, urlIndex = 0, credentials = null) {
+    const baseUrls = this.getOrderedBaseUrls(credentials);
+    return baseUrls[urlIndex] || baseUrls[0] || this.config.baseUrl;
+  }
+
   transformRequest(model, body, stream, credentials) {
     return body;
   }
@@ -41,7 +60,7 @@ export class KiroExecutor extends BaseExecutor {
    * Custom execute for Kiro - handles AWS EventStream binary response with retry support
    */
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
-    const url = this.buildUrl(model, stream, 0);
+    const url = this.buildUrl(model, stream, 0, credentials);
     const transformedBody = this.transformRequest(model, body, stream, credentials);
     
     // Merge default retry config with provider-specific config
