@@ -654,8 +654,8 @@ async function handleTopupVnd(chatId, telegramId, creditsAmount) {
     const expiresAt = new Date(Date.now() + getPaymentTimeoutMs()).toISOString();
 
     db.run(
-      `INSERT INTO payments (id, userId, method, status, credits, amountVnd, memo, network, coin, amountExpected, expiresAt, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [id, user.id, "vnd_bank", "pending", credits, amountVnd, memo, "VND", "VND", amountVnd, expiresAt, now, now]
+      `INSERT INTO payments (id, userId, network, coin, amountExpected, method, status, credits, amountVnd, memo, expiresAt, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, user.id, "vnd", "VND", 0, "vnd_bank", "pending", credits, amountVnd, memo, expiresAt, now, now]
     );
 
     const bankInfo = getBankInfo();
