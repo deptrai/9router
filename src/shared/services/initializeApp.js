@@ -349,6 +349,9 @@ function warnMissingWebhookSecrets() {
   if ((provider === "bitcart" || provider === "auto") && !process.env.BITCART_WEBHOOK_SECRET) {
     console.warn("[InitApp] WARNING: BITCART_WEBHOOK_SECRET is not set — all Bitcart webhook calls will be rejected");
   }
+  if (process.env.VND_BANK_ACCOUNT && process.env.VND_BANK_BIN && !process.env.SEPAY_WEBHOOK_SECRET) {
+    console.warn("[InitApp] WARNING: SEPAY_WEBHOOK_SECRET is not set — VND topup form works but all SePay webhooks will be rejected (payments stuck pending)");
+  }
 }
 
 export default initializeApp;
