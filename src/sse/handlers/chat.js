@@ -26,6 +26,37 @@ import { checkPlanQuota } from "@/lib/quota/planQuota.js";
 import { getApiKeyByKey } from "@/lib/localDb";
 
 /**
+ * Recursively sanitize a JSON Schema object for Bedrock draft 2020-12 compatibility.
+ * Converts "type": ["T", "null"] → "type": "T", removes "format": "uint", "default": null.
+ */
+function sanitizeSchemaForBedrock(schema) {
+  if (!schema || typeof schema !== "object") return;
+  // Convert "type": ["T", "null"] → "type": "T"
+  if (Array.isArray(schema.type)) {
+    const nonNull = schema.type.filter(t => t !== "null");
+    if (nonNull.length === 1) schema.type = nonNull[0];
+  }
+  // Remove invalid format values
+  if (schema.format === "uint" || schema.format === "uint64") delete schema.format;
+  // Remove "default": null
+  if (schema.default === null) delete schema.default;
+  // Recurse into properties
+  if (schema.properties) {
+    for (const prop of Object.values(schema.properties)) {
+      sanitizeSchemaForBedrock(prop);
+    }
+  }
+  // Recurse into items
+  if (schema.items) sanitizeSchemaForBedrock(schema.items);
+  // Recurse into anyOf/oneOf/allOf
+  for (const key of ["anyOf", "oneOf", "allOf"]) {
+    if (Array.isArray(schema[key])) {
+      schema[key].forEach(s => sanitizeSchemaForBedrock(s));
+    }
+  }
+}
+
+/**
  * Handle chat completion request
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats
  * Format detection and translation handled by translator
@@ -60,6 +91,13 @@ export async function handleChat(request, clientRawRequest = null) {
   const effort = body.reasoning_effort || body.reasoning?.effort || null;
   log.request("POST", `${url.pathname} | ${modelStr} | ${msgCount} msgs${toolCount ? ` | ${toolCount} tools` : ""}${effort ? ` | effort=${effort}` : ""}`);
 
+  // Sanitize tool schemas for Bedrock compatibility (draft 2020-12)
+  if (body.tools?.length) {
+    for (const tool of body.tools) {
+      const schema = tool.input_schema || tool.custom?.input_schema;
+      if (schema) sanitizeSchemaForBedrock(schema);
+    }
+  }
   // Log API key (masked)
   const authHeader = request.headers.get("Authorization");
   const apiKey = extractApiKey(request);
