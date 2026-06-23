@@ -18,11 +18,15 @@ export async function GET(request) {
     // AC2 — role-aware userId filter: user sees only own data, admin sees all
     // M.4: admin can pass ?userId=xxx to drill-down a specific user
     const { session, role } = await getSessionRole(request);
+    // Defense-in-depth: align with sibling usage routes — a null session must
+    // never fall through to admin path (userId=null → all-users data). The
+    // middleware already gates /api/usage, this is the route-level backstop.
+    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     let userId;
     if (role === "admin") {
       userId = searchParams.get("userId") || null;
     } else {
-      userId = session?.userId ?? null;
+      userId = session.userId;
     }
 
     const stats = await getUsageStats(period, userId);
