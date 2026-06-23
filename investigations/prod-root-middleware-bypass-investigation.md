@@ -11,6 +11,90 @@ prerendered static pages the way the old Edge middleware did. The fix is to make
 session-based redirects **dynamic** (so they enter the render pipeline) rather than relying on the proxy to rewrite a
 cached static page.
 
+## Follow-up: 2026-06-23 #2 — corrected diagnosis: production runs a STALE build of `/`
+
+**The earlier "Node-proxy can't intercept static pages" theory is REFUTED as the operative cause.** New decisive
+evidence:
+
+- **Local build of the current commit (cc266d5f) compiles `/` as dynamic.** Route table prints `┌ ƒ /`; there is NO
+  `.next/server/app/index.html`. Running the **standalone** server locally (same artifact Docker runs) returns
+  `GET / → 307 → /landing` with a clean redirect (no cache-control, no x-nextjs-prerender). The code + build are
+  correct.
+- **Production, same commit (marker `/api/health` = `adfc-dyn-page` confirms the new build is live), serves `/` as a
+  STATIC copy of landing:** `200`, body byte-identical to `/landing` (`shasum` match), `ETag: "sx6hcbuxutuq8"`
+  identical to `/landing`, `cache-control: s-maxage=31536000`, `x-nextjs-cache: HIT`. A force-dynamic redirect has no
+  ETag and no s-maxage — so production is NOT running the dynamic `/` that the current build produces.
+- Ruled out: separate backend (only the 9router app is bound to `router.chainlens.net`; `frontend`→`chainlens.net`,
+  `api`→`api.chainlens.net`); `x-powered-by` difference is a red herring (Next omits it on route handlers in the
+  standalone server locally too); CDN (DigitalOcean IP, no Cloudflare/Via/Age headers).
+
+**Confirmed contradiction:** the running container reports the new marker (so the *server bundle* is new) yet serves
+`/` from a **prebuilt static `.next/server/app/` artifact that still contains the OLD prerendered `/`**. This means
+the Docker image's `.next` page artifacts are stale relative to the freshly-compiled server — i.e. the
+`RUN npm run build` layer (which writes `.next/server/app/*.html`) was served from Docker layer cache while a later
+layer (or the API route chunks) updated. `cleanCache=true` was toggled but the prebuilt `/index.html`-equivalent for
+the prerendered landing-at-root persisted in the image being run.
+
+**H2 (Open → most likely):** The deployed image contains a stale `.next/server/app` where `/` is still the old
+prerendered static page. Confirm by inspecting the running container's `.next/server/app/` (is there an `index.html`?
+what is `app-paths-manifest.json['/page']`?) or by forcing a guaranteed-fresh image (change Dockerfile cache key /
+bump base, or build+push the image out-of-band and pin the digest). Refute if a verified-fresh image still serves
+static `/`.
+
+**What is NOT the problem:** the application code. `src/app/page.js` (force-dynamic, cookie-based redirect), the
+logout cookie fix, and the proxy are all correct and verified locally end-to-end via the standalone server.
+
+## Follow-up: 2026-06-23 #3 — cache-bust did NOT fix; production build differs from local build
+
+Pushed `28c66ff4` adding `ARG CACHE_BUST` before `npm run build` in the Dockerfile to force a clean build. After
+deploy: `/`'s ETag CHANGED (`sx6hcbuxutuq8` → `pijty2io8suq8`) and container uptime reset — so a **genuinely new
+image built and is running**. Yet `/` STILL returns `200` + `x-nextjs-prerender: 1` + body byte-identical to
+`/landing`. The cache-bust forced a fresh `npm run build`, and that fresh production build STILL prerendered `/` as
+static.
+
+**This refutes the "stale Docker layer" theory (H2) too.** The contradiction is now sharp and reproducible:
+
+- **Same commit, local `npm run build`** → `/` is `ƒ` (Dynamic), no `.next/server/app/index.html`, standalone serves
+  `307 → /landing`.
+- **Same commit, production `npm run build` (Docker, freshly cache-busted)** → `/` is prerendered static, served as a
+  copy of `/landing`.
+
+The only remaining explanation is an **environment difference at build time** that changes how Next classifies `/`:
+the production Docker build evaluates `export const dynamic = "force-dynamic"` differently, OR something in the
+production build environment (an env var present at build, a different lockfile/next version resolved by
+`npm install` in-image, or build-time data) causes `/` to be statically generated despite force-dynamic.
+
+**Evidence gap (blocks further remote diagnosis):** I cannot read the production build log
+(`/etc/dokploy/logs/app-copy-primary-monitor-xiub91/*.log`, on the remote host) to see whether the production build's
+route table prints `ƒ /` or `○ /`. That single line is decisive and is the next thing to obtain.
+
+### Diagnostic steps (need host/dashboard access)
+1. **Read the latest production build log** (Dokploy UI → 9router → Deployments → latest → Logs). Find the
+   `Route (app)` table. If it shows `○ /` → the production build itself prerenders `/` (build-env issue, pursue #2
+   below). If it shows `ƒ /` → the built artifact is dynamic but something at runtime serves a cached static copy
+   (pursue full-route cache on the mounted `/app/data` volume or an intermediary).
+2. **Compare `next` version resolved in-image vs local.** Dockerfile runs `npm install` (not `npm ci`, no committed
+   lockfile copy step) — the in-image Next version may differ from local `node_modules` (local = 16.2.7). A different
+   Next minor could classify force-dynamic redirects differently. Check `node_modules/next/package.json` inside the
+   running container, or add it to `/api/health`.
+3. **Inspect the running container's `.next/server/app/`** for an `index.html` (= `/` prerendered) and read
+   `app-paths-manifest.json['/page']`.
+
+### Current production behavior (acceptable interim state)
+- Anonymous visitor → `/` serves the **landing page** content (HTTP 200, not a redirect, but the user SEES landing).
+  This satisfies "logged-out users see landing."
+- The unfixed gap: a logged-in user visiting `/` also gets the static landing instead of being bounced to
+  `/dashboard`. They reach the dashboard via `/dashboard` directly.
+- The logout cookie fix (`fa01cee4`) is independent and correct.
+
+### Strongest hypothesis (Medium confidence)
+The in-image `npm install` resolves a **different Next.js version** than local (no `package-lock.json` is copied
+before install in the Dockerfile — `COPY package.json ./` then `npm install`), and that version prerenders the
+force-dynamic redirect page. Confirm via step 2. Fix would be to commit and `COPY package-lock.json` + use `npm ci`
+for reproducible builds, then rebuild.
+
+
+
 ## Case Info
 - **Slug:** prod-root-middleware-bypass
 - **Date:** 2026-06-23
