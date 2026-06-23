@@ -15,6 +15,7 @@ function rowToUser(row, includePasswordHash = false) {
     displayName: row.displayName || null,
     isActive: row.isActive === 1 || row.isActive === true,
     isEmailVerified: row.isEmailVerified === 1 || row.isEmailVerified === true,
+    isAdmin: row.isAdmin === 1 || row.isAdmin === true,
     creditsBalance: row.creditsBalance ?? 0,
     planId: row.planId ?? null,
     planExpiresAt: row.planExpiresAt ?? null,
@@ -148,6 +149,14 @@ export async function deactivateUser(id) {
   const db = await getAdapter();
   const now = new Date().toISOString();
   db.run(`UPDATE users SET isActive = 0, updatedAt = ? WHERE id = ?`, [now, id]);
+}
+
+// Set or clear the admin flag for a user (used by login/register to promote
+// the configured ADMIN_EMAIL on first sign-in).
+export async function setUserAdmin(id, isAdmin) {
+  const db = await getAdapter();
+  const now = new Date().toISOString();
+  db.run(`UPDATE users SET isAdmin = ?, updatedAt = ? WHERE id = ?`, [isAdmin ? 1 : 0, now, id]);
 }
 
 export async function getUserByGoogleSub(googleSub) {

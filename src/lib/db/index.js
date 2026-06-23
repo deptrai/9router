@@ -36,6 +36,7 @@ export {
 // Users
 export {
   createUser, getUserByEmail, getUserById, updateUser, addCredits, listUsers, deactivateUser,
+  setUserAdmin,
   getUserByTelegramId, getUserByRefCode, getReferrals, getReferralCount,
 } from "./repos/usersRepo.js";
 

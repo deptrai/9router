@@ -3,9 +3,9 @@ import { getSettings } from "@/lib/localDb";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
-import { isOidcConfigured } from "@/lib/auth/oidc";
+import { resolveAdminFlag } from "@/lib/auth/adminEmail";
 import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
-import { getUserByEmail, createUser } from "@/lib/db/index.js";
+import { getUserByEmail } from "@/lib/db/index.js";
 
 const RESET_HINT = "Forgot password? Reset to default via 9Router CLI → Settings → Reset Password to Default.";
 
@@ -35,98 +35,52 @@ export async function POST(request) {
       return NextResponse.json({ error: "Dashboard access via tunnel is disabled" }, { status: 403 });
     }
 
-    // ─── USER LOGIN BRANCH (email provided) ───
-    if (body.email) {
-      const email = body.email.trim().toLowerCase();
-      const userLockKey = `user:${ip}`;
-      const userLock = checkLock(userLockKey);
-      if (userLock.locked) {
-        return NextResponse.json(
-          { error: `Too many failed attempts. Try again in ${userLock.retryAfter}s` },
-          { status: 429, headers: { "Retry-After": String(userLock.retryAfter) } }
-        );
-      }
-
-      const user = await getUserByEmail(email);
-      if (!user || !user.isActive) {
-        recordFail(userLockKey);
-        return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
-      }
-
-      // Review fix (P5): social-only accounts store passwordHash="!" (not a valid bcrypt
-      // hash). bcrypt.compare returns false for it, but guard explicitly to avoid relying
-      // on bcrypt's behaviour with malformed hashes (defense-in-depth).
-      if (!user.passwordHash || user.passwordHash === "!") {
-        recordFail(userLockKey);
-        return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
-      }
-
-      const isValid = await bcrypt.compare(body.password || "", user.passwordHash);
-      if (!isValid) {
-        recordFail(userLockKey);
-        return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
-      }
-
-      recordSuccess(userLockKey);
-      const cookieStore = await cookies();
-      await setDashboardAuthCookie(cookieStore, request, {
-        role: "user",
-        userId: user.id,
-        email: user.email,
-      });
-
-      return NextResponse.json({ success: true });
+    // Admin password login was removed — admin is now a regular user with an
+    // isAdmin flag (bootstrap via process.env.ADMIN_EMAIL). Email is required.
+    if (!body.email) {
+      return NextResponse.json({ error: "Email is required" }, { status: 400 });
     }
 
-    // ─── ADMIN LOGIN BRANCH (password only — existing behavior) ───
-    const { password } = body;
-    const storedHash = settings.password;
-
-    if (settings.authMode === "oidc" && isOidcConfigured(settings)) {
-      return NextResponse.json({ error: "Password login is disabled. Use OIDC sign in." }, { status: 403 });
-    }
-
-    let isValid = false;
-    if (storedHash) {
-      isValid = await bcrypt.compare(password || "", storedHash);
-    } else {
-      // Use env var or default
-      const initialPassword = process.env.INITIAL_PASSWORD || "123456";
-      isValid = password === initialPassword;
-    }
-
-    if (isValid) {
-      recordSuccess(ip);
-
-      // Get or create admin user row (Story 2-39 fix: admin needs userId for payment endpoints)
-      const ADMIN_EMAIL = "admin@9router.local";
-      let adminUser = await getUserByEmail(ADMIN_EMAIL);
-      if (!adminUser) {
-        adminUser = await createUser(ADMIN_EMAIL, storedHash || "!", "Admin");
-      }
-
-      const cookieStore = await cookies();
-      await setDashboardAuthCookie(cookieStore, request, {
-        role: "admin",
-        userId: adminUser.id,
-        email: adminUser.email,
-      });
-
-      return NextResponse.json({ success: true });
-    }
-
-    const { remainingBeforeLock } = recordFail(ip);
-    const postLock = checkLock(ip);
-    if (postLock.locked) {
+    const email = body.email.trim().toLowerCase();
+    const userLockKey = `user:${ip}`;
+    const userLock = checkLock(userLockKey);
+    if (userLock.locked) {
       return NextResponse.json(
-        { error: `Too many failed attempts. Try again in ${postLock.retryAfter}s. ${RESET_HINT}`, retryAfter: postLock.retryAfter, resetHint: RESET_HINT },
-        { status: 429, headers: { "Retry-After": String(postLock.retryAfter) } }
+        { error: `Too many failed attempts. Try again in ${userLock.retryAfter}s` },
+        { status: 429, headers: { "Retry-After": String(userLock.retryAfter) } }
       );
     }
-    return NextResponse.json(
-      { error: `Invalid password. ${remainingBeforeLock} attempt(s) left before lockout.`, remainingBeforeLock },
-      { status: 401 }
-    );
+
+    const user = await getUserByEmail(email);
+    if (!user || !user.isActive) {
+      recordFail(userLockKey);
+      return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
+    }
+
+    // Review fix (P5): social-only accounts store passwordHash="!" (not a valid bcrypt
+    // hash). bcrypt.compare returns false for it, but guard explicitly to avoid relying
+    // on bcrypt's behaviour with malformed hashes (defense-in-depth).
+    if (!user.passwordHash || user.passwordHash === "!") {
+      recordFail(userLockKey);
+      return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
+    }
+
+    const isValid = await bcrypt.compare(body.password || "", user.passwordHash);
+    if (!isValid) {
+      recordFail(userLockKey);
+      return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
+    }
+
+    recordSuccess(userLockKey);
+    const isAdmin = await resolveAdminFlag(user);
+    const cookieStore = await cookies();
+    await setDashboardAuthCookie(cookieStore, request, {
+      role: isAdmin ? "admin" : "user",
+      userId: user.id,
+      email: user.email,
+    });
+
+    return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

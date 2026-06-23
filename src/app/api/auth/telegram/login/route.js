@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifyTelegramPayload, isTelegramAuthFresh } from "@/lib/auth/telegramAuth.js";
 import { setDashboardAuthCookie, getDashboardAuthSession } from "@/lib/auth/dashboardSession.js";
+import { resolveAdminFlag } from "@/lib/auth/adminEmail";
 import { getUserByTelegramId, updateUser, createUser } from "@/lib/db/repos/usersRepo.js";
 
 export async function POST(request) {
@@ -56,9 +57,10 @@ export async function POST(request) {
     return NextResponse.json({ error: "Account disabled" }, { status: 403 });
   }
 
+  const isAdmin = await resolveAdminFlag(user);
   await setDashboardAuthCookie(cookieStore, request, {
     userId: user.id,
-    role: "user",
+    role: isAdmin ? "admin" : "user",
     email: user.email,
   });
   return NextResponse.json({ success: true });

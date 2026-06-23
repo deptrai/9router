@@ -1,5 +1,5 @@
 // Latest schema version — bumped when a migration is added in ./migrations/
-export const SCHEMA_VERSION = 17;
+export const SCHEMA_VERSION = 18;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -106,6 +106,7 @@ export const TABLES = {
       displayName: "TEXT",
       isActive: "INTEGER DEFAULT 1",
       isEmailVerified: "INTEGER DEFAULT 0",
+      isAdmin: "INTEGER NOT NULL DEFAULT 0",
       creditsBalance: "REAL DEFAULT 0",
       planId: "TEXT",
       planExpiresAt: "TEXT",

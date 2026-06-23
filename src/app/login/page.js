@@ -5,7 +5,6 @@ import { Card, Button, Input } from "@/shared/components";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
-  const [loginTab, setLoginTab] = useState("user"); // "user" | "admin"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -23,7 +22,7 @@ export default function LoginPage() {
 
   // Telegram popup callback — oauth.telegram.org uses postMessage (cross-origin)
   useEffect(() => {
-    if (!telegramBotUsername || loginTab !== "user") return;
+    if (!telegramBotUsername) return;
 
     const container = document.getElementById("telegram-widget-container");
     if (!container) return;
@@ -62,7 +61,7 @@ export default function LoginPage() {
       container.innerHTML = "";
       delete window.onTelegramAuth;
     };
-  }, [telegramBotUsername, loginTab, router]);
+  }, [telegramBotUsername, router]);
 
   // Countdown for rate-limit
   useEffect(() => {
@@ -85,11 +84,6 @@ export default function LoginPage() {
 
         if (res.ok) {
           const data = await res.json();
-          if (data.requireLogin === false) {
-            router.push("/dashboard");
-            router.refresh();
-            return;
-          }
           setHasPassword(!!data.hasPassword);
           setAuthMode(data.authMode || "password");
           setOidcConfigured(data.oidcConfigured === true);
@@ -122,15 +116,10 @@ export default function LoginPage() {
     setResetHint("");
 
     try {
-      const body =
-        loginTab === "user"
-          ? { email, password }
-          : { password };
-
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ email, password }),
       });
 
       if (res.ok) {
@@ -194,32 +183,6 @@ export default function LoginPage() {
 
             {passwordAvailable && (
               <>
-                {/* Tab switcher: User / Admin */}
-                <div className="inline-flex p-1 rounded-lg bg-black/5 dark:bg-white/5 w-full">
-                  <button
-                    type="button"
-                    onClick={() => { setLoginTab("user"); setError(""); }}
-                    className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-                      loginTab === "user"
-                        ? "bg-white dark:bg-white/10 text-text-main shadow-sm"
-                        : "text-text-muted hover:text-text-main"
-                    }`}
-                  >
-                    User
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setLoginTab("admin"); setError(""); }}
-                    className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-                      loginTab === "admin"
-                        ? "bg-white dark:bg-white/10 text-text-main shadow-sm"
-                        : "text-text-muted hover:text-text-main"
-                    }`}
-                  >
-                    Admin
-                  </button>
-                </div>
-
                 <form onSubmit={handleLogin} className="flex flex-col gap-4">
                   {((authMode === "oidc" && !oidcConfigured) || (authMode === "both" && !oidcConfigured)) && (
                     <p className="text-xs text-amber-600 dark:text-amber-400 text-center">
@@ -227,20 +190,17 @@ export default function LoginPage() {
                     </p>
                   )}
 
-                  {/* User tab: email + password */}
-                  {loginTab === "user" && (
-                    <div className="flex flex-col gap-2">
-                      <label className="text-sm font-medium">Email</label>
-                      <Input
-                        type="email"
-                        placeholder="you@example.com"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        required
-                        autoFocus
-                      />
-                    </div>
-                  )}
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-medium">Email</label>
+                    <Input
+                      type="email"
+                      placeholder="you@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      autoFocus
+                    />
+                  </div>
 
                   <div className="flex flex-col gap-2">
                     <label className="text-sm font-medium">Password</label>
@@ -250,7 +210,6 @@ export default function LoginPage() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       required
-                      autoFocus={loginTab === "admin" && !oidcAvailable}
                     />
                     {error && <p className="text-xs text-red-500">{error}</p>}
                     {retryAfter > 0 && (
@@ -275,31 +234,18 @@ export default function LoginPage() {
                     {retryAfter > 0 ? `Wait ${retryAfter}s` : "Sign In"}
                   </Button>
 
-                  {loginTab === "admin" && (
-                    <p className="text-xs text-center text-text-muted mt-2">
-                      Default password is <code className="bg-sidebar px-1 rounded">123456</code>
-                    </p>
-                  )}
-                  {loginTab === "admin" && hasPassword === false && (
-                    <p className="text-xs text-center text-text-muted">
-                      No custom password is set yet. The default password above will work until you change it.
-                    </p>
-                  )}
-
-                  {loginTab === "user" && (
-                    <p className="text-xs text-center text-text-muted mt-2">
-                      <a href="/forgot-password" className="text-primary hover:underline">
-                        Quên mật khẩu?
-                      </a>
-                      {" · "}
-                      <a href="/register" className="text-primary hover:underline">
-                        Đăng ký
-                      </a>
-                    </p>
-                  )}
+                  <p className="text-xs text-center text-text-muted mt-2">
+                    <a href="/forgot-password" className="text-primary hover:underline">
+                      Quên mật khẩu?
+                    </a>
+                    {" · "}
+                    <a href="/register" className="text-primary hover:underline">
+                      Đăng ký
+                    </a>
+                  </p>
                 </form>
 
-                {loginTab === "user" && (googleEnabled || telegramBotUsername) && (
+                {(googleEnabled || telegramBotUsername) && (
                   <div className="flex flex-col gap-3 mt-4">
                     <div className="flex items-center gap-2">
                       <div className="flex-1 h-px bg-border/60" />

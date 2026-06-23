@@ -72,8 +72,12 @@ export async function GET(request) {
     });
 
     clearOidcCookies(cookieStore);
+    // OIDC is the operator sign-in path (not tied to a DB user row). Set the
+    // admin role explicitly rather than relying on the legacy `role ?? "admin"`
+    // fallback, so role semantics stay clear after the password-admin removal.
     await setDashboardAuthCookie(cookieStore, request, {
       oidc: true,
+      role: "admin",
       oidcSub: payload.sub || null,
       oidcEmail: pickOidcEmail(payload) || null,
       oidcName: pickOidcDisplayName(payload),

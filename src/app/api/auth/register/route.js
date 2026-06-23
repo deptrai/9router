@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { getUserByEmail, createUser, getUserByRefCode, updateUser } from "@/lib/db/index.js";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
+import { resolveAdminFlag } from "@/lib/auth/adminEmail";
 import { checkLock, recordFail, getClientIp } from "@/lib/auth/loginLimiter";
 import { createEmailVerifyToken } from "@/lib/auth/emailVerifyToken.js";
 import { sendEmail } from "@/lib/email/sendEmail.js";
@@ -91,10 +92,12 @@ export async function POST(request) {
       } catch {}
     }
 
-    // Set auth cookie with user claims
+    // Set auth cookie with user claims. Promote to admin if the email matches
+    // the configured ADMIN_EMAIL (bootstrap path for self-hosted deployments).
+    const isAdmin = await resolveAdminFlag(user);
     const cookieStore = await cookies();
     await setDashboardAuthCookie(cookieStore, request, {
-      role: "user",
+      role: isAdmin ? "admin" : "user",
       userId: user.id,
       email: user.email,
     });

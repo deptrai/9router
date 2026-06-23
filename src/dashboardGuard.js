@@ -307,9 +307,12 @@ export async function proxy(request) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Root: logged-in users go to the dashboard; everyone else sees the landing page.
+  // Root: only a valid session goes to the dashboard; everyone else (including
+  // when requireLogin=false — "login optional" ≠ "logged in") sees the landing
+  // page. Use hasValidToken, NOT isAuthenticated, so logged-out visitors aren't
+  // bounced into the dashboard.
   if (pathname === "/") {
-    if (await isAuthenticated(request)) {
+    if (await hasValidToken(request)) {
       return NextResponse.redirect(new URL("/dashboard", request.url));
     }
     return NextResponse.redirect(new URL("/landing", request.url));

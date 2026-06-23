@@ -8,6 +8,7 @@ import {
   verifyGoogleIdToken,
 } from "@/lib/auth/googleOidc.js";
 import { setDashboardAuthCookie, getDashboardAuthSession } from "@/lib/auth/dashboardSession.js";
+import { resolveAdminFlag } from "@/lib/auth/adminEmail";
 import {
   getUserByGoogleSub,
   getUserByEmail,
@@ -84,9 +85,10 @@ export async function GET(request) {
       return NextResponse.redirect(`${origin}/login?error=account_disabled`);
     }
 
+    const isAdmin = await resolveAdminFlag(user);
     await setDashboardAuthCookie(cookieStore, request, {
       userId: user.id,
-      role: "user",
+      role: isAdmin ? "admin" : "user",
       email: user.email,
     });
     return NextResponse.redirect(`${origin}/dashboard`);

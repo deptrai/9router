@@ -226,11 +226,14 @@ describe("dashboard guard — root path routing", () => {
     expect(new URL(response.url).pathname).toBe("/dashboard");
   });
 
-  it("requireLogin=false (self-hosted) at / → treated as authed → /dashboard", async () => {
+  it("requireLogin=false, no token at / → still /landing (logout must stick)", async () => {
+    // Regression: "login optional" must NOT be treated as "already logged in".
+    // A logged-out visitor (no valid token) sees the landing page even when
+    // requireLogin=false, so logout actually sticks at the root path.
     mocks.getSettings.mockResolvedValue({ requireLogin: false });
     const response = await proxy(request("/", { host: "localhost:20128" }));
     expect(response.status).toBe(307);
-    expect(new URL(response.url).pathname).toBe("/dashboard");
+    expect(new URL(response.url).pathname).toBe("/landing");
   });
 });
 
