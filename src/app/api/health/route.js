@@ -20,7 +20,7 @@ export async function GET() {
 
   const status = dbOk ? 200 : 503;
   return NextResponse.json(
-    { ok: dbOk, db: dbOk, build: "20df51a5-dyn-root", uptime: Math.floor((Date.now() - startedAt) / 1000), semaphore: getSemaphoreMetrics() },
+    { ok: dbOk, db: dbOk, build: "fa01-noroot-page", uptime: Math.floor((Date.now() - startedAt) / 1000), semaphore: getSemaphoreMetrics() },
     { status, headers: CORS_HEADERS },
   );
 }
