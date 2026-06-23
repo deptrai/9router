@@ -13,7 +13,11 @@ RUN --mount=type=cache,target=/root/.npm \
 
 COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run build
+# Cache-bust: bump this value to force a clean `next build` (invalidates the
+# Docker layer cache for the build step). Production was observed serving a
+# stale prerendered `/` that did not match committed source.
+ARG CACHE_BUST=2026-06-23-dynroot-1
+RUN echo "cache-bust: ${CACHE_BUST}" && npm run build
 
 FROM ${NODE_IMAGE} AS runner
 WORKDIR /app
