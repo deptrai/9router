@@ -307,9 +307,12 @@ export async function proxy(request) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Redirect / to /dashboard if logged in, or /dashboard if it's the root
+  // Root: logged-in users go to the dashboard; everyone else sees the landing page.
   if (pathname === "/") {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    if (await isAuthenticated(request)) {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+    return NextResponse.redirect(new URL("/landing", request.url));
   }
 
   return NextResponse.next();

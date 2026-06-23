@@ -200,6 +200,40 @@ describe("dashboard guard local-only access", () => {
   });
 });
 
+// Root path is auth-aware: logged-in users land on the dashboard, anonymous
+// visitors see the marketing landing page.
+describe("dashboard guard — root path routing", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+    mocks.validateApiKey.mockResolvedValue(false);
+    mocks.getConsistentMachineId.mockResolvedValue("cli-token");
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+  });
+
+  it("anonymous visitor at / → redirected to /landing", async () => {
+    const response = await proxy(request("/", { host: "localhost:20128" }));
+    expect(response.status).toBe(307);
+    expect(new URL(response.url).pathname).toBe("/landing");
+  });
+
+  it("authenticated user at / → redirected to /dashboard", async () => {
+    mocks.verifyDashboardAuthToken.mockResolvedValue(true);
+    const req = request("/", { host: "localhost:20128" });
+    req.cookies.get = vi.fn(() => ({ value: "valid-jwt" }));
+    const response = await proxy(req);
+    expect(response.status).toBe(307);
+    expect(new URL(response.url).pathname).toBe("/dashboard");
+  });
+
+  it("requireLogin=false (self-hosted) at / → treated as authed → /dashboard", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+    const response = await proxy(request("/", { host: "localhost:20128" }));
+    expect(response.status).toBe(307);
+    expect(new URL(response.url).pathname).toBe("/dashboard");
+  });
+});
+
 describe("dashboard guard helpers", () => {
   it("extracts bearer API keys before x-api-key", () => {
     const apiRequest = request("/v1/chat/completions", {
