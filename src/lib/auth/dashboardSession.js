@@ -63,6 +63,15 @@ export async function setDashboardAuthCookie(cookieStore, request, claims = {}) 
   });
 }
 
-export function clearDashboardAuthCookie(cookieStore) {
-  cookieStore.delete("auth_token");
+export function clearDashboardAuthCookie(cookieStore, request) {
+  // Must mirror the attributes used in setDashboardAuthCookie (secure, sameSite,
+  // path). On HTTPS the auth cookie is set with secure:true; deleting by name
+  // alone leaves a secure cookie in the browser, so logout wouldn't "stick".
+  cookieStore.set("auth_token", "", {
+    httpOnly: true,
+    secure: shouldUseSecureCookie(request),
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+  });
 }
