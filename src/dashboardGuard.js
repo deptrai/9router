@@ -43,6 +43,9 @@ const PUBLIC_API_PATHS = [
   "/api/store/products",
   // Story 2.30: Supplier webhook — public, self-authenticates via timingSafeEqual secret (AC3)
   "/api/store/suppliers/webhook",
+  // Story M.6: public announcement banner — read-only active announcements, no
+  // sensitive data. Admin CRUD lives under /api/admin/announcements (gated separately).
+  "/api/announcements",
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).

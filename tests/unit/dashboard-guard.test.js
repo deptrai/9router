@@ -210,3 +210,30 @@ describe("dashboard guard helpers", () => {
     expect(__test__.extractApiKey(apiRequest)).toBe("bearer-key");
   });
 });
+
+// Story M.6: public announcement banner allow-list. Read-only active announcements
+// must be reachable without a session; admin CRUD must stay gated.
+describe("dashboard guard — announcements allow-list (M.6)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+    mocks.validateApiKey.mockResolvedValue(false);
+    mocks.getConsistentMachineId.mockResolvedValue("cli-token");
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+  });
+
+  it("allows public /api/announcements without a session", async () => {
+    const response = await proxy(request("/api/announcements", { host: "localhost:20128" }));
+    expect(response).toBe(mocks.nextResponse);
+  });
+
+  it("does not make admin /api/admin/announcements public (still gated)", async () => {
+    // The new allow-list entry is the exact path "/api/announcements"; the admin
+    // CRUD prefix "/api/admin/announcements" must NOT match it. Without a session
+    // the middleware denies with 401 (credentials required), and the route's own
+    // requireAdmin() enforces the admin role on top.
+    const response = await proxy(request("/api/admin/announcements", { host: "localhost:20128" }));
+    expect(response.status).toBe(401);
+  });
+});
+
