@@ -142,6 +142,71 @@ describe("usersRepo", () => {
     expect(page[0].email).toBe("u2@example.com");
   });
 
+  // Story M.3 — search / planId / balanceFilter / sort
+  it("listUsers search → matches email or displayName (case-insensitive)", async () => {
+    const { createUser, listUsers } = await import("@/lib/db/repos/usersRepo.js");
+    await createUser("alice@example.com", "$2a$10$h", "Alice");
+    await createUser("bob@example.com", "$2a$10$h", "Bobby");
+    await createUser("carol@other.com", "$2a$10$h", "Alicia");
+
+    const byEmail = await listUsers({ search: "bob" });
+    expect(byEmail.total).toBe(1);
+    expect(byEmail.users[0].email).toBe("bob@example.com");
+
+    // "alic" hits alice@ (email) and Alicia (displayName)
+    const byName = await listUsers({ search: "alic" });
+    expect(byName.total).toBe(2);
+
+    const none = await listUsers({ search: "zzz-no-match" });
+    expect(none.total).toBe(0);
+    expect(none.users).toEqual([]);
+  });
+
+  it("listUsers planId='none' → only users without a plan", async () => {
+    const { createUser, updateUser, listUsers } = await import("@/lib/db/repos/usersRepo.js");
+    const withPlan = await createUser("planned@example.com", "$2a$10$h", "Planned");
+    await updateUser(withPlan.id, { planId: "plan-x" });
+    await createUser("free@example.com", "$2a$10$h", "Free");
+
+    const noPlan = await listUsers({ planId: "none" });
+    expect(noPlan.total).toBe(1);
+    expect(noPlan.users[0].email).toBe("free@example.com");
+
+    const planned = await listUsers({ planId: "plan-x" });
+    expect(planned.total).toBe(1);
+    expect(planned.users[0].email).toBe("planned@example.com");
+  });
+
+  it("listUsers balanceFilter → zero / low / normal buckets", async () => {
+    const { createUser, addCredits, listUsers } = await import("@/lib/db/repos/usersRepo.js");
+    await createUser("zero@example.com", "$2a$10$h", "Zero"); // 0
+    const low = await createUser("low@example.com", "$2a$10$h", "Low");
+    await addCredits(low.id, 0.5); // 0 < x < 1
+    const normal = await createUser("normal@example.com", "$2a$10$h", "Normal");
+    await addCredits(normal.id, 5); // >= 1
+
+    expect((await listUsers({ balanceFilter: "zero" })).users.map(u => u.email)).toEqual(["zero@example.com"]);
+    expect((await listUsers({ balanceFilter: "low" })).users.map(u => u.email)).toEqual(["low@example.com"]);
+    expect((await listUsers({ balanceFilter: "normal" })).users.map(u => u.email)).toEqual(["normal@example.com"]);
+  });
+
+  it("listUsers sort=balance desc → highest balance first", async () => {
+    const { createUser, addCredits, listUsers } = await import("@/lib/db/repos/usersRepo.js");
+    const a = await createUser("a-bal@example.com", "$2a$10$h", "A");
+    await addCredits(a.id, 1);
+    const b = await createUser("b-bal@example.com", "$2a$10$h", "B");
+    await addCredits(b.id, 100);
+    const c = await createUser("c-bal@example.com", "$2a$10$h", "C");
+    await addCredits(c.id, 10);
+
+    const { users } = await listUsers({ sort: "balance", order: "desc" });
+    expect(users.map(u => u.email)).toEqual([
+      "b-bal@example.com",
+      "c-bal@example.com",
+      "a-bal@example.com",
+    ]);
+  });
+
   it("deactivateUser → sets isActive=0", async () => {
     const { createUser, getUserById, deactivateUser } = await import("@/lib/db/repos/usersRepo.js");
 
