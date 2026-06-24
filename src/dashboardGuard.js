@@ -21,6 +21,7 @@ async function hasValidCliToken(request) {
 // Public API paths — no auth required (LLM API has its own key auth inside handler).
 const PUBLIC_API_PATHS = [
   "/api/health",
+  "/api/_debug-build",
   "/api/init",
   "/api/locale",
   "/api/auth/login",
