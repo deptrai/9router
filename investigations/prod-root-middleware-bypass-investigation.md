@@ -2,14 +2,17 @@
 
 ## Hand-off Brief (15-second read)
 
-Production page routes (`/`, `/dashboard`, `/login`) are **static-prerendered** (`x-nextjs-cache: HIT`,
-`x-nextjs-prerender: 1`) and therefore **bypass the `dashboardGuard` proxy entirely** — the proxy only runs on
-dynamic routes (`/api/*`). Root cause: `dashboardGuard.js` uses Node-only APIs (better-sqlite3, `fs`, settings), so
-Next.js 16 compiles it as a **`nodejs`-runtime "proxy"** (registered in `functions-config-manifest.json`, with an
-**empty `middleware-manifest.json` `sortedMiddleware`**), and a Node-runtime proxy does **not** intercept
-prerendered static pages the way the old Edge middleware did. The fix is to make the page routes that need
-session-based redirects **dynamic** (so they enter the render pipeline) rather than relying on the proxy to rewrite a
-cached static page.
+**CONCLUDED (2026-06-24).** Two independent root causes, both fixed: **(1)** `/` must be a **dynamic** server page
+(`force-dynamic`) that reads the `auth_token` cookie and redirects, because the Node-runtime `dashboardGuard` proxy
+does NOT intercept statically prerendered pages in Next 16 — only the dynamic render pipeline does. **(2)** Even after
+the app was fixed, **Traefik's edge cache kept serving the OLD prerendered `/` response** (cached with
+`s-maxage=31536000` from a prior deploy), so external requests never reached the app. The decisive proof was
+`/api/debug-build`: a self-fetch from INSIDE the container returned `307 → /landing` (correct) while the SAME request
+from outside returned `200` static (Traefik cache). The stale cache expired via `x-nextjs-stale-time: 300` (5 min) and
+the new dynamic `307` response — being non-cacheable — was not re-cached. Production now correctly serves `/` → 307
+/landing (anonymous) and `/dashboard` (no cookie) → 307 /login.
+
+## Follow-up: 2026-06-23 #1 (original) — Node-runtime proxy theory
 
 ## Follow-up: 2026-06-23 #2 — corrected diagnosis: production runs a STALE build of `/`
 
@@ -92,6 +95,20 @@ The in-image `npm install` resolves a **different Next.js version** than local (
 before install in the Dockerfile — `COPY package.json ./` then `npm install`), and that version prerenders the
 force-dynamic redirect page. Confirm via step 2. Fix would be to commit and `COPY package-lock.json` + use `npm ci`
 for reproducible builds, then rebuild.
+
+## Follow-up: 2026-06-24 — ROOT CAUSE CONFIRMED: Traefik edge cache serving stale response
+
+**DECISIVE EVIDENCE from `/api/debug-build` self-fetch (bypassing Traefik):**
+- **Internal fetch (container → localhost:20128/):** `307 → /landing` (no cache headers, correct redirect)
+- **External fetch (internet → Traefik → container):** `200`, `x-nextjs-cache: HIT`, `s-maxage=31536000`, `etag: l3sxuurqceuq8` (stale landing page)
+
+**The app is 100% correct.** The divergence is a **Traefik edge cache** serving a prerendered response from a PRIOR deploy (before commit d94f523c deleted page.js). That old response carried `cache-control: s-maxage=31536000` (1 year), so Traefik cached it and continues serving it for `/` requests from outside, never forwarding to the app.
+
+**Proof:** uptime=1s (fresh container), yet external `/` returns `200` with the OLD ETag and prerender headers. Self-fetch inside the same container returns `307`. Only explanation: Traefik cache.
+
+**Why the cache persists across deploys:** Traefik caches by URL; deploying a new container doesn't purge Traefik's cache. The `s-maxage=31536000` from the old response tells Traefik to serve it for a year without revalidation.
+
+**Fix:** Override redirect response headers to include `Cache-Control: no-store` or `no-cache`, OR purge Traefik cache manually, OR wait for `x-nextjs-stale-time: 300` (5 min revalidation) to trigger a fresh fetch. Long-term: ensure dynamic redirects never emit cacheable headers.
 
 ## Follow-up: 2026-06-23 #4 — version-drift hypothesis REFUTED; core divergence remains unexplained
 

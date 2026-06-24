@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
-import { createRequire } from "node:module";
 import { getAdapter } from "@/lib/db/driver.js";
 import { getSemaphoreMetrics } from "@/sse/services/auth.js";
-
-let nextVersion = "unknown";
-try { nextVersion = createRequire(import.meta.url)("next/package.json").version; } catch { /* ignore */ }
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -24,7 +20,7 @@ export async function GET() {
 
   const status = dbOk ? 200 : 503;
   return NextResponse.json(
-    { ok: dbOk, db: dbOk, build: "npmci-nextver", nextVersion, uptime: Math.floor((Date.now() - startedAt) / 1000), semaphore: getSemaphoreMetrics() },
+    { ok: dbOk, db: dbOk, uptime: Math.floor((Date.now() - startedAt) / 1000), semaphore: getSemaphoreMetrics() },
     { status, headers: CORS_HEADERS },
   );
 }
