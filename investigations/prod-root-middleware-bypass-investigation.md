@@ -93,6 +93,59 @@ before install in the Dockerfile — `COPY package.json ./` then `npm install`),
 force-dynamic redirect page. Confirm via step 2. Fix would be to commit and `COPY package-lock.json` + use `npm ci`
 for reproducible builds, then rebuild.
 
+## Follow-up: 2026-06-23 #4 — version-drift hypothesis REFUTED; core divergence remains unexplained
+
+Implemented the npm-ci fix: un-ignored + committed `package-lock.json` (was gitignored, never tracked), changed
+Dockerfile to `COPY package.json package-lock.json` + `npm ci` (commit 71563340), and exposed `nextVersion` in
+`/api/health` (7a31a0b5). Both deployed successfully (status `done`).
+
+**Decisive result — production now runs `next@16.2.7` (confirmed via `/api/health` → `"nextVersion":"16.2.7"`,
+identical to local) but the behavior is UNCHANGED:** `/` still serves static landing (200, body == /landing), and
+`/api/auth/logout` still does NOT emit `set-cookie: auth_token=`. Version drift was real (prod was pulling 16.2.9)
+but is NOT the cause of the symptom.
+
+**The irreducible contradiction (all four hypotheses now refuted): identical commit + identical next version, yet:**
+- **Local standalone server** (`node .next/standalone/server.js`, the exact artifact Docker runs): `/` → `307 /landing`,
+  `/dashboard` (no cookie) → `307 /login`, logout → `set-cookie: auth_token=; Max-Age=0; Secure`. All correct.
+- **Production**: `/` → `200` static landing, `/dashboard` → `200`, logout emits only `oidc_code_verifier` (no
+  `auth_token`). Dynamic-route behavior is systematically "old"/wrong.
+
+Yet `/api/health` on production reflects the NEWEST code (the `nextVersion` field added in the latest commit). So the
+server bundle IS current, but page routes + some route handlers behave as if running different/cached code.
+
+**Refuted:** (H-proxy) Node proxy can't catch static pages — refuted, the page is dynamic in the artifact; (H-docker)
+stale Docker build layer — refuted, ETag changed across builds & cleanCache used; (H-version) next version drift —
+refuted, now 16.2.7 and unchanged.
+
+**Remaining candidate (unverified, needs host access):** a response/edge cache or routing split in front of the
+origin that serves cached page responses (and possibly an older container for some routes) with
+`cache-control: s-maxage=31536000`, independent of the app. Notable unexplained signal: on production `/` carries
+`x-powered-by: Next.js` while `/api/health` does NOT — on the local standalone server NEITHER does. This asymmetry
+hints `/`/page routes and `/api/*` may be served by different layers/instances on production. Not confirmed: only the
+9router app is bound to `router.chainlens.net` per Dokploy domain config (frontend→chainlens.net,
+api→api.chainlens.net), and `/`'s body is byte-identical to 9router's own `/landing`.
+
+### Decisive evidence still needed (all require host / Dokploy-UI access I don't have)
+1. **Production build log Route table** (Dokploy UI → 9router → latest deploy → Logs): does it print `ƒ /` or `○ /`?
+   If `○ /`, the production build itself prerenders `/` despite force-dynamic + 16.2.7 (would be a build-env mystery).
+   If `ƒ /`, the artifact is dynamic and an intermediary is serving a cached/old response.
+2. **`curl` the origin container directly** (bypassing Traefik): `docker exec` into the 9router container and
+   `curl -i localhost:20128/` — if that returns `307`, the divergence is in Traefik/edge; if `200` static, it's in
+   the container's own Next cache.
+3. **Inspect `/app/.next/server/app/` in the running container** for `index.html` (= `/` prerendered) and check
+   whether a cache dir under the mounted `/app/data` volume holds an old full-route cache for `/`.
+
+### Bottom line for the user's reported bug
+- **Original symptom ("after logout, `/` auto-enters dashboard") appears RESOLVED in practice:** production `/` now
+  serves the **landing page** for everyone (HTTP 200, content == /landing), so a logged-out visitor no longer lands on
+  the dashboard.
+- **Two residual issues, both needing host access to finish:** (a) a logged-IN user at `/` sees landing instead of
+  auto-redirecting to `/dashboard`; (b) `/dashboard` (no cookie) returns 200 static instead of redirecting to
+  `/login`, and logout's `auth_token` clear isn't observed on production — all symptoms of the same
+  app-code-runs-locally-but-not-on-prod divergence.
+- Application code, build (local), logout fix, and dependency pinning are all correct and verified locally.
+
+
 
 
 ## Case Info
