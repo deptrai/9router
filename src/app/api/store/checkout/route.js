@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
+
+export const dynamic = "force-dynamic";
 import { getProductById } from "@/lib/db/repos/productsRepo.js";
 import { storeCheckout, CheckoutError } from "@/lib/store/storeCheckout.js";
 import { externalCheckout, ExternalCheckoutError } from "@/lib/store/externalCheckout.js";

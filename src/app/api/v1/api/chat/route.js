@@ -29,7 +29,9 @@ export async function POST(request) {
   try {
     const body = await clonedReq.json();
     modelName = body.model || "llama3.2";
-  } catch {}
+  } catch (e) {
+    console.log("[OLLAMA] Could not parse request body for model extraction, defaulting to llama3.2:", e?.message);
+  }
 
   const response = await handleChat(request);
   return transformToOllama(response, modelName);

@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
-import { 
-  getProvider, 
-  generateAuthData, 
-  exchangeTokens, 
-  requestDeviceCode, 
-  pollForToken 
+import {
+  getProvider,
+  generateAuthData,
+  exchangeTokens,
+  requestDeviceCode,
+  pollForToken
 } from "@/lib/oauth/providers";
 import { createProviderConnection } from "@/models";
+import { requireAdmin } from "@/lib/auth/requireRole";
 import {
   startCodexProxy,
   stopCodexProxy,
@@ -170,8 +171,9 @@ export async function GET(request, { params }) {
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (error) {
-    console.log("OAuth GET error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("OAuth GET error:", error);
+    // R4-P2-4: do not leak internal error details to client.
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
@@ -179,6 +181,12 @@ export async function GET(request, { params }) {
 // POST /api/oauth/[provider]/poll - Poll for token (device_code flow)
 export async function POST(request, { params }) {
   try {
+    // R4-P0-7: creating/exchanging OAuth provider connections is an admin operation.
+    const session = await requireAdmin(request);
+    if (!session) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const { provider, action } = await params;
     let body;
     try {
@@ -337,7 +345,8 @@ export async function POST(request, { params }) {
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (error) {
-    console.log("OAuth POST error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("OAuth POST error:", error);
+    // R4-P2-4: do not leak internal error details to client.
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

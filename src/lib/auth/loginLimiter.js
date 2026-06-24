@@ -46,7 +46,12 @@ export function recordSuccess(ip) {
 }
 
 export function getClientIp(request) {
+  // R4-P1-2: prefer x-real-ip (set by Traefik/Dokploy reverse proxy — not
+  // spoofable by clients) over x-forwarded-for[0] (attacker-controlled header
+  // that could contain a spoofed IP to bypass rate-limiting).
+  const realIp = request.headers.get("x-real-ip");
+  if (realIp) return realIp.trim();
   const xff = request.headers.get("x-forwarded-for");
   if (xff) return xff.split(",")[0].trim();
-  return request.headers.get("x-real-ip") || "unknown";
+  return "unknown";
 }

@@ -27,13 +27,12 @@ export function parseIpn(rawBody) {
   };
 }
 
-const _ipnCache = new Map();
-export function cacheIpnData(gatewayPaymentId, raw) { _ipnCache.set(gatewayPaymentId, raw); }
-
-export async function resolveSettlement(gatewayPaymentId) {
-  const data = _ipnCache.get(gatewayPaymentId);
-  if (!data) throw new Error(`[nowpayments-adapter] No cached IPN data for ${gatewayPaymentId}`);
-  _ipnCache.delete(gatewayPaymentId); // consume once — prevents unbounded Map growth + stale reuse
+// Pass IPN data directly instead of caching in a module-level Map.
+// The Map pattern was fragile: a serverless restart between cacheIpnData and
+// resolveSettlement would silently lose the data. Since both calls happen in the
+// same request handler, passing data directly is strictly safer (R3-P1-4).
+export function resolveSettlement(_gatewayPaymentId, data) {
+  if (!data) throw new Error(`[nowpayments-adapter] No IPN data provided for ${_gatewayPaymentId}`);
   return {
     amountReceived: Number(data.actually_paid) || Number(data.pay_amount) || 0,
     txHash: data.payin_hash || data.purchase_id || null,

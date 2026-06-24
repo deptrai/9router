@@ -70,7 +70,7 @@ export function warn(tag, message, data) {
 export function error(tag, message, data) {
   if (LEVEL <= LOG_LEVELS.ERROR) {
     const dataStr = data ? ` ${formatData(data)}` : "";
-    console.log(clean(`[${formatTime()}] ❌ [${tag}] ${message}${dataStr}`));
+    console.error(clean(`[${formatTime()}] ❌ [${tag}] ${message}${dataStr}`));
   }
 }
 

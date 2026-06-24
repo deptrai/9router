@@ -310,8 +310,15 @@ async function passthroughHttps(req, res, bodyBuffer, headers, targetHost, onRes
 const server = https.createServer(sslOptions, async (req, res) => {
   try {
     if (req.url === "/_mitm_health") {
+      // Only respond to loopback — do not expose pid to external callers
+      const remote = req.socket.remoteAddress;
+      if (remote !== "127.0.0.1" && remote !== "::1" && remote !== "::ffff:127.0.0.1") {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "not found" }));
+        return;
+      }
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, pid: process.pid }));
+      res.end(JSON.stringify({ ok: true }));
       return;
     }
 

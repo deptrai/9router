@@ -90,11 +90,13 @@ describe("logger — level resolution (B2)", () => {
     setTTY(false);
     process.env.NODE_ENV = "production";
     process.env.LOG_LEVEL = "ERROR";
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const log = await import("@/sse/utils/logger.js");
     log.info("X", "info");
     log.error("X", "err");
-    expect(spy).toHaveBeenCalledOnce(); // chỉ error
+    expect(logSpy).not.toHaveBeenCalled(); // INFO bị nén
+    expect(errSpy).toHaveBeenCalledOnce(); // chỉ error (routed to stderr)
   });
 
   it("dev (non-production): DEBUG log", async () => {

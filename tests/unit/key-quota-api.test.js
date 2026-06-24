@@ -16,6 +16,12 @@ vi.mock("../../src/lib/db/repos/quotaRepo.js", () => ({
   getQuotaState: vi.fn(),
   sumUsageTokens: vi.fn(),
 }));
+// R4-P0-2 added a requireAdmin guard to this route. This suite tests quota
+// logic, not auth — stub requireAdmin to return an admin session so the guard
+// is a no-op here (auth itself is covered in auth-specific tests).
+vi.mock("../../src/lib/auth/requireRole.js", () => ({
+  requireAdmin: vi.fn().mockResolvedValue({ role: "admin", userId: "admin-1" }),
+}));
 
 import { getApiKeyById } from "../../src/lib/localDb.js";
 import { getQuotaConfig, setQuotaConfig, getQuotaState, sumUsageTokens } from "../../src/lib/db/repos/quotaRepo.js";

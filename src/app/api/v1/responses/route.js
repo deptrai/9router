@@ -1,13 +1,13 @@
 import { handleChat } from "@/sse/handlers/chat.js";
 import { initTranslators } from "open-sse/translator/index.js";
 
-let initialized = false;
+let _initPromise = null;
 
-async function ensureInitialized() {
-  if (!initialized) {
-    await initTranslators();
-    initialized = true;
-  }
+/**
+ * Initialize translators once — promise-singleton prevents double-init on concurrent cold requests.
+ */
+function ensureInitialized() {
+  return (_initPromise ??= initTranslators());
 }
 
 export async function OPTIONS() {

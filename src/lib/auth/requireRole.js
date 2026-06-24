@@ -32,9 +32,13 @@ export async function requireAdmin(request) {
 
 /**
  * Get session with role info. Returns { session, role }.
+ * When there is no valid session, role is "guest" (not "admin").
+ * Callers that need admin access should check session !== null separately.
  */
 export async function getSessionRole(request) {
   const token = await getAuthToken(request);
   const session = await getDashboardAuthSession(token);
-  return { session, role: session?.role ?? "admin" };
+  // Use "guest" as the no-session fallback so unauthenticated requests
+  // do NOT accidentally receive admin privileges (R4-P1-1).
+  return { session, role: session?.role ?? (session ? "admin" : "guest") };
 }

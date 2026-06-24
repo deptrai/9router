@@ -8,6 +8,15 @@ import { notifyAdminPaymentSettled } from "@/lib/admin/notifyAdmin.js";
 
 const TERMINAL_STATUSES = new Set(["settled", "failed", "expired"]);
 
+// R3-P0-1 REGRESSION GUARD: settlePayment uses better-sqlite3 synchronous transactions.
+// better-sqlite3 does NOT support true nested transactions (no SAVEPOINT) — calling
+// adapter.transaction() from inside another adapter.transaction() will throw.
+// INVARIANT: settlePayment MUST be called OUTSIDE any open transaction.
+// Both callers (webhooks/bitcart and webhooks/crypto) already satisfy this:
+//   - bitcart/route.js:46 calls settlePayment AFTER the non-terminal transaction block (line 53)
+//   - crypto/route.js calls settlePayment in its own branch, no outer transaction
+// DO NOT refactor to call settlePayment from inside a transaction block without verifying
+// better-sqlite3 savepoint support for the version in use.
 export async function settlePayment(payment, { amountReceived, txHash, confirmations }, db) {
   const adapter = db || (await getAdapter());
   const bonusPct = payment.bonusPercent || 0;

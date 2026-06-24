@@ -26,6 +26,13 @@ vi.mock("open-sse/translator/index.js", () => ({
   initTranslators: vi.fn().mockResolvedValue(undefined),
 }));
 
+// This suite tests Gemini<->OpenAI conversion, not auth. Stub settings so the
+// requireApiKey guard (R2-P0-2) is a no-op here; auth is covered by handleChat's
+// own tests (handleChat is mocked above).
+vi.mock("@/lib/localDb", () => ({
+  getSettings: vi.fn().mockResolvedValue({ requireApiKey: false }),
+}));
+
 // ── Imports ───────────────────────────────────────────────────────────────────
 
 import { POST, OPTIONS } from "../../src/app/api/v1beta/models/[...path]/route.js";

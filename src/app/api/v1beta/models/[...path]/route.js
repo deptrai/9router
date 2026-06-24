@@ -1,16 +1,15 @@
 import { handleChat } from "@/sse/handlers/chat.js";
 import { initTranslators } from "open-sse/translator/index.js";
+import { getSettings } from "@/lib/localDb";
+import { extractApiKey, isValidApiKey } from "@/sse/services/auth.js";
 
-let initialized = false;
+let _initPromise = null;
 
 /**
- * Initialize translators once
+ * Initialize translators once — promise-singleton prevents double-init on concurrent cold requests.
  */
-async function ensureInitialized() {
-  if (!initialized) {
-    await initTranslators();
-    initialized = true;
-  }
+function ensureInitialized() {
+  return (_initPromise ??= initTranslators());
 }
 
 /**
@@ -40,6 +39,19 @@ export async function OPTIONS() {
  */
 export async function POST(request, { params }) {
   await ensureInitialized();
+
+  // R2-P0-2: honour requireApiKey the same way all other v1 handlers do.
+  const settings = await getSettings();
+  if (settings.requireApiKey) {
+    const apiKey = extractApiKey(request);
+    if (!apiKey) {
+      return Response.json({ error: { message: "Missing API key", code: 401 } }, { status: 401 });
+    }
+    const valid = await isValidApiKey(apiKey);
+    if (!valid) {
+      return Response.json({ error: { message: "Invalid API key", code: 401 } }, { status: 401 });
+    }
+  }
 
   try {
     const { path } = await params;

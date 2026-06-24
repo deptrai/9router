@@ -60,7 +60,8 @@ export function getDownloadStatus() {
   return { downloading: dlState.downloading, progress: dlState.progress };
 }
 
-function downloadFile(url, dest) {
+function downloadFile(url, dest, _redirectCount = 0) {
+  const MAX_REDIRECTS = 10;
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(dest);
 
@@ -68,7 +69,11 @@ function downloadFile(url, dest) {
       if ([301, 302, 303, 307, 308].includes(response.statusCode)) {
         file.close();
         fs.unlinkSync(dest);
-        downloadFile(response.headers.location, dest).then(resolve).catch(reject);
+        if (_redirectCount >= MAX_REDIRECTS) {
+          reject(new Error(`Too many redirects downloading ${url}`));
+          return;
+        }
+        downloadFile(response.headers.location, dest, _redirectCount + 1).then(resolve).catch(reject);
         return;
       }
 

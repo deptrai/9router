@@ -102,7 +102,10 @@ export async function purchasePlanForUser({ userId, planId, idempotencyKey, now 
     if (existing) {
       const user = rowToUser(db.get(`SELECT * FROM users WHERE id = ?`, [userId]));
       const plan = rowToPlan(db.get(`SELECT * FROM plans WHERE id = ?`, [user?.planId || planId]));
-      result = { action: "buy", plan, user, transaction: existing, idempotent: true, resetPlanQuotaState: false };
+      // R3-P1-5: recover original action from the transaction note ("buy plan X", "renew plan X", "change plan X")
+      // instead of hardcoding "buy" — callers rely on this to display the correct message.
+      const noteAction = /^(buy|renew|change)\s/.exec(existing.note || "")?.[1] || "buy";
+      result = { action: noteAction, plan, user, transaction: existing, idempotent: true, resetPlanQuotaState: false };
       return;
     }
 

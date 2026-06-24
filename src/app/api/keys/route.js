@@ -15,10 +15,14 @@ async function getSession() {
 export async function GET() {
   try {
     const session = await getSession();
-    const role = session?.role ?? "admin";
+    // R4-P0-6: require a valid session — no session must NOT default to admin.
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const role = session.role ?? "admin"; // legacy token without role → admin
 
     const keys =
-      role === "user" && session?.userId
+      role === "user" && session.userId
         ? await getApiKeysByUser(session.userId)
         : await getApiKeys();
 
@@ -53,10 +57,14 @@ export async function POST(request) {
     }
 
     const session = await getSession();
-    const role = session?.role ?? "admin";
+    // R4-P1-6: require a valid session — no session must NOT default to admin.
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const role = session.role ?? "admin"; // legacy token without role → admin
 
     // Attach userId for user role; admin keys have no owner
-    const userId = role === "user" ? (session?.userId ?? null) : null;
+    const userId = role === "user" ? (session.userId ?? null) : null;
 
     // Always get machineId from server
     const machineId = await getConsistentMachineId();

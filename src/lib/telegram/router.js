@@ -597,14 +597,20 @@ async function handleRefList(chatId, telegramId) {
     const { getLedgerByUser } = await import("../db/repos/creditLedgerRepo.js");
     const lines = ["<b>📋 Người bạn giới thiệu</b>", ""];
 
+    // Hoist commission queries out of the per-referral loop (was N+1: 2 queries × each referral).
+    const allComm = await getLedgerByUser(user.id, { type: "affiliate_commission", limit: 1000 });
+    const allStoreComm = await getLedgerByUser(user.id, { type: "affiliate_store_commission", limit: 1000 });
+    const allCommissionTxns = [...allComm, ...allStoreComm];
+
     for (let i = 0; i < referrals.length; i++) {
       const r = referrals[i];
-      const name = escapeHtml(r.displayName || r.email?.split("@")[0] || "Ẩn danh");
+      // Use the RAW name to match against ledger notes (notes store unescaped names);
+      // escape only for HTML display so special chars (& < >) don't break matching.
+      const rawName = r.displayName || r.email?.split("@")[0] || "Ẩn danh";
+      const name = escapeHtml(rawName);
       const date = r.createdAt ? r.createdAt.slice(0, 10) : "";
       // Sum commission from this referred user
-      const allComm = await getLedgerByUser(user.id, { type: "affiliate_commission", limit: 1000 });
-      const allStoreComm = await getLedgerByUser(user.id, { type: "affiliate_store_commission", limit: 1000 });
-      const fromThisUser = [...allComm, ...allStoreComm].filter((t) => t.note?.includes(name)).reduce((s, t) => s + t.amount, 0);
+      const fromThisUser = allCommissionTxns.filter((t) => t.note?.includes(rawName)).reduce((s, t) => s + t.amount, 0);
       lines.push(`${i + 1}. <b>${name}</b> — ${date} — +${fromThisUser.toLocaleString()} cr`);
     }
 

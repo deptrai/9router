@@ -37,7 +37,7 @@ export async function GET(_request, { params }) {
             type: "invalid_request_error",
           },
         },
-        { status: 404, headers: { "Access-Control-Allow-Origin": "*" } }
+        { status: 400, headers: { "Access-Control-Allow-Origin": "*" } }
       );
     }
 

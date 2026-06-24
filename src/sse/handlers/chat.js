@@ -92,13 +92,23 @@ export async function handleChat(request, clientRawRequest = null) {
   log.request("POST", `${url.pathname} | ${modelStr} | ${msgCount} msgs${toolCount ? ` | ${toolCount} tools` : ""}${effort ? ` | effort=${effort}` : ""}`);
 
   // Sanitize tool schemas for Bedrock compatibility (draft 2020-12)
+  // Deep-clone before sanitizing to prevent prototype pollution from untrusted client input
   if (body.tools?.length) {
     let sanitized = 0;
     for (const tool of body.tools) {
-      // Handle all possible schema locations
-      if (tool.input_schema) { sanitizeSchemaForBedrock(tool.input_schema); sanitized++; }
-      if (tool.custom?.input_schema) { sanitizeSchemaForBedrock(tool.custom.input_schema); sanitized++; }
-      if (tool.function?.parameters) { sanitizeSchemaForBedrock(tool.function.parameters); sanitized++; }
+      // Handle all possible schema locations — operate on deep clone to avoid __proto__ pollution
+      if (tool.input_schema) {
+        try { tool.input_schema = JSON.parse(JSON.stringify(tool.input_schema)); } catch { /* keep original on clone failure */ }
+        sanitizeSchemaForBedrock(tool.input_schema); sanitized++;
+      }
+      if (tool.custom?.input_schema) {
+        try { tool.custom.input_schema = JSON.parse(JSON.stringify(tool.custom.input_schema)); } catch { /* keep original */ }
+        sanitizeSchemaForBedrock(tool.custom.input_schema); sanitized++;
+      }
+      if (tool.function?.parameters) {
+        try { tool.function.parameters = JSON.parse(JSON.stringify(tool.function.parameters)); } catch { /* keep original */ }
+        sanitizeSchemaForBedrock(tool.function.parameters); sanitized++;
+      }
     }
     if (sanitized > 0) log.info("SANITIZE", `Sanitized ${sanitized}/${body.tools.length} tool schemas for Bedrock compatibility`);
   }
@@ -108,9 +118,9 @@ export async function handleChat(request, clientRawRequest = null) {
   const fit = getModelContextFit(body, body.model, estimateRequestInputTokens);
   if (fit && fit.effectiveLimit && !fit.fits) {
     log.warn("CONTEXT", `Early-reject: ~${fit.estimatedTokens} tokens > ${fit.effectiveLimit} limit (model=${body.model})`);
-    return NextResponse.json(
-      { error: { message: `Request too large: estimated ${fit.estimatedTokens} tokens exceeds model context limit of ${fit.effectiveLimit}`, type: "invalid_request_error", code: "context_length_exceeded" } },
-      { status: 400, headers: { "Access-Control-Allow-Origin": "*" } }
+    return new Response(
+      JSON.stringify({ error: { message: `Request too large: estimated ${fit.estimatedTokens} tokens exceeds model context limit of ${fit.effectiveLimit}`, type: "invalid_request_error", code: "context_length_exceeded" } }),
+      { status: 400, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }
     );
   }
 

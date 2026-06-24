@@ -140,7 +140,7 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
       log
     });
     if (result.success) return result.response;
-    return result.response;
+    return result.response || errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "Search failed");
   }
 
   // Credential + fallback loop

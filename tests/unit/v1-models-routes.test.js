@@ -98,12 +98,12 @@ describe("MODELS-DISCOVERY routes", () => {
       expect(Array.isArray(body.data)).toBe(true);
     });
 
-    it("returns 404 and error envelope for unknown kind", async () => {
+    it("returns 400 and error envelope for unknown kind", async () => {
       const request = new Request("https://router.local/v1/models/unknown-kind");
       const response = await getModelsByKind(request, { params: Promise.resolve({ kind: "unknown-kind" }) });
       const body = await response.json();
 
-      expect(response.status).toBe(404);
+      expect(response.status).toBe(400);
       expect(body).toHaveProperty("error");
       expect(body.error).toHaveProperty("message");
       expect(body.error).toHaveProperty("type");

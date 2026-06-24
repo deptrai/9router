@@ -8,6 +8,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/auth/requireRole";
 import { getApiKeyById } from "@/lib/localDb";
 import { getQuotaConfig, setQuotaConfig, getQuotaState, sumUsageTokens } from "@/lib/db/repos/quotaRepo.js";
 import { resolveWindow, duration, formatResetCountdown } from "@/lib/quota/window.js";
@@ -101,6 +102,12 @@ async function computeUsage(keyString, keyId, limits) {
  */
 export async function GET(request, { params }) {
   try {
+    // R4-P0-2: handler-level auth guard — do not rely solely on middleware.
+    const session = await requireAdmin(request);
+    if (!session) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const { id } = await params;
 
     const key = await getApiKeyById(id);
@@ -130,6 +137,12 @@ export async function GET(request, { params }) {
  */
 export async function PUT(request, { params }) {
   try {
+    // R4-P0-2: handler-level auth guard — do not rely solely on middleware.
+    const session = await requireAdmin(request);
+    if (!session) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const { id } = await params;
 
     const key = await getApiKeyById(id);

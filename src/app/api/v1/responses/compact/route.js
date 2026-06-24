@@ -1,13 +1,13 @@
 import { handleChat } from "@/sse/handlers/chat.js";
 import { initTranslators } from "open-sse/translator/index.js";
 
-let initialized = false;
+let _initPromise = null;
 
-async function ensureInitialized() {
-  if (!initialized) {
-    await initTranslators();
-    initialized = true;
-  }
+/**
+ * Initialize translators once — promise-singleton prevents double-init on concurrent cold requests.
+ */
+function ensureInitialized() {
+  return (_initPromise ??= initTranslators());
 }
 
 export async function OPTIONS() {
@@ -26,7 +26,15 @@ export async function OPTIONS() {
  */
 export async function POST(request) {
   await ensureInitialized();
-  const body = await request.json();
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return new Response(JSON.stringify({ error: { message: "Invalid JSON body", type: "invalid_request_error" } }), {
+      status: 400,
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+    });
+  }
   body._compact = true;
   const newRequest = new Request(request.url, {
     method: "POST",

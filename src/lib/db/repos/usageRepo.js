@@ -290,7 +290,12 @@ export async function saveRequestUsage(entry) {
         if (keyRow?.userId) {
           const isOverflow = entry.billingSource === "overflow";
           const note = `${isOverflow ? "[overflow] " : ""}${entry.model || "unknown"} @ ${entry.endpoint || "/v1/chat/completions"}`;
-          deductFromPriorityBuckets(keyRow.userId, entry.cost, entry.timestamp, note, db);
+          try {
+            deductFromPriorityBuckets(keyRow.userId, entry.cost, entry.timestamp, note, db);
+          } catch (deductErr) {
+            // Fail-open by design (business decision) — but log clearly so reconciliation is possible
+            console.error(`[usageRepo] WARN: credit deduction failed — userId=${keyRow.userId} cost=${entry.cost} model=${entry.model || "unknown"} endpoint=${entry.endpoint || "/v1/chat/completions"} err=${deductErr?.message}`);
+          }
         }
         // legacy key (userId=null) or key not found → skip (fail-open by design)
       }

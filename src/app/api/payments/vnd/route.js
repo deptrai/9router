@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
 import { isConfigured, getBankInfo, createVndPayment } from "@/lib/payment/vndBank.js";
 
+export const dynamic = "force-dynamic";
+
 // Upper bound on a single VND topup request (P6) — guards against float/overflow/abuse.
 const MAX_VND_CREDITS = 1_000_000;
 

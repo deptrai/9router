@@ -143,6 +143,11 @@ function getOrSpawn(name) {
   const plugin = findPlugin(name);
   if (!plugin) throw new Error(`Unknown local plugin: ${name}`);
 
+  // Validate args is array of strings to prevent argument injection (R5-P1-7)
+  if (!Array.isArray(plugin.args) || plugin.args.some((a) => typeof a !== "string")) {
+    throw new Error(`Plugin '${name}': args must be an array of strings`);
+  }
+
   const proc = spawn(plugin.command, plugin.args, { stdio: ["pipe", "pipe", "pipe"], env: process.env });
   entry = { proc, sessions: new Map(), buffer: "" };
   store.set(name, entry);

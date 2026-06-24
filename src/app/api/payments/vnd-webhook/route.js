@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyWebhookSecret } from "@/lib/payment/vndBank.js";
+
+export const dynamic = "force-dynamic";
 import { getAdapter } from "@/lib/db/driver.js";
 import { recordCreditTxn } from "@/lib/db/repos/creditLedgerRepo.js";
 import { payAffiliateCommission } from "@/lib/affiliate/affiliateCommission.js";

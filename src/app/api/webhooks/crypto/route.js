@@ -46,8 +46,7 @@ export async function POST(request) {
     if (payment.status === "settled") return NextResponse.json({ ok: true });
 
     if (internalStatus === "settled") {
-      nowpaymentsAdapter.cacheIpnData(gatewayPaymentId, data);
-      const settlement = await nowpaymentsAdapter.resolveSettlement(gatewayPaymentId);
+      const settlement = nowpaymentsAdapter.resolveSettlement(gatewayPaymentId, data);
       await settlePayment(payment, settlement);
       return NextResponse.json({ ok: true });
     }

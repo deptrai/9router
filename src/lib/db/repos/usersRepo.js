@@ -126,7 +126,11 @@ export async function listUsers({ offset = 0, limit = 50, search, planId, balanc
   else if (balanceFilter === "normal") conds.push("users.creditsBalance >= 1.0");
 
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
-  const sortCol = sort === "balance" ? "users.creditsBalance" : "users.createdAt";
+  const SORT_COL_MAP = {
+    balance: "users.creditsBalance",
+    createdAt: "users.createdAt",
+  };
+  const sortCol = SORT_COL_MAP[sort] ?? "users.createdAt";
   const sortOrder = order === "desc" ? "DESC" : "ASC";
 
   const total = db.get(

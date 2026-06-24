@@ -125,8 +125,10 @@ function getProcessUsingPort443() {
 let serverProcess = null;
 let serverPid = null;
 
-function getCachedPassword() { return globalThis.__mitmSudoPassword || null; }
-function setCachedPassword(pwd) { globalThis.__mitmSudoPassword = pwd; }
+// Module-scoped cache — safer than globalThis (no cross-module leak, no XSS exposure)
+let _cachedSudoPassword = null;
+function getCachedPassword() { return _cachedSudoPassword || null; }
+function setCachedPassword(pwd) { _cachedSudoPassword = pwd; }
 
 function isProcessAlive(pid) {
   try {
@@ -401,9 +403,9 @@ async function killLeftoverMitm(sudoPassword) {
       const escaped = SERVER_PATH.replace(/'/g, "'\\''");
       if (sudoPassword || isSudoAvailable()) {
         const { execWithPassword } = require("./dns/dnsConfig");
-        await execWithPassword(`pkill -SIGKILL -f "${escaped}" 2>/dev/null || true`, sudoPassword || "").catch(() => { });
+        await execWithPassword(`pkill -SIGKILL -f '${escaped}' 2>/dev/null || true`, sudoPassword || "").catch(() => { });
       } else {
-        exec(`pkill -SIGKILL -f "${escaped}" 2>/dev/null || true`, { windowsHide: true }, () => { });
+        exec(`pkill -SIGKILL -f '${escaped}' 2>/dev/null || true`, { windowsHide: true }, () => { });
       }
       await new Promise(r => setTimeout(r, 500));
     } catch { /* ignore */ }

@@ -1,6 +1,6 @@
 import {
   extractApiKey, isValidApiKey,
-  getProviderCredentials, markAccountUnavailable,
+  getProviderCredentials, markAccountUnavailable, clearAccountError,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
@@ -10,6 +10,7 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { handleComboChat } from "open-sse/services/combo.js";
 import * as log from "../utils/logger.js";
+import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 
 // Derived from providers.js: any TTS provider not noAuth requires stored credentials
 const CREDENTIALED_PROVIDERS = new Set(
@@ -101,12 +102,28 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language) {
     const lease = credentials._lease || null;
     let result;
     try {
-      result = await handleTtsCore({ provider, model, input: body.input, credentials, responseFormat, language });
+      // Refresh token BEFORE calling core (ttsCore has no internal 401-refresh path).
+      const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+      if (refreshedCredentials !== credentials) {
+        await updateProviderCredentials(credentials.connectionId, {
+          accessToken: refreshedCredentials.accessToken,
+          refreshToken: refreshedCredentials.refreshToken,
+          providerSpecificData: refreshedCredentials.providerSpecificData,
+          testStatus: "active",
+        });
+      }
+      result = await handleTtsCore({
+        provider, model, input: body.input, credentials: refreshedCredentials, responseFormat, language,
+      });
     } finally {
       if (lease) lease.release();
     }
 
-    if (result.success) return result.response;
+    if (result.success) {
+      // Clear any prior error state on this account after a successful request.
+      await clearAccountError(credentials.connectionId, credentials, model);
+      return result.response;
+    }
 
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
     if (shouldFallback) {

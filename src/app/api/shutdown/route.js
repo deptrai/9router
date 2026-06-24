@@ -7,7 +7,10 @@ export async function POST() {
   }
 
   const secret = process.env.SHUTDOWN_SECRET;
-  const authorization = headers().get("authorization");
+  // R4-P1-4: headers() is async in Next.js 15 — must await or it returns a
+  // Promise object, making .get() always return undefined → endpoint always 401.
+  const headersList = await headers();
+  const authorization = headersList.get("authorization");
 
   if (!secret || authorization !== `Bearer ${secret}`) {
     return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });

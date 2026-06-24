@@ -32,7 +32,14 @@ export async function GET(request) {
 
     const baseUrl = PROVIDER_API[provider](origin);
     const url = lang ? `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}lang=${encodeURIComponent(lang)}` : baseUrl;
-    const res = await fetch(url, { cache: "no-store" });
+    const ac = new AbortController();
+    const voicesTimeout = setTimeout(() => ac.abort(), 5000);
+    let res;
+    try {
+      res = await fetch(url, { cache: "no-store", signal: ac.signal });
+    } finally {
+      clearTimeout(voicesTimeout);
+    }
     const data = await res.json();
     if (!res.ok || data.error) {
       return Response.json(

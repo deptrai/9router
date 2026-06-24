@@ -3,6 +3,25 @@ function normalizeString(value) {
   return String(value).trim();
 }
 
+/**
+ * Validate that a proxy URL uses an allowed scheme (http, https, socks5).
+ * Returns the URL unchanged if valid, throws otherwise.
+ */
+function validateProxyScheme(url) {
+  if (!url) return url;
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`Invalid proxy URL: ${url}`);
+  }
+  const allowed = new Set(["http:", "https:", "socks5:"]);
+  if (!allowed.has(parsed.protocol)) {
+    throw new Error(`Proxy URL scheme '${parsed.protocol}' is not allowed. Use http, https, or socks5.`);
+  }
+  return url;
+}
+
 export function applyOutboundProxyEnv(
   { outboundProxyEnabled, outboundProxyUrl, outboundNoProxy } = {}
 ) {
@@ -46,6 +65,7 @@ export function applyOutboundProxyEnv(
   }
 
   if (proxyUrl) {
+    validateProxyScheme(proxyUrl);
     process.env.HTTP_PROXY = proxyUrl;
     process.env.HTTPS_PROXY = proxyUrl;
     process.env.ALL_PROXY = proxyUrl;

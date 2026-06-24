@@ -7,6 +7,16 @@ import { promisify } from "util";
 import { execWithPassword } from "@/mitm/dns/dnsConfig";
 import { DATA_DIR } from "@/lib/dataDir.js";
 
+/**
+ * Validate sudoPassword to prevent stdin command injection.
+ * Reject non-strings, empty, newline, or null-byte.
+ */
+function validateSudoPassword(pwd) {
+  if (typeof pwd !== "string" || !pwd || pwd.includes("\n") || pwd.includes("\0")) {
+    throw new Error("Invalid sudo password");
+  }
+}
+
 const execAsync = promisify(exec);
 
 const BIN_DIR = path.join(DATA_DIR, "bin");
@@ -298,6 +308,7 @@ async function installTailscaleMac(sudoPassword, log) {
       }
     });
     child.on("error", reject);
+    validateSudoPassword(sudoPassword);
     child.stdin.write(`${sudoPassword}\n`);
     child.stdin.end();
   });
@@ -305,9 +316,7 @@ async function installTailscaleMac(sudoPassword, log) {
 
 async function installTailscaleLinux(sudoPassword, log) {
   // Reject password containing newline → prevents stdin command injection
-  if (typeof sudoPassword !== "string" || sudoPassword.includes("\n")) {
-    throw new Error("Invalid sudo password");
-  }
+  validateSudoPassword(sudoPassword);
   log("Downloading install script...");
   return new Promise((resolve, reject) => {
     const curlChild = spawn("curl", ["-fsSL", "https://tailscale.com/install.sh"], {
@@ -440,7 +449,7 @@ async function ensureUserOwnedDir(dir) {
 
     // Try direct chown first (works if already owned). Fallback to passwordless sudo.
     try {
-      execSync(`chown -R ${uid}:${gid} "${dir}"`, { stdio: "ignore", timeout: 3000 });
+      fs.chownSync(dir, uid, gid);
     } catch {
       try { execSync(`sudo -n chown -R ${uid}:${gid} "${dir}"`, { stdio: "ignore", timeout: 3000 }); } catch { /* ignore */ }
     }
@@ -523,6 +532,7 @@ export async function startDaemonWithPassword(sudoPassword) {
 
   if (wantTun) {
     // TUN mode: spawn via sudo, password via stdin. Detached so it survives parent exit.
+    validateSudoPassword(sudoPassword);
     const child = spawn("sudo", ["-S", tailscaledBin, ...daemonArgs], {
       detached: true,
       stdio: ["pipe", "ignore", "ignore"],

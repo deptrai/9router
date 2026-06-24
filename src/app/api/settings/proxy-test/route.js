@@ -1,8 +1,16 @@
 import { NextResponse } from "next/server";
 import { testProxyUrl } from "@/lib/network/proxyTest";
+import { requireAdmin } from "@/lib/auth/requireRole";
 
 export async function POST(request) {
   try {
+    // R4-P0-4: proxy-test makes outbound HTTP to arbitrary URLs (SSRF risk).
+    // Require admin regardless of requireLogin setting.
+    const session = await requireAdmin(request);
+    if (!session) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const body = await request.json();
     const result = await testProxyUrl({
       proxyUrl: body?.proxyUrl,

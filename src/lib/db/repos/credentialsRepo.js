@@ -277,5 +277,6 @@ export async function getDecryptedPayload(id) {
   const db = await getAdapter();
   const row = db.get(`SELECT payload FROM productCredentials WHERE id = ?`, [id]);
   if (!row) throw new Error(`getDecryptedPayload: credential ${id} not found`);
+  console.info(`[credentialsRepo] getDecryptedPayload: credId=${id}`);
   return decrypt(row.payload);
 }

@@ -5,6 +5,7 @@ import {
   updateProviderConnection,
   deleteProviderConnection,
 } from "@/models";
+import { requireAdmin } from "@/lib/auth/requireRole";
 
 function normalizeProxyConfig(body = {}) {
   const hasAnyProxyField =
@@ -62,6 +63,12 @@ function shouldMergeProviderSpecificData(existing, incoming, hasLegacyProxy, has
 // GET /api/providers/[id] - Get single connection
 export async function GET(request, { params }) {
   try {
+    // R4-P0-5: consistent with parent route GET/POST which both requireAdmin.
+    const session = await requireAdmin(request);
+    if (!session) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const { id } = await params;
     const connection = await getProviderConnectionById(id);
 
@@ -86,6 +93,12 @@ export async function GET(request, { params }) {
 // PUT /api/providers/[id] - Update connection
 export async function PUT(request, { params }) {
   try {
+    // R4-P0-5: consistent with parent route.
+    const session = await requireAdmin(request);
+    if (!session) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const { id } = await params;
     const body = await request.json();
     const {
@@ -174,6 +187,12 @@ export async function PUT(request, { params }) {
 // DELETE /api/providers/[id] - Delete connection
 export async function DELETE(request, { params }) {
   try {
+    // R4-P0-5: consistent with parent route.
+    const session = await requireAdmin(request);
+    if (!session) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const { id } = await params;
 
     const deleted = await deleteProviderConnection(id);

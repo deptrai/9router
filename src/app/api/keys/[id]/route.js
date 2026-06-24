@@ -12,10 +12,24 @@ async function getSession() {
 export async function GET(request, { params }) {
   try {
     const { id } = await params;
+
+    // R4-P0-1: require a valid session before exposing key details.
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const key = await getApiKeyById(id);
     if (!key) {
       return NextResponse.json({ error: "Key not found" }, { status: 404 });
     }
+
+    // Ownership check for user role — users can only read their own keys.
+    const role = session.role ?? "admin";
+    if (role === "user" && key.userId !== session.userId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     return NextResponse.json({ key });
   } catch (error) {
     console.log("Error fetching key:", error);
@@ -35,10 +49,13 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: "Key not found" }, { status: 404 });
     }
 
-    // Ownership check for user role
+    // Ownership check: require a valid session first.
     const session = await getSession();
-    const role = session?.role ?? "admin";
-    if (role === "user" && existing.userId !== session?.userId) {
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const role = session.role ?? "admin"; // legacy token without role → admin
+    if (role === "user" && existing.userId !== session.userId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -80,10 +97,13 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ error: "Key not found" }, { status: 404 });
     }
 
-    // Ownership check for user role
+    // Ownership check: require a valid session first.
     const session = await getSession();
-    const role = session?.role ?? "admin";
-    if (role === "user" && existing.userId !== session?.userId) {
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const role = session.role ?? "admin"; // legacy token without role → admin
+    if (role === "user" && existing.userId !== session.userId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
