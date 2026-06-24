@@ -42,3 +42,14 @@ Use for precise, known-target searches where semantic understanding isn't needed
 - Throttle with `--rpm` / `--delay-ms`; chat 429s usually come from the UPSTREAM provider (e.g. `kiro/auto` cooldown), not from 9Router itself.
 - For router+network overhead without model-generation noise, compare `/v1/models` latency instead of chat.
 - Full usage and options are documented in README.md under "Latency Benchmark".
+
+## Harness: 9router feature development
+
+**Mục tiêu:** Phát triển feature end-to-end cho 9router (LLM router/proxy) với đội agent chuyên — spec → implement (core+route+test) → QA boundary → deploy gate — bám đúng kiến trúc "thin route / fat core" và tránh các bẫy prod đã biết (force-dynamic, drift shape route↔core↔test).
+
+**Trigger:** Khi yêu cầu liên quan phát triển/sửa feature router (thêm endpoint `/v1*`, tích hợp provider, route+core+test) → dùng skill `9r-feature-orchestrator`. Câu hỏi đơn lẻ trả lời trực tiếp, không cần orchestrator.
+
+**변경 이력 (Change log):**
+| Ngày | Thay đổi | Đối tượng | Lý do |
+|------|----------|-----------|-------|
+| 2026-06-24 | Khởi tạo harness | 6 agent (router-architect, core-implementer, route-implementer, contract-tester, boundary-qa, deploy-gate) + 7 skill (9r-feature-orchestrator + 6 skill chuyên) | Cấu hình ban đầu cho domain phát triển feature end-to-end |
