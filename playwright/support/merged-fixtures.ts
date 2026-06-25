@@ -56,6 +56,9 @@ export const test = base.extend<CustomFixtures>({
     // auth_token cookie by default. Tests that need to assert the unauth path
     // (AC9) use the raw `request` fixture instead, which has no cookie.
     const cookie = await adminCookieHeader();
+    // Track the latest auth_token from Set-Cookie so register/login responses
+    // replace the default admin cookie for subsequent calls in the same test.
+    let currentCookie = cookie;
     const apiRequestFn = async (opts: {
       method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
       path: string;
@@ -66,9 +69,18 @@ export const test = base.extend<CustomFixtures>({
         opts.path,
         {
           ...(opts.data ? { data: opts.data } : {}),
-          headers: { Cookie: cookie, ...(opts.headers || {}) },
+          headers: { Cookie: currentCookie, ...(opts.headers || {}) },
         },
       );
+
+      // Update cookie if the server set a new auth_token (e.g. register/login)
+      const setCookie = response.headers()['set-cookie'];
+      if (setCookie) {
+        const authTokenMatch = setCookie.match(/auth_token=([^;]+)/);
+        if (authTokenMatch) {
+          currentCookie = `auth_token=${authTokenMatch[1]}`;
+        }
+      }
 
       let body: unknown;
       const contentType = response.headers()['content-type'] || '';

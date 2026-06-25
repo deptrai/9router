@@ -21,6 +21,7 @@ export function isTurnstileEnabled() {
 export async function verifyTurnstile(token, remoteIp) {
   const secret = process.env.TURNSTILE_SECRET_KEY;
   if (!secret) return { ok: true }; // disabled → fail-open for local dev
+  if (process.env.TURNSTILE_TEST_BYPASS === "1") return { ok: true }; // e2e test mode
 
   if (!token || typeof token !== "string") {
     return { ok: false, error: "missing-captcha" };

@@ -42,7 +42,7 @@ export default defineConfig({
   // Cap local workers: the Next.js dev server is a single process that
   // compiles routes lazily, so too many parallel first-hits saturate CPU
   // and blow navigation timeouts. CI runs serial (1).
-  workers: process.env.CI ? 1 : 3,
+  workers: process.env.CI ? 1 : 2,
 
   // Global test timeout
   timeout: 60_000,
@@ -94,11 +94,11 @@ export default defineConfig({
     },
   ],
 
-  // Local dev server
+  // Local dev server — TURNSTILE_TEST_BYPASS=1 disables captcha for e2e tests
   webServer: process.env.CI
     ? undefined
     : {
-        command: 'npm run dev',
+        command: 'TURNSTILE_TEST_BYPASS=1 npm run dev',
         url: 'http://localhost:20128',
         reuseExistingServer: true,
         timeout: 120_000,

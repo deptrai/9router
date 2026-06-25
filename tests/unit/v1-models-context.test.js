@@ -11,6 +11,12 @@ vi.mock("@/lib/disabledModelsDb", () => ({
   getDisabledModels: vi.fn(),
 }));
 
+// Prevent windsurfAuth.extractKey() from finding a real state.vscdb (e.g. Devin's)
+// which would inject a synthetic windsurf connection and skip static cx/kr models.
+vi.mock("open-sse/utils/windsurfAuth.js", () => ({
+  extractKey: vi.fn().mockResolvedValue({ api_key: null }),
+}));
+
 import { buildModelsList } from "@/app/api/v1/models/route.js";
 import { GET as getModelInfo } from "@/app/api/v1/models/info/route.js";
 import { getCombos, getCustomModels, getModelAliases, getProviderConnections } from "@/lib/localDb";
