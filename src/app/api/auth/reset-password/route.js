@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { cookies } from "next/headers";
 import { peekPasswordResetToken, removePasswordResetToken } from "@/lib/auth/passwordResetToken.js";
-import { updateUser } from "@/lib/db/index.js";
+import { updateUser, getUserById } from "@/lib/db/index.js";
+import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
+import { resolveAdminFlag } from "@/lib/auth/adminEmail";
 
 export async function POST(request) {
   try {
@@ -37,7 +40,19 @@ export async function POST(request) {
     // Remove token only after successful DB write
     await removePasswordResetToken(token);
 
-    return NextResponse.json({ success: true });
+    // Auto-login: set dashboard auth cookie ngay sau khi đổi pass
+    const user = await getUserById(data.userId);
+    if (user && user.isActive) {
+      const isAdmin = await resolveAdminFlag(user);
+      const cookieStore = await cookies();
+      await setDashboardAuthCookie(cookieStore, request, {
+        role: isAdmin ? "admin" : "user",
+        userId: user.id,
+        email: user.email,
+      });
+    }
+
+    return NextResponse.json({ success: true, autoLogin: !!(user && user.isActive) });
   } catch (error) {
     console.error("[reset-password] error:", error.message);
     return NextResponse.json({ error: "Reset failed" }, { status: 500 });

@@ -33,7 +33,7 @@ export async function POST(request) {
 
     const user = await getUserByEmail(email);
 
-    if (user?.isEmailVerified) {
+    if (user?.passwordHash) {
       if (!process.env.BASE_URL && !process.env.NEXT_PUBLIC_BASE_URL) {
         console.warn("[forgot-password] BASE_URL not set — reset link will use localhost fallback");
       }

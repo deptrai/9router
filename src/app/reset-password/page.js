@@ -10,14 +10,18 @@ function ResetPasswordContent() {
   const [status, setStatus] = useState("form"); // "form" | "success" | "error"
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [autoLogin, setAutoLogin] = useState(false);
   const searchParams = useSearchParams();
   const router = useRouter();
 
   useEffect(() => {
     if (status !== "success") return;
-    const id = setTimeout(() => router.push("/login"), 1500);
+    // Auto-login → redirect thẳng vào dashboard; không → redirect /login sau 1.5s
+    const target = autoLogin ? "/dashboard" : "/login";
+    const delay = autoLogin ? 800 : 1500;
+    const id = setTimeout(() => router.push(target), delay);
     return () => clearTimeout(id);
-  }, [router, status]);
+  }, [router, status, autoLogin]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -48,7 +52,12 @@ function ResetPasswordContent() {
       });
 
       if (res.ok) {
+        const data = await res.json().catch(() => ({}));
         setStatus("success");
+        // Auto-login: nếu server đã set cookie → redirect thẳng vào dashboard
+        if (data.autoLogin) {
+          setAutoLogin(true);
+        }
       } else {
         const data = await res.json();
         setStatus("error");
@@ -78,9 +87,13 @@ function ResetPasswordContent() {
                 <span className="material-symbols-outlined text-[32px]">check_circle</span>
               </div>
               <h2 className="text-lg font-semibold text-green-500">Đặt lại thành công!</h2>
-              <p className="text-sm text-text-muted text-center">Mật khẩu đã được cập nhật. Bạn có thể đăng nhập với mật khẩu mới.</p>
-              <Button variant="primary" className="w-full mt-2" onClick={() => router.push("/login")}>
-                Đăng nhập
+              <p className="text-sm text-text-muted text-center">
+                {autoLogin
+                  ? "Mật khẩu đã được cập nhật. Đang đăng nhập và chuyển đến dashboard..."
+                  : "Mật khẩu đã được cập nhật. Bạn có thể đăng nhập với mật khẩu mới."}
+              </p>
+              <Button variant="primary" className="w-full mt-2" onClick={() => router.push(autoLogin ? "/dashboard" : "/login")}>
+                {autoLogin ? "Vào dashboard" : "Đăng nhập"}
               </Button>
             </div>
           )}
