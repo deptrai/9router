@@ -34,11 +34,14 @@ export async function POST(request) {
     const user = await getUserByEmail(email);
 
     if (user?.passwordHash) {
+      // Construct base URL từ request headers (robust — không phụ thuộc env build-time)
+      const proto = request.headers.get("x-forwarded-proto") || "https";
+      const host = request.headers.get("host") || "localhost:20128";
+      const baseUrl = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || `${proto}://${host}`;
       if (!process.env.BASE_URL && !process.env.NEXT_PUBLIC_BASE_URL) {
-        console.warn("[forgot-password] BASE_URL not set — reset link will use localhost fallback");
+        console.warn("[forgot-password] BASE_URL not set — using request-derived:", baseUrl);
       }
       try {
-        const baseUrl = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:20128";
         const token = await createPasswordResetToken(user.id, user.email);
         await sendEmail({
           to: user.email,
