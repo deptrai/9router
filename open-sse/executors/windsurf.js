@@ -160,6 +160,8 @@ export class WindsurfExecutor extends BaseExecutor {
                 for (const frame of frames) {
                   const strings = extractStrings(frame);
                   for (const text of strings) {
+                    const cleaned = self._stripStopTokens(text);
+                    if (!cleaned) continue;
                     const chunk = {
                       id: completionId,
                       object: "chat.completion.chunk",
@@ -167,7 +169,7 @@ export class WindsurfExecutor extends BaseExecutor {
                       model: model,
                       choices: [{
                         index: 0,
-                        delta: { content: text },
+                        delta: { content: cleaned },
                         finish_reason: null,
                       }],
                     };
@@ -183,6 +185,8 @@ export class WindsurfExecutor extends BaseExecutor {
               for (const frame of frames) {
                 const strings = extractStrings(frame);
                 for (const text of strings) {
+                  const cleaned = self._stripStopTokens(text);
+                  if (!cleaned) continue;
                   const chunk = {
                     id: completionId,
                     object: "chat.completion.chunk",
@@ -190,7 +194,7 @@ export class WindsurfExecutor extends BaseExecutor {
                     model: model,
                     choices: [{
                       index: 0,
-                      delta: { content: text },
+                      delta: { content: cleaned },
                       finish_reason: null,
                     }],
                   };
@@ -236,6 +240,7 @@ export class WindsurfExecutor extends BaseExecutor {
           const strings = extractStrings(frame);
           fullText += strings.join("");
         }
+        fullText = this._stripStopTokens(fullText);
 
         const jsonBody = {
           id: completionId,
@@ -328,6 +333,20 @@ export class WindsurfExecutor extends BaseExecutor {
         finish_reason: finishReason,
       }],
     };
+  }
+
+  /**
+   * Strip model EOS stop tokens from response text.
+   * Windsurf's Devstral model appends </s> as end-of-sequence token.
+   * @param {string} text
+   * @returns {string}
+   */
+  _stripStopTokens(text) {
+    return text
+      .replace(/<\/s>\s*$/, "")         // Windsurf / Mistral / LLaMA EOS
+      .replace(/<\|end\|>\s*$/, "")     // some instruction-tuned models
+      .replace(/<\|endoftext\|>\s*$/, "") // GPT-2 style
+      .replace(/<\|eot_id\|>\s*$/, ""); // LLaMA-3 style
   }
 
   /**

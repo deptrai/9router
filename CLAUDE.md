@@ -49,7 +49,21 @@ Use for precise, known-target searches where semantic understanding isn't needed
 
 **Trigger:** Khi yêu cầu liên quan phát triển/sửa feature router (thêm endpoint `/v1*`, tích hợp provider, route+core+test) → dùng skill `9r-feature-orchestrator`. Câu hỏi đơn lẻ trả lời trực tiếp, không cần orchestrator.
 
+**Custom agent profiles** (`.devin/agents/<name>/AGENT.md`):
+| Profile | Vai trò | MCP chính |
+|---------|---------|-----------|
+| `9r-router-architect` | Viết spec hợp đồng, tìm tiền lệ | vibervn-context-engine, serena |
+| `9r-core-implementer` | Implement handler symbol-aware | serena (replace_symbol_body), vibervn-context-engine |
+| `9r-route-implementer` | Wire route mỏng + force-dynamic | serena, vibervn-context-engine |
+| `9r-contract-tester` | Viết + chạy vitest contract test | vibervn-context-engine, serena, exec |
+| `9r-boundary-qa` | So khớp shape route↔core↔test | serena, vibervn-context-engine, codebase-memory |
+| `9r-deploy-gate` | Impact/risk + force-dynamic + env | code-review-graph, serena |
+
+**Phối hợp:** File-based qua `_workspace/*.md` (không có SendMessage/TaskCreate).  
+**Parallel:** Route + Test chạy background song song sau khi Core xong.
+
 **변경 이력 (Change log):**
 | Ngày | Thay đổi | Đối tượng | Lý do |
 |------|----------|-----------|-------|
-| 2026-06-24 | Khởi tạo harness | 6 agent (router-architect, core-implementer, route-implementer, contract-tester, boundary-qa, deploy-gate) + 7 skill (9r-feature-orchestrator + 6 skill chuyên) | Cấu hình ban đầu cho domain phát triển feature end-to-end |
+| 2026-06-24 | Khởi tạo harness | 6 agent + 7 skill | Cấu hình ban đầu |
+| 2026-08-19 | Refactor harness sang Devin sub-agent | Rewrite orchestrator dùng `run_subagent`/`read_subagent`; tạo 6 AGENT.md profiles trong `.devin/agents/`; file-based coordination thay SendMessage; route+test background song song | Primitives BMAD (TaskCreate/TeamCreate/SendMessage) không tồn tại trong Devin CLI |
