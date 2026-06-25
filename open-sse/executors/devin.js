@@ -67,16 +67,35 @@ export class DevinExecutor extends BaseExecutor {
     }
 
     if (!sessionResp.ok) {
+      // Parse error body để trả message cụ thể từ Devin API (vd: "devin_mode 'lite' is not available for this organization")
+      let serverDetail = "";
+      try {
+        const errBody = await sessionResp.json();
+        serverDetail = errBody?.detail || errBody?.message || errBody?.error || "";
+      } catch {
+        // Body không phải JSON — ignore
+      }
+
       if (sessionResp.status === 403) {
-        return this._errorResponse(403, "Devin out_of_quota — billing required");
+        // 403 thường là out_of_quota — giữ message quen thuộc + thêm detail nếu có
+        const msg = serverDetail ? `Devin out_of_quota — ${serverDetail}` : "Devin out_of_quota — billing required";
+        return this._errorResponse(403, msg);
       }
       if (sessionResp.status === 404) {
-        return this._errorResponse(404, "Devin Organization ID not found");
+        return this._errorResponse(404, serverDetail || "Devin Organization ID not found");
       }
       if (sessionResp.status === 401) {
-        return this._errorResponse(401, "Devin API key invalid");
+        return this._errorResponse(401, serverDetail || "Devin API key invalid");
       }
-      return this._errorResponse(502, `Devin session creation failed: HTTP ${sessionResp.status}`);
+      if (sessionResp.status === 400) {
+        // 400 = bad request — trả detail cụ thể (vd: mode không available, prompt thiếu)
+        return this._errorResponse(400, serverDetail ? `Devin bad request: ${serverDetail}` : "Devin bad request");
+      }
+      // Fallback: include server detail nếu có
+      const fallbackMsg = serverDetail
+        ? `Devin session creation failed: HTTP ${sessionResp.status} — ${serverDetail}`
+        : `Devin session creation failed: HTTP ${sessionResp.status}`;
+      return this._errorResponse(502, fallbackMsg);
     }
 
     const sessionData = await sessionResp.json();

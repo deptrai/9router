@@ -85,6 +85,32 @@ export async function GET(request) {
     const pageSize = Math.min(parsePositiveInt(searchParams.get("pageSize"), DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE);
 
     const allConnections = await getProviderConnections();
+
+    // Inject synthetic windsurf connection if no DB connection exists (auto-extract from state.vscdb)
+    if (!allConnections.some(c => c.provider === "windsurf")) {
+      let wsKey = process.env.WINDSURF_API_KEY;
+      if (!wsKey) {
+        try {
+          const { extractKey } = await import("open-sse/utils/windsurfAuth.js");
+          const extracted = await extractKey();
+          if (extracted?.api_key) wsKey = extracted.api_key;
+        } catch { /* no vscdb available */ }
+      }
+      if (wsKey) {
+        allConnections.push({
+          id: "windsurf-autoextract",
+          provider: "windsurf",
+          authType: "apikey",
+          name: "Auto-extracted (state.vscdb)",
+          isActive: 1,
+          apiKey: wsKey,
+          providerSpecificData: {},
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    }
+
     const eligibleConnections = allConnections.filter(isUsageEligible);
     const providerOptions = Array.from(new Set(eligibleConnections.map((conn) => conn.provider))).sort();
 

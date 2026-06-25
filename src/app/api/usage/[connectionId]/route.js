@@ -107,11 +107,33 @@ export async function GET(request, { params }) {
   try {
     const { connectionId } = await params;
 
-
-    // Get connection from database
-    connection = await getProviderConnectionById(connectionId);
-    if (!connection) {
-      return Response.json({ error: "Connection not found" }, { status: 404 });
+    // Handle synthetic windsurf connection (auto-extracted from state.vscdb)
+    if (connectionId === "windsurf-autoextract") {
+      let wsKey = process.env.WINDSURF_API_KEY;
+      if (!wsKey) {
+        try {
+          const { extractKey } = await import("open-sse/utils/windsurfAuth.js");
+          const extracted = await extractKey();
+          if (extracted?.api_key) wsKey = extracted.api_key;
+        } catch { /* no vscdb available */ }
+      }
+      if (!wsKey) {
+        return Response.json({ error: "Windsurf token not available" }, { status: 404 });
+      }
+      connection = {
+        id: "windsurf-autoextract",
+        provider: "windsurf",
+        authType: "apikey",
+        name: "Auto-extracted (state.vscdb)",
+        apiKey: wsKey,
+        providerSpecificData: {},
+      };
+    } else {
+      // Get connection from database
+      connection = await getProviderConnectionById(connectionId);
+      if (!connection) {
+        return Response.json({ error: "Connection not found" }, { status: 404 });
+      }
     }
 
     // Allow OAuth connections, plus whitelisted apikey providers (glm/minimax/...)

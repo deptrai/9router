@@ -150,6 +150,53 @@ describe("Story N.2 — DevinExecutor", () => {
     expect(result.response.status).toBe(404);
   });
 
+  it("400 bad request → parse server detail vào message", async () => {
+    // Devin API trả 400 với { detail: "devin_mode 'lite' is not available for this organization" }
+    mockFetchSequence([{
+      ok: false,
+      status: 400,
+      json: async () => ({ detail: "devin_mode 'lite' is not available for this organization" }),
+      headers: new Map(),
+    }]);
+
+    const executor = new DevinExecutor("devin", {});
+    const result = await executor.execute({
+      model: "lite",
+      body: makeBody(),
+      stream: false,
+      credentials: makeCredentials(),
+      signal: undefined,
+    });
+
+    expect(result.response.status).toBe(400);
+    const json = await result.response.json();
+    expect(json.error.message).toContain("devin_mode 'lite' is not available");
+  });
+
+  it("403 out_of_quota → parse server detail vào message", async () => {
+    // Devin API trả 403 với { detail: "Your organization has a billing error. Error: out_of_quota" }
+    mockFetchSequence([{
+      ok: false,
+      status: 403,
+      json: async () => ({ detail: "Your organization has a billing error. Error: out_of_quota" }),
+      headers: new Map(),
+    }]);
+
+    const executor = new DevinExecutor("devin", {});
+    const result = await executor.execute({
+      model: "normal",
+      body: makeBody(),
+      stream: false,
+      credentials: makeCredentials(),
+      signal: undefined,
+    });
+
+    expect(result.response.status).toBe(403);
+    const json = await result.response.json();
+    expect(json.error.message).toContain("out_of_quota");
+    expect(json.error.message).toContain("billing error");
+  });
+
   it("401 invalid API key → synthetic 401 Response", async () => {
     mockFetchSequence([errorResponse(401)]);
 

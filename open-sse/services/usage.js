@@ -91,6 +91,15 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
     case "minimax":
     case "minimax-cn":
       return await getMiniMaxUsage(apiKey, provider, proxyOptions);
+    case "devin":
+      return await getDevinUsage(apiKey, providerSpecificData, proxyOptions);
+    case "windsurf":
+      // Windsurf (Cascade WS) — free tier, không có quota/usage endpoint công khai.
+      // Trả về message thay vì lỗi để UI hiển thị connection mà không crash.
+      return {
+        message: "Windsurf (Cascade WS) — free tier LLM, không theo dõi quota theo token. 9 model có sẵn: swe, swe-1-5, claude-opus-4-6, claude-sonnet-4-6, gpt-5-5-high, gemini-3-5-pro, deepseek-v4, kimi-k2-6.",
+        quotas: [],
+      };
     default:
       return { message: `Usage API not implemented for ${provider}` };
   }
@@ -1242,4 +1251,278 @@ async function getQoderUsage(accessToken, proxyOptions = null) {
   } catch (error) {
     return { message: `Qoder connected. Unable to fetch usage: ${error.message}` };
   }
+}
+
+/**
+ * Devin Usage — gọi Connect-RPC GetUserStatus (JSON) để lấy real-time quota
+ *
+ * Flow:
+ *   1. extractKey() → đọc apiKey từ state.vscdb
+ *   2. fetchJwt(apiKey) → đổi apiKey thành JWT qua GetUserJwt
+ *   3. POST GetUserStatus (JSON) → nhận planStatus với daily/weekly quota
+ *
+ * planStatus fields:
+ *   - dailyQuotaRemainingPercent / weeklyQuotaRemainingPercent
+ *   - dailyQuotaResetAtUnix / weeklyQuotaResetAtUnix
+ *   - overageBalanceMicros, availablePromptCredits, etc.
+ */
+async function getDevinUsage(apiKey, providerSpecificData, proxyOptions = null) {
+  const quotas = {};
+
+  try {
+    const { extractKey, fetchJwt } = await import("../utils/windsurfAuth.js");
+
+    // Step 1: Extract apiKey from state.vscdb
+    const extracted = await extractKey();
+    if (!extracted?.api_key) {
+      return { message: "Devin: không đọc được API key từ state.vscdb. Đảm bảo Devin CLI đã đăng nhập." };
+    }
+
+    // Step 2: Fetch JWT
+    const jwt = await fetchJwt(extracted.api_key);
+
+    // Step 3: Call GetUserStatus via Connect-RPC JSON
+    const reqBody = JSON.stringify({
+      metadata: {
+        ideName: "windsurf",
+        ideVersion: "1.48.2",
+        apiKey: extracted.api_key,
+        language: "en",
+        extensionVersion: "1.9544.35",
+        auth_token: jwt,
+      },
+    });
+
+    const resp = await proxyAwareFetch(
+      "https://server.codeium.com/exa.seat_management_pb.SeatManagementService/GetUserStatus",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Connect-Protocol-Version": "1",
+        },
+        body: reqBody,
+      },
+      proxyOptions,
+    );
+
+    if (!resp.ok) {
+      return { message: `Devin: GetUserStatus HTTP ${resp.status}` };
+    }
+
+    const data = await resp.json();
+    const planStatus = data?.userStatus?.planStatus;
+    if (!planStatus) {
+      return { message: "Devin: server không trả về planStatus." };
+    }
+
+    const planInfo = planStatus.planInfo || {};
+    const planName = planInfo.planName || "Devin";
+    const hideDaily = planInfo.hideDailyQuota || false;
+    const hideWeekly = planInfo.hideWeeklyQuota || false;
+
+    // Daily quota (ẩn nếu hideDailyQuota=true)
+    // Lưu ý: server trả undefined khi daily quota = 0% remaining (đã dùng hết)
+    if (!hideDaily) {
+      const dailyPct = planStatus.dailyQuotaRemainingPercent !== undefined
+        ? Number(planStatus.dailyQuotaRemainingPercent) || 0
+        : 0; // undefined = 0% remaining = 100% used
+      quotas.daily = {
+        used: 100 - dailyPct,
+        total: 100,
+        remaining: dailyPct,
+        resetAt: planStatus.dailyQuotaResetAtUnix ? Number(planStatus.dailyQuotaResetAtUnix) * 1000 : null,
+        unit: "%",
+      };
+    }
+
+    // Weekly quota
+    if (!hideWeekly && planStatus.weeklyQuotaRemainingPercent !== undefined) {
+      const weeklyPct = Number(planStatus.weeklyQuotaRemainingPercent) || 0;
+      quotas.weekly = {
+        used: 100 - weeklyPct,
+        total: 100,
+        remaining: weeklyPct,
+        resetAt: planStatus.weeklyQuotaResetAtUnix ? Number(planStatus.weeklyQuotaResetAtUnix) * 1000 : null,
+        unit: "%",
+      };
+    }
+
+    // Overage balance (chỉ hiển thị khi > 0)
+    const overage = Number(planStatus.overageBalanceMicros) || 0;
+    if (overage > 0) {
+      quotas.overage = {
+        used: overage / 1_000_000,
+        total: 0,
+        remaining: 0,
+        resetAt: null,
+        unit: "credits",
+      };
+    }
+
+    // Per-model rate limit — gọi CheckUserMessageRateLimit cho free models
+    // API trả về messagesRemaining / maxMessages / retryAfterMs / message
+    // Pro plan: -1/-1 = unlimited, hasCapacity=true → không hiển thị
+    // Free plan: số message còn lại + cooldown (retryAfterMs) khi hasCapacity=false
+    const modelRateLimits = await checkDevinModelRateLimits(extracted.api_key, jwt, proxyOptions);
+    if (modelRateLimits && Object.keys(modelRateLimits).length > 0) {
+      for (const [modelUid, rl] of Object.entries(modelRateLimits)) {
+        // Chỉ thêm khi có rate limit thực:
+        //   - maxMessages > 0 (có giới hạn), HOẶC
+        //   - retryAfterMs > 0 (đang cooldown), HOẶC
+        //   - hasCapacity = false (đã hết capacity)
+        const hasRateLimit = rl.maxMessages > 0 || (rl.retryAfterMs && rl.retryAfterMs > 0) || rl.hasCapacity === false;
+        if (hasRateLimit) {
+          const cooldownMs = rl.retryAfterMs && rl.retryAfterMs > 0 ? rl.retryAfterMs : 0;
+          quotas[`rate_limit_${modelUid}`] = {
+            used: rl.maxMessages > 0 ? Math.max(0, rl.maxMessages - rl.messagesRemaining) : 0,
+            total: rl.maxMessages > 0 ? rl.maxMessages : 0,
+            remaining: rl.messagesRemaining,
+            resetAt: cooldownMs > 0 ? Date.now() + cooldownMs : null,
+            unit: "messages",
+            hasCapacity: rl.hasCapacity,
+            message: rl.message || null,
+            cooldownMs,
+          };
+        }
+      }
+    }
+
+    return {
+      plan: planName,
+      quotas,
+      isDevinUser: planInfo.isDevin || false,
+      billingStrategy: planInfo.billingStrategy || "quota",
+      accountIdentity: planInfo.devinInfo?.accountDisplayName
+        ? `${data?.userStatus?.email || ""} - ${planInfo.devinInfo.accountDisplayName}`
+        : null,
+    };
+  } catch (error) {
+    return { message: `Devin: không thể fetch quota — ${error.message}` };
+  }
+}
+
+/**
+ * Check per-model rate limit qua Connect-RPC CheckUserMessageRateLimit (JSON).
+ *
+ * Free models (MODEL_COST_TIER_FREE): swe-1-6, swe-1-6-fast, kimi-k2-7, glm-5-2,
+ *   MODEL_SWE_1_5_SLOW, MODEL_SWE_1_5, + 4 BYOK models.
+ *
+ * Response fields:
+ *   - hasCapacity (bool): false = đang bị rate limit / cooldown
+ *   - messagesRemaining (int): -1 = unlimited (Pro); 0 = hết; >0 = còn
+ *   - maxMessages (int): -1 = unlimited; >0 = giới hạn
+ *   - retryAfterMs (int, optional): milliseconds until quota resets (chỉ khi hasCapacity=false)
+ *   - resetsInSeconds (int, optional): seconds until reset (proto3 schema, có thể không trả JSON)
+ *   - message (string): error message khi hasCapacity=false, dạng "Resets in: 27m12s"
+ *
+ * Rate limit tiers (theo WindsurfAPI open-source research):
+ *   - Daily-limited: claude-sonnet-4.6, claude-haiku-4.5 — daily quota宽松
+ *   - Weekly-limited: claude-opus-4-7-max, -thinking, gpt-5.5-xhigh — mỗi account/tuần 5 lần
+ *   - Free models: SWE-1.6, Kimi, GLM — free tier rate limit thấp, cooldown lâu hơn
+ *   - IP-level cooldown: Windsurf có cả IP-level rate limit (nhiều account cùng IP bị limit chung)
+ *
+ * @returns {Object} map modelUid → { hasCapacity, messagesRemaining, maxMessages, retryAfterMs, resetsInSeconds, message }
+ */
+async function checkDevinModelRateLimits(apiKey, jwt, proxyOptions = null) {
+  // Danh sách free model UIDs cần check rate limit
+  // MODEL_COST_TIER_FREE: 8 models — 4 BYOK cần user key riêng, bỏ qua
+  const freeModelUids = [
+    "swe-1-6",
+    "swe-1-6-fast",
+    "kimi-k2-7",
+    "glm-5-2",
+  ];
+
+  const baseMeta = {
+    apiKey,
+    ideName: "windsurf",
+    ideVersion: "1.9600.41",
+    extensionName: "windsurf",
+    extensionVersion: "1.9600.41",
+    locale: "en",
+    // auth_token (JWT) — thêm nếu có, server chấp nhận cả 2 auth mode
+    ...(jwt ? { auth_token: jwt } : {}),
+  };
+
+  const results = {};
+  await Promise.all(
+    freeModelUids.map(async (modelUid) => {
+      try {
+        const resp = await proxyAwareFetch(
+          "https://server.codeium.com/exa.api_server_pb.ApiServerService/CheckUserMessageRateLimit",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Connect-Protocol-Version": "1",
+            },
+            body: JSON.stringify({ metadata: baseMeta, modelUid }),
+          },
+          proxyOptions,
+        );
+        if (resp.ok) {
+          const data = await resp.json();
+          // retryAfterMs (JSON) hoặc resetsInSeconds (proto3) — ưu tiên retryAfterMs
+          let cooldownMs = null;
+          if (data.retryAfterMs !== undefined && Number.isFinite(Number(data.retryAfterMs))) {
+            cooldownMs = Number(data.retryAfterMs);
+          } else if (data.resetsInSeconds !== undefined && Number(data.resetsInSeconds) > 0) {
+            cooldownMs = Number(data.resetsInSeconds) * 1000;
+          }
+          // Parse "Resets in: 27m12s" từ message nếu vẫn không có cooldown
+          if (cooldownMs === null && data.message) {
+            cooldownMs = parseRateLimitCooldownMs(data.message);
+          }
+
+          results[modelUid] = {
+            hasCapacity: data.hasCapacity ?? true,
+            messagesRemaining: Number(data.messagesRemaining) ?? -1,
+            maxMessages: Number(data.maxMessages) ?? -1,
+            retryAfterMs: cooldownMs,
+            message: data.message || null,
+          };
+        }
+      } catch {
+        // Skip model nếu lỗi — không crash toàn bộ
+      }
+    }),
+  );
+  return results;
+}
+
+/**
+ * Parse cooldown từ error message dạng "Resets in: 27m12s" / "Retry after 300 seconds".
+ * Port từ WindsurfAPI (dwgx/WindsurfAPI) — parseRateLimitCooldownMs.
+ *
+ * @param {string} message — error message từ server
+ * @returns {number|null} cooldown tính bằng ms, hoặc null nếu không parse được
+ */
+function parseRateLimitCooldownMs(message = "") {
+  const msg = String(message || "");
+  // Format 1: "Resets in: 27m12s" hoặc "resets in 1h2m"
+  const reset = msg.match(/resets?\s+in\s*:?\s*((?:(?:\d+)\s*[hms]\s*)+)/i);
+  if (reset) {
+    let total = 0;
+    for (const part of reset[1].matchAll(/(\d+)\s*([hms])/gi)) {
+      const n = Number(part[1]);
+      const unit = part[2].toLowerCase();
+      if (unit === "h") total += n * 60 * 60 * 1000;
+      else if (unit === "m") total += n * 60 * 1000;
+      else total += n * 1000;
+    }
+    if (total > 0) return total;
+  }
+  // Format 2: "Retry after 300 seconds" / "retry in 5 minutes"
+  const m = msg.match(/(?:retry (?:after|in)|after)\s+(\d+)\s*(seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h)/i);
+  if (m) {
+    const n = Number(m[1]);
+    const unit = m[2].toLowerCase();
+    if (unit.startsWith("h")) return n * 60 * 60 * 1000;
+    if (unit.startsWith("m")) return n * 60 * 1000;
+    return n * 1000;
+  }
+  // Format 3: "about an hour" / "try again in an hour"
+  if (/about an hour|in an hour|try again in.*hour/i.test(msg)) return 60 * 60 * 1000;
+  return null;
 }

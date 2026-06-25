@@ -207,6 +207,47 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "devin":
+        // Devin quota từ Connect-RPC GetUserStatus — daily/weekly remaining percent + reset times
+        // + per-model rate limit từ CheckUserMessageRateLimit (free models)
+        if (data.message) {
+          normalizedQuotas.push({
+            name: "error",
+            used: 0,
+            total: 0,
+            resetAt: null,
+            message: data.message,
+          });
+        } else if (data.quotas) {
+          const labelMap = {
+            daily: "Daily Quota",
+            weekly: "Weekly Quota",
+            flex_credits: "Flex Credits",
+            overage: "Overage Balance",
+            acu_consumed: "ACU Consumed (30d)",
+            sessions: "Sessions (30d)",
+          };
+          const modelLabelMap = {
+            "rate_limit_swe-1-6": "SWE-1.6 Rate Limit",
+            "rate_limit_swe-1-6-fast": "SWE-1.6 Fast Rate Limit",
+            "rate_limit_kimi-k2-7": "Kimi K2.7 Rate Limit",
+            "rate_limit_glm-5-2": "GLM-5.2 Rate Limit",
+          };
+          Object.entries(data.quotas).forEach(([key, quota]) => {
+            normalizedQuotas.push({
+              name: labelMap[key] || modelLabelMap[key] || key,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              remaining: quota.remaining || 0,
+              resetAt: quota.resetAt || null,
+              unit: quota.unit || null,
+              hasCapacity: quota.hasCapacity,
+              message: quota.message || null,
+            });
+          });
+        }
+        break;
+
       default:
         // Generic fallback for unknown providers
         if (data.quotas) {

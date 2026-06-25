@@ -195,6 +195,28 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     log.debug("AUTH", `${provider} | total connections: ${connections.length}, excludeIds: ${excludeSet.size > 0 ? [...excludeSet].join(",") : "none"}, model: ${model || "any"}`);
 
     if (connections.length === 0) {
+      // Windsurf auto-extract: if no DB connection, try env or state.vscdb (same as executor)
+      if (providerId === "windsurf") {
+        let wsKey = process.env.WINDSURF_API_KEY;
+        if (!wsKey) {
+          try {
+            const { extractKey } = await import("open-sse/utils/windsurfAuth.js");
+            const extracted = await extractKey();
+            if (extracted?.api_key) wsKey = extracted.api_key;
+          } catch { /* no vscdb available */ }
+        }
+        if (wsKey) {
+          const source = process.env.WINDSURF_API_KEY ? "Env (WINDSURF_API_KEY)" : "Auto-extracted (state.vscdb)";
+          log.info("AUTH", `windsurf | ${source}, using synthetic connection`);
+          return {
+            id: "windsurf-autoextract",
+            connectionName: source,
+            isActive: true,
+            apiKey: wsKey,
+            providerSpecificData: {},
+          };
+        }
+      }
       log.warn("AUTH", `No credentials for ${provider}`);
       return null;
     }

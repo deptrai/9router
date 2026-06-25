@@ -523,7 +523,17 @@ export const PROVIDER_MODELS = {
     { id: "ultra", name: "Devin (Ultra)" },
   ],
   windsurf: [
-    { id: "swe", upstreamId: "MODEL_SWE_1_6_SLOW", name: "Windsurf SWE LLM (free tier, code search)", contextWindow: 128000, maxOutput: 16384 },
+    { id: "swe", upstreamModelId: "MODEL_SWE_1_6_SLOW", name: "Windsurf SWE-1.6 Slow (code, free tier)", contextWindow: 128000, maxOutput: 16384 },
+    { id: "swe-1-5", upstreamModelId: "MODEL_SWE_1_5", name: "Windsurf SWE-1.5", contextWindow: 128000, maxOutput: 16384 },
+    { id: "swe-1-5-slow", upstreamModelId: "MODEL_SWE_1_5_SLOW", name: "Windsurf SWE-1.5 Slow", contextWindow: 128000, maxOutput: 16384 },
+    { id: "claude-opus-4-6", upstreamModelId: "claude-opus-4-6", name: "Claude Opus 4.6 (via Cascade)", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-sonnet-4-6", upstreamModelId: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (via Cascade)", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-5-high", upstreamModelId: "gpt-5-5-high", name: "GPT-5.5 High (via Cascade)", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gemini-3-5-pro", upstreamModelId: "gemini-3-5-pro", name: "Gemini 3.5 Pro (via Cascade)", contextWindow: 200000, maxOutput: 16384 },
+    { id: "deepseek-v4", upstreamModelId: "deepseek-v4", name: "DeepSeek V4 (via Cascade)", contextWindow: 128000, maxOutput: 16384 },
+    { id: "kimi-k2-6", upstreamModelId: "kimi-k2-6", name: "Kimi K2.6 (via Cascade)", contextWindow: 128000, maxOutput: 16384 },
+    { id: "kimi-k2-7", upstreamModelId: "kimi-k2-7", name: "Kimi K2.7 (via Cascade, free tier)", contextWindow: 128000, maxOutput: 16384 },
+    { id: "glm-5-2", upstreamModelId: "glm-5-2", name: "GLM-5.2 (via Cascade, free tier)", contextWindow: 128000, maxOutput: 16384 },
   ],
   groq: [
     { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B" },

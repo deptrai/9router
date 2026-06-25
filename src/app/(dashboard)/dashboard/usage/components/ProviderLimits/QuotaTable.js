@@ -165,10 +165,30 @@ export default function QuotaTable({
                       <span className={`${nameText} font-medium text-text-primary truncate`}>
                         {quota.name}
                       </span>
+                      {quota.hasCapacity === false && (
+                        <span className="shrink-0 rounded bg-red-500/15 px-1 text-[9px] font-semibold text-red-600 dark:text-red-400">
+                          COOLDOWN
+                        </span>
+                      )}
                     </div>
+                    {quota.hasCapacity === false && quota.message && (
+                      <div className={`mt-0.5 ${compact ? "text-[9px]" : "text-[10px]"} text-red-600 dark:text-red-400 truncate`} title={quota.message}>
+                        {quota.message}
+                      </div>
+                    )}
                   </td>
 
                   <td className={`${cellPad} w-[45%]`}>
+                    {quota.total === 0 ? (
+                      // Consumption-only mode (e.g. Devin ACU, sessions count)
+                      // No progress bar/percentage — show used value with unit, span full width
+                      <div className={`flex items-center ${compact ? "text-[11px]" : "text-sm"}`}>
+                        <span className="font-medium text-text-primary">
+                          {quota.used.toLocaleString()}{quota.unit ? ` ${quota.unit}` : ""}
+                        </span>
+                        <span className="ml-2 text-text-muted text-[10px]">used (30d)</span>
+                      </div>
+                    ) : (
                     <div className={compact ? "space-y-1" : "space-y-1.5"}>
                       <div className={`${compact ? "h-1" : "h-1.5"} rounded-full overflow-hidden border ${colors.bgLight} ${
                         quota.remaining === 0 ? "border-black/10 dark:border-white/10" : "border-transparent"
@@ -188,10 +208,14 @@ export default function QuotaTable({
                         </span>
                       </div>
                     </div>
+                    )}
                   </td>
 
                   <td className={`${cellPad} w-[25%]`}>
-                    {countdown !== "-" || resetDisplay ? (
+                    {quota.total === 0 ? (
+                      // No reset cycle for consumption-only metrics
+                      <div className={`${resetSecondary} text-text-muted`}>—</div>
+                    ) : countdown !== "-" || resetDisplay ? (
                       compact ? (
                         <div
                           className={`${resetPrimary} text-text-primary font-medium truncate`}

@@ -233,16 +233,25 @@ export async function buildModelsList(kindFilter) {
   }
 
   // WINDSURF_API_KEY env shortcut: synthetic connection for model listing only (no DB write).
-  // Auto-extract from state.vscdb if env not set (handled in executor). DB connection takes precedence.
+  // Auto-extract from state.vscdb if env not set (same as executor). DB connection takes precedence.
   if (
-    process.env.WINDSURF_API_KEY &&
     !connections.some(c => c.provider === "windsurf")
   ) {
-    connections.push({
-      provider: "windsurf",
-      apiKey: process.env.WINDSURF_API_KEY,
-      isActive: true,
-    });
+    let wsKey = process.env.WINDSURF_API_KEY;
+    if (!wsKey) {
+      try {
+        const { extractKey } = await import("open-sse/utils/windsurfAuth.js");
+        const extracted = await extractKey();
+        if (extracted?.api_key) wsKey = extracted.api_key;
+      } catch { /* ignore — no vscdb available */ }
+    }
+    if (wsKey) {
+      connections.push({
+        provider: "windsurf",
+        apiKey: wsKey,
+        isActive: true,
+      });
+    }
   }
 
   let combos = [];

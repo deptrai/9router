@@ -247,4 +247,51 @@ describe("Story N.2 — WindsurfExecutor", () => {
     expect(messages[0].content).toBe("Image description: ");
     expect(typeof messages[0].content).toBe("string");
   });
+
+  it("Multi-model: resolves upstreamModelId via getModelUpstreamId", async () => {
+    const { connectFrameEncode } = await import("../../open-sse/utils/windsurfProtobuf.js");
+    const testString = "ok";
+    const innerProto = Buffer.alloc(2 + testString.length);
+    innerProto[0] = 0x0a;
+    innerProto[1] = testString.length;
+    innerProto.write(testString, 2);
+    const frame = connectFrameEncode(innerProto);
+    _streamingRequest.mockResolvedValue(mockStreamResponse([frame]));
+
+    const executor = new WindsurfExecutor("windsurf", {});
+    await executor.execute({
+      model: "claude-opus-4-6",
+      body: makeBody(),
+      stream: false,
+      credentials: makeCredentials(),
+      signal: undefined,
+    });
+
+    // _buildRequest 5th arg = model ID passed to Cascade
+    const callArgs = _buildRequest.mock.calls[0];
+    expect(callArgs[4]).toBe("claude-opus-4-6"); // upstreamModelId == id for this model
+  });
+
+  it("Multi-model: swe resolves to MODEL_SWE_1_6_SLOW", async () => {
+    const { connectFrameEncode } = await import("../../open-sse/utils/windsurfProtobuf.js");
+    const testString = "ok";
+    const innerProto = Buffer.alloc(2 + testString.length);
+    innerProto[0] = 0x0a;
+    innerProto[1] = testString.length;
+    innerProto.write(testString, 2);
+    const frame = connectFrameEncode(innerProto);
+    _streamingRequest.mockResolvedValue(mockStreamResponse([frame]));
+
+    const executor = new WindsurfExecutor("windsurf", {});
+    await executor.execute({
+      model: "swe",
+      body: makeBody(),
+      stream: false,
+      credentials: makeCredentials(),
+      signal: undefined,
+    });
+
+    const callArgs = _buildRequest.mock.calls[0];
+    expect(callArgs[4]).toBe("MODEL_SWE_1_6_SLOW");
+  });
 });

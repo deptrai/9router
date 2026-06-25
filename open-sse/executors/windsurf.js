@@ -23,6 +23,7 @@ import {
   connectFrameDecode,
   extractStrings,
 } from "../utils/windsurfProtobuf.js";
+import { getModelUpstreamId } from "../config/providerModels.js";
 
 export class WindsurfExecutor extends BaseExecutor {
   constructor(provider, config) {
@@ -88,8 +89,9 @@ export class WindsurfExecutor extends BaseExecutor {
         })
       : null;
 
-    // Build protobuf request
-    const protoBytes = _buildRequest(apiKey, jwt, protoMessages, toolDefs);
+    // Build protobuf request — resolve user-facing model ID to Cascade upstream ID
+    const upstreamModel = getModelUpstreamId("windsurf", model);
+    const protoBytes = _buildRequest(apiKey, jwt, protoMessages, toolDefs, upstreamModel);
 
     const upstreamUrl = "https://server.self-serve.windsurf.com/exa.api_server_pb.ApiServerService/GetDevstralStream";
     const upstreamHeaders = {
@@ -97,6 +99,8 @@ export class WindsurfExecutor extends BaseExecutor {
       "Connect-Protocol-Version": "1",
     };
     const completionId = "chatcmpl-" + randomUUID().replace(/-/g, "").slice(0, 24); // F28: unique ID
+    // Pipeline expects binary chunks (TextDecoder.decode in stream.js); encode strings to Uint8Array.
+    const enc = (s) => new TextEncoder().encode(s);
 
     if (stream) {
       // D1: True streaming — read Response body incrementally
@@ -111,15 +115,15 @@ export class WindsurfExecutor extends BaseExecutor {
             // F15: Invalidate JWT on 401
             if (e.status === 401) {
               invalidateJwt(apiKey);
-              controller.enqueue(`data: ${JSON.stringify(self._errorChunk(completionId, model, 401, "Windsurf token invalid"))}\n\n`);
+              controller.enqueue(Buffer.from("data: " + JSON.stringify(self._errorChunk(completionId, model, 401, "Windsurf token invalid")) + "\n\n"));
             } else if (e.status === 429) {
-              controller.enqueue(`data: ${JSON.stringify(self._errorChunk(completionId, model, 429, "Windsurf rate limit exceeded"))}\n\n`);
+              controller.enqueue(Buffer.from("data: " + JSON.stringify(self._errorChunk(completionId, model, 429, "Windsurf rate limit exceeded")) + "\n\n"));
             } else {
-              controller.enqueue(`data: ${JSON.stringify(self._errorChunk(completionId, model, 502, e.message))}\n\n`);
+              controller.enqueue(Buffer.from("data: " + JSON.stringify(self._errorChunk(completionId, model, 502, e.message)) + "\n\n"));
             }
             // F17: Emit finish_reason on error
-            controller.enqueue(`data: ${JSON.stringify(self._finalChunk(completionId, model, "stop"))}\n\n`);
-            controller.enqueue("data: [DONE]\n\n");
+            controller.enqueue(Buffer.from("data: " + JSON.stringify(self._finalChunk(completionId, model, "stop")) + "\n\n"));
+            controller.enqueue(Buffer.from("data: [DONE]\n\n"));
             controller.close();
             return;
           }
@@ -132,8 +136,8 @@ export class WindsurfExecutor extends BaseExecutor {
             while (true) {
               if (signal?.aborted) {
                 reader.cancel();
-                controller.enqueue(`data: ${JSON.stringify(self._finalChunk(completionId, model, "stop"))}\n\n`);
-                controller.enqueue("data: [DONE]\n\n");
+                controller.enqueue(Buffer.from("data: " + JSON.stringify(self._finalChunk(completionId, model, "stop")) + "\n\n"));
+                controller.enqueue(Buffer.from("data: [DONE]\n\n"));
                 controller.close();
                 return;
               }
@@ -167,7 +171,7 @@ export class WindsurfExecutor extends BaseExecutor {
                         finish_reason: null,
                       }],
                     };
-                    controller.enqueue(`data: ${JSON.stringify(chunk)}\n\n`);
+                    controller.enqueue(Buffer.from("data: " + JSON.stringify(chunk) + "\n\n"));
                   }
                 }
               }
@@ -190,21 +194,21 @@ export class WindsurfExecutor extends BaseExecutor {
                       finish_reason: null,
                     }],
                   };
-                  controller.enqueue(`data: ${JSON.stringify(chunk)}\n\n`);
+                  controller.enqueue(Buffer.from("data: " + JSON.stringify(chunk) + "\n\n"));
                 }
               }
             }
 
             // Final chunk with finish_reason
-            controller.enqueue(`data: ${JSON.stringify(self._finalChunk(completionId, model, "stop"))}\n\n`);
-            controller.enqueue("data: [DONE]\n\n");
+            controller.enqueue(Buffer.from("data: " + JSON.stringify(self._finalChunk(completionId, model, "stop")) + "\n\n"));
+            controller.enqueue(Buffer.from("data: [DONE]\n\n"));
             controller.close();
           } catch (e) {
             // F17: Emit finish_reason on mid-stream error
             if (e.status === 401) invalidateJwt(apiKey);
-            controller.enqueue(`data: ${JSON.stringify(self._errorChunk(completionId, model, e.status || 502, e.message))}\n\n`);
-            controller.enqueue(`data: ${JSON.stringify(self._finalChunk(completionId, model, "stop"))}\n\n`);
-            controller.enqueue("data: [DONE]\n\n");
+            controller.enqueue(Buffer.from("data: " + JSON.stringify(self._errorChunk(completionId, model, e.status || 502, e.message)) + "\n\n"));
+            controller.enqueue(Buffer.from("data: " + JSON.stringify(self._finalChunk(completionId, model, "stop")) + "\n\n"));
+            controller.enqueue(Buffer.from("data: [DONE]\n\n"));
             controller.close();
           }
         },

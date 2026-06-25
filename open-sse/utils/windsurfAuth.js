@@ -339,9 +339,10 @@ function _buildChatMessage(role, content, opts = {}) {
  * @param {string} jwt
  * @param {Array} messages
  * @param {string} toolDefs
+ * @param {string} [model] - Model ID (e.g. MODEL_SWE_1_6_SLOW, claude-opus-4-6). Defaults to WS_MODEL.
  * @returns {Buffer}
  */
-export function _buildRequest(apiKey, jwt, messages, toolDefs) {
+export function _buildRequest(apiKey, jwt, messages, toolDefs, model) {
   const req = new ProtobufEncoder();
   req.writeMessage(1, _buildMetadata(apiKey, jwt));
 
@@ -349,8 +350,11 @@ export function _buildRequest(apiKey, jwt, messages, toolDefs) {
     req.writeMessage(2, _buildChatMessage(m.role, m.content, m.opts));
   }
 
+  // Field 3 = model ID (same field as checkRateLimit)
+  req.writeString(3, model || WS_MODEL);
+
   if (toolDefs) {
-    req.writeString(3, toolDefs);
+    req.writeString(4, toolDefs);
   }
 
   return req.toBuffer();
