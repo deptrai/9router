@@ -34,6 +34,16 @@ export async function POST(request) {
       );
     }
 
+    // Check user isActive TRƯỚC khi update password — tránh race condition
+    // khi admin deactivate user sau khi user request reset nhưng trước khi click link
+    const user = await getUserById(data.userId);
+    if (!user || !user.isActive) {
+      return NextResponse.json(
+        { error: "Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ admin." },
+        { status: 403 }
+      );
+    }
+
     const passwordHash = await bcrypt.hash(newPassword, 10);
     await updateUser(data.userId, { passwordHash });
 
@@ -41,18 +51,15 @@ export async function POST(request) {
     await removePasswordResetToken(token);
 
     // Auto-login: set dashboard auth cookie ngay sau khi đổi pass
-    const user = await getUserById(data.userId);
-    if (user && user.isActive) {
-      const isAdmin = await resolveAdminFlag(user);
-      const cookieStore = await cookies();
-      await setDashboardAuthCookie(cookieStore, request, {
-        role: isAdmin ? "admin" : "user",
-        userId: user.id,
-        email: user.email,
-      });
-    }
+    const isAdmin = await resolveAdminFlag(user);
+    const cookieStore = await cookies();
+    await setDashboardAuthCookie(cookieStore, request, {
+      role: isAdmin ? "admin" : "user",
+      userId: user.id,
+      email: user.email,
+    });
 
-    return NextResponse.json({ success: true, autoLogin: !!(user && user.isActive) });
+    return NextResponse.json({ success: true, autoLogin: true });
   } catch (error) {
     console.error("[reset-password] error:", error.message);
     return NextResponse.json({ error: "Reset failed" }, { status: 500 });

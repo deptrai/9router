@@ -34,21 +34,28 @@ export async function POST(request) {
     const user = await getUserByEmail(email);
 
     if (user?.passwordHash) {
-      // Construct base URL từ request headers (robust — không phụ thuộc env build-time)
-      const proto = request.headers.get("x-forwarded-proto") || "https";
-      const host = request.headers.get("host") || "localhost:20128";
-      const baseUrl = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || `${proto}://${host}`;
-      if (!process.env.BASE_URL && !process.env.NEXT_PUBLIC_BASE_URL) {
+      // Ưu tiên env BASE_URL (build-time + runtime). Chỉ fallback request headers
+      // khi env không có (local dev). Tránh Host header injection trên production.
+      const envBaseUrl = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL;
+      let baseUrl;
+      if (envBaseUrl) {
+        baseUrl = envBaseUrl;
+      } else {
+        const proto = request.headers.get("x-forwarded-proto") || "http";
+        const host = request.headers.get("host") || "localhost:20128";
+        baseUrl = `${proto}://${host}`;
         console.warn("[forgot-password] BASE_URL not set — using request-derived:", baseUrl);
       }
       try {
         const token = await createPasswordResetToken(user.id, user.email);
+        const display = escapeHtml(user.displayName || user.email);
+        const resetUrl = `${baseUrl}/reset-password?token=${token}`;
         await sendEmail({
           to: user.email,
           subject: "Đặt lại mật khẩu 9Router",
-          html: `<p>Chào ${escapeHtml(user.displayName || user.email)},</p>
+          html: `<p>Chào ${display},</p>
 <p>Bạn đã yêu cầu đặt lại mật khẩu. Click vào link bên dưới:</p>
-<p><a href="${baseUrl}/reset-password?token=${token}">${baseUrl}/reset-password?token=${token}</a></p>
+<p><a href="${resetUrl}">${resetUrl}</a></p>
 <p>Link có hiệu lực trong 1 giờ. Nếu bạn không yêu cầu, hãy bỏ qua email này.</p>`,
         });
       } catch (err) {

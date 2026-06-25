@@ -2,7 +2,7 @@
 id: N.2
 title: Devin Executor (REST v3) + Windsurf Executor (Cascade WS)
 epic: N
-status: ready-for-dev
+status: done
 priority: high
 storyPoints: 8
 baseline_commit: b55a2082
@@ -26,7 +26,15 @@ context:
 
 # Story N.2: Devin Executor (REST v3) + Windsurf Executor (Cascade WS)
 
-Status: ready-for-dev
+Status: done
+
+## Post-launch updates (2026-06-26)
+
+- Thêm 2 free model mới vào `open-sse/config/providerModels.js`: `kimi-k2-7`, `glm-5-2` (Windsurf free tier).
+- Fix Devin executor: parse error body 400/403 trả message cụ thể từ server thay vì generic 502.
+- Fix label `src/sse/services/auth.js`: "Env (WINDSURF_API_KEY)" thay vì hardcoded "state.vscdb".
+- Production compatibility: `WindsurfExecutor` hỗ trợ `credentials.apiKey` (dashboard) + `process.env.WINDSURF_API_KEY`, không phụ thuộc `state.vscdb` (chỉ có ở local Windsurf/Devin editor).
+- Tất cả 9 Windsurf models (4 free + 5 frontier) test OK local + production shape.
 
 ## Story
 

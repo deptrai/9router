@@ -89,6 +89,13 @@ Status: done
 - 2026-06-07: Story created (ready-for-dev)
 - 2026-06-10: Implemented (5b732f5 + 3 fix commits). Status → review.
 - 2026-06-12: Removed isActive gate from forgot-password (Option B — OWASP best practice). All review findings resolved.
+- 2026-06-26: Post-launch fixes (commits d5477073, aad6aef9, review patch):
+  - Đổi điều kiện gửi email từ `isEmailVerified` → `passwordHash` (user hợp lệ có password đều nhận reset link, kể cả chưa verified).
+  - Auto-login sau reset-password: server set dashboard cookie ngay sau khi update passwordHash, frontend redirect thẳng `/dashboard` thay vì `/login`.
+  - Fix Host header injection: ưu tiên env `BASE_URL`/`NEXT_PUBLIC_BASE_URL`, chỉ fallback request headers khi env không có (local dev). Tránh phishing qua spoofed Host header.
+  - Fix inactive user bypass: check `user.isActive` TRƯỚC khi update password (tránh race condition khi admin deactivate user sau khi user request reset).
+  - Escape HTML cho cả displayName fallback (email).
+  - Production env: `BASE_URL=https://router.chainlens.net`, `RESEND_API_KEY`, `EMAIL_FROM=9Router <noreply@research.chainlens.net>` đã set trên Dokploy.
 
 ## Review Findings — 2026-06-10
 
