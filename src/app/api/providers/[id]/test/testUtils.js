@@ -391,6 +391,34 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const valid = res.status !== 401 && res.status !== 403 && res.status !== 404;
         return { valid, error: valid ? null : "Invalid API token or Account ID" };
       }
+      case "devin": {
+        const psd = connection.providerSpecificData || {};
+        const orgId = psd.orgId;
+        if (!orgId) return { valid: false, error: "Missing Organization ID" };
+        const url = `https://api.devin.ai/v3/organizations/${encodeURIComponent(orgId)}/sessions`;
+        const res = await fetchWithConnectionProxy(url, {
+          headers: { Authorization: `Bearer ${connection.apiKey}` },
+        }, effectiveProxy);
+        // Valid only on 2xx. Reject 401/403 (bad key), 404 (org_id không tồn tại), 5xx (API down).
+        const valid = res.status >= 200 && res.status < 300;
+        let err = null;
+        if (!valid) {
+          if (res.status === 404) err = "Organization ID not found";
+          else if (res.status >= 500) err = "Devin API unavailable, try again";
+          else err = "Invalid API key or org_id";
+        }
+        return { valid, error: err };
+      }
+      case "windsurf": {
+        try {
+          const { fetchJwt } = await import("../../../../open-sse/utils/windsurfAuth.js");
+          const jwt = await fetchJwt(connection.apiKey);
+          const valid = !!jwt && jwt.startsWith("eyJ");
+          return { valid, error: valid ? null : "Invalid Windsurf token (devin-session-token$...)" };
+        } catch (e) {
+          return { valid: false, error: "Windsurf validation failed: " + e.message };
+        }
+      }
       case "azure": {
         const psd = connection.providerSpecificData || {};
         const endpoint = (psd.azureEndpoint || "").replace(/\/$/, "");

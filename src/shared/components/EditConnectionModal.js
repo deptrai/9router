@@ -21,6 +21,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [devinData, setDevinData] = useState({ orgId: "" });
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [validating, setValidating] = useState(false);
@@ -46,6 +47,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
         setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
       }
+      if (connection.provider === "devin" && connection.providerSpecificData) {
+        setDevinData({ orgId: connection.providerSpecificData.orgId || "" });
+      }
       setTestResult(null);
       setValidationResult(null);
     }
@@ -54,6 +58,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const isOAuth = connection?.authType === "oauth";
   const isAzure = connection?.provider === "azure";
   const isCloudflareAi = connection?.provider === "cloudflare-ai";
+  const isDevin = connection?.provider === "devin";
   const isCompatible = connection
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
     : false;
@@ -86,6 +91,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           apiKey: formData.apiKey,
           ...(isAzure ? { providerSpecificData: azureData } : {}),
           ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
+          ...(isDevin ? { providerSpecificData: devinData } : {}),
         }),
       });
       const data = await res.json();
@@ -149,6 +155,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       }
       if (isCloudflareAi) {
         updates.providerSpecificData = { accountId: cloudflareData.accountId };
+      }
+      if (isDevin) {
+        updates.providerSpecificData = { orgId: devinData.orgId };
       }
       
       await onSave(updates);
@@ -243,7 +252,20 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           </div>
         )}
 
-        {!isCompatible && !isAzure && !isCloudflareAi && (
+        {isDevin && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold mb-3 text-sm">Devin (v3 API)</h3>
+            <Input
+              label="Organization ID"
+              value={devinData.orgId}
+              onChange={(e) => setDevinData({ ...devinData, orgId: e.target.value })}
+              placeholder="org-xxxxxxxx..."
+              hint="Find in Settings → Service Users at app.devin.ai"
+            />
+          </div>
+        )}
+
+        {!isCompatible && !isAzure && !isCloudflareAi && !isDevin && (
           <div className="flex items-center gap-3">
             <Button onClick={handleTest} variant="secondary" disabled={testing}>
               {testing ? "Testing..." : "Test Connection"}

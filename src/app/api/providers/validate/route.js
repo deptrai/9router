@@ -196,6 +196,58 @@ export async function POST(request) {
         });
       }
 
+      if (provider === "devin") {
+        const { providerSpecificData } = body;
+        const orgId = providerSpecificData?.orgId;
+        if (!orgId) {
+          return NextResponse.json({ valid: false, error: "Missing Organization ID" });
+        }
+        const url = `https://api.devin.ai/v3/organizations/${encodeURIComponent(orgId)}/sessions`;
+        try {
+          const res = await fetch(url, {
+            headers: { "Authorization": `Bearer ${apiKey}` },
+            signal: AbortSignal.timeout(8000),
+          });
+          // Valid only on definitive auth-OK signal: 2xx. Reject 401/403 (bad key),
+          // 404 (org_id không tồn tại), and 5xx (API down — không lie valid:true).
+          isValid = res.status >= 200 && res.status < 300;
+          if (!isValid && (res.status === 401 || res.status === 403)) {
+            error = "Invalid API key or org_id";
+          } else if (!isValid && res.status === 404) {
+            error = "Organization ID not found";
+          } else if (!isValid && res.status >= 500) {
+            error = "Devin API unavailable, try again";
+          } else if (!isValid) {
+            error = "Invalid API key or org_id";
+          }
+        } catch (e) {
+          isValid = false;
+          error = "Validation request failed or timed out";
+        }
+        return NextResponse.json({
+          valid: isValid,
+          error: isValid ? null : error,
+        });
+      }
+
+      if (provider === "windsurf") {
+        try {
+          const { fetchJwt } = await import("../../../../open-sse/utils/windsurfAuth.js");
+          const jwt = await fetchJwt(apiKey);
+          isValid = !!jwt && jwt.startsWith("eyJ");
+          if (!isValid) {
+            error = "Invalid Windsurf token (devin-session-token$...)";
+          }
+        } catch (e) {
+          isValid = false;
+          error = "Windsurf validation failed: " + e.message;
+        }
+        return NextResponse.json({
+          valid: isValid,
+          error: isValid ? null : error,
+        });
+      }
+
       if (provider === "azure") {
         const { providerSpecificData } = body;
         const endpoint = (providerSpecificData?.azureEndpoint || "").replace(/\/$/, "");

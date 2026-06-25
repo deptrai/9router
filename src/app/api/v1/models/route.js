@@ -217,6 +217,34 @@ export async function buildModelsList(kindFilter) {
     console.log("Could not fetch providers, returning all models");
   }
 
+  // DEVIN_API_KEY + DEVIN_ORG_ID env shortcut: synthetic connection for model listing only (no DB write).
+  // Requires both env vars to avoid validating against a wrong endpoint. DB connection takes precedence.
+  if (
+    process.env.DEVIN_API_KEY &&
+    process.env.DEVIN_ORG_ID &&
+    !connections.some(c => c.provider === "devin")
+  ) {
+    connections.push({
+      provider: "devin",
+      apiKey: process.env.DEVIN_API_KEY,
+      isActive: true,
+      providerSpecificData: { orgId: process.env.DEVIN_ORG_ID },
+    });
+  }
+
+  // WINDSURF_API_KEY env shortcut: synthetic connection for model listing only (no DB write).
+  // Auto-extract from state.vscdb if env not set (handled in executor). DB connection takes precedence.
+  if (
+    process.env.WINDSURF_API_KEY &&
+    !connections.some(c => c.provider === "windsurf")
+  ) {
+    connections.push({
+      provider: "windsurf",
+      apiKey: process.env.WINDSURF_API_KEY,
+      isActive: true,
+    });
+  }
+
   let combos = [];
   try {
     combos = await getCombos();

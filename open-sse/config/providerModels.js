@@ -516,6 +516,15 @@ export const PROVIDER_MODELS = {
     { id: "Qwen/Qwen3.6-Plus", name: "Qwen 3.6 Plus" },
     { id: "stepfun/Step-3.5-Flash", name: "Step 3.5 Flash" },
   ],
+  devin: [
+    { id: "normal", name: "Devin (Normal)" },
+    { id: "fast", name: "Devin (Fast)" },
+    { id: "lite", name: "Devin (Lite)" },
+    { id: "ultra", name: "Devin (Ultra)" },
+  ],
+  windsurf: [
+    { id: "swe", upstreamId: "MODEL_SWE_1_6_SLOW", name: "Windsurf SWE LLM (free tier, code search)", contextWindow: 128000, maxOutput: 16384 },
+  ],
   groq: [
     { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B" },
     { id: "meta-llama/llama-4-maverick-17b-128e-instruct", name: "Llama 4 Maverick" },

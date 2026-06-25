@@ -268,6 +268,16 @@ export const PROVIDERS = {
       "x-cli-environment": "cli"
     }
   },
+  devin: {
+    baseUrl: "https://api.devin.ai/v3/organizations",
+    format: "devin",
+    headers: {}
+  },
+  windsurf: {
+    baseUrl: "https://server.self-serve.windsurf.com",
+    format: "windsurf",
+    headers: {}
+  },
   groq: {
     baseUrl: "https://api.groq.com/openai/v1/chat/completions",
     format: "openai"

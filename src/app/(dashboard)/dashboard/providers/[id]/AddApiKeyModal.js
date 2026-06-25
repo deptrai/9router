@@ -19,6 +19,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
   const isAzure = provider === "azure";
   const isCloudflareAi = provider === "cloudflare-ai";
+  const isDevin = provider === "devin";
   const providerRegions = AI_PROVIDERS?.[provider]?.regions || null;
   const defaultRegion = AI_PROVIDERS?.[provider]?.defaultRegion || providerRegions?.[0]?.id || "";
 
@@ -37,6 +38,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [devinData, setDevinData] = useState({ orgId: "" });
   const [region, setRegion] = useState(defaultRegion);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
@@ -59,6 +61,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     }
     if (isCloudflareAi) {
       return { accountId: cloudflareData.accountId };
+    }
+    if (isDevin) {
+      return { orgId: devinData.orgId };
     }
     if (providerRegions && region) {
       return { region };
@@ -295,6 +300,20 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             </p>
           </div>
         )}
+        {isDevin && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold mb-3 text-sm">Devin (v3 API)</h3>
+            <Input
+              label="Organization ID"
+              value={devinData.orgId}
+              onChange={(e) => setDevinData({ ...devinData, orgId: e.target.value })}
+              placeholder="org-xxxxxxxx..."
+            />
+            <p className="text-xs text-text-muted mt-2">
+              Find your Organization ID in <a href="https://app.devin.ai/settings/service-users" target="_blank" rel="noopener noreferrer" className="text-primary underline">Settings → Service Users</a>. Requires a Service User API Key (cog_*).
+            </p>
+          </div>
+        )}
         {isAzure && (
           <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
             <h3 className="font-semibold mb-3 text-sm">Azure OpenAI Configuration</h3>
@@ -356,7 +375,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         </p>
 
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={saving || (!isOllamaLocal && (!formData.name || !formData.apiKey)) || (isCompatible && !formData.defaultModel.trim()) || (isAzure && (!azureData.azureEndpoint || !azureData.deployment || !azureData.organization)) || (isCloudflareAi && !cloudflareData.accountId)}>
+          <Button onClick={handleSubmit} fullWidth disabled={saving || (!isOllamaLocal && (!formData.name || !formData.apiKey)) || (isCompatible && !formData.defaultModel.trim()) || (isAzure && (!azureData.azureEndpoint || !azureData.deployment || !azureData.organization)) || (isCloudflareAi && !cloudflareData.accountId) || (isDevin && !devinData.orgId)}>
             {saving ? "Saving..." : "Save"}
           </Button>
           <Button onClick={onClose} variant="ghost" fullWidth>
