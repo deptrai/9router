@@ -1,0 +1,67 @@
+{
+  "count": 8,
+  "bots": [
+    {
+      "username": "codezdev_bot",
+      "name": "Kiro Enterprise Shop codezdev",
+      "id": 8666956877,
+      "registered": false,
+      "via": "search:kiro"
+    },
+    {
+      "username": "ta_kiro_bot",
+      "name": "TA Kiro",
+      "id": 8936357809,
+      "registered": false,
+      "via": "search:kiro"
+    },
+    {
+      "username": "kirolbet01max_w_bot",
+      "name": "✨ Kirol Bet 01 Max",
+      "id": 8213611062,
+      "registered": false,
+      "via": "search:kiro max"
+    },
+    {
+      "username": "sellkirobot",
+      "name": "kiro power bot",
+      "id": 8932282967,
+      "registered": false,
+      "via": "search:kiro power"
+    },
+    {
+      "username": "kiro_powerstay_bot",
+      "name": "KiroAssistant_PS",
+      "id": 8551572351,
+      "registered": false,
+      "via": "search:kiro power"
+    },
+    {
+      "username": "kiro_powerstay01_bot",
+      "name": "KiroAssistant_PS01",
+      "id": 8656870046,
+      "registered": false,
+      "via": "search:kiro power"
+    },
+    {
+      "username": "kiropowershopbot",
+      "name": "KIRO POWER | SHOP",
+      "id": 8930757811,
+      "registered": false,
+      "via": "search:kiro power"
+    },
+    {
+      "username": "kiro_powerstay0_bot",
+      "name": "KiroAssistant_PS01",
+      "id": 8772802116,
+      "registered": false,
+      "via": "search:kiro power"
+    }
+  ],
+  "tried_keywords": [
+    "kiro",
+    "kiro max",
+    "kiro power",
+    "kiro trial"
+  ]
+}
