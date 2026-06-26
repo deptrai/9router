@@ -195,6 +195,11 @@ function isValidToolName(name) {
   if (/[*#`]/.test(trimmed)) return false;        // no markdown
   // Identifier-like: letters, digits, _, -, :, . (MCP tools use __ and :)
   if (!/^[A-Za-z_][A-Za-z0-9_\-:.]*$/.test(trimmed)) return false;
+  // GLM-5.2 sometimes uses its own model name as the tool name (e.g.
+  // "glm-5-2", "claude-sonnet-4-6") — repeating it hundreds of times in
+  // a loop. Reject any name that starts with a known model family prefix
+  // followed by version-like suffix (digits, dashes, dots, letters).
+  if (/^(glm|gpt|claude|sonnet|haiku|opus|llama|mistral|qwen|deepseek|gemini|swe|devmini)[\-_a-z0-9.]+$/i.test(trimmed)) return false;
   return true;
 }
 

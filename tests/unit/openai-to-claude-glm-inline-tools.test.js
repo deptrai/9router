@@ -237,6 +237,38 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     expect(toolUses[0].name).toBe("serena:find_symbol");
   });
 
+  it("rejects model name as tool name (glm-5-2 loop bug)", () => {
+    // GLM-5.2 sometimes emits [TOOL_CALLS]glm-5-2[ARGS] hundreds of times
+    const events = collectEvents([
+      { id: "chatcmpl-glm15b", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS]glm-5-2[ARGS][TOOL_CALLS]glm-5-2[ARGS][TOOL_CALLS]glm-5-2[ARGS]" }, finish_reason: "stop" }] },
+    ]);
+
+    const toolUses = getToolUseBlocks(events);
+    expect(toolUses).toHaveLength(0);
+  });
+
+  it("rejects other model names as tool name (sonnet, gpt, claude)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm15c", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS]claude-sonnet-4-6[TOOL_CALLS]{}" }, finish_reason: "stop" }] },
+    ]);
+    expect(getToolUseBlocks(events)).toHaveLength(0);
+
+    const events2 = collectEvents([
+      { id: "chatcmpl-glm15d", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS]gpt-4[TOOL_CALLS]{}" }, finish_reason: "stop" }] },
+    ]);
+    expect(getToolUseBlocks(events2)).toHaveLength(0);
+  });
+
+  it("does NOT reject real tool names that share prefix with model names", () => {
+    // e.g. "Read" should still work, "Bash" should still work
+    const events = collectEvents([
+      { id: "chatcmpl-glm15e", model: "glm-5-2", choices: [{ delta: { content: '[TOOL_CALLS]Read[TOOL_CALLS]{"file_path":"/tmp/foo"}' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Read");
+  });
+
   it("sanitizes Bash args: strips hallucinated working_directory", () => {
     const events = collectEvents([
       { id: "chatcmpl-glm16", model: "glm-5-2", choices: [{ delta: { content: '[TOOL_CALLS]Bash[TOOL_CALLS]{"command":"ls -la","working_directory":"/Users/luisphan"}' }, finish_reason: "stop" }] },
