@@ -393,14 +393,34 @@ export class WindsurfExecutor extends BaseExecutor {
 
   /**
    * Extract text from content — string or array with multimodal parts (F9).
+   * Also converts Anthropic tool_use and tool_result blocks into text so
+   * multi-turn agent flows work: GLM-5.2 needs to see the tool call it made
+   * and the result returned, otherwise it re-calls the same tool in a loop.
    */
   _extractTextContent(content) {
     if (typeof content === "string") return content;
     if (Array.isArray(content)) {
       return content
-        .filter(item => item.type === "text")
-        .map(item => item.text)
-        .join("");
+        .map(item => {
+          if (item.type === "text") return item.text;
+          if (item.type === "tool_use") {
+            // Represent the assistant's tool call as inline text so GLM-5.2
+            // sees it in context and knows it already called this tool.
+            const args = JSON.stringify(item.input || {});
+            return `[TOOL_CALLS]${item.name}[TOOL_CALLS]${args}`;
+          }
+          if (item.type === "tool_result") {
+            // Represent the tool result as text so GLM-5.2 can continue.
+            const result = typeof item.content === "string"
+              ? item.content
+              : Array.isArray(item.content)
+                ? item.content.map(c => c.text || "").join("")
+                : JSON.stringify(item.content || "");
+            return `[Tool Result for ${item.tool_use_id}]: ${result}`;
+          }
+          return "";
+        })
+        .join("\n");
     }
     return String(content || "");
   }

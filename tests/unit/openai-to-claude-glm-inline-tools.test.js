@@ -171,7 +171,7 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     ]);
 
     const stopReason = events.find((e) => e.type === "message_delta")?.delta?.stop_reason;
-    expect(stopReason).toBe("end_turn"); // finish_reason "stop" → end_turn (router may override downstream)
+    expect(stopReason).toBe("tool_use"); // GLM inline tool call → override to tool_use
   });
 
   it("parses [TOOL_CALLS]name: {json} colon-format variant", () => {

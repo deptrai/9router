@@ -540,9 +540,17 @@ export function openaiToClaudeResponse(chunk, state) {
 
     // Use tracked usage (will be estimated in stream.js if not valid)
     const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
+    // When GLM-5.2 emits inline [TOOL_CALLS] markers, Windsurf returns
+    // finish_reason="stop" (model ended normally). But Claude Code needs
+    // stop_reason="tool_use" to know it should execute the tool and continue
+    // the turn. Override if any GLM-emitted tool_use block was emitted.
+    const hasGlmToolUse = [...state.toolCalls.values()].some(t => t.glmEmitted);
+    const stopReason = hasGlmToolUse
+      ? "tool_use"
+      : convertFinishReason(choice.finish_reason);
     results.push({
       type: "message_delta",
-      delta: { stop_reason: convertFinishReason(choice.finish_reason) },
+      delta: { stop_reason: stopReason },
       usage: finalUsage
     });
     results.push({ type: "message_stop" });
