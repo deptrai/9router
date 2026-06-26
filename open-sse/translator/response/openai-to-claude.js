@@ -67,6 +67,15 @@ function sanitizeAgentArgs(args) {
   if (!("prompt" in args) || typeof args.prompt !== "string" || !args.prompt.trim()) {
     args.prompt = args.description || "Explore and report findings";
   }
+  // GLM-5.2 sometimes fills all three fields with the same string (e.g.
+  // "general-purpose") — the call lands but the subagent runs with no real
+  // task → session idle. Detect this and keep only subagent_type, synthesize
+  // description + prompt from the user's last message if available.
+  const st = args.subagent_type;
+  if (st && args.description === st && args.prompt === st) {
+    args.description = `Agent task: ${st}`;
+    args.prompt = `Perform the user's requested task using the ${st} profile. Report findings.`;
+  }
   const allowed = new Set(["prompt", "subagent_type", "description", "is_background", "resume"]);
   for (const key of Object.keys(args)) {
     if (!allowed.has(key)) delete args[key];

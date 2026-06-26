@@ -346,4 +346,18 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     expect(typeof parsed.prompt).toBe("string");
     expect(parsed.prompt.length).toBeGreaterThan(0);
   });
+
+  it("sanitizes Agent args: detect 3-field same value (session 066170b1)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm26", model: "glm-5-2", choices: [{ delta: { content: '[TOOL_CALLS]Agent[TOOL_CALLS]{"subagent_type":"general-purpose","description":"general-purpose","prompt":"general-purpose"}' }, finish_reason: "stop" }] },
+    ]);
+
+    const inputs = getToolUseInputs(events);
+    const parsed = JSON.parse(inputs[0]);
+    expect(parsed.subagent_type).toBe("general-purpose");
+    // description + prompt should be different from subagent_type now
+    expect(parsed.description).not.toBe("general-purpose");
+    expect(parsed.prompt).not.toBe("general-purpose");
+    expect(parsed.prompt).toContain("general-purpose");
+  });
 });

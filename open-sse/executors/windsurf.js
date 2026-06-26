@@ -102,7 +102,8 @@ export class WindsurfExecutor extends BaseExecutor {
         `Rules:\n` +
         `- Args MUST be a valid JSON object matching the tool's expected fields.\n` +
         `- ONLY use tool names from the list above. NEVER use your model name as a tool name.\n` +
-        `- Do NOT echo or repeat the user's request. Act on it directly.\n`;
+        `- Do NOT echo or repeat the user's request. Act on it directly.\n` +
+        `- For the Agent tool: subagent_type must be a real profile name (e.g. "Explore", "general", "subagent_general"), description must be a short title of the task, and prompt must be the FULL task instruction. NEVER use the same string for all three fields.\n`;
       const firstSysIdx = messagesForProto.findIndex(m => m.role === "system");
       if (firstSysIdx >= 0) {
         messagesForProto = messagesForProto.map((m, i) =>
