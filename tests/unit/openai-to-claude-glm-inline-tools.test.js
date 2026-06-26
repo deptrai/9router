@@ -736,4 +736,32 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     expect(text).toContain("Prose 1");
     expect(text).toContain("Prose 2");
   });
+
+  it("F29: infers Skill from {skill,args} envelope + remaps args", () => {
+    // Run 3 pattern: [TOOL_CALLS]{"skill":"codebase-memory","args":{"query":"MCP|mcp","mode":"calls","limit":10}}
+    const events = collectEvents([
+      { id: "chatcmpl-f29a", model: "claude-sonnet-4-6", choices: [{ delta: { content: '[TOOL_CALLS]{"skill": "codebase-memory", "args": {"query": "MCP|mcp", "mode": "calls", "limit": 10}}' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const inputs = getToolUseInputs(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Skill");
+    const parsed = JSON.parse(inputs[0]);
+    expect(parsed.command).toBe("invoke");
+    expect(parsed.skill).toBe("codebase-memory");
+    expect(parsed.query).toBe("MCP|mcp");
+  });
+
+  it("F29: infers Skill from {skill} without args envelope", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f29b", model: "claude-sonnet-4-6", choices: [{ delta: { content: '[TOOL_CALLS]{"skill": "devin-for-terminal"}' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const inputs = getToolUseInputs(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Skill");
+    const parsed = JSON.parse(inputs[0]);
+    expect(parsed.command).toBe("invoke");
+    expect(parsed.skill).toBe("devin-for-terminal");
+  });
 });

@@ -163,6 +163,23 @@ function inferToolNameFromArgs(argsJson) {
       }
     }
 
+    // F29: {skill, args} envelope — model tries to invoke a skill
+    // {"skill":"codebase-memory","args":{"query":"mcp","mode":"calls"}}
+    // → Skill tool with {command:"invoke", skill:"codebase-memory", ...args}
+    if (has("skill") && typeof args.skill === "string") {
+      const remapped = { command: "invoke", skill: args.skill };
+      if (has("args") && typeof args.args === "object" && args.args) {
+        Object.assign(remapped, args.args);
+      }
+      // Also copy any direct keys (not wrapped in args)
+      for (const k of keys) {
+        if (k !== "skill" && k !== "args" && !(k in remapped)) {
+          remapped[k] = args[k];
+        }
+      }
+      return { name: "Skill", argsJson: JSON.stringify(remapped) };
+    }
+
     // F25: Direct key pattern inference (no envelope)
     // Bash: command (string), optional run_in_background/timeout
     if (has("command") && typeof args.command === "string") return { name: "Bash", argsJson };
