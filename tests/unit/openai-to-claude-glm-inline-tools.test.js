@@ -225,4 +225,65 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     expect(toolUses).toHaveLength(1);
     expect(toolUses[0].name).toBe("serena:find_symbol");
   });
+
+  it("sanitizes Bash args: strips hallucinated working_directory", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm16", model: "glm-5-2", choices: [{ delta: { content: '[TOOL_CALLS]Bash[TOOL_CALLS]{"command":"ls -la","working_directory":"/Users/luisphan"}' }, finish_reason: "stop" }] },
+    ]);
+
+    const inputs = getToolUseInputs(events);
+    const parsed = JSON.parse(inputs[0]);
+    expect(parsed.command).toBe("ls -la");
+    expect(parsed).not.toHaveProperty("working_directory");
+  });
+
+  it("sanitizes Bash args: keeps valid fields (run_in_background, timeout)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm17", model: "glm-5-2", choices: [{ delta: { content: '[TOOL_CALLS]Bash[TOOL_CALLS]{"command":"sleep 10","run_in_background":true,"timeout":5000}' }, finish_reason: "stop" }] },
+    ]);
+
+    const inputs = getToolUseInputs(events);
+    const parsed = JSON.parse(inputs[0]);
+    expect(parsed.command).toBe("sleep 10");
+    expect(parsed.run_in_background).toBe(true);
+    expect(parsed.timeout).toBe(5000);
+  });
+
+  it("sanitizes Agent args: renames agent_type→subagent_type, instructions→prompt", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm18", model: "glm-5-2", choices: [{ delta: { content: '[TOOL_CALLS]Agent[TOOL_CALLS]{"agent_type":"Explore","instructions":"Find the auth logic"}' }, finish_reason: "stop" }] },
+    ]);
+
+    const inputs = getToolUseInputs(events);
+    const parsed = JSON.parse(inputs[0]);
+    expect(parsed.subagent_type).toBe("Explore");
+    expect(parsed.prompt).toBe("Find the auth logic");
+    expect(parsed).not.toHaveProperty("agent_type");
+    expect(parsed).not.toHaveProperty("instructions");
+  });
+
+  it("sanitizes Task args: same renames as Agent", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm19", model: "glm-5-2", choices: [{ delta: { content: '[TOOL_CALLS]Task[TOOL_CALLS]{"agent_type":"general","instructions":"do stuff"}' }, finish_reason: "stop" }] },
+    ]);
+
+    const inputs = getToolUseInputs(events);
+    const parsed = JSON.parse(inputs[0]);
+    expect(parsed.subagent_type).toBe("general");
+    expect(parsed.prompt).toBe("do stuff");
+  });
+
+  it("Agent sanitize: keeps existing prompt/subagent_type if already correct", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm20", model: "glm-5-2", choices: [{ delta: { content: '[TOOL_CALLS]Agent[TOOL_CALLS]{"subagent_type":"Explore","prompt":"find auth","is_background":true}' }, finish_reason: "stop" }] },
+    ]);
+
+    const inputs = getToolUseInputs(events);
+    const parsed = JSON.parse(inputs[0]);
+    expect(parsed.subagent_type).toBe("Explore");
+    expect(parsed.prompt).toBe("find auth");
+    expect(parsed.is_background).toBe(true);
+    expect(parsed).not.toHaveProperty("agent_type");
+    expect(parsed).not.toHaveProperty("instructions");
+  });
 });

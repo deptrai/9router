@@ -12,9 +12,41 @@ function sanitizeToolArgs(toolName, argsJson) {
       ? toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length)
       : toolName;
     if (name === "Read") sanitizeReadArgs(args);
+    if (name === "Bash") sanitizeBashArgs(args);
+    if (name === "Agent" || name === "Task") sanitizeAgentArgs(args);
     return JSON.stringify(args);
   } catch {
     return argsJson;
+  }
+}
+
+// Claude Code Bash tool only accepts these fields. Non-Anthropic models
+// (notably GLM-5.2) hallucinate extra fields like `working_directory` which
+// Claude Code rejects with InputValidationError → model retries same bad
+// args → loop → session stuck. Strip unknown fields so the tool call lands.
+function sanitizeBashArgs(args) {
+  const allowed = new Set([
+    "command", "run_in_background", "shell_id", "timeout",
+    "interactive_shell", "idle_timeout", "output_processing",
+  ]);
+  for (const key of Object.keys(args)) {
+    if (!allowed.has(key)) delete args[key];
+  }
+}
+
+// Claude Code Agent/Task tool expects `prompt` + `subagent_type` (+ optional
+// `description`, `is_background`, `resume`). Non-Anthropic models hallucinate
+// `agent_type` (should be `subagent_type`) and `instructions` (should be
+// `prompt`). Rename to the canonical fields so the tool call doesn't get
+// rejected with "required parameter missing".
+function sanitizeAgentArgs(args) {
+  if (!("subagent_type" in args) && "agent_type" in args) {
+    args.subagent_type = args.agent_type;
+    delete args.agent_type;
+  }
+  if (!("prompt" in args) && "instructions" in args) {
+    args.prompt = args.instructions;
+    delete args.instructions;
   }
 }
 
