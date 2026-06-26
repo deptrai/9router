@@ -75,61 +75,19 @@ export class WindsurfExecutor extends BaseExecutor {
 
     // F9: Convert OpenAI messages[] to protobuf messages (extract text from multimodal)
     // D3: Include tool messages
-    // GLM-5.2 (free-tier) doesn't support native function calling — Windsurf Cascade
-    // may inject its own tools (agent__explore__medium, etc.) and ignore passed toolDefs.
-    // Inject a system-prompt instruction forcing the model to use the CLIENT's tools
-    // (Read/Write/Bash/...) via the [TOOL_CALLS]name[TOOL_CALLS]{json} inline format
-    // so the openai-to-claude response translator can parse them into tool_use blocks.
+    const protoMessages = body.messages.map((m) => ({
+      role: m.role === "user" ? 1 : m.role === "assistant" ? 2 : m.role === "tool" ? 5 : 5,
+      content: this._extractTextContent(m.content),
+      opts: {},
+    }));
+
+    // D3: Build tool definitions if present
     const toolDefs = body.tools && body.tools.length > 0
       ? body.tools.map(t => {
           const fn = t.function || t;
           return { name: fn.name, description: fn.description || "", schema: fn.parameters || {} };
         })
       : null;
-
-    let messagesForProto = body.messages;
-    if (toolDefs && toolDefs.length > 0) {
-      // Compact tool list: name + first sentence of description only.
-      // Full JSON schemas are omitted to save tokens — GLM-5.2 free-tier has a
-      // limited context window and bloated tool definitions (20+ Claude Code
-      // tools × full schema ≈ 6000 tokens) can push total input past the limit,
-      // causing the model to only see the tail of the conversation and echo the
-      // user message instead of performing the task.
-      const shortDesc = (d) => {
-        if (!d) return "";
-        const firstSentence = d.split(/[.\n]/)[0];
-        return firstSentence.length > 80 ? firstSentence.slice(0, 77) + "..." : firstSentence;
-      };
-      const toolList = toolDefs.map(t => `- ${t.name}: ${shortDesc(t.description)}`).join("\n");
-      const toolNames = toolDefs.map(t => t.name).join(", ");
-      const toolInstruction =
-        `You are an agent. Use tools to accomplish the user's task. Do NOT echo or repeat the user's message.\n\n` +
-        `Available tools: ${toolNames}\n${toolList}\n\n` +
-        `To call a tool, output this exact format on its own line (no markdown, no backticks):\n` +
-        `[TOOL_CALLS]<tool_name>[TOOL_CALLS]{<json_arguments>}\n` +
-        `Example: [TOOL_CALLS]Read[TOOL_CALLS]{"file_path":"/tmp/foo.txt"}\n\n` +
-        `Rules:\n` +
-        `- Pick the tool that best matches the task. Args are JSON matching the tool's expected fields.\n` +
-        `- ONLY use tool names from the list above. NEVER use your model name as a tool name.\n` +
-        `- Do NOT echo or repeat the user's request. Act on it directly.\n`;
-      // Prepend to existing system message if present, else insert new one
-      const firstSysIdx = messagesForProto.findIndex(m => m.role === "system");
-      if (firstSysIdx >= 0) {
-        messagesForProto = messagesForProto.map((m, i) =>
-          i === firstSysIdx
-            ? { ...m, content: toolInstruction + "\n\n" + this._extractTextContent(m.content) }
-            : m
-        );
-      } else {
-        messagesForProto = [{ role: "system", content: toolInstruction }, ...messagesForProto];
-      }
-    }
-
-    const protoMessages = messagesForProto.map((m) => ({
-      role: m.role === "user" ? 1 : m.role === "assistant" ? 2 : m.role === "tool" ? 5 : 5,
-      content: this._extractTextContent(m.content),
-      opts: {},
-    }));
 
     // Build protobuf request — resolve user-facing model ID to Cascade upstream ID
     const upstreamModel = getModelUpstreamId("windsurf", model);
@@ -393,34 +351,14 @@ export class WindsurfExecutor extends BaseExecutor {
 
   /**
    * Extract text from content — string or array with multimodal parts (F9).
-   * Also converts Anthropic tool_use and tool_result blocks into text so
-   * multi-turn agent flows work: GLM-5.2 needs to see the tool call it made
-   * and the result returned, otherwise it re-calls the same tool in a loop.
    */
   _extractTextContent(content) {
     if (typeof content === "string") return content;
     if (Array.isArray(content)) {
       return content
-        .map(item => {
-          if (item.type === "text") return item.text;
-          if (item.type === "tool_use") {
-            // Represent the assistant's tool call as inline text so GLM-5.2
-            // sees it in context and knows it already called this tool.
-            const args = JSON.stringify(item.input || {});
-            return `[TOOL_CALLS]${item.name}[TOOL_CALLS]${args}`;
-          }
-          if (item.type === "tool_result") {
-            // Represent the tool result as text so GLM-5.2 can continue.
-            const result = typeof item.content === "string"
-              ? item.content
-              : Array.isArray(item.content)
-                ? item.content.map(c => c.text || "").join("")
-                : JSON.stringify(item.content || "");
-            return `[Tool Result for ${item.tool_use_id}]: ${result}`;
-          }
-          return "";
-        })
-        .join("\n");
+        .filter(item => item.type === "text")
+        .map(item => item.text)
+        .join("");
     }
     return String(content || "");
   }

@@ -81,34 +81,18 @@ function emitTextSegment(state, results, text) {
   });
 }
 
-// Helper: emit a tool_use block from GLM inline tool call.
-// Returns true if a tool_use block was emitted, false if the input was
-// degenerate (empty/invalid tool name) and was emitted as text instead.
-function emitGlmToolUse(state, results, toolName, argsJson, originalText) {
-  // Strip Claude OAuth prefix if present
-  let bareName = (toolName || "").trim();
-  if (bareName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
-    bareName = bareName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length);
-  }
-
-  // GLM-5.2 sometimes hallucinates the model name (e.g. "glm-5-2") as the tool
-  // name. Infer the real tool from the args shape so Claude Code doesn't reject
-  // with "No such tool available".
-  bareName = inferToolFromNameAndArgs(bareName, argsJson);
-
-  // Guard: if the tool name is still empty/whitespace after inference, do NOT
-  // emit a tool_use block with name="" (Claude Code rejects it). Emit the raw
-  // text instead so nothing is silently dropped and the turn doesn't break.
-  if (!bareName || !bareName.trim()) {
-    emitTextSegment(state, results, originalText != null ? originalText : `[TOOL_CALLS]${toolName}[TOOL_CALLS]${argsJson}`);
-    return false;
-  }
-
+// Helper: emit a tool_use block from GLM inline tool call
+function emitGlmToolUse(state, results, toolName, argsJson) {
   stopThinkingBlock(state, results);
   stopTextBlock(state, results);
 
   const toolBlockIndex = state.nextBlockIndex++;
   const toolId = `toolu_glm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  // Strip Claude OAuth prefix if present
+  let bareName = toolName;
+  if (bareName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
+    bareName = bareName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length);
+  }
 
   results.push({
     type: "content_block_start",
@@ -137,74 +121,6 @@ function emitGlmToolUse(state, results, toolName, argsJson, originalText) {
   // Track for finish handler (so it doesn't try to re-stop)
   const idx = state.toolCalls.size;
   state.toolCalls.set(idx, { id: toolId, name: bareName, blockIndex: toolBlockIndex, glmEmitted: true });
-}
-
-// Detect suspicious tool names that look like model names (e.g. "glm-5-2",
-// "gpt-4", "claude-3-5-sonnet"). These are hallucinations — the model emitted
-// its own name instead of the real tool name.
-function looksLikeModelName(name) {
-  if (!name) return false;
-  const lower = name.toLowerCase();
-  // Known model family prefixes
-  if (/^(glm|gpt|claude|sonnet|opus|haiku|gemini|llama|mistral|qwen|deepseek|kimi|grok|o[0-9])[-_]/.test(lower)) return true;
-  // Contains version-like pattern: digit-dot or digit-dash-digit (e.g. "5-2", "4.1")
-  if (/\d[-_.]\d/.test(name)) return true;
-  return false;
-}
-
-// Infer the real Claude Code tool name from the args shape when the model
-// hallucinated an invalid tool name (e.g. used the model name).
-function inferToolFromNameAndArgs(name, argsJson) {
-  // Only remap if the name looks suspicious (model name or unknown).
-  // Common Claude Code tools we know about — if name is already valid, keep it.
-  const knownTools = new Set([
-    "Read", "Write", "Edit", "Bash", "Glob", "Grep", "WebFetch", "WebSearch",
-    "Agent", "Task", "TodoWrite", "NotebookEdit", "MultiEdit", "BashOutput",
-    "KillShell", "WaitForMcpServers", "SlashCommand", "ListMcpTools",
-  ]);
-  if (knownTools.has(name)) return name;
-  // MCP tools have double-underscore or colon patterns — keep those too
-  if (name && (name.includes("__") || name.includes(":"))) return name;
-
-  // If name looks like a model name (or is otherwise unknown), infer from args
-  let args = {};
-  try { args = JSON.parse(argsJson); } catch { return name; }
-
-  const keys = Object.keys(args);
-  const has = (k) => keys.includes(k);
-
-  // IMPORTANT: order from most-specific shape to least-specific. A broad check
-  // (e.g. Read on `file_path`, or Grep on `pattern`) must not shadow a more
-  // specific tool (Edit, Glob) that shares the same key.
-
-  // Edit: file_path + old_string + new_string (most specific file op)
-  if (has("file_path") && has("old_string") && has("new_string")) return "Edit";
-  // Write: file_path + content
-  if (has("file_path") && has("content")) return "Write";
-  // Glob: path + pattern, no file_path (more specific than Grep)
-  if (has("path") && has("pattern") && !has("file_path")) return "Glob";
-  // Read: file_path only (no content/command/pattern)
-  if (has("file_path") && !has("content") && !has("command") && !has("pattern")) return "Read";
-  // Bash: command (+ optional description/timeout)
-  if (has("command")) return "Bash";
-  // Grep: pattern (+ optional path/glob)
-  if (has("pattern")) return "Grep";
-  // Agent/Task: prompt + subagent_type
-  if (has("prompt") && has("subagent_type")) return "Agent";
-  // WebFetch: url
-  if (has("url")) return "WebFetch";
-  // WebSearch: query
-  if (has("query")) return "WebSearch";
-  // TodoWrite: todos
-  if (has("todos")) return "TodoWrite";
-
-  // Last resort: if name looks like a model name but we can't infer, default
-  // to Bash if there's a command-like field, else Read. Better than rejecting.
-  if (looksLikeModelName(name)) {
-    if (has("file_path")) return "Read";
-    if (has("command")) return "Bash";
-  }
-  return name;
 }
 
 // Parse + drain GLM-5.2 inline tool calls from buffer.
@@ -251,26 +167,15 @@ function drainGlmInlineToolCalls(state, results) {
   // Find second marker: [TOOL_CALLS] or [ARGS]
   const secondMarkerRe = /\[(TOOL_CALLS|ARGS)\]/;
   const m2 = afterMarker.match(secondMarkerRe);
-
-  // Determine toolName + afterSecondMarker via two formats:
-  //  (a) [TOOL_CALLS]name[TOOL_CALLS]{json}  or  [TOOL_CALLS]name[ARGS]{json}
-  //  (b) [TOOL_CALLS]name: {json}  (colon separator, no second marker)
-  let toolName, afterSecondMarker;
-  if (m2) {
-    toolName = afterMarker.slice(0, m2.index);
-    afterSecondMarker = afterMarker.slice(m2.index + m2[0].length);
-  } else {
-    const colonJsonMatch = afterMarker.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(\{)/);
-    if (colonJsonMatch) {
-      toolName = colonJsonMatch[1];
-      afterSecondMarker = afterMarker.slice(afterMarker.indexOf("{"));
-    } else {
-      // Incomplete — keep marker + afterMarker so flush-at-finish preserves the
-      // original text (no silent drop of the "[TOOL_CALLS]" we already consumed).
-      state.glmTextBuffer = marker + afterMarker;
-      return false;
-    }
+  if (!m2) {
+    // Incomplete — keep marker + afterMarker so flush-at-finish preserves the
+    // original text (no silent drop of the "[TOOL_CALLS]" we already consumed).
+    state.glmTextBuffer = marker + afterMarker;
+    return false;
   }
+
+  const toolName = afterMarker.slice(0, m2.index);
+  const afterSecondMarker = afterMarker.slice(m2.index + m2[0].length);
 
   // Find JSON object: starts with { , ends with matching }
   const jsonStart = afterSecondMarker.indexOf("{");
@@ -310,11 +215,9 @@ function drainGlmInlineToolCalls(state, results) {
 
   const argsJson = afterSecondMarker.slice(jsonStart, jsonEnd + 1);
   const remainder = afterSecondMarker.slice(jsonEnd + 1);
-  // Original consumed text (for fallback if tool name is degenerate)
-  const consumedText = buf.slice(markerIdx, buf.length - afterSecondMarker.length + jsonEnd + 1);
 
-  // Emit tool_use block (or text fallback if tool name is empty/invalid)
-  emitGlmToolUse(state, results, toolName, argsJson, consumedText);
+  // Emit tool_use block
+  emitGlmToolUse(state, results, toolName, argsJson);
 
   // Continue with remainder
   state.glmTextBuffer = remainder;
@@ -540,17 +443,9 @@ export function openaiToClaudeResponse(chunk, state) {
 
     // Use tracked usage (will be estimated in stream.js if not valid)
     const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
-    // When GLM-5.2 emits inline [TOOL_CALLS] markers, Windsurf returns
-    // finish_reason="stop" (model ended normally). But Claude Code needs
-    // stop_reason="tool_use" to know it should execute the tool and continue
-    // the turn. Override if any GLM-emitted tool_use block was emitted.
-    const hasGlmToolUse = [...state.toolCalls.values()].some(t => t.glmEmitted);
-    const stopReason = hasGlmToolUse
-      ? "tool_use"
-      : convertFinishReason(choice.finish_reason);
     results.push({
       type: "message_delta",
-      delta: { stop_reason: stopReason },
+      delta: { stop_reason: convertFinishReason(choice.finish_reason) },
       usage: finalUsage
     });
     results.push({ type: "message_stop" });
