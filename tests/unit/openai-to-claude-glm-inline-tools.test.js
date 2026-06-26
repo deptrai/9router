@@ -286,4 +286,16 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     expect(parsed).not.toHaveProperty("agent_type");
     expect(parsed).not.toHaveProperty("instructions");
   });
+
+  it("sanitizes Agent args: renames task→prompt, strips actions (variant hallucination)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm21", model: "glm-5-2", choices: [{ delta: { content: '[TOOL_CALLS]Agent[TOOL_CALLS]{"task":"Explore codebase","actions":["search","examine"]}' }, finish_reason: "stop" }] },
+    ]);
+
+    const inputs = getToolUseInputs(events);
+    const parsed = JSON.parse(inputs[0]);
+    expect(parsed.prompt).toBe("Explore codebase");
+    expect(parsed).not.toHaveProperty("task");
+    expect(parsed).not.toHaveProperty("actions");
+  });
 });

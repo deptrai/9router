@@ -36,17 +36,26 @@ function sanitizeBashArgs(args) {
 
 // Claude Code Agent/Task tool expects `prompt` + `subagent_type` (+ optional
 // `description`, `is_background`, `resume`). Non-Anthropic models hallucinate
-// `agent_type` (should be `subagent_type`) and `instructions` (should be
-// `prompt`). Rename to the canonical fields so the tool call doesn't get
-// rejected with "required parameter missing".
+// various field names: `agent_type` (should be `subagent_type`), `instructions`
+// or `task` (should be `prompt`). Rename to canonical fields, then strip any
+// remaining unknown fields so the tool call doesn't get rejected.
 function sanitizeAgentArgs(args) {
   if (!("subagent_type" in args) && "agent_type" in args) {
     args.subagent_type = args.agent_type;
     delete args.agent_type;
   }
-  if (!("prompt" in args) && "instructions" in args) {
-    args.prompt = args.instructions;
-    delete args.instructions;
+  if (!("prompt" in args)) {
+    if ("instructions" in args) {
+      args.prompt = args.instructions;
+      delete args.instructions;
+    } else if ("task" in args) {
+      args.prompt = args.task;
+      delete args.task;
+    }
+  }
+  const allowed = new Set(["prompt", "subagent_type", "description", "is_background", "resume"]);
+  for (const key of Object.keys(args)) {
+    if (!allowed.has(key)) delete args[key];
   }
 }
 
