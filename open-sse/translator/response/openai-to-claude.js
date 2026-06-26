@@ -320,6 +320,20 @@ function drainGlmInlineToolCalls(state, results) {
   const toolName = afterMarker.slice(0, m2.index);
   const afterSecondMarker = afterMarker.slice(m2.index + m2[0].length);
 
+  // F22: Windsurf returns [TOOL_CALLS] with non-JSON args for Sonnet/Claude too
+  // (not just GLM). E.g. [TOOL_CALLS]rg[TOOL_CALLS]"devin" or
+  // [TOOL_CALLS]rg[TOOL_CALLS]rg "mcp" --max-results 10. Map windsurf tool
+  // names to Claude Code tool names and synthesize JSON args from raw text.
+  const WINDSURF_TOOL_MAP = {
+    rg: "Grep", grep: "Grep", search: "Grep",
+    bash: "Bash", shell: "Bash", sh: "Bash",
+    read: "Read", cat: "Read", view: "Read",
+    edit: "Edit", replace: "Edit",
+    write: "Write", create: "Write",
+    find: "Glob", glob: "Glob",
+    agent: "Agent", subagent: "Agent", task: "Agent",
+  };
+
   // Find JSON object: starts with { , ends with matching }
   const jsonStart = afterSecondMarker.indexOf("{");
   if (jsonStart === -1) {
@@ -328,7 +342,35 @@ function drainGlmInlineToolCalls(state, results) {
       state.glmTextBuffer = marker + afterMarker;
       return false;
     }
-    // Malformed (no JSON) — emit as text and move on
+    // F22: No JSON args — try to map tool name + synthesize args from raw text
+    const mappedName = WINDSURF_TOOL_MAP[toolName.toLowerCase().trim()];
+    if (mappedName) {
+      const rawArgs = afterSecondMarker.trim().replace(/<\/s>\s*$/, "").trim();
+      let synthArgs;
+      if (mappedName === "Grep") {
+        // Extract quoted pattern first: rg "mcp" --max-results 10 → mcp
+        // Or unquoted first token if no quotes: devin → devin
+        const quotedMatch = rawArgs.match(/["']([^"']+)["']/);
+        const pattern = quotedMatch
+          ? quotedMatch[1]
+          : rawArgs.replace(/^(rg|grep|search)\s+/i, "").split(/\s+/)[0] || rawArgs;
+        synthArgs = JSON.stringify({ pattern: pattern });
+      } else if (mappedName === "Bash") {
+        synthArgs = JSON.stringify({ command: rawArgs });
+      } else if (mappedName === "Read") {
+        synthArgs = JSON.stringify({ file_path: rawArgs.replace(/^["']|["']$/g, "") });
+      } else if (mappedName === "Glob") {
+        synthArgs = JSON.stringify({ pattern: rawArgs.replace(/^["']|["']$/g, "") });
+      } else if (mappedName === "Agent") {
+        synthArgs = JSON.stringify({ description: rawArgs.slice(0, 80), prompt: rawArgs });
+      } else {
+        synthArgs = JSON.stringify({ input: rawArgs });
+      }
+      emitGlmToolUse(state, results, mappedName, synthArgs);
+      state.glmTextBuffer = "";
+      return true;
+    }
+    // Malformed (no JSON, no map) — emit as text and move on
     emitTextSegment(state, results, marker + toolName + m2[0] + afterSecondMarker);
     state.glmTextBuffer = "";
     return true;

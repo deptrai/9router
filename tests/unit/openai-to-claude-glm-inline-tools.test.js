@@ -486,4 +486,58 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     expect(parsed.prompt).toBe(realTask);
     expect(parsed.description).toBe(realTask);
   });
+
+  it("F22: maps windsurf tool name rg→Grep with string args (Sonnet via windsurf)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f22a", model: "claude-sonnet-4-6", choices: [{ delta: { content: '[TOOL_CALLS]rg[TOOL_CALLS]"devin"' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const inputs = getToolUseInputs(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Grep");
+    expect(JSON.parse(inputs[0]).pattern).toBe("devin");
+  });
+
+  it("F22: maps rg→Grep with command-style args", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f22b", model: "claude-sonnet-4-6", choices: [{ delta: { content: '[TOOL_CALLS]rg[TOOL_CALLS]rg "mcp" --max-results 10' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const inputs = getToolUseInputs(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Grep");
+    expect(JSON.parse(inputs[0]).pattern).toBe("mcp");
+  });
+
+  it("F22: maps bash→Bash with command args", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f22c", model: "claude-sonnet-4-6", choices: [{ delta: { content: '[TOOL_CALLS]bash[TOOL_CALLS]ls -la /tmp' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const inputs = getToolUseInputs(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Bash");
+    expect(JSON.parse(inputs[0]).command).toBe("ls -la /tmp");
+  });
+
+  it("F22: maps read→Read with file path args", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f22d", model: "claude-sonnet-4-6", choices: [{ delta: { content: '[TOOL_CALLS]read[TOOL_CALLS]/tmp/foo.txt' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const inputs = getToolUseInputs(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Read");
+    expect(JSON.parse(inputs[0]).file_path).toBe("/tmp/foo.txt");
+  });
+
+  it("F22: multiple rg tool calls in one response (Sonnet pattern)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f22e", model: "claude-sonnet-4-6", choices: [{ delta: { content: '[TOOL_CALLS]rg[TOOL_CALLS]rg mcp[TOOL_CALLS]rg[TOOL_CALLS]rg devin[TOOL_CALLS]rg[TOOL_CALLS]rg config' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    expect(toolUses.length).toBeGreaterThanOrEqual(1);
+    // All should be Grep
+    for (const tu of toolUses) expect(tu.name).toBe("Grep");
+  });
 });
