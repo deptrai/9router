@@ -61,6 +61,12 @@ function sanitizeAgentArgs(args) {
     const source = args.prompt || args.task || args.instructions || args.subagent_type || "Agent task";
     args.description = String(source).slice(0, 80);
   }
+  // Claude Code also requires `prompt`. If the model emitted an Agent call
+  // without any prompt-like field, synthesize from description so the call
+  // lands instead of being rejected.
+  if (!("prompt" in args) || typeof args.prompt !== "string" || !args.prompt.trim()) {
+    args.prompt = args.description || "Explore and report findings";
+  }
   const allowed = new Set(["prompt", "subagent_type", "description", "is_background", "resume"]);
   for (const key of Object.keys(args)) {
     if (!allowed.has(key)) delete args[key];

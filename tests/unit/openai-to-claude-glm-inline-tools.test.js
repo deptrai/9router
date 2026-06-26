@@ -333,4 +333,17 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     expect(parsed.description).toBe("Search auth code");
     expect(parsed.prompt).toBe("find auth");
   });
+
+  it("sanitizes Agent args: synthesize prompt when completely empty args", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm25", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS]Agent[TOOL_CALLS]{}" }, finish_reason: "stop" }] },
+    ]);
+
+    const inputs = getToolUseInputs(events);
+    const parsed = JSON.parse(inputs[0]);
+    expect(typeof parsed.description).toBe("string");
+    expect(parsed.description.length).toBeGreaterThan(0);
+    expect(typeof parsed.prompt).toBe("string");
+    expect(parsed.prompt.length).toBeGreaterThan(0);
+  });
 });
