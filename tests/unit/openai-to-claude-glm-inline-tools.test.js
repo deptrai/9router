@@ -708,4 +708,32 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     const toolUses = getToolUseBlocks(events);
     expect(toolUses).toHaveLength(0);
   });
+
+  it("F28: suppresses [TOOL_CALLS]claude-sonnet-4-6[ARGS] model name loop (Sonnet)", () => {
+    // Sonnet emits its own model name as tool name with [ARGS] marker
+    const events = collectEvents([
+      { id: "chatcmpl-f28a", model: "claude-sonnet-4-6", choices: [{ delta: { content: "[TOOL_CALLS]claude-sonnet-4-6[ARGS]\nNow I need to understand how MCP tools are defined." }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const text = getTextDelta(events);
+    expect(toolUses).toHaveLength(0);
+    // Should NOT emit the [TOOL_CALLS]claude-sonnet-4-6[ARGS] garbage
+    expect(text).not.toContain("[TOOL_CALLS]");
+    expect(text).not.toContain("claude-sonnet-4-6");
+    // Should preserve the useful prose after [ARGS]
+    expect(text).toContain("Now I need to understand");
+  });
+
+  it("F28: suppresses multiple model name loops in one response", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f28b", model: "claude-sonnet-4-6", choices: [{ delta: { content: "[TOOL_CALLS]claude-sonnet-4-6[ARGS]\nProse 1.[TOOL_CALLS]claude-sonnet-4-6[ARGS]\nProse 2.[TOOL_CALLS]claude-sonnet-4-6[ARGS]" }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const text = getTextDelta(events);
+    expect(toolUses).toHaveLength(0);
+    expect(text).not.toContain("[TOOL_CALLS]");
+    expect(text).not.toContain("claude-sonnet-4-6");
+    expect(text).toContain("Prose 1");
+    expect(text).toContain("Prose 2");
+  });
 });

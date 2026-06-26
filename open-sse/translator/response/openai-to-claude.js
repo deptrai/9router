@@ -593,6 +593,12 @@ function drainGlmInlineToolCalls(state, results) {
   // Find JSON object: starts with { , ends with matching }
   const jsonStart = afterSecondMarker.indexOf("{");
   if (jsonStart === -1) {
+    // F28: Model name as tool name with no args (e.g. [TOOL_CALLS]claude-sonnet-4-6[ARGS])
+    // Suppress marker garbage, keep remaining text in buffer for next iteration
+    if (isModelName(toolName.trim())) {
+      state.glmTextBuffer = afterSecondMarker;
+      return true; // loop to process remaining text
+    }
     if (afterSecondMarker === "" || /^\s*$/.test(afterSecondMarker)) {
       // JSON not started yet — wait for more chunks
       state.glmTextBuffer = marker + afterMarker;
