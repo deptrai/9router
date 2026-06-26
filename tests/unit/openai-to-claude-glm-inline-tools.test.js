@@ -152,7 +152,8 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     const text = getTextDelta(events);
     const toolUses = getToolUseBlocks(events);
 
-    expect(text).toBe("Partial [TOOL_CALLS]Read[TOOL_");
+    // F35: markers stripped at flush-at-finish, only prose + partial tool name remain
+    expect(text).toBe("Partial Read");
     expect(toolUses).toHaveLength(0);
   });
 
@@ -946,5 +947,28 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     expect(toolUses[0].name).toBe("Bash");
     expect(text).not.toContain("[TOOL_CALLS]");
     expect(text).not.toContain("[T");
+  });
+
+  it("F35: strips markers when toolName is prose + afterSecondMarker is code (not JSON)", () => {
+    // Model hallucinates: [TOOL_CALLS]prose[TOOL_CALLS]{javascript code}
+    // Should emit cleaned text without [TOOL_CALLS] markers
+    const events = collectEvents([
+      { id: "chatcmpl-f35a", model: "claude-sonnet-4-6", choices: [{ delta: { content: "[TOOL_CALLS]Code to find MCP config:[TOOL_CALLS]{if (err) return}" }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const text = getTextDelta(events);
+    expect(text).not.toContain("[TOOL_CALLS]");
+    expect(text).not.toContain("[ARGS]");
+  });
+
+  it("F35: strips markers from flush-at-finish when buffer has orphan markers", () => {
+    // Buffer with orphan markers at finish — should strip, not leak
+    const events = collectEvents([
+      { id: "chatcmpl-f35b", model: "claude-sonnet-4-6", choices: [{ delta: { content: "Some text [TOOL_CALLS] orphan marker" }, finish_reason: "stop" }] },
+    ]);
+    const text = getTextDelta(events);
+    expect(text).not.toContain("[TOOL_CALLS]");
+    expect(text).toContain("Some text");
+    expect(text).toContain("orphan marker");
   });
 });

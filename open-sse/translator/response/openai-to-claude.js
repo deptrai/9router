@@ -555,7 +555,8 @@ function emitGlmToolUse(state, results, toolName, argsJson) {
     if (isModelName(bareName)) {
       return;
     }
-    emitTextSegment(state, results, `[TOOL_CALLS]${toolName}[TOOL_CALLS]${argsJson}`);
+    // F35: Invalid tool name (prose, code, etc.) — emit cleaned text without markers
+    emitTextSegment(state, results, `${toolName}${argsJson}`.trim());
     return;
   }
 
@@ -846,7 +847,8 @@ function drainGlmInlineToolCalls(state, results) {
       return true;
     }
     // Malformed (no JSON, no map) — emit as text and move on
-    emitTextSegment(state, results, marker + toolName + m2[0] + afterSecondMarker);
+    // F35: Strip markers so they don't leak into output text
+    emitTextSegment(state, results, (toolName + afterSecondMarker).trim());
     state.glmTextBuffer = "";
     return true;
   }
@@ -1070,8 +1072,15 @@ export function openaiToClaudeResponse(chunk, state) {
       let drained = drainGlmInlineToolCalls(state, results);
       while (drained) drained = drainGlmInlineToolCalls(state, results);
       // Anything left is plain text (incomplete/no marker) — emit as text
+      // F35: Strip any remaining [TOOL_CALLS]/[ARGS] markers so they don't leak
+      // into the final text output (model hallucinated markers without valid tool call).
       if (state.glmTextBuffer) {
-        emitTextSegment(state, results, state.glmTextBuffer);
+        const cleaned = state.glmTextBuffer
+          .replace(/\[TOOL_CALLS\]/g, "")
+          .replace(/\[ARGS\]/g, "")
+          .replace(/\[TOOL_$/, "")  // partial marker at end
+          .replace(/\[ARG$/, "");   // partial marker at end
+        emitTextSegment(state, results, cleaned);
         state.glmTextBuffer = "";
       }
     }
