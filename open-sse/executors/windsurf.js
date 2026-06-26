@@ -110,7 +110,7 @@ export class WindsurfExecutor extends BaseExecutor {
       if (firstSysIdx >= 0) {
         messagesForProto = messagesForProto.map((m, i) =>
           i === firstSysIdx
-            ? { ...m, content: toolInstruction + "\n\n" + this._extractTextContent(m.content) }
+            ? { ...m, content: toolInstruction + "\n\n" + this._extractTextContent(m.content, true) }
             : m
         );
       } else {
@@ -120,9 +120,15 @@ export class WindsurfExecutor extends BaseExecutor {
 
     // F9: Convert OpenAI messages[] to protobuf messages (extract text from multimodal)
     // D3: Include tool messages
+    // F21: Pass model to _extractTextContent so non-GLM models (Sonnet, Claude,
+    // GPT) get a neutral text format for tool_use blocks instead of [TOOL_CALLS]
+    // marker. Sonnet 4.6 sees [TOOL_CALLS] in context and mimics the format →
+    // emits inline [TOOL_CALLS]Explore[ARGS]... instead of native tool_use →
+    // end_turn → session stop (session 38f24236).
+    const isGlm = /glm/i.test(model);
     const protoMessages = messagesForProto.map((m) => ({
       role: m.role === "user" ? 1 : m.role === "assistant" ? 2 : m.role === "tool" ? 5 : 5,
-      content: this._extractTextContent(m.content),
+      content: this._extractTextContent(m.content, isGlm),
       opts: {},
     }));
 
@@ -396,15 +402,23 @@ export class WindsurfExecutor extends BaseExecutor {
    * Also converts Anthropic tool_use and tool_result blocks into text so
    * multi-turn agent flows work: GLM-5.2 needs to see the tool call it made
    * and the result returned, otherwise it re-calls the same tool in a loop.
+   * F21: Non-GLM models (Sonnet, Claude, GPT) get a neutral text format for
+   * tool_use (no [TOOL_CALLS] marker) to prevent them from mimicking the
+   * inline format and emitting raw text instead of native tool_use blocks.
    */
-  _extractTextContent(content) {
+  _extractTextContent(content, isGlm = true) {
     if (typeof content === "string") return content;
     if (Array.isArray(content)) {
       const parts = content.map(item => {
         if (item.type === "text") return item.text;
         if (item.type === "tool_use") {
           const args = JSON.stringify(item.input || {});
-          return `[TOOL_CALLS]${item.name}[TOOL_CALLS]${args}`;
+          if (isGlm) {
+            // GLM needs [TOOL_CALLS] format to parse inline tool calls
+            return `[TOOL_CALLS]${item.name}[TOOL_CALLS]${args}`;
+          }
+          // Non-GLM: neutral format, no [TOOL_CALLS] marker to avoid mimicry
+          return `[Tool Call: ${item.name}] args: ${args}`;
         }
         if (item.type === "tool_result") {
           let result = typeof item.content === "string"

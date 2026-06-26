@@ -459,6 +459,45 @@ describe("Story N.2 — WindsurfExecutor", () => {
     expect(toolResultMsg.content).toContain("file contents here");
   });
 
+  it("Multi-turn: non-GLM model gets neutral tool_use format (session 38f24236)", async () => {
+    const { connectFrameEncode } = await import("../../open-sse/utils/windsurfProtobuf.js");
+    const testString = "ok";
+    const innerProto = Buffer.alloc(2 + testString.length);
+    innerProto[0] = 0x0a;
+    innerProto[1] = testString.length;
+    innerProto.write(testString, 2);
+    const frame = connectFrameEncode(innerProto);
+    _streamingRequest.mockResolvedValue(mockStreamResponse([frame]));
+
+    const executor = new WindsurfExecutor("windsurf", {});
+    await executor.execute({
+      model: "claude-sonnet-4-6",
+      body: makeBody({
+        messages: [
+          { role: "user", content: "Read /tmp/foo.txt" },
+          { role: "assistant", content: [
+            { type: "text", text: "Let me read that." },
+            { type: "tool_use", id: "toolu_1", name: "Read", input: { file_path: "/tmp/foo.txt" } },
+          ]},
+          { role: "user", content: [
+            { type: "tool_result", tool_use_id: "toolu_1", content: "file contents here" },
+          ]},
+        ],
+        tools: [{ function: { name: "Read", description: "Read", parameters: {} } }],
+      }),
+      stream: false,
+      credentials: makeCredentials(),
+      signal: undefined,
+    });
+
+    const callArgs = _buildRequest.mock.calls[0];
+    const messages = callArgs[2];
+    const assistantMsg = messages.find(m => m.role === 2);
+    // Non-GLM: should use neutral format, NOT [TOOL_CALLS] marker
+    expect(assistantMsg.content).toContain("[Tool Call: Read]");
+    expect(assistantMsg.content).not.toContain("[TOOL_CALLS]Read[TOOL_CALLS]");
+  });
+
   it("Multi-turn: strips [TOOL_CALLS] markers from tool_result text (session 89893ae0)", async () => {
     const { connectFrameEncode } = await import("../../open-sse/utils/windsurfProtobuf.js");
     const testString = "ok";
