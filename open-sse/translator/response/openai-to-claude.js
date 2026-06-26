@@ -317,8 +317,29 @@ function drainGlmInlineToolCalls(state, results) {
     return false;
   }
 
-  const toolName = afterMarker.slice(0, m2.index);
-  const afterSecondMarker = afterMarker.slice(m2.index + m2[0].length);
+  let toolName = afterMarker.slice(0, m2.index);
+  let afterSecondMarker = afterMarker.slice(m2.index + m2[0].length);
+
+  // F24: Detect swapped format [TOOL_CALLS]prose[TOOL_CALLS]real_tool_name{args}
+  // Sonnet/Claude via Cascade sometimes put explanation text as the "tool name"
+  // and the real tool name after the second marker.
+  // Pattern: [TOOL_CALLS]I'll help you...[TOOL_CALLS]Grep{"pattern":"mcp"}
+  // Detect: toolName has whitespace (prose) + afterSecondMarker starts with
+  // a valid compact identifier → emit prose as text, swap tool name.
+  if (/\s/.test(toolName.trim()) && toolName.trim().length > 15) {
+    const swapMatch = afterSecondMarker.match(/^([A-Za-z_][A-Za-z0-9_\-:.]*)([\s\S]*)/);
+    if (swapMatch && swapMatch[1] && !/\s/.test(swapMatch[1]) && swapMatch[1].length <= 64) {
+      emitTextSegment(state, results, toolName.trim());
+      toolName = swapMatch[1];
+      afterSecondMarker = swapMatch[2];
+      // After swap, if no args remain, emit tool call with empty args
+      if (!afterSecondMarker.trim()) {
+        emitGlmToolUse(state, results, toolName, "{}");
+        state.glmTextBuffer = "";
+        return true;
+      }
+    }
+  }
 
   // F22: Windsurf returns [TOOL_CALLS] with non-JSON args for Sonnet/Claude too
   // (not just GLM). E.g. [TOOL_CALLS]rg[TOOL_CALLS]"devin" or

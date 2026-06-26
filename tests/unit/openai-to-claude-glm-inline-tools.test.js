@@ -540,4 +540,42 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     // All should be Grep
     for (const tu of toolUses) expect(tu.name).toBe("Grep");
   });
+
+  it("F24: swaps prose tool name with real tool name (Sonnet session 38f24236)", () => {
+    // Sonnet emits: [TOOL_CALLS]I'll help you...[TOOL_CALLS]Grep{"pattern":"mcp"}
+    // Prose is in tool name position, real tool name is after second marker
+    const events = collectEvents([
+      { id: "chatcmpl-f24a", model: "claude-sonnet-4-6", choices: [{ delta: { content: "[TOOL_CALLS]I'll help you understand the MCP setup. Let me explore the codebase.[TOOL_CALLS]Grep{\"pattern\":\"mcp\"}" }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const inputs = getToolUseInputs(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Grep");
+    expect(JSON.parse(inputs[0]).pattern).toBe("mcp");
+    // Prose should be emitted as text, not lost
+    const text = getTextDelta(events);
+    expect(text).toContain("I'll help you understand");
+  });
+
+  it("F24: swaps prose with real tool name + no JSON args", () => {
+    // [TOOL_CALLS]prose[TOOL_CALLS]agent__explore__codebase-memory__index_repository
+    const events = collectEvents([
+      { id: "chatcmpl-f24b", model: "claude-sonnet-4-6", choices: [{ delta: { content: "[TOOL_CALLS]Let me explore the codebase to find MCP configs.[TOOL_CALLS]agent__explore__codebase-memory__index_repository" }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("agent__explore__codebase-memory__index_repository");
+    const text = getTextDelta(events);
+    expect(text).toContain("Let me explore the codebase");
+  });
+
+  it("F24: does NOT swap when tool name is short (no prose)", () => {
+    // Normal: [TOOL_CALLS]Read[TOOL_CALLS]{json} — Read has no spaces, should NOT swap
+    const events = collectEvents([
+      { id: "chatcmpl-f24c", model: "glm-5-2", choices: [{ delta: { content: '[TOOL_CALLS]Read[TOOL_CALLS]{"file_path":"/tmp/foo"}' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Read");
+  });
 });
