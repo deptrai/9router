@@ -167,15 +167,26 @@ function drainGlmInlineToolCalls(state, results) {
   // Find second marker: [TOOL_CALLS] or [ARGS]
   const secondMarkerRe = /\[(TOOL_CALLS|ARGS)\]/;
   const m2 = afterMarker.match(secondMarkerRe);
-  if (!m2) {
-    // Incomplete — keep marker + afterMarker so flush-at-finish preserves the
-    // original text (no silent drop of the "[TOOL_CALLS]" we already consumed).
-    state.glmTextBuffer = marker + afterMarker;
-    return false;
-  }
 
-  const toolName = afterMarker.slice(0, m2.index);
-  const afterSecondMarker = afterMarker.slice(m2.index + m2[0].length);
+  // Determine toolName + afterSecondMarker via two formats:
+  //  (a) [TOOL_CALLS]name[TOOL_CALLS]{json}  or  [TOOL_CALLS]name[ARGS]{json}
+  //  (b) [TOOL_CALLS]name: {json}  (colon separator, no second marker)
+  let toolName, afterSecondMarker;
+  if (m2) {
+    toolName = afterMarker.slice(0, m2.index);
+    afterSecondMarker = afterMarker.slice(m2.index + m2[0].length);
+  } else {
+    const colonJsonMatch = afterMarker.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(\{)/);
+    if (colonJsonMatch) {
+      toolName = colonJsonMatch[1];
+      afterSecondMarker = afterMarker.slice(afterMarker.indexOf("{"));
+    } else {
+      // Incomplete — keep marker + afterMarker so flush-at-finish preserves the
+      // original text (no silent drop of the "[TOOL_CALLS]" we already consumed).
+      state.glmTextBuffer = marker + afterMarker;
+      return false;
+    }
+  }
 
   // Find JSON object: starts with { , ends with matching }
   const jsonStart = afterSecondMarker.indexOf("{");

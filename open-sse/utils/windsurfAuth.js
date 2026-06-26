@@ -354,7 +354,11 @@ export function _buildRequest(apiKey, jwt, messages, toolDefs, model) {
   req.writeString(3, model || WS_MODEL);
 
   if (toolDefs) {
-    req.writeString(4, toolDefs);
+    // toolDefs may arrive as an array of {name,description,schema} objects.
+    // writeString expects a string — serialize to JSON so Windsurf receives
+    // valid tool definitions instead of "[object Object],..." garbage.
+    const toolDefsStr = typeof toolDefs === "string" ? toolDefs : JSON.stringify(toolDefs);
+    req.writeString(4, toolDefsStr);
   }
 
   return req.toBuffer();

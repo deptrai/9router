@@ -173,4 +173,29 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     const stopReason = events.find((e) => e.type === "message_delta")?.delta?.stop_reason;
     expect(stopReason).toBe("end_turn"); // finish_reason "stop" → end_turn (router may override downstream)
   });
+
+  it("parses [TOOL_CALLS]name: {json} colon-format variant", () => {
+    // Some models emit colon separator instead of second [TOOL_CALLS] marker
+    const events = collectEvents([
+      { id: "chatcmpl-glm11", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS]Read: {\"file_path\":\"/tmp/colon.txt\"}" }, finish_reason: "stop" }] },
+    ]);
+
+    const toolUses = getToolUseBlocks(events);
+    const inputs = getToolUseInputs(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Read");
+    expect(JSON.parse(inputs[0])).toEqual({ file_path: "/tmp/colon.txt" });
+  });
+
+  it("parses [TOOL_CALLS]name: {json} with whitespace before brace", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm12", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS]Write:  {\"file_path\":\"/tmp/w.txt\",\"content\":\"hi\"}" }, finish_reason: "stop" }] },
+    ]);
+
+    const toolUses = getToolUseBlocks(events);
+    const inputs = getToolUseInputs(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Write");
+    expect(JSON.parse(inputs[0])).toEqual({ file_path: "/tmp/w.txt", content: "hi" });
+  });
 });

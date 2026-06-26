@@ -75,19 +75,51 @@ export class WindsurfExecutor extends BaseExecutor {
 
     // F9: Convert OpenAI messages[] to protobuf messages (extract text from multimodal)
     // D3: Include tool messages
-    const protoMessages = body.messages.map((m) => ({
-      role: m.role === "user" ? 1 : m.role === "assistant" ? 2 : m.role === "tool" ? 5 : 5,
-      content: this._extractTextContent(m.content),
-      opts: {},
-    }));
-
-    // D3: Build tool definitions if present
+    // GLM-5.2 (free-tier) doesn't support native function calling — Windsurf Cascade
+    // may inject its own tools (agent__explore__medium, etc.) and ignore passed toolDefs.
+    // Inject a system-prompt instruction forcing the model to use the CLIENT's tools
+    // (Read/Write/Bash/...) via the [TOOL_CALLS]name[TOOL_CALLS]{json} inline format
+    // so the openai-to-claude response translator can parse them into tool_use blocks.
     const toolDefs = body.tools && body.tools.length > 0
       ? body.tools.map(t => {
           const fn = t.function || t;
           return { name: fn.name, description: fn.description || "", schema: fn.parameters || {} };
         })
       : null;
+
+    let messagesForProto = body.messages;
+    if (toolDefs && toolDefs.length > 0) {
+      const toolList = toolDefs.map(t =>
+        `- ${t.name}: ${t.description}\n  args schema: ${JSON.stringify(t.schema)}`
+      ).join("\n");
+      const toolInstruction =
+        `You have access to these tools. Use them when needed:\n${toolList}\n\n` +
+        `To call a tool, output EXACTLY this format (no markdown, no backticks):\n` +
+        `[TOOL_CALLS]<tool_name>[TOOL_CALLS]{<json_arguments>}\n\n` +
+        `Example: [TOOL_CALLS]Read[TOOL_CALLS]{"file_path":"/tmp/foo.txt"}\n\n` +
+        `Rules:\n` +
+        `- ONLY use tool names from the list above. Do NOT invent tool names like agent__explore__medium.\n` +
+        `- Arguments MUST be valid JSON matching the tool's schema.\n` +
+        `- Output the tool call on its own line. You may add brief text before it.\n` +
+        `- After a tool result is returned, continue the task or call another tool.\n`;
+      // Prepend to existing system message if present, else insert new one
+      const firstSysIdx = messagesForProto.findIndex(m => m.role === "system");
+      if (firstSysIdx >= 0) {
+        messagesForProto = messagesForProto.map((m, i) =>
+          i === firstSysIdx
+            ? { ...m, content: toolInstruction + "\n\n" + this._extractTextContent(m.content) }
+            : m
+        );
+      } else {
+        messagesForProto = [{ role: "system", content: toolInstruction }, ...messagesForProto];
+      }
+    }
+
+    const protoMessages = messagesForProto.map((m) => ({
+      role: m.role === "user" ? 1 : m.role === "assistant" ? 2 : m.role === "tool" ? 5 : 5,
+      content: this._extractTextContent(m.content),
+      opts: {},
+    }));
 
     // Build protobuf request — resolve user-facing model ID to Cascade upstream ID
     const upstreamModel = getModelUpstreamId("windsurf", model);
