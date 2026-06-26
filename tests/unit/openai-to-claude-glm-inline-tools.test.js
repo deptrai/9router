@@ -165,13 +165,24 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     expect(toolUses[0].name).toBe("Read");
   });
 
-  it("sets stop_reason to tool_use when tool call emitted", () => {
+  it("sets stop_reason to tool_use when GLM inline tool call emitted", () => {
     const events = collectEvents([
       { id: "chatcmpl-glm10", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS]Read[TOOL_CALLS]{\"file_path\":\"/tmp/test.txt\"}" }, finish_reason: "stop" }] },
     ]);
 
     const stopReason = events.find((e) => e.type === "message_delta")?.delta?.stop_reason;
-    expect(stopReason).toBe("end_turn"); // finish_reason "stop" → end_turn (router may override downstream)
+    // GLM emits [TOOL_CALLS] as text → Windsurf returns finish_reason="stop".
+    // Translator must override stop_reason to "tool_use" so Claude Code executes the tool.
+    expect(stopReason).toBe("tool_use");
+  });
+
+  it("sets stop_reason to end_turn when no tool call (plain text)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm10b", model: "glm-5-2", choices: [{ delta: { content: "Hello world" }, finish_reason: "stop" }] },
+    ]);
+
+    const stopReason = events.find((e) => e.type === "message_delta")?.delta?.stop_reason;
+    expect(stopReason).toBe("end_turn");
   });
 
   it("emits raw text instead of tool_use when tool name is hallucinated prose", () => {

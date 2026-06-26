@@ -530,11 +530,22 @@ export function openaiToClaudeResponse(chunk, state) {
     // Mark finish for later usage injection in stream.js
     state.finishReason = choice.finish_reason;
 
+    // Override stop_reason when GLM emitted inline tool_use blocks.
+    // GLM-5.2 emits [TOOL_CALLS] as text → Windsurf returns finish_reason="stop"
+    // → convertFinishReason("stop") = "end_turn". But Claude Code needs
+    // stop_reason="tool_use" to trigger tool execution. Without this override,
+    // Claude Code sees "end_turn" + tool_use block → stops without executing
+    // the tool → session idle → "dừng đột ngột".
+    const hasGlmToolUse = [...state.toolCalls.values()].some(t => t.glmEmitted);
+    const stopReason = hasGlmToolUse
+      ? "tool_use"
+      : convertFinishReason(choice.finish_reason);
+
     // Use tracked usage (will be estimated in stream.js if not valid)
     const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
     results.push({
       type: "message_delta",
-      delta: { stop_reason: convertFinishReason(choice.finish_reason) },
+      delta: { stop_reason: stopReason },
       usage: finalUsage
     });
     results.push({ type: "message_stop" });
