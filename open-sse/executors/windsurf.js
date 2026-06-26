@@ -73,14 +73,6 @@ export class WindsurfExecutor extends BaseExecutor {
       return this._errorResponse(429, "Windsurf rate limit exceeded");
     }
 
-    // F9: Convert OpenAI messages[] to protobuf messages (extract text from multimodal)
-    // D3: Include tool messages
-    const protoMessages = body.messages.map((m) => ({
-      role: m.role === "user" ? 1 : m.role === "assistant" ? 2 : m.role === "tool" ? 5 : 5,
-      content: this._extractTextContent(m.content),
-      opts: {},
-    }));
-
     // D3: Build tool definitions if present
     const toolDefs = body.tools && body.tools.length > 0
       ? body.tools.map(t => {
@@ -88,6 +80,48 @@ export class WindsurfExecutor extends BaseExecutor {
           return { name: fn.name, description: fn.description || "", schema: fn.parameters || {} };
         })
       : null;
+
+    // GLM-5.2 (windsurf free tier) doesn't support native function calling via
+    // protobuf — it ignores the toolDefs field and emits tool calls inline as
+    // text. Without guidance the model invents a broken format (missing JSON
+    // args, prose as tool name). Inject a compact instruction teaching the
+    // exact [TOOL_CALLS]name[TOOL_CALLS]{json} format so the openai-to-claude
+    // response translator can parse tool calls into proper tool_use blocks.
+    // Only inject when tools are present AND the model is GLM (other windsurf
+    // models like Claude/GPT support native function calling and would be
+    // confused by an inline-format instruction).
+    let messagesForProto = body.messages;
+    if (toolDefs && /glm/i.test(model)) {
+      const toolNames = toolDefs.map(t => t.name).join(", ");
+      const toolInstruction =
+        `You are an agent. Use tools to accomplish the user's task. Do NOT echo or repeat the user's message.\n\n` +
+        `Available tools: ${toolNames}\n\n` +
+        `To call a tool, output this exact format on its own line (no markdown, no backticks):\n` +
+        `[TOOL_CALLS]<tool_name>[TOOL_CALLS]{<json_arguments>}\n` +
+        `Example: [TOOL_CALLS]Read[TOOL_CALLS]{"file_path":"/tmp/foo.txt"}\n\n` +
+        `Rules:\n` +
+        `- Args MUST be a valid JSON object matching the tool's expected fields.\n` +
+        `- ONLY use tool names from the list above. NEVER use your model name as a tool name.\n` +
+        `- Do NOT echo or repeat the user's request. Act on it directly.\n`;
+      const firstSysIdx = messagesForProto.findIndex(m => m.role === "system");
+      if (firstSysIdx >= 0) {
+        messagesForProto = messagesForProto.map((m, i) =>
+          i === firstSysIdx
+            ? { ...m, content: toolInstruction + "\n\n" + this._extractTextContent(m.content) }
+            : m
+        );
+      } else {
+        messagesForProto = [{ role: "system", content: toolInstruction }, ...messagesForProto];
+      }
+    }
+
+    // F9: Convert OpenAI messages[] to protobuf messages (extract text from multimodal)
+    // D3: Include tool messages
+    const protoMessages = messagesForProto.map((m) => ({
+      role: m.role === "user" ? 1 : m.role === "assistant" ? 2 : m.role === "tool" ? 5 : 5,
+      content: this._extractTextContent(m.content),
+      opts: {},
+    }));
 
     // Build protobuf request — resolve user-facing model ID to Cascade upstream ID
     const upstreamModel = getModelUpstreamId("windsurf", model);
@@ -351,14 +385,35 @@ export class WindsurfExecutor extends BaseExecutor {
 
   /**
    * Extract text from content — string or array with multimodal parts (F9).
+   * Also converts Anthropic tool_use and tool_result blocks into text so
+   * multi-turn agent flows work: GLM-5.2 needs to see the tool call it made
+   * and the result returned, otherwise it re-calls the same tool in a loop.
    */
   _extractTextContent(content) {
     if (typeof content === "string") return content;
     if (Array.isArray(content)) {
-      return content
-        .filter(item => item.type === "text")
-        .map(item => item.text)
-        .join("");
+      const parts = content.map(item => {
+        if (item.type === "text") return item.text;
+        if (item.type === "tool_use") {
+          const args = JSON.stringify(item.input || {});
+          return `[TOOL_CALLS]${item.name}[TOOL_CALLS]${args}`;
+        }
+        if (item.type === "tool_result") {
+          const result = typeof item.content === "string"
+            ? item.content
+            : Array.isArray(item.content)
+              ? item.content.map(c => c.text || "").join("")
+              : JSON.stringify(item.content || {});
+          return `[Tool Result for ${item.tool_use_id}]: ${result}`;
+        }
+        return "";
+      });
+      // Join with newline when tool blocks are present (so tool calls/results
+      // sit on their own lines); plain multimodal text joins without separator
+      // to preserve original behavior.
+      const hasToolBlock = content.some(item =>
+        item.type === "tool_use" || item.type === "tool_result");
+      return hasToolBlock ? parts.join("\n") : parts.join("");
     }
     return String(content || "");
   }

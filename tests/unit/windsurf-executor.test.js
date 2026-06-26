@@ -294,4 +294,168 @@ describe("Story N.2 — WindsurfExecutor", () => {
     const callArgs = _buildRequest.mock.calls[0];
     expect(callArgs[4]).toBe("swe-1-6");
   });
+
+  it("GLM model with tools: injects [TOOL_CALLS] format instruction into system message", async () => {
+    const { connectFrameEncode } = await import("../../open-sse/utils/windsurfProtobuf.js");
+    const testString = "ok";
+    const innerProto = Buffer.alloc(2 + testString.length);
+    innerProto[0] = 0x0a;
+    innerProto[1] = testString.length;
+    innerProto.write(testString, 2);
+    const frame = connectFrameEncode(innerProto);
+    _streamingRequest.mockResolvedValue(mockStreamResponse([frame]));
+
+    const executor = new WindsurfExecutor("windsurf", {});
+    await executor.execute({
+      model: "glm-5-2",
+      body: makeBody({
+        messages: [{ role: "user", content: "Read /tmp/foo.txt" }],
+        tools: [
+          { function: { name: "Read", description: "Read file", parameters: {} } },
+          { function: { name: "Bash", description: "Run command", parameters: {} } },
+        ],
+      }),
+      stream: false,
+      credentials: makeCredentials(),
+      signal: undefined,
+    });
+
+    const callArgs = _buildRequest.mock.calls[0];
+    const messages = callArgs[2];
+    // System message with instruction should be prepended (index 0)
+    expect(messages[0].role).toBe(5); // system role
+    expect(messages[0].content).toContain("[TOOL_CALLS]");
+    expect(messages[0].content).toContain("Read");
+    expect(messages[0].content).toContain("Bash");
+  });
+
+  it("GLM model with tools: prepends instruction to existing system message", async () => {
+    const { connectFrameEncode } = await import("../../open-sse/utils/windsurfProtobuf.js");
+    const testString = "ok";
+    const innerProto = Buffer.alloc(2 + testString.length);
+    innerProto[0] = 0x0a;
+    innerProto[1] = testString.length;
+    innerProto.write(testString, 2);
+    const frame = connectFrameEncode(innerProto);
+    _streamingRequest.mockResolvedValue(mockStreamResponse([frame]));
+
+    const executor = new WindsurfExecutor("windsurf", {});
+    await executor.execute({
+      model: "glm-5-2",
+      body: makeBody({
+        messages: [
+          { role: "system", content: "You are helpful." },
+          { role: "user", content: "Do something" },
+        ],
+        tools: [{ function: { name: "Read", description: "Read", parameters: {} } }],
+      }),
+      stream: false,
+      credentials: makeCredentials(),
+      signal: undefined,
+    });
+
+    const callArgs = _buildRequest.mock.calls[0];
+    const messages = callArgs[2];
+    expect(messages[0].role).toBe(5);
+    expect(messages[0].content).toContain("[TOOL_CALLS]");
+    expect(messages[0].content).toContain("You are helpful.");
+  });
+
+  it("Non-GLM model with tools: does NOT inject inline-format instruction", async () => {
+    const { connectFrameEncode } = await import("../../open-sse/utils/windsurfProtobuf.js");
+    const testString = "ok";
+    const innerProto = Buffer.alloc(2 + testString.length);
+    innerProto[0] = 0x0a;
+    innerProto[1] = testString.length;
+    innerProto.write(testString, 2);
+    const frame = connectFrameEncode(innerProto);
+    _streamingRequest.mockResolvedValue(mockStreamResponse([frame]));
+
+    const executor = new WindsurfExecutor("windsurf", {});
+    await executor.execute({
+      model: "claude-opus-4-6",
+      body: makeBody({
+        messages: [{ role: "user", content: "Read /tmp/foo.txt" }],
+        tools: [{ function: { name: "Read", description: "Read", parameters: {} } }],
+      }),
+      stream: false,
+      credentials: makeCredentials(),
+      signal: undefined,
+    });
+
+    const callArgs = _buildRequest.mock.calls[0];
+    const messages = callArgs[2];
+    // No system message injected — only the user message
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toBe("Read /tmp/foo.txt");
+  });
+
+  it("GLM model without tools: does NOT inject instruction", async () => {
+    const { connectFrameEncode } = await import("../../open-sse/utils/windsurfProtobuf.js");
+    const testString = "ok";
+    const innerProto = Buffer.alloc(2 + testString.length);
+    innerProto[0] = 0x0a;
+    innerProto[1] = testString.length;
+    innerProto.write(testString, 2);
+    const frame = connectFrameEncode(innerProto);
+    _streamingRequest.mockResolvedValue(mockStreamResponse([frame]));
+
+    const executor = new WindsurfExecutor("windsurf", {});
+    await executor.execute({
+      model: "glm-5-2",
+      body: makeBody({ messages: [{ role: "user", content: "Hello" }] }),
+      stream: false,
+      credentials: makeCredentials(),
+      signal: undefined,
+    });
+
+    const callArgs = _buildRequest.mock.calls[0];
+    const messages = callArgs[2];
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toBe("Hello");
+  });
+
+  it("Multi-turn: tool_use and tool_result blocks converted to text for GLM context", async () => {
+    const { connectFrameEncode } = await import("../../open-sse/utils/windsurfProtobuf.js");
+    const testString = "ok";
+    const innerProto = Buffer.alloc(2 + testString.length);
+    innerProto[0] = 0x0a;
+    innerProto[1] = testString.length;
+    innerProto.write(testString, 2);
+    const frame = connectFrameEncode(innerProto);
+    _streamingRequest.mockResolvedValue(mockStreamResponse([frame]));
+
+    const executor = new WindsurfExecutor("windsurf", {});
+    await executor.execute({
+      model: "glm-5-2",
+      body: makeBody({
+        messages: [
+          { role: "user", content: "Read /tmp/foo.txt" },
+          { role: "assistant", content: [
+            { type: "text", text: "Let me read that." },
+            { type: "tool_use", id: "toolu_1", name: "Read", input: { file_path: "/tmp/foo.txt" } },
+          ]},
+          { role: "user", content: [
+            { type: "tool_result", tool_use_id: "toolu_1", content: "file contents here" },
+          ]},
+        ],
+        tools: [{ function: { name: "Read", description: "Read", parameters: {} } }],
+      }),
+      stream: false,
+      credentials: makeCredentials(),
+      signal: undefined,
+    });
+
+    const callArgs = _buildRequest.mock.calls[0];
+    const messages = callArgs[2];
+    // Assistant message should contain [TOOL_CALLS] inline representation
+    const assistantMsg = messages.find(m => m.role === 2);
+    expect(assistantMsg.content).toContain("[TOOL_CALLS]Read[TOOL_CALLS]");
+    expect(assistantMsg.content).toContain('"file_path":"/tmp/foo.txt"');
+    // Tool result message should contain the result text
+    const toolResultMsg = messages.find(m =>
+      m.content && m.content.includes("[Tool Result for toolu_1]"));
+    expect(toolResultMsg).toBeTruthy();
+    expect(toolResultMsg.content).toContain("file contents here");
+  });
 });
