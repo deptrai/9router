@@ -20,6 +20,76 @@ function findJsonEnd(str) {
   return -1; // incomplete
 }
 
+// F34: Lenient JSON extraction for malformed JSON with unescaped quotes.
+// Models emit: {"cmd":"find /path -name "*.js" | grep "mcp""}
+// The quotes inside the string value are NOT escaped → JSON.parse fails.
+// This function extracts known key-value pairs using regex instead of JSON.parse.
+// Returns {name, argsJson} or null.
+function inferToolNameFromMalformedArgs(text) {
+  // Extract cmd/command key value (for Bash)
+  const cmdMatch = text.match(/"(?:cmd|command)"\s*:\s*"((?:[^"\\]|\\.|"(?=\s*[}|,]))*)"/);
+  if (cmdMatch) {
+    // If the regex captured too little (unescaped quotes cut it short),
+    // try a greedy approach: take everything between first " after colon
+    // and the last " before the closing }
+    let cmd = cmdMatch[1];
+    // Greedy extraction: "cmd":"...everything..."}
+    const greedyMatch = text.match(/"(?:cmd|command)"\s*:\s*"(.*)"\s*\}\s*$/);
+    if (greedyMatch && greedyMatch[1].length > cmd.length) {
+      cmd = greedyMatch[1];
+    }
+    // Unescape any escaped quotes
+    cmd = cmd.replace(/\\"/g, '"');
+    return { name: "Bash", argsJson: JSON.stringify({ command: cmd }) };
+  }
+
+  // Extract file_path key value (for Read)
+  const fpMatch = text.match(/"file_path"\s*:\s*"((?:[^"\\]|\\.|"(?=\s*[}|,]))*)"/);
+  if (fpMatch) {
+    let fp = fpMatch[1];
+    const greedyMatch = text.match(/"file_path"\s*:\s*"(.*)"\s*\}\s*$/);
+    if (greedyMatch && greedyMatch[1].length > fp.length) {
+      fp = greedyMatch[1];
+    }
+    fp = fp.replace(/\\"/g, '"');
+    return { name: "Read", argsJson: JSON.stringify({ file_path: fp }) };
+  }
+
+  // Extract pattern key value (for Grep)
+  const patMatch = text.match(/"pattern"\s*:\s*"((?:[^"\\]|\\.|"(?=\s*[}|,]))*)"/);
+  if (patMatch) {
+    let pattern = patMatch[1];
+    const greedyMatch = text.match(/"pattern"\s*:\s*"(.*)"\s*\}\s*$/);
+    if (greedyMatch && greedyMatch[1].length > pattern.length) {
+      pattern = greedyMatch[1];
+    }
+    pattern = pattern.replace(/\\"/g, '"');
+    // Also try to extract path
+    const pathMatch = text.match(/"path"\s*:\s*"((?:[^"\\]|\\.|"(?=\s*[}|,]))*)"/);
+    const path = pathMatch ? pathMatch[1].replace(/\\"/g, '"') : ".";
+    return { name: "Grep", argsJson: JSON.stringify({ pattern, path }) };
+  }
+
+  // Extract query key value (for context-engine / WebSearch)
+  const queryMatch = text.match(/"query"\s*:\s*"((?:[^"\\]|\\.|"(?=\s*[}|,]))*)"/);
+  if (queryMatch) {
+    let query = queryMatch[1];
+    const greedyMatch = text.match(/"query"\s*:\s*"(.*)"\s*\}\s*$/);
+    if (greedyMatch && greedyMatch[1].length > query.length) {
+      query = greedyMatch[1];
+    }
+    query = query.replace(/\\"/g, '"');
+    // Check for workspace_full_path → context-engine
+    const wsMatch = text.match(/"workspace_full_path"\s*:\s*"((?:[^"\\]|\\.|"(?=\s*[}|,]))*)"/);
+    if (wsMatch) {
+      return { name: "mcp__vibervn-context-engine__codebase-retrieval", argsJson: JSON.stringify({ query, workspace_full_path: wsMatch[1].replace(/\\"/g, '"') }) };
+    }
+    return { name: "WebSearch", argsJson: JSON.stringify({ query }) };
+  }
+
+  return null;
+}
+
 // F27: Detect raw shell commands in text (no [TOOL_CALLS] marker).
 // Sonnet via Cascade sometimes emits raw commands directly in text:
 //   "Let me search.rg "mcp" /path --exclude-dir tests"
@@ -592,6 +662,19 @@ function drainGlmInlineToolCalls(state, results) {
           return true;
         }
       }
+      // F34: JSON.parse failed (malformed JSON with unescaped quotes).
+      // Try lenient extraction before giving up.
+      // Only attempt if buffer has a closing } (JSON complete, just malformed).
+      if (trimmedAfter.includes("}")) {
+        const malformed = inferToolNameFromMalformedArgs(trimmedAfter);
+        if (malformed) {
+          emitGlmToolUse(state, results, malformed.name, malformed.argsJson);
+          // Find the end: look for the last } in trimmedAfter
+          const lastBrace = trimmedAfter.lastIndexOf("}");
+          state.glmTextBuffer = lastBrace > 0 ? trimmedAfter.slice(lastBrace + 1) : "";
+          return true;
+        }
+      }
     }
     // F31: Orphan [TOOL_CALLS] marker — afterMarker doesn't start with a valid
     // tool name character or JSON. Model emitted code/prose with marker prefix.
@@ -599,6 +682,15 @@ function drainGlmInlineToolCalls(state, results) {
     // Valid tool name starts with [A-Za-z_], JSON starts with {. Anything else
     // (digit, space, special char, newline) = not a tool call.
     if (trimmedAfter && !/^[A-Za-z_{]/.test(trimmedAfter)) {
+      // F34b: Check if trimmedAfter is a partial prefix of [TOOL_CALLS] or [ARGS].
+      // If so, this is a second marker split across chunks — wait for more.
+      const isPartialMarker =
+        "[TOOL_CALLS]".startsWith(trimmedAfter) && trimmedAfter.length >= 2 ||
+        "[ARGS]".startsWith(trimmedAfter) && trimmedAfter.length >= 2;
+      if (isPartialMarker) {
+        state.glmTextBuffer = marker + afterMarker;
+        return false;
+      }
       emitTextSegment(state, results, trimmedAfter);
       state.glmTextBuffer = "";
       return true;
@@ -616,18 +708,32 @@ function drainGlmInlineToolCalls(state, results) {
   // Sonnet emits: [TOOL_CALLS]\n[TOOL_CALLS]{"file_path":"/path"} (empty name).
   // Infer tool name from args keys.
   if (!toolName.trim() && afterSecondMarker.trim().startsWith("{")) {
-    const jsonEnd = findJsonEnd(afterSecondMarker.trim());
+    const afterTrim = afterSecondMarker.trim();
+    const jsonEnd = findJsonEnd(afterTrim);
     if (jsonEnd > 0) {
-      const argsJson = afterSecondMarker.trim().slice(0, jsonEnd);
+      const argsJson = afterTrim.slice(0, jsonEnd);
       const inferred = inferToolNameFromArgs(argsJson);
       if (inferred) {
         emitGlmToolUse(state, results, inferred.name, inferred.argsJson);
-        state.glmTextBuffer = afterSecondMarker.trim().slice(jsonEnd);
+        state.glmTextBuffer = afterTrim.slice(jsonEnd);
         return true;
       }
       // F32: Empty tool name + empty args {} = garbage emission, strip markers
       if (argsJson.trim() === "{}") {
-        state.glmTextBuffer = afterSecondMarker.trim().slice(jsonEnd);
+        state.glmTextBuffer = afterTrim.slice(jsonEnd);
+        return true;
+      }
+    }
+    // F34: JSON.parse failed (malformed JSON with unescaped quotes).
+    // Models emit: {"cmd":"find -name "*.js""} — quotes inside value not escaped.
+    // Try lenient extraction before giving up.
+    // Only attempt if buffer has a closing } (JSON complete, just malformed).
+    if (afterTrim.includes("}")) {
+      const malformed = inferToolNameFromMalformedArgs(afterTrim);
+      if (malformed) {
+        emitGlmToolUse(state, results, malformed.name, malformed.argsJson);
+        const lastBrace = afterTrim.lastIndexOf("}");
+        state.glmTextBuffer = lastBrace > 0 ? afterTrim.slice(lastBrace + 1) : "";
         return true;
       }
     }

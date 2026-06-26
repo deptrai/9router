@@ -895,4 +895,56 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     expect(text).not.toContain("claude-sonnet-4-6");
     expect(text).toContain("Useful text after loop");
   });
+
+  it("F34: infers Bash from malformed JSON with unescaped quotes (single chunk)", () => {
+    // Model emits: {"cmd":"find -name "*.js""} — quotes inside value not escaped
+    const events = collectEvents([
+      { id: "chatcmpl-f34a", model: "claude-sonnet-4-6", choices: [{ delta: { content: '[TOOL_CALLS]\n[TOOL_CALLS]{"cmd":"find /Users/luisphan -name "*.js" | grep "mcp" | head -20"}' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const text = getTextDelta(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Bash");
+    expect(text).not.toContain("[TOOL_CALLS]");
+  });
+
+  it("F34: infers Bash from malformed JSON when streamed in small chunks", () => {
+    // Stream the malformed JSON in 15-char chunks to test buffer accumulation
+    const raw = '[TOOL_CALLS]\n[TOOL_CALLS]{"cmd":"find /Users/luisphan -name "*.js" | grep "mcp" | head -20"}';
+    const chunks = [];
+    for (let i = 0; i < raw.length; i += 15) {
+      chunks.push({ id: "chatcmpl-f34b", model: "claude-sonnet-4-6", choices: [{ delta: { content: raw.slice(i, i + 15) } }] });
+    }
+    chunks.push({ id: "chatcmpl-f34b", model: "claude-sonnet-4-6", choices: [{ delta: {}, finish_reason: "stop" }] });
+    const events = collectEvents(chunks);
+    const toolUses = getToolUseBlocks(events);
+    const text = getTextDelta(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Bash");
+    expect(text).not.toContain("[TOOL_CALLS]");
+    expect(text).not.toContain('"cmd"');
+  });
+
+  it("F34: handles escaped quotes in JSON args (valid JSON)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f34c", model: "claude-sonnet-4-6", choices: [{ delta: { content: '[TOOL_CALLS]\n[TOOL_CALLS]{"cmd":"find /path -name \\"*.js\\" | head -20"}' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Bash");
+  });
+
+  it("F34b: waits for more chunks when second marker is split across chunks", () => {
+    // [TOOL_CALLS]\n[T  →  [T is partial of [TOOL_CALLS], should buffer not emit
+    const events = collectEvents([
+      { id: "chatcmpl-f34d", model: "claude-sonnet-4-6", choices: [{ delta: { content: "[TOOL_CALLS]\n[T" } }] },
+      { id: "chatcmpl-f34d", model: "claude-sonnet-4-6", choices: [{ delta: { content: 'OOL_CALLS]{"cmd":"ls"}' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const text = getTextDelta(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Bash");
+    expect(text).not.toContain("[TOOL_CALLS]");
+    expect(text).not.toContain("[T");
+  });
 });
