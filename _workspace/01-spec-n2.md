@@ -4,6 +4,8 @@
 > **Date:** 2026-06-25
 > **Prerequisite:** N.1 done (provider config + 4 model tĩnh + validate + env shortcut)
 > **Scope flag:** Đụng **5 core artifact** (2 executor mới + 2 registry windsurf + validate/testUtils windsurf + models route windsurf env) — VƯỢT ngưỡng 3 handler mà skill `9r-feature-spec` khuyến nghị chẻ nhỏ. User đã chọn "1 story lớn" → giữ nguyên nhưng flag risk cao.
+>
+> **Update 2026-06-26 (post-launch):** Catalog windsurf mở rộng từ 1 model lên ~60+ model. Canonical model đổi: `windsurf/swe` (upstream `MODEL_SWE_1_6_SLOW`) → `windsurf/swe-1-6` (upstream `swe-1-6`). `WS_MODEL` default đổi sang `swe-1-6`. QĐ7/AC3-AC5 dưới đây vẫn ghi `windsurf/swe` (historical) — canonical hiện tại = `windsurf/swe-1-6`.
 
 ## Mục tiêu (User story)
 

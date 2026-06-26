@@ -95,7 +95,7 @@ describe("Story N.2 — WindsurfExecutor", () => {
 
     const executor = new WindsurfExecutor("windsurf", {});
     const result = await executor.execute({
-      model: "swe",
+      model: "swe-1-6",
       body: makeBody(),
       stream: true,
       credentials: makeCredentials(),
@@ -129,7 +129,7 @@ describe("Story N.2 — WindsurfExecutor", () => {
 
     const executor = new WindsurfExecutor("windsurf", {});
     const result = await executor.execute({
-      model: "swe",
+      model: "swe-1-6",
       body: makeBody(),
       stream: false,
       credentials: makeCredentials(),
@@ -149,7 +149,7 @@ describe("Story N.2 — WindsurfExecutor", () => {
 
     const executor = new WindsurfExecutor("windsurf", {});
     const result = await executor.execute({
-      model: "swe",
+      model: "swe-1-6",
       body: makeBody(),
       stream: false,
       credentials: makeCredentials(),
@@ -165,7 +165,7 @@ describe("Story N.2 — WindsurfExecutor", () => {
 
     const executor = new WindsurfExecutor("windsurf", {});
     const result = await executor.execute({
-      model: "swe",
+      model: "swe-1-6",
       body: makeBody(),
       stream: false,
       credentials: makeCredentials(),
@@ -180,7 +180,7 @@ describe("Story N.2 — WindsurfExecutor", () => {
 
     const executor = new WindsurfExecutor("windsurf", {});
     const result = await executor.execute({
-      model: "swe",
+      model: "swe-1-6",
       body: makeBody(),
       stream: false,
       credentials: makeCredentials(),
@@ -203,7 +203,7 @@ describe("Story N.2 — WindsurfExecutor", () => {
 
     const executor = new WindsurfExecutor("windsurf", {});
     await executor.execute({
-      model: "swe",
+      model: "swe-1-6",
       body: makeBody(),
       stream: false,
       credentials: makeCredentials("db-key"),
@@ -226,7 +226,7 @@ describe("Story N.2 — WindsurfExecutor", () => {
 
     const executor = new WindsurfExecutor("windsurf", {});
     await executor.execute({
-      model: "swe",
+      model: "swe-1-6",
       body: makeBody({
         messages: [{
           role: "user",
@@ -272,7 +272,7 @@ describe("Story N.2 — WindsurfExecutor", () => {
     expect(callArgs[4]).toBe("claude-opus-4-6"); // upstreamModelId == id for this model
   });
 
-  it("Multi-model: swe resolves to MODEL_SWE_1_6_SLOW", async () => {
+  it("Multi-model: swe-1-6 resolves to swe-1-6 upstream", async () => {
     const { connectFrameEncode } = await import("../../open-sse/utils/windsurfProtobuf.js");
     const testString = "ok";
     const innerProto = Buffer.alloc(2 + testString.length);
@@ -284,7 +284,7 @@ describe("Story N.2 — WindsurfExecutor", () => {
 
     const executor = new WindsurfExecutor("windsurf", {});
     await executor.execute({
-      model: "swe",
+      model: "swe-1-6",
       body: makeBody(),
       stream: false,
       credentials: makeCredentials(),
@@ -292,6 +292,6 @@ describe("Story N.2 — WindsurfExecutor", () => {
     });
 
     const callArgs = _buildRequest.mock.calls[0];
-    expect(callArgs[4]).toBe("MODEL_SWE_1_6_SLOW");
+    expect(callArgs[4]).toBe("swe-1-6");
   });
 });

@@ -523,17 +523,131 @@ export const PROVIDER_MODELS = {
     { id: "ultra", name: "Devin (Ultra)" },
   ],
   windsurf: [
-    { id: "swe", upstreamModelId: "MODEL_SWE_1_6_SLOW", name: "Windsurf SWE-1.6 Slow (code, free tier)", contextWindow: 128000, maxOutput: 16384 },
-    { id: "swe-1-5", upstreamModelId: "MODEL_SWE_1_5", name: "Windsurf SWE-1.5", contextWindow: 128000, maxOutput: 16384 },
-    { id: "swe-1-5-slow", upstreamModelId: "MODEL_SWE_1_5_SLOW", name: "Windsurf SWE-1.5 Slow", contextWindow: 128000, maxOutput: 16384 },
-    { id: "claude-opus-4-6", upstreamModelId: "claude-opus-4-6", name: "Claude Opus 4.6 (via Cascade)", contextWindow: 200000, maxOutput: 16384 },
-    { id: "claude-sonnet-4-6", upstreamModelId: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (via Cascade)", contextWindow: 200000, maxOutput: 16384 },
-    { id: "gpt-5-5-high", upstreamModelId: "gpt-5-5-high", name: "GPT-5.5 High (via Cascade)", contextWindow: 200000, maxOutput: 16384 },
-    { id: "gemini-3-5-pro", upstreamModelId: "gemini-3-5-pro", name: "Gemini 3.5 Pro (via Cascade)", contextWindow: 200000, maxOutput: 16384 },
-    { id: "deepseek-v4", upstreamModelId: "deepseek-v4", name: "DeepSeek V4 (via Cascade)", contextWindow: 128000, maxOutput: 16384 },
-    { id: "kimi-k2-6", upstreamModelId: "kimi-k2-6", name: "Kimi K2.6 (via Cascade)", contextWindow: 128000, maxOutput: 16384 },
-    { id: "kimi-k2-7", upstreamModelId: "kimi-k2-7", name: "Kimi K2.7 (via Cascade, free tier)", contextWindow: 128000, maxOutput: 16384 },
-    { id: "glm-5-2", upstreamModelId: "glm-5-2", name: "GLM-5.2 (via Cascade, free tier)", contextWindow: 128000, maxOutput: 16384 },
+    // ─── Adaptive / Arena routers ────────────────────────────────────────────
+    { id: "adaptive", upstreamModelId: "adaptive", name: "Adaptive (auto-router)", contextWindow: 200000, maxOutput: 16384 },
+    { id: "arena-fast", upstreamModelId: "arena-fast", name: "Fast Arena", contextWindow: 200000, maxOutput: 16384 },
+    { id: "arena-mixed", upstreamModelId: "arena-mixed", name: "Hybrid Arena", contextWindow: 200000, maxOutput: 16384 },
+    { id: "arena-smart", upstreamModelId: "arena-smart", name: "Frontier Arena", contextWindow: 200000, maxOutput: 16384 },
+
+    // ─── SWE family (Windsurf in-house) ──────────────────────────────────────
+    { id: "swe-1-6", upstreamModelId: "swe-1-6", name: "SWE-1.6 (free)", contextWindow: 128000, maxOutput: 16384 },
+    { id: "swe-1-6-fast", upstreamModelId: "swe-1-6-fast", name: "SWE-1.6 Fast", contextWindow: 128000, maxOutput: 16384 },
+    { id: "swe-check", upstreamModelId: "swe-check", name: "SWE-check", contextWindow: 128000, maxOutput: 16384 },
+    // Legacy SWE-1.5 (old-style enum IDs — still accepted by Cascade API)
+    { id: "swe-1-5", upstreamModelId: "MODEL_SWE_1_5", name: "SWE-1.5 Fast (legacy)", contextWindow: 128000, maxOutput: 16384 },
+    { id: "swe-1-5-slow", upstreamModelId: "MODEL_SWE_1_5_SLOW", name: "SWE-1.5 (legacy)", contextWindow: 128000, maxOutput: 16384 },
+
+    // ─── Claude Opus 4.6 ─────────────────────────────────────────────────────
+    { id: "claude-opus-4-6", upstreamModelId: "claude-opus-4-6", name: "Claude Opus 4.6", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-opus-4-6-1m", upstreamModelId: "claude-opus-4-6-1m", name: "Claude Opus 4.6 1M", contextWindow: 1000000, maxOutput: 16384 },
+    { id: "claude-opus-4-6-fast", upstreamModelId: "claude-opus-4-6-fast", name: "Claude Opus 4.6 Fast", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-opus-4-6-thinking", upstreamModelId: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 Thinking", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-opus-4-6-thinking-1m", upstreamModelId: "claude-opus-4-6-thinking-1m", name: "Claude Opus 4.6 Thinking 1M", contextWindow: 1000000, maxOutput: 16384 },
+    { id: "claude-opus-4-6-thinking-fast", upstreamModelId: "claude-opus-4-6-thinking-fast", name: "Claude Opus 4.6 Thinking Fast", contextWindow: 200000, maxOutput: 16384 },
+
+    // ─── Claude Opus 4.7 ─────────────────────────────────────────────────────
+    { id: "claude-opus-4-7-low", upstreamModelId: "claude-opus-4-7-low", name: "Claude Opus 4.7 Low", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-opus-4-7-low-fast", upstreamModelId: "claude-opus-4-7-low-fast", name: "Claude Opus 4.7 Low Fast", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-opus-4-7-medium", upstreamModelId: "claude-opus-4-7-medium", name: "Claude Opus 4.7 Medium", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-opus-4-7-medium-fast", upstreamModelId: "claude-opus-4-7-medium-fast", name: "Claude Opus 4.7 Medium Fast", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-opus-4-7-high", upstreamModelId: "claude-opus-4-7-high", name: "Claude Opus 4.7 High", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-opus-4-7-high-fast", upstreamModelId: "claude-opus-4-7-high-fast", name: "Claude Opus 4.7 High Fast", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-opus-4-7-xhigh", upstreamModelId: "claude-opus-4-7-xhigh", name: "Claude Opus 4.7 XHigh", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-opus-4-7-xhigh-fast", upstreamModelId: "claude-opus-4-7-xhigh-fast", name: "Claude Opus 4.7 XHigh Fast", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-opus-4-7-max", upstreamModelId: "claude-opus-4-7-max", name: "Claude Opus 4.7 Max", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-opus-4-7-max-fast", upstreamModelId: "claude-opus-4-7-max-fast", name: "Claude Opus 4.7 Max Fast", contextWindow: 200000, maxOutput: 16384 },
+    { id: "opus-4-7-review", upstreamModelId: "opus-4-7-review", name: "Opus 4.7 Review", contextWindow: 200000, maxOutput: 16384 },
+
+    // ─── Claude Opus 4.8 ─────────────────────────────────────────────────────
+    { id: "claude-opus-4-8-low", upstreamModelId: "claude-opus-4-8-low", name: "Claude Opus 4.8 Low", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-opus-4-8-low-fast", upstreamModelId: "claude-opus-4-8-low-fast", name: "Claude Opus 4.8 Low Fast", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-opus-4-8-medium", upstreamModelId: "claude-opus-4-8-medium", name: "Claude Opus 4.8 Medium", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-opus-4-8-medium-fast", upstreamModelId: "claude-opus-4-8-medium-fast", name: "Claude Opus 4.8 Medium Fast", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-opus-4-8-high", upstreamModelId: "claude-opus-4-8-high", name: "Claude Opus 4.8 High", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-opus-4-8-high-fast", upstreamModelId: "claude-opus-4-8-high-fast", name: "Claude Opus 4.8 High Fast", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-opus-4-8-xhigh", upstreamModelId: "claude-opus-4-8-xhigh", name: "Claude Opus 4.8 XHigh", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-opus-4-8-xhigh-fast", upstreamModelId: "claude-opus-4-8-xhigh-fast", name: "Claude Opus 4.8 XHigh Fast", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-opus-4-8-max", upstreamModelId: "claude-opus-4-8-max", name: "Claude Opus 4.8 Max", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-opus-4-8-max-fast", upstreamModelId: "claude-opus-4-8-max-fast", name: "Claude Opus 4.8 Max Fast", contextWindow: 200000, maxOutput: 16384 },
+
+    // ─── Claude Fable 5 ──────────────────────────────────────────────────────
+    { id: "claude-fable-5-low", upstreamModelId: "claude-fable-5-low", name: "Claude Fable 5 Low", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-fable-5-medium", upstreamModelId: "claude-fable-5-medium", name: "Claude Fable 5 Medium", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-fable-5-high", upstreamModelId: "claude-fable-5-high", name: "Claude Fable 5 High", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-fable-5-xhigh", upstreamModelId: "claude-fable-5-xhigh", name: "Claude Fable 5 XHigh", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-fable-5-max", upstreamModelId: "claude-fable-5-max", name: "Claude Fable 5 Max", contextWindow: 200000, maxOutput: 16384 },
+
+    // ─── Claude Sonnet 4.6 ───────────────────────────────────────────────────
+    { id: "claude-sonnet-4-6", upstreamModelId: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-sonnet-4-6-1m", upstreamModelId: "claude-sonnet-4-6-1m", name: "Claude Sonnet 4.6 1M", contextWindow: 1000000, maxOutput: 16384 },
+    { id: "claude-sonnet-4-6-thinking", upstreamModelId: "claude-sonnet-4-6-thinking", name: "Claude Sonnet 4.6 Thinking", contextWindow: 200000, maxOutput: 16384 },
+    { id: "claude-sonnet-4-6-thinking-1m", upstreamModelId: "claude-sonnet-4-6-thinking-1m", name: "Claude Sonnet 4.6 Thinking 1M", contextWindow: 1000000, maxOutput: 16384 },
+
+    // ─── GPT-5.3 Codex ───────────────────────────────────────────────────────
+    { id: "gpt-5-3-codex-low", upstreamModelId: "gpt-5-3-codex-low", name: "GPT-5.3-Codex Low", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-3-codex-low-fast", upstreamModelId: "gpt-5-3-codex-low-priority", name: "GPT-5.3-Codex Low Fast", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-3-codex-medium", upstreamModelId: "gpt-5-3-codex-medium", name: "GPT-5.3-Codex Medium", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-3-codex-medium-fast", upstreamModelId: "gpt-5-3-codex-medium-priority", name: "GPT-5.3-Codex Medium Fast", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-3-codex-high", upstreamModelId: "gpt-5-3-codex-high", name: "GPT-5.3-Codex High", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-3-codex-high-fast", upstreamModelId: "gpt-5-3-codex-high-priority", name: "GPT-5.3-Codex High Fast", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-3-codex-xhigh", upstreamModelId: "gpt-5-3-codex-xhigh", name: "GPT-5.3-Codex XHigh", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-3-codex-xhigh-fast", upstreamModelId: "gpt-5-3-codex-xhigh-priority", name: "GPT-5.3-Codex XHigh Fast", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-3-codex-spark-medium", upstreamModelId: "gpt-5-3-codex-spark-medium", name: "GPT-5.3-Codex Spark Medium", contextWindow: 200000, maxOutput: 16384 },
+
+    // ─── GPT-5.4 ─────────────────────────────────────────────────────────────
+    { id: "gpt-5-4-low", upstreamModelId: "gpt-5-4-low", name: "GPT-5.4 Low Thinking", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-4-low-fast", upstreamModelId: "gpt-5-4-low-priority", name: "GPT-5.4 Low Thinking Fast", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-4-medium", upstreamModelId: "gpt-5-4-medium", name: "GPT-5.4 Medium Thinking", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-4-medium-fast", upstreamModelId: "gpt-5-4-medium-priority", name: "GPT-5.4 Medium Thinking Fast", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-4-high", upstreamModelId: "gpt-5-4-high", name: "GPT-5.4 High Thinking", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-4-high-fast", upstreamModelId: "gpt-5-4-high-priority", name: "GPT-5.4 High Thinking Fast", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-4-xhigh", upstreamModelId: "gpt-5-4-xhigh", name: "GPT-5.4 XHigh Thinking", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-4-xhigh-fast", upstreamModelId: "gpt-5-4-xhigh-priority", name: "GPT-5.4 XHigh Thinking Fast", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-4-none", upstreamModelId: "gpt-5-4-none", name: "GPT-5.4 No Thinking", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-4-none-fast", upstreamModelId: "gpt-5-4-none-priority", name: "GPT-5.4 No Thinking Fast", contextWindow: 200000, maxOutput: 16384 },
+    // GPT-5.4 Mini
+    { id: "gpt-5-4-mini-low", upstreamModelId: "gpt-5-4-mini-low", name: "GPT-5.4 Mini Low Thinking", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-4-mini-medium", upstreamModelId: "gpt-5-4-mini-medium", name: "GPT-5.4 Mini Medium Thinking", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-4-mini-high", upstreamModelId: "gpt-5-4-mini-high", name: "GPT-5.4 Mini High Thinking", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-4-mini-xhigh", upstreamModelId: "gpt-5-4-mini-xhigh", name: "GPT-5.4 Mini XHigh Thinking", contextWindow: 200000, maxOutput: 16384 },
+
+    // ─── GPT-5.5 ─────────────────────────────────────────────────────────────
+    { id: "gpt-5-5-low", upstreamModelId: "gpt-5-5-low", name: "GPT-5.5 Low Thinking", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-5-low-fast", upstreamModelId: "gpt-5-5-low-priority", name: "GPT-5.5 Low Thinking Fast", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-5-medium", upstreamModelId: "gpt-5-5-medium", name: "GPT-5.5 Medium Thinking", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-5-medium-fast", upstreamModelId: "gpt-5-5-medium-priority", name: "GPT-5.5 Medium Thinking Fast", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-5-high", upstreamModelId: "gpt-5-5-high", name: "GPT-5.5 High Thinking", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-5-high-fast", upstreamModelId: "gpt-5-5-high-priority", name: "GPT-5.5 High Thinking Fast", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-5-xhigh", upstreamModelId: "gpt-5-5-xhigh", name: "GPT-5.5 XHigh Thinking", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-5-xhigh-fast", upstreamModelId: "gpt-5-5-xhigh-priority", name: "GPT-5.5 XHigh Thinking Fast", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-5-none", upstreamModelId: "gpt-5-5-none", name: "GPT-5.5 No Thinking", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-5-none-fast", upstreamModelId: "gpt-5-5-none-priority", name: "GPT-5.5 No Thinking Fast", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gpt-5-5-review", upstreamModelId: "gpt-5-5-review", name: "GPT-5.5 Review", contextWindow: 200000, maxOutput: 16384 },
+
+    // ─── Gemini 3.1 Pro ──────────────────────────────────────────────────────
+    { id: "gemini-3-1-pro-low", upstreamModelId: "gemini-3-1-pro-low", name: "Gemini 3.1 Pro Low Thinking", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gemini-3-1-pro-high", upstreamModelId: "gemini-3-1-pro-high", name: "Gemini 3.1 Pro High Thinking", contextWindow: 200000, maxOutput: 16384 },
+
+    // ─── Gemini 3.5 Flash ────────────────────────────────────────────────────
+    { id: "gemini-3-5-flash-minimal", upstreamModelId: "gemini-3-5-flash-minimal", name: "Gemini 3.5 Flash Minimal", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gemini-3-5-flash-low", upstreamModelId: "gemini-3-5-flash-low", name: "Gemini 3.5 Flash Low", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gemini-3-5-flash-medium", upstreamModelId: "gemini-3-5-flash-medium", name: "Gemini 3.5 Flash Medium", contextWindow: 200000, maxOutput: 16384 },
+    { id: "gemini-3-5-flash-high", upstreamModelId: "gemini-3-5-flash-high", name: "Gemini 3.5 Flash High", contextWindow: 200000, maxOutput: 16384 },
+
+    // ─── DeepSeek V4 ─────────────────────────────────────────────────────────
+    { id: "deepseek-v4", upstreamModelId: "deepseek-v4", name: "DeepSeek V4", contextWindow: 128000, maxOutput: 16384 },
+
+    // ─── Kimi K2.x ───────────────────────────────────────────────────────────
+    { id: "kimi-k2-5", upstreamModelId: "kimi-k2-5", name: "Kimi K2.5", contextWindow: 128000, maxOutput: 16384 },
+    { id: "kimi-k2-6", upstreamModelId: "kimi-k2-6", name: "Kimi K2.6", contextWindow: 128000, maxOutput: 16384 },
+    { id: "kimi-k2-7", upstreamModelId: "kimi-k2-7", name: "Kimi K2.7", contextWindow: 128000, maxOutput: 16384 },
+
+    // ─── GLM-5.x ─────────────────────────────────────────────────────────────
+    { id: "glm-5-1", upstreamModelId: "glm-5-1", name: "GLM-5.1", contextWindow: 128000, maxOutput: 16384 },
+    { id: "glm-5-2", upstreamModelId: "glm-5-2", name: "GLM-5.2", contextWindow: 128000, maxOutput: 16384 },
+
+    // ─── MiniMax M2.5 ────────────────────────────────────────────────────────
+    { id: "minimax-m2-5", upstreamModelId: "minimax-m2-5", name: "MiniMax M2.5", contextWindow: 128000, maxOutput: 16384 },
   ],
   groq: [
     { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B" },

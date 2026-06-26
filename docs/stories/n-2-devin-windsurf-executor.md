@@ -28,13 +28,21 @@ context:
 
 Status: done
 
-## Post-launch updates (2026-06-26)
+## Post-launch updates
 
-- Thêm 2 free model mới vào `open-sse/config/providerModels.js`: `kimi-k2-7`, `glm-5-2` (Windsurf free tier).
+### 2026-06-26 (catalog mở rộng + canonical model đổi)
+
+- **Breaking change:** Catalog windsurf mở rộng từ 11 lên ~60+ model (adaptive/arena routers, SWE-1.6 family, Claude Opus 4.6/4.7/4.8, Fable 5, Sonnet 4.6, GPT-5.3-Codex, Gemini, Kimi, GLM...). Xem `open-sse/config/providerModels.js` `windsurf: [...]`.
+- **Model canonical đổi:** `windsurf/swe` (upstream `MODEL_SWE_1_6_SLOW`) → `windsurf/swe-1-6` (upstream `swe-1-6`). Cascade API đã đổi naming convention từ enum `MODEL_*` sang string id mới. Caller dùng `windsurf/swe` cũ **phải migrate sang `windsurf/swe-1-6`**.
+- **`WS_MODEL` default đổi:** `MODEL_SWE_1_6_SLOW` → `swe-1-6` (mirror catalog mới). Env `WS_MODEL` override vẫn hoạt động.
+- **Test update:** `windsurf-provider-config.test.js` + `windsurf-executor.test.js` đã update sang `swe-1-6`. Full suite 2031 pass.
+- **Docs note:** QĐ7/AC1-AC4/T5/T8/Dev Notes dưới đây vẫn ghi `windsurf/swe` + `MODEL_SWE_1_6_SLOW` (historical record lúc story done). Canonical hiện tại = `windsurf/swe-1-6` + upstream `swe-1-6`.
+
+### 2026-06-26 (trước)
+
 - Fix Devin executor: parse error body 400/403 trả message cụ thể từ server thay vì generic 502.
 - Fix label `src/sse/services/auth.js`: "Env (WINDSURF_API_KEY)" thay vì hardcoded "state.vscdb".
 - Production compatibility: `WindsurfExecutor` hỗ trợ `credentials.apiKey` (dashboard) + `process.env.WINDSURF_API_KEY`, không phụ thuộc `state.vscdb` (chỉ có ở local Windsurf/Devin editor).
-- Tất cả 9 Windsurf models (4 free + 5 frontier) test OK local + production shape.
 
 ## Story
 
@@ -195,7 +203,7 @@ so that **agent khác (Claude, GPT, custom bot) có thể dùng Devin agent + Wi
 - **Windsurf token expire:** `getCachedJwt` check `exp` (port `_getJwtExp`), refresh auto khi within 60s of expiration. Document: user phải re-login IDE nếu token expire hoàn toàn.
 - **Devin `output` field:** REST v3 trả `output` field trong session object khi `status_enum=finished`. Emit nguyên `output` làm 1 chunk. Nếu `output` rỗng → emit content `""` + `finish_reason=stop` (không crash).
 - **Devin `usage`:** REST v3 không trả token count. `usage: {prompt_tokens:0, completion_tokens:0, total_tokens:0}` placeholder, document rõ.
-- **Windsurf `WS_MODEL` env:** Default `MODEL_SWE_1_6_SLOW`, env `WS_MODEL` override (mirror deepgrep `core.mjs:88`).
+- **Windsurf `WS_MODEL` env:** Default `swe-1-6` (updated 2026-06-26, mirror catalog mới), env `WS_MODEL` override. Lịch sử: default cũ `MODEL_SWE_1_6_SLOW` (mirror deepgrep `core.mjs:88`).
 - **Windsurf `WS_APP_VER`/`WS_LS_VER`:** Default từ deepgrep (`1.48.2`/`1.9544.35`), env override nếu cần.
 - **Auto-extract `state.vscdb`:** Port `extract-key.mjs` đọc `windsurfAuthStatus.apiKey` từ DB. `sql.js` đã có sẵn trong 9router (`^1.14.1`, verified F8). Risk: server deploy không có IDE → auto-extract fail → phải set env `WINDSURF_API_KEY`. Document rõ trong error message.
 - **Test deps:** `cd /Users/luisphan/Documents/9router/tests && npm test -- unit/<file>.test.js` (vitest, alias `@/`→`src/`, deps `/tmp/node_modules`).

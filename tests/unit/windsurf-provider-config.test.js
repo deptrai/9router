@@ -14,9 +14,9 @@ describe("Windsurf Provider Config", () => {
   it("windsurf trong PROVIDER_MODELS", () => {
     expect(PROVIDER_MODELS.windsurf).toBeDefined();
     expect(PROVIDER_MODELS.windsurf.length).toBeGreaterThanOrEqual(1);
-    const swe = PROVIDER_MODELS.windsurf.find((m) => m.id === "swe");
+    const swe = PROVIDER_MODELS.windsurf.find((m) => m.id === "swe-1-6");
     expect(swe).toBeDefined();
-    expect(swe.upstreamModelId).toBe("MODEL_SWE_1_6_SLOW");
+    expect(swe.upstreamModelId).toBe("swe-1-6");
   });
 
   it("windsurf trong APIKEY_PROVIDERS", () => {

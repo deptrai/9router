@@ -25,7 +25,7 @@ const AUTH_BASE = "https://server.self-serve.windsurf.com/exa.auth_pb.AuthServic
 const WS_APP = "windsurf";
 const WS_APP_VER = process.env.WS_APP_VER || "1.48.2";
 const WS_LS_VER = process.env.WS_LS_VER || "1.9544.35";
-const WS_MODEL = process.env.WS_MODEL || "MODEL_SWE_1_6_SLOW";
+const WS_MODEL = process.env.WS_MODEL || "swe-1-6";
 
 // ─── JWT Cache ─────────────────────────────────────────────
 
@@ -339,7 +339,7 @@ function _buildChatMessage(role, content, opts = {}) {
  * @param {string} jwt
  * @param {Array} messages
  * @param {string} toolDefs
- * @param {string} [model] - Model ID (e.g. MODEL_SWE_1_6_SLOW, claude-opus-4-6). Defaults to WS_MODEL.
+ * @param {string} [model] - Model ID (e.g. swe-1-6, claude-opus-4-6). Defaults to WS_MODEL.
  * @returns {Buffer}
  */
 export function _buildRequest(apiKey, jwt, messages, toolDefs, model) {
