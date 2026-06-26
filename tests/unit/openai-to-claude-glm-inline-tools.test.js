@@ -842,4 +842,19 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     // This is acceptable — it's a rare edge case of truncated stream
     expect(text).toContain("Read");
   });
+
+  it("F32: strips empty tool name + empty args {} garbage", () => {
+    // Run 1 pattern: [TOOL_CALLS]\n[TOOL_CALLS]{} — no tool name, no args
+    const events = collectEvents([
+      { id: "chatcmpl-f32a", model: "claude-sonnet-4-6", choices: [{ delta: { content: "Let me examine.[TOOL_CALLS]\n[TOOL_CALLS]{}" }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const text = getTextDelta(events);
+    expect(toolUses).toHaveLength(0);
+    // Should NOT leak [TOOL_CALLS] markers
+    expect(text).not.toContain("[TOOL_CALLS]");
+    expect(text).not.toContain("{}");
+    // Should preserve prose before the garbage
+    expect(text).toContain("Let me examine");
+  });
 });

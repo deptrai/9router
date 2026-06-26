@@ -625,6 +625,11 @@ function drainGlmInlineToolCalls(state, results) {
         state.glmTextBuffer = afterSecondMarker.trim().slice(jsonEnd);
         return true;
       }
+      // F32: Empty tool name + empty args {} = garbage emission, strip markers
+      if (argsJson.trim() === "{}") {
+        state.glmTextBuffer = afterSecondMarker.trim().slice(jsonEnd);
+        return true;
+      }
     }
   }
 
