@@ -385,9 +385,13 @@ describe("Story N.2 — WindsurfExecutor", () => {
 
     const callArgs = _buildRequest.mock.calls[0];
     const messages = callArgs[2];
-    // No system message injected — only the user message
-    expect(messages).toHaveLength(1);
-    expect(messages[0].content).toBe("Read /tmp/foo.txt");
+    // F23: Now injects for ALL models via windsurf (Cascade API always returns
+    // [TOOL_CALLS] inline format). System message prepended with instruction.
+    expect(messages).toHaveLength(2);
+    expect(messages[0].role).toBe(5); // system
+    expect(messages[0].content).toContain("[TOOL_CALLS]");
+    expect(messages[0].content).toContain("Available tools: Read");
+    expect(messages[1].content).toBe("Read /tmp/foo.txt");
   });
 
   it("GLM model without tools: does NOT inject instruction", async () => {

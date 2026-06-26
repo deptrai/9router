@@ -87,11 +87,13 @@ export class WindsurfExecutor extends BaseExecutor {
     // args, prose as tool name). Inject a compact instruction teaching the
     // exact [TOOL_CALLS]name[TOOL_CALLS]{json} format so the openai-to-claude
     // response translator can parse tool calls into proper tool_use blocks.
-    // Only inject when tools are present AND the model is GLM (other windsurf
-    // models like Claude/GPT support native function calling and would be
-    // confused by an inline-format instruction).
+    // F23: Inject for ALL models via windsurf, not just GLM — Windsurf's Cascade
+    // API always returns [TOOL_CALLS] inline format regardless of model. Without
+    // the instruction, Sonnet/Claude emit broken variants (prose as tool name,
+    // YAML args, missing tool name) that the parser can't handle → raw text →
+    // end_turn → session stop.
     let messagesForProto = body.messages;
-    if (toolDefs && /glm/i.test(model)) {
+    if (toolDefs) {
       const toolNames = toolDefs.map(t => t.name).join(", ");
       const toolInstruction =
         `You are an agent. Use tools to accomplish the user's task. Do NOT echo or repeat the user's message.\n\n` +
