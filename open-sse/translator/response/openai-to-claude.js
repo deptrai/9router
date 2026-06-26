@@ -20,42 +20,179 @@ function findJsonEnd(str) {
   return -1; // incomplete
 }
 
-// F25: Infer tool name from JSON args keys when model omits tool name.
+// F27: Detect raw shell commands in text (no [TOOL_CALLS] marker).
+// Sonnet via Cascade sometimes emits raw commands directly in text:
+//   "Let me search.rg "mcp" /path --exclude-dir tests"
+//   "I'll read that file.cat /path/to/file"
+//   "Running: ls -la /tmp"
+// Scan for known command patterns and synthesize tool calls.
+// Returns {beforeText, toolName, argsJson, afterText} or null.
+function detectRawCommandInText(text) {
+  // rg/grep "pattern" /path [--flags...]
+  // Require: quoted pattern + path starting with / . ~ OR --flag
+  const grepRe = /(?:^|[\s.])(rg|grep)\s+["']([^"']+)["']\s+(\/[^\s]+|\.\.?[^\s]*|~[^\s]+|--[^\s]+)/;
+  const grepMatch = text.match(grepRe);
+  if (grepMatch) {
+    const matchStart = grepMatch.index + (grepMatch[0].startsWith(grepMatch[1]) ? 0 : 1);
+    const matchEnd = matchStart + grepMatch[0].length - (grepMatch[0].startsWith(grepMatch[1]) ? 0 : 1);
+    // Extract full command line until end of text or newline
+    const lineEnd = text.indexOf("\n", matchEnd);
+    const cmdEnd = lineEnd === -1 ? text.length : lineEnd;
+    const fullCmd = text.slice(matchStart, cmdEnd).trim();
+    const beforeText = text.slice(0, matchStart).trim();
+    const afterText = text.slice(cmdEnd);
+    // Parse path from the full command
+    const pathMatch = fullCmd.match(/\s(\/[^\s]+|\.\.?[^\s]*|~[^\s]+)/);
+    const path = pathMatch ? pathMatch[1] : ".";
+    const pattern = grepMatch[2];
+    return {
+      beforeText,
+      toolName: "Grep",
+      argsJson: JSON.stringify({ pattern, path }),
+      afterText,
+    };
+  }
+
+  // cat /path/to/file → Read
+  const catRe = /(?:^|[\s.])(cat)\s+(\/[^\s]+|\.\.?[^\s]*|~[^\s]+)/;
+  const catMatch = text.match(catRe);
+  if (catMatch) {
+    const matchStart = catMatch.index + (catMatch[0].startsWith(catMatch[1]) ? 0 : 1);
+    const matchEnd = matchStart + catMatch[0].length - (catMatch[0].startsWith(catMatch[1]) ? 0 : 1);
+    const beforeText = text.slice(0, matchStart).trim();
+    const afterText = text.slice(matchEnd);
+    return {
+      beforeText,
+      toolName: "Read",
+      argsJson: JSON.stringify({ file_path: catMatch[2] }),
+      afterText,
+    };
+  }
+
+  // ls -la /path → Bash (only if has path)
+  const lsRe = /(?:^|[\s.])((?:ls|pwd|find)\s+[^\n]+)/;
+  const lsMatch = text.match(lsRe);
+  if (lsMatch && lsMatch[1]) {
+    const cmd = lsMatch[1].trim();
+    // Only trigger if command has a path argument
+    if (/\/[^\s]/.test(cmd) || /\.\.?[^\s]/.test(cmd)) {
+      const matchStart = lsMatch.index + (lsMatch[0].startsWith(lsMatch[1]) ? 0 : 1);
+      const matchEnd = matchStart + lsMatch[1].length;
+      const beforeText = text.slice(0, matchStart).trim();
+      const afterText = text.slice(matchEnd);
+      return {
+        beforeText,
+        toolName: "Bash",
+        argsJson: JSON.stringify({ command: cmd }),
+        afterText,
+      };
+    }
+  }
+
+  return null;
+}
+
+// F25/F26: Infer tool name from JSON args keys when model omits tool name.
 // Sonnet via Cascade emits [TOOL_CALLS]{"command":"ls"} or
 // [TOOL_CALLS]\n[TOOL_CALLS]{"file_path":"/path"} — no tool name.
-// Map known arg key patterns to Claude Code tool names.
+// F26: Also handles {"tool":"serena","action":"find_symbol","name":"mcp"} pattern
+// where model wraps the real tool call inside a generic {tool,action} envelope.
+// Returns {name, argsJson} with remapped args, or null if can't infer.
 function inferToolNameFromArgs(argsJson) {
   try {
     const args = JSON.parse(argsJson);
     const keys = Object.keys(args);
     const has = (k) => keys.includes(k);
+
+    // F26: {tool, action} envelope pattern — remap to real MCP tool + args
+    if (has("tool") && has("action") && typeof args.tool === "string") {
+      const tool = args.tool.toLowerCase().trim();
+      const action = typeof args.action === "string" ? args.action.toLowerCase().trim() : "";
+      // Serena: {tool:"serena", action:"find_symbol", name:"foo"} → mcp__serena__find_symbol, {symbol:"foo"}
+      if (tool === "serena") {
+        const serenaMap = {
+          find_symbol: "mcp__serena__find_symbol",
+          find_referencing_symbols: "mcp__serena__find_referencing_symbols",
+          find_symbol_matches: "mcp__serena__find_symbol_matches",
+          get_symbols_overview: "mcp__serena__get_symbols_overview",
+          replace_symbol_body: "mcp__serena__replace_symbol_body",
+          insert_after_symbol: "mcp__serena__insert_after_symbol",
+          insert_before_symbol: "mcp__serena__insert_before_symbol",
+          rename_symbol: "mcp__serena__rename_symbol",
+          activate_project: "mcp__serena__activate_project",
+        };
+        const mcpName = serenaMap[action];
+        if (mcpName) {
+          // Remap args: strip tool/action wrapper, keep meaningful fields
+          const remapped = {};
+          if (has("name")) remapped.symbol = args.name;
+          if (has("symbol")) remapped.symbol = args.symbol;
+          if (has("include_body")) remapped.include_body = args.include_body;
+          if (has("workspace")) remapped.workspace = args.workspace;
+          if (has("path")) remapped.path = args.path;
+          if (has("new_name")) remapped.new_name = args.new_name;
+          if (has("body")) remapped.body = args.body;
+          if (has("relative_path")) remapped.relative_path = args.relative_path;
+          return { name: mcpName, argsJson: JSON.stringify(remapped) };
+        }
+      }
+      // context-engine: {tool:"context-engine", action:"codebase-retrieval", query:"..."}
+      if (tool === "context-engine" || tool === "vibervn-context-engine") {
+        const remapped = {};
+        if (has("query")) remapped.query = args.query;
+        if (has("workspace")) remapped.workspace_full_path = args.workspace;
+        if (has("workspace_full_path")) remapped.workspace_full_path = args.workspace_full_path;
+        if (has("mode")) remapped.mode = args.mode;
+        return { name: "mcp__vibervn-context-engine__codebase-retrieval", argsJson: JSON.stringify(remapped) };
+      }
+      // code-review-graph
+      if (tool === "code-review-graph" || tool === "crg") {
+        const crgMap = {
+          detect_changes: "mcp__code-review-graph__detect_changes_tool",
+          get_impact_radius: "mcp__code-review-graph__get_impact_radius_tool",
+          build_or_update_graph: "mcp__code-review-graph__build_or_update_graph_tool",
+          get_suggested_questions: "mcp__code-review-graph__get_suggested_questions_tool",
+        };
+        const mcpName = crgMap[action];
+        if (mcpName) {
+          const remapped = { ...args };
+          delete remapped.tool;
+          delete remapped.action;
+          return { name: mcpName, argsJson: JSON.stringify(remapped) };
+        }
+      }
+    }
+
+    // F25: Direct key pattern inference (no envelope)
     // Bash: command (string), optional run_in_background/timeout
-    if (has("command") && typeof args.command === "string") return "Bash";
+    if (has("command") && typeof args.command === "string") return { name: "Bash", argsJson };
     // Read: file_path (string)
-    if (has("file_path") && typeof args.file_path === "string") return "Read";
+    if (has("file_path") && typeof args.file_path === "string" && !has("old_string") && !has("content")) return { name: "Read", argsJson };
     // Edit: file_path + old_string + new_string
-    if (has("file_path") && has("old_string") && has("new_string")) return "Edit";
+    if (has("file_path") && has("old_string") && has("new_string")) return { name: "Edit", argsJson };
     // Write: file_path + content
-    if (has("file_path") && has("content") && !has("old_string")) return "Write";
+    if (has("file_path") && has("content") && !has("old_string")) return { name: "Write", argsJson };
     // Grep: pattern (string), optional path/glob_pattern
-    if (has("pattern") && typeof args.pattern === "string") return "Grep";
+    if (has("pattern") && typeof args.pattern === "string" && has("path")) return { name: "Grep", argsJson };
     // Glob: pattern (string), no other key
-    if (has("pattern") && keys.length === 1) return "Glob";
+    if (has("pattern") && typeof args.pattern === "string" && keys.length === 1) return { name: "Glob", argsJson };
+    // Grep with just pattern (no path)
+    if (has("pattern") && typeof args.pattern === "string" && !has("file_path")) return { name: "Grep", argsJson };
     // Agent/Task: prompt + description, or subagent_type + prompt
-    if (has("prompt") && (has("description") || has("subagent_type"))) return "Agent";
-    if (has("prompt") && has("agent_type")) return "Agent";
+    if (has("prompt") && (has("description") || has("subagent_type"))) return { name: "Agent", argsJson };
+    if (has("prompt") && has("agent_type")) return { name: "Agent", argsJson };
     // TodoWrite: todos (array)
-    if (has("todos") && Array.isArray(args.todos)) return "TodoWrite";
+    if (has("todos") && Array.isArray(args.todos)) return { name: "TodoWrite", argsJson };
     // WebFetch: url
-    if (has("url") && typeof args.url === "string") return "WebFetch";
+    if (has("url") && typeof args.url === "string") return { name: "WebFetch", argsJson };
     // WebSearch: query
-    if (has("query") && typeof args.query === "string" && !has("workspace_full_path")) return "WebSearch";
+    if (has("query") && typeof args.query === "string" && !has("workspace_full_path")) return { name: "WebSearch", argsJson };
     // Serena find_symbol: find_symbol key
-    if (has("find_symbol")) return "mcp__serena__find_symbol";
-    if (has("find_referencing_symbols")) return "mcp__serena__find_referencing_symbols";
-    if (has("get_symbols_overview")) return "mcp__serena__get_symbols_overview";
+    if (has("find_symbol")) return { name: "mcp__serena__find_symbol", argsJson };
+    if (has("find_referencing_symbols")) return { name: "mcp__serena__find_referencing_symbols", argsJson };
+    if (has("get_symbols_overview")) return { name: "mcp__serena__get_symbols_overview", argsJson };
     // context-engine: workspace_full_path + query
-    if (has("workspace_full_path") && has("query")) return "mcp__vibervn-context-engine__codebase-retrieval";
+    if (has("workspace_full_path") && has("query")) return { name: "mcp__vibervn-context-engine__codebase-retrieval", argsJson };
     return null; // can't infer
   } catch {
     return null;
@@ -353,7 +490,15 @@ function drainGlmInlineToolCalls(state, results) {
         return false;
       }
     }
-    // No partial marker — emit everything
+    // No partial marker — check for raw commands (F27) before emitting
+    const rawCmd = detectRawCommandInText(buf);
+    if (rawCmd) {
+      if (rawCmd.beforeText) emitTextSegment(state, results, rawCmd.beforeText);
+      emitGlmToolUse(state, results, rawCmd.toolName, rawCmd.argsJson);
+      state.glmTextBuffer = rawCmd.afterText;
+      return true; // loop to process remaining text
+    }
+    // No raw command found — emit everything
     emitTextSegment(state, results, buf);
     state.glmTextBuffer = "";
     return false;
@@ -379,7 +524,7 @@ function drainGlmInlineToolCalls(state, results) {
         const argsJson = trimmedAfter.slice(0, jsonEnd);
         const inferred = inferToolNameFromArgs(argsJson);
         if (inferred) {
-          emitGlmToolUse(state, results, inferred, argsJson);
+          emitGlmToolUse(state, results, inferred.name, inferred.argsJson);
           state.glmTextBuffer = trimmedAfter.slice(jsonEnd);
           return true;
         }
@@ -403,7 +548,7 @@ function drainGlmInlineToolCalls(state, results) {
       const argsJson = afterSecondMarker.trim().slice(0, jsonEnd);
       const inferred = inferToolNameFromArgs(argsJson);
       if (inferred) {
-        emitGlmToolUse(state, results, inferred, argsJson);
+        emitGlmToolUse(state, results, inferred.name, inferred.argsJson);
         state.glmTextBuffer = afterSecondMarker.trim().slice(jsonEnd);
         return true;
       }

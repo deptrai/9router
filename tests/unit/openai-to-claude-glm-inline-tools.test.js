@@ -635,4 +635,77 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     const toolUses = getToolUseBlocks(events);
     expect(toolUses).toHaveLength(0);
   });
+
+  it("F26: infers Serena find_symbol from {tool,action} envelope + remaps args", () => {
+    // Run 1 pattern: [TOOL_CALLS]{"tool":"serena","action":"find_symbol","name":"mcp","workspace":"/repo","include_body":false}
+    const events = collectEvents([
+      { id: "chatcmpl-f26a", model: "claude-sonnet-4-6", choices: [{ delta: { content: '[TOOL_CALLS]{"tool": "serena", "action": "find_symbol", "name": "mcp", "workspace": "/Users/luisphan/Documents/9router", "include_body": false}' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const inputs = getToolUseInputs(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("mcp__serena__find_symbol");
+    const parsed = JSON.parse(inputs[0]);
+    expect(parsed.symbol).toBe("mcp");
+    expect(parsed.include_body).toBe(false);
+    // Should NOT have tool/action wrapper keys
+    expect(parsed.tool).toBeUndefined();
+    expect(parsed.action).toBeUndefined();
+  });
+
+  it("F26: infers context-engine from {tool,action} envelope + remaps args", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f26b", model: "claude-sonnet-4-6", choices: [{ delta: { content: '[TOOL_CALLS]{"tool":"context-engine","action":"codebase-retrieval","query":"mcp","workspace":"/repo"}' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const inputs = getToolUseInputs(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("mcp__vibervn-context-engine__codebase-retrieval");
+    const parsed = JSON.parse(inputs[0]);
+    expect(parsed.query).toBe("mcp");
+    expect(parsed.workspace_full_path).toBe("/repo");
+  });
+
+  it("F27: detects raw rg command in text → synthesizes Grep", () => {
+    // Run 4 pattern: prose + rg "mcp" /path --exclude-dir tests
+    const events = collectEvents([
+      { id: "chatcmpl-f27a", model: "claude-sonnet-4-6", choices: [{ delta: { content: 'I need to understand the MCP setup.rg "mcp" /Users/luisphan/Documents/9router --exclude-dir tests --exclude-dir test 2> /dev/null' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const inputs = getToolUseInputs(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Grep");
+    const parsed = JSON.parse(inputs[0]);
+    expect(parsed.pattern).toBe("mcp");
+    expect(parsed.path).toContain("9router");
+  });
+
+  it("F27: detects raw cat command in text → synthesizes Read", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f27b", model: "claude-sonnet-4-6", choices: [{ delta: { content: 'Let me check that file.cat /tmp/config.json' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const inputs = getToolUseInputs(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Read");
+    expect(JSON.parse(inputs[0]).file_path).toBe("/tmp/config.json");
+  });
+
+  it("F27: does NOT false-positive on prose mentioning rg", () => {
+    // "I used rg to search" — no quoted pattern + path → no detection
+    const events = collectEvents([
+      { id: "chatcmpl-f27c", model: "claude-sonnet-4-6", choices: [{ delta: { content: 'I used rg to search for the pattern but it did not work.' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    expect(toolUses).toHaveLength(0);
+  });
+
+  it("F27: does NOT false-positive on prose with quoted string after rg", () => {
+    // "rg is a tool" — "tool" is not a path → no detection
+    const events = collectEvents([
+      { id: "chatcmpl-f27d", model: "claude-sonnet-4-6", choices: [{ delta: { content: 'The rg "search" is not a command here.' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    expect(toolUses).toHaveLength(0);
+  });
 });
