@@ -578,4 +578,61 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     expect(toolUses).toHaveLength(1);
     expect(toolUses[0].name).toBe("Read");
   });
+
+  it("F25: infers Bash from [TOOL_CALLS]{command:...} (missing tool name)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f25a", model: "claude-sonnet-4-6", choices: [{ delta: { content: '[TOOL_CALLS]{"command": "ls -la /tmp/"}' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const inputs = getToolUseInputs(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Bash");
+    expect(JSON.parse(inputs[0]).command).toBe("ls -la /tmp/");
+  });
+
+  it("F25: infers Read from [TOOL_CALLS]\\n[TOOL_CALLS]{file_path:...} (empty tool name)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f25b", model: "claude-sonnet-4-6", choices: [{ delta: { content: '[TOOL_CALLS]\n[TOOL_CALLS]{"file_path":"/Users/luisphan/Documents/9router/src/lib/mcp/server.js"}' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const inputs = getToolUseInputs(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Read");
+    expect(JSON.parse(inputs[0]).file_path).toContain("mcp/server.js");
+  });
+
+  it("F25: infers Grep from {pattern:...} (missing tool name)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f25c", model: "claude-sonnet-4-6", choices: [{ delta: { content: '[TOOL_CALLS]{"pattern":"mcp","path":"/src"}' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Grep");
+  });
+
+  it("F25: infers Serena find_symbol from {find_symbol:...}", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f25d", model: "claude-sonnet-4-6", choices: [{ delta: { content: '[TOOL_CALLS]{"find_symbol":{"symbol":"mcp","include_body":false}}' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("mcp__serena__find_symbol");
+  });
+
+  it("F25: infers Agent from {prompt,description} (missing tool name)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f25e", model: "claude-sonnet-4-6", choices: [{ delta: { content: '[TOOL_CALLS]{"prompt":"find mcp configs","description":"search mcp"}' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Agent");
+  });
+
+  it("F25: does NOT infer from unknown args keys → emits raw text", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f25f", model: "claude-sonnet-4-6", choices: [{ delta: { content: '[TOOL_CALLS]{"unknown_key":"value"}' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    expect(toolUses).toHaveLength(0);
+  });
 });

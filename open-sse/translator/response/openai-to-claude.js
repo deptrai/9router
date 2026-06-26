@@ -4,6 +4,64 @@ import { FORMATS } from "../formats.js";
 // Prefix for Claude OAuth tool names (must match request translator)
 const CLAUDE_OAUTH_TOOL_PREFIX = "proxy_";
 
+// F25: Find end index of a JSON object starting with '{'. Returns -1 if incomplete.
+function findJsonEnd(str) {
+  if (!str.startsWith("{")) return -1;
+  let depth = 0, inStr = false, escape = false;
+  for (let i = 0; i < str.length; i++) {
+    const c = str[i];
+    if (escape) { escape = false; continue; }
+    if (c === "\\") { escape = true; continue; }
+    if (c === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (c === "{") depth++;
+    else if (c === "}") { depth--; if (depth === 0) return i + 1; }
+  }
+  return -1; // incomplete
+}
+
+// F25: Infer tool name from JSON args keys when model omits tool name.
+// Sonnet via Cascade emits [TOOL_CALLS]{"command":"ls"} or
+// [TOOL_CALLS]\n[TOOL_CALLS]{"file_path":"/path"} — no tool name.
+// Map known arg key patterns to Claude Code tool names.
+function inferToolNameFromArgs(argsJson) {
+  try {
+    const args = JSON.parse(argsJson);
+    const keys = Object.keys(args);
+    const has = (k) => keys.includes(k);
+    // Bash: command (string), optional run_in_background/timeout
+    if (has("command") && typeof args.command === "string") return "Bash";
+    // Read: file_path (string)
+    if (has("file_path") && typeof args.file_path === "string") return "Read";
+    // Edit: file_path + old_string + new_string
+    if (has("file_path") && has("old_string") && has("new_string")) return "Edit";
+    // Write: file_path + content
+    if (has("file_path") && has("content") && !has("old_string")) return "Write";
+    // Grep: pattern (string), optional path/glob_pattern
+    if (has("pattern") && typeof args.pattern === "string") return "Grep";
+    // Glob: pattern (string), no other key
+    if (has("pattern") && keys.length === 1) return "Glob";
+    // Agent/Task: prompt + description, or subagent_type + prompt
+    if (has("prompt") && (has("description") || has("subagent_type"))) return "Agent";
+    if (has("prompt") && has("agent_type")) return "Agent";
+    // TodoWrite: todos (array)
+    if (has("todos") && Array.isArray(args.todos)) return "TodoWrite";
+    // WebFetch: url
+    if (has("url") && typeof args.url === "string") return "WebFetch";
+    // WebSearch: query
+    if (has("query") && typeof args.query === "string" && !has("workspace_full_path")) return "WebSearch";
+    // Serena find_symbol: find_symbol key
+    if (has("find_symbol")) return "mcp__serena__find_symbol";
+    if (has("find_referencing_symbols")) return "mcp__serena__find_referencing_symbols";
+    if (has("get_symbols_overview")) return "mcp__serena__get_symbols_overview";
+    // context-engine: workspace_full_path + query
+    if (has("workspace_full_path") && has("query")) return "mcp__vibervn-context-engine__codebase-retrieval";
+    return null; // can't infer
+  } catch {
+    return null;
+  }
+}
+
 // Sanitize tool call arguments to fix bad params from non-Anthropic models
 function sanitizeToolArgs(toolName, argsJson) {
   try {
@@ -311,6 +369,22 @@ function drainGlmInlineToolCalls(state, results) {
   const secondMarkerRe = /\[(TOOL_CALLS|ARGS)\]/;
   const m2 = afterMarker.match(secondMarkerRe);
   if (!m2) {
+    // F25: Single marker + JSON object directly after = missing tool name.
+    // Sonnet via Cascade emits: [TOOL_CALLS]{"command":"ls -la"} (no tool name).
+    // Try to parse JSON and infer tool name from args keys.
+    const trimmedAfter = afterMarker.trim();
+    if (trimmedAfter.startsWith("{")) {
+      const jsonEnd = findJsonEnd(trimmedAfter);
+      if (jsonEnd > 0) {
+        const argsJson = trimmedAfter.slice(0, jsonEnd);
+        const inferred = inferToolNameFromArgs(argsJson);
+        if (inferred) {
+          emitGlmToolUse(state, results, inferred, argsJson);
+          state.glmTextBuffer = trimmedAfter.slice(jsonEnd);
+          return true;
+        }
+      }
+    }
     // Incomplete — keep marker + afterMarker so flush-at-finish preserves the
     // original text (no silent drop of the "[TOOL_CALLS]" we already consumed).
     state.glmTextBuffer = marker + afterMarker;
@@ -319,6 +393,22 @@ function drainGlmInlineToolCalls(state, results) {
 
   let toolName = afterMarker.slice(0, m2.index);
   let afterSecondMarker = afterMarker.slice(m2.index + m2[0].length);
+
+  // F25: Empty/whitespace tool name + JSON args = missing tool name.
+  // Sonnet emits: [TOOL_CALLS]\n[TOOL_CALLS]{"file_path":"/path"} (empty name).
+  // Infer tool name from args keys.
+  if (!toolName.trim() && afterSecondMarker.trim().startsWith("{")) {
+    const jsonEnd = findJsonEnd(afterSecondMarker.trim());
+    if (jsonEnd > 0) {
+      const argsJson = afterSecondMarker.trim().slice(0, jsonEnd);
+      const inferred = inferToolNameFromArgs(argsJson);
+      if (inferred) {
+        emitGlmToolUse(state, results, inferred, argsJson);
+        state.glmTextBuffer = afterSecondMarker.trim().slice(jsonEnd);
+        return true;
+      }
+    }
+  }
 
   // F24: Detect swapped format [TOOL_CALLS]prose[TOOL_CALLS]real_tool_name{args}
   // Sonnet/Claude via Cascade sometimes put explanation text as the "tool name"
