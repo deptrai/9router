@@ -81,18 +81,43 @@ function emitTextSegment(state, results, text) {
   });
 }
 
-// Helper: emit a tool_use block from GLM inline tool call
+// Validate that a tool name looks like a real tool identifier.
+// GLM-5.2 sometimes hallucinates a long analysis sentence as the "tool name"
+// (e.g. "1. **JWT Expiration Handling Issue**: ..."). Emitting that as a
+// tool_use block makes Claude Code reject with "No such tool available" and
+// breaks the turn. A valid tool name is a compact identifier — no whitespace,
+// no markdown, no prose.
+function isValidToolName(name) {
+  if (!name || typeof name !== "string") return false;
+  const trimmed = name.trim();
+  if (!trimmed || trimmed.length > 64) return false;
+  if (/\s/.test(trimmed)) return false;          // no spaces/newlines
+  if (/[*#`]/.test(trimmed)) return false;        // no markdown
+  // Identifier-like: letters, digits, _, -, :, . (MCP tools use __ and :)
+  if (!/^[A-Za-z_][A-Za-z0-9_\-:.]*$/.test(trimmed)) return false;
+  return true;
+}
+
+// Helper: emit a tool_use block from GLM inline tool call.
+// If the tool name is invalid (hallucinated prose), emit the raw inline text
+// instead so nothing is silently dropped and the turn doesn't break.
 function emitGlmToolUse(state, results, toolName, argsJson) {
+  // Strip Claude OAuth prefix if present
+  let bareName = toolName;
+  if (typeof bareName === "string" && bareName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
+    bareName = bareName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length);
+  }
+
+  if (!isValidToolName(bareName)) {
+    emitTextSegment(state, results, `[TOOL_CALLS]${toolName}[TOOL_CALLS]${argsJson}`);
+    return;
+  }
+
   stopThinkingBlock(state, results);
   stopTextBlock(state, results);
 
   const toolBlockIndex = state.nextBlockIndex++;
   const toolId = `toolu_glm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  // Strip Claude OAuth prefix if present
-  let bareName = toolName;
-  if (bareName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
-    bareName = bareName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length);
-  }
 
   results.push({
     type: "content_block_start",

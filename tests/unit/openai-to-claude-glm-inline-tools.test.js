@@ -173,4 +173,56 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     const stopReason = events.find((e) => e.type === "message_delta")?.delta?.stop_reason;
     expect(stopReason).toBe("end_turn"); // finish_reason "stop" → end_turn (router may override downstream)
   });
+
+  it("emits raw text instead of tool_use when tool name is hallucinated prose", () => {
+    const hallucinatedName = "1. **JWT Expiration Handling Issue**: The current JWT check uses floor";
+    const events = collectEvents([
+      { id: "chatcmpl-glm11", model: "glm-5-2", choices: [{ delta: { content: `[TOOL_CALLS]${hallucinatedName}[TOOL_CALLS]{\"file_path\":\"/tmp/x\"}` }, finish_reason: "stop" }] },
+    ]);
+
+    const toolUses = getToolUseBlocks(events);
+    const text = getTextDelta(events);
+
+    expect(toolUses).toHaveLength(0);
+    expect(text).toContain(hallucinatedName);
+  });
+
+  it("emits raw text when tool name contains markdown", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm12", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS]Edit*file[TOOL_CALLS]{\"file_path\":\"/tmp/x\"}" }, finish_reason: "stop" }] },
+    ]);
+
+    const toolUses = getToolUseBlocks(events);
+    expect(toolUses).toHaveLength(0);
+  });
+
+  it("emits raw text when tool name is too long (>64 chars)", () => {
+    const longName = "A".repeat(80);
+    const events = collectEvents([
+      { id: "chatcmpl-glm13", model: "glm-5-2", choices: [{ delta: { content: `[TOOL_CALLS]${longName}[TOOL_CALLS]{\"file_path\":\"/tmp/x\"}` }, finish_reason: "stop" }] },
+    ]);
+
+    const toolUses = getToolUseBlocks(events);
+    expect(toolUses).toHaveLength(0);
+  });
+
+  it("still emits tool_use for valid MCP tool name with double underscore", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm14", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS]mcp__serena__find_symbol[TOOL_CALLS]{\"name\":\"foo\"}" }, finish_reason: "stop" }] },
+    ]);
+
+    const toolUses = getToolUseBlocks(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("mcp__serena__find_symbol");
+  });
+
+  it("still emits tool_use for valid tool name with colon (MCP namespace)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm15", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS]serena:find_symbol[TOOL_CALLS]{\"name\":\"foo\"}" }, finish_reason: "stop" }] },
+    ]);
+
+    const toolUses = getToolUseBlocks(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("serena:find_symbol");
+  });
 });
