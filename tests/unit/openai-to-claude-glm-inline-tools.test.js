@@ -198,4 +198,43 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     expect(toolUses[0].name).toBe("Write");
     expect(JSON.parse(inputs[0])).toEqual({ file_path: "/tmp/w.txt", content: "hi" });
   });
+
+  it("infers Read when model hallucinates its own name as tool name (file_path arg)", () => {
+    // GLM-5.2 sometimes emits [TOOL_CALLS]glm-5-2[TOOL_CALLS]{file_path:...}
+    const events = collectEvents([
+      { id: "chatcmpl-glm13", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS]glm-5-2[TOOL_CALLS]{\"file_path\":\"/Users/x/.claude/settings.json\"}" }, finish_reason: "stop" }] },
+    ]);
+
+    const toolUses = getToolUseBlocks(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Read"); // inferred from file_path
+  });
+
+  it("infers Bash when model hallucinates its own name as tool name (command arg)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm14", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS]glm-5-2[TOOL_CALLS]{\"command\":\"grep -r devin /Users/x/.claude\",\"description\":\"search\",\"timeout\":5000}" }, finish_reason: "stop" }] },
+    ]);
+
+    const toolUses = getToolUseBlocks(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Bash"); // inferred from command
+  });
+
+  it("keeps valid known tool names (no remap)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm15", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS]Read[TOOL_CALLS]{\"file_path\":\"/tmp/ok.txt\"}" }, finish_reason: "stop" }] },
+    ]);
+
+    const toolUses = getToolUseBlocks(events);
+    expect(toolUses[0].name).toBe("Read");
+  });
+
+  it("keeps MCP tool names with double underscore (no remap)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm16", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS]mcp__serena__find_symbol[TOOL_CALLS]{\"name\":\"foo\"}" }, finish_reason: "stop" }] },
+    ]);
+
+    const toolUses = getToolUseBlocks(events);
+    expect(toolUses[0].name).toBe("mcp__serena__find_symbol");
+  });
 });

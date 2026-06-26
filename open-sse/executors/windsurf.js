@@ -99,6 +99,7 @@ export class WindsurfExecutor extends BaseExecutor {
         `Example: [TOOL_CALLS]Read[TOOL_CALLS]{"file_path":"/tmp/foo.txt"}\n\n` +
         `Rules:\n` +
         `- ONLY use tool names from the list above. Do NOT invent tool names like agent__explore__medium.\n` +
+        `- NEVER use your own model name (e.g. "glm-5-2") as a tool name. The tool name MUST be one of: ${toolDefs.map(t => t.name).join(", ")}.\n` +
         `- Arguments MUST be valid JSON matching the tool's schema.\n` +
         `- Output the tool call on its own line. You may add brief text before it.\n` +
         `- After a tool result is returned, continue the task or call another tool.\n`;
