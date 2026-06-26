@@ -75,8 +75,8 @@ từ GLM-5.2 thành Claude `tool_use` content block hợp lệ:
 ## Review Findings (code review 2026-06-26, 3 layer adversarial)
 
 ### patch
-- [ ] [Review][Patch] Tool name rỗng/whitespace bị emit thẳng [openai-to-claude.js:244-251, 85-128] — `[TOOL_CALLS][TOOL_CALLS]{...}` → toolName="" → tool_use có name="" → Claude Code reject. Cần guard: nếu name (sau infer) rỗng/không hợp lệ → emit lại as text thay vì tool_use hỏng.
-- [ ] [Review][Patch] Thiếu test 6/8 infer-mapping của R6 [tests/unit/...] — chỉ test Read+Bash; thiếu Edit/Grep/Glob/WebFetch/WebSearch/TodoWrite/Agent + MCP colon pattern.
+- [x] [Review][Patch] Tool name rỗng/whitespace bị emit thẳng [openai-to-claude.js:244-251, 85-128] — FIXED in 6a6bfd18: emitGlmToolUse guard `if (!bareName) → emitTextSegment + return false`. Test 2 case mới (empty+unrecognizable→text, empty+file_path→infer Read).
+- [x] [Review][Patch] Thiếu test 6/8 infer-mapping của R6 [tests/unit/...] — FIXED in 6a6bfd18: thêm 10 test (Edit/Grep/Glob/WebFetch/WebSearch/TodoWrite/Agent + MCP colon + 2 empty-name). Test mới phát hiện + fix bug ordering (Edit/Glob bị shadow).
 
 ### defer
 - [x] [Review][Defer] body.messages undefined → findIndex throws [windsurf.js:90,107] — deferred, pre-existing (endpoint /v1/messages luôn có messages).
