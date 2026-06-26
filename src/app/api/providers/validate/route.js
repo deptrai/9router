@@ -232,7 +232,7 @@ export async function POST(request) {
 
       if (provider === "windsurf") {
         try {
-          const { fetchJwt } = await import("../../../../open-sse/utils/windsurfAuth.js");
+          const { fetchJwt } = await import("open-sse/utils/windsurfAuth.js");
           const jwt = await fetchJwt(apiKey);
           isValid = !!jwt && jwt.startsWith("eyJ");
           if (!isValid) {

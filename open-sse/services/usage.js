@@ -94,12 +94,9 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
     case "devin":
       return await getDevinUsage(apiKey, providerSpecificData, proxyOptions);
     case "windsurf":
-      // Windsurf (Cascade WS) — free tier, không có quota/usage endpoint công khai.
-      // Trả về message thay vì lỗi để UI hiển thị connection mà không crash.
-      return {
-        message: "Windsurf (Cascade WS) — free tier LLM, không theo dõi quota theo token. 9 model có sẵn: swe, swe-1-5, claude-opus-4-6, claude-sonnet-4-6, gpt-5-5-high, gemini-3-5-pro, deepseek-v4, kimi-k2-6.",
-        quotas: [],
-      };
+      // Windsurf token cùng format với Devin (devin-session-token$...),
+      // dùng chung GetUserStatus + CheckUserMessageRateLimit để lấy quota.
+      return await getDevinUsage(apiKey, providerSpecificData, proxyOptions);
     default:
       return { message: `Usage API not implemented for ${provider}` };
   }
@@ -1272,21 +1269,26 @@ async function getDevinUsage(apiKey, providerSpecificData, proxyOptions = null) 
   try {
     const { extractKey, fetchJwt } = await import("../utils/windsurfAuth.js");
 
-    // Step 1: Extract apiKey from state.vscdb
-    const extracted = await extractKey();
-    if (!extracted?.api_key) {
-      return { message: "Devin: không đọc được API key từ state.vscdb. Đảm bảo Devin CLI đã đăng nhập." };
+    // Step 1: Lấy apiKey — ưu tiên apiKey truyền vào (từ provider connection DB),
+    // fallback sang extract từ state.vscdb (Devin CLI local).
+    let wsKey = apiKey;
+    if (!wsKey) {
+      const extracted = await extractKey();
+      wsKey = extracted?.api_key;
+    }
+    if (!wsKey) {
+      return { message: "Devin/Windsurf: không có API key. Thêm provider với token hoặc đảm bảo Devin CLI đã đăng nhập." };
     }
 
     // Step 2: Fetch JWT
-    const jwt = await fetchJwt(extracted.api_key);
+    const jwt = await fetchJwt(wsKey);
 
     // Step 3: Call GetUserStatus via Connect-RPC JSON
     const reqBody = JSON.stringify({
       metadata: {
         ideName: "windsurf",
         ideVersion: "1.48.2",
-        apiKey: extracted.api_key,
+        apiKey: wsKey,
         language: "en",
         extensionVersion: "1.9544.35",
         auth_token: jwt,
@@ -1364,7 +1366,7 @@ async function getDevinUsage(apiKey, providerSpecificData, proxyOptions = null) 
     // API trả về messagesRemaining / maxMessages / retryAfterMs / message
     // Pro plan: -1/-1 = unlimited, hasCapacity=true → không hiển thị
     // Free plan: số message còn lại + cooldown (retryAfterMs) khi hasCapacity=false
-    const modelRateLimits = await checkDevinModelRateLimits(extracted.api_key, jwt, proxyOptions);
+    const modelRateLimits = await checkDevinModelRateLimits(wsKey, jwt, proxyOptions);
     if (modelRateLimits && Object.keys(modelRateLimits).length > 0) {
       for (const [modelUid, rl] of Object.entries(modelRateLimits)) {
         // Chỉ thêm khi có rate limit thực:

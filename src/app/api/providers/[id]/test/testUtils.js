@@ -411,7 +411,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       }
       case "windsurf": {
         try {
-          const { fetchJwt } = await import("../../../../open-sse/utils/windsurfAuth.js");
+          const { fetchJwt } = await import("open-sse/utils/windsurfAuth.js");
           const jwt = await fetchJwt(connection.apiKey);
           const valid = !!jwt && jwt.startsWith("eyJ");
           return { valid, error: valid ? null : "Invalid Windsurf token (devin-session-token$...)" };
