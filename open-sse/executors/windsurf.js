@@ -127,8 +127,13 @@ export class WindsurfExecutor extends BaseExecutor {
     }));
 
     // Build protobuf request — resolve user-facing model ID to Cascade upstream ID
+    // F20: _buildRequest writes toolDefs via writeString (expects string), so
+    // serialize the array of {name,description,schema} objects to JSON first.
+    // Passing the raw array → Buffer.from(array, "utf-8") → null bytes →
+    // windsurf receives empty toolDefs → model doesn't see tools natively.
     const upstreamModel = getModelUpstreamId("windsurf", model);
-    const protoBytes = _buildRequest(apiKey, jwt, protoMessages, toolDefs, upstreamModel);
+    const toolDefsJson = toolDefs ? JSON.stringify(toolDefs) : null;
+    const protoBytes = _buildRequest(apiKey, jwt, protoMessages, toolDefsJson, upstreamModel);
 
     const upstreamUrl = "https://server.self-serve.windsurf.com/exa.api_server_pb.ApiServerService/GetDevstralStream";
     const upstreamHeaders = {
