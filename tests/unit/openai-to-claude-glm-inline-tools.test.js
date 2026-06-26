@@ -804,4 +804,42 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     const parsed = JSON.parse(inputs[0]);
     expect(parsed.command).toContain("grep -r");
   });
+
+  it("F31: strips orphan [TOOL_CALLS] when followed by code (not tool call)", () => {
+    // Run 2 pattern: [TOOL_CALLS]1   import { registerSession } from "..."
+    const events = collectEvents([
+      { id: "chatcmpl-f31a", model: "claude-sonnet-4-6", choices: [{ delta: { content: "Let me examine.[TOOL_CALLS]1   import { registerSession } from \"@/lib/mcp/stdioSseBridge\";\n2   import { NextResponse } from \"next/router\";" }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const text = getTextDelta(events);
+    expect(toolUses).toHaveLength(0);
+    // Should NOT leak [TOOL_CALLS] marker into text
+    expect(text).not.toContain("[TOOL_CALLS]");
+    // Should preserve the code content
+    expect(text).toContain("import { registerSession }");
+    expect(text).toContain("Let me examine");
+  });
+
+  it("F31: strips orphan [TOOL_CALLS] when followed by digit", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f31b", model: "claude-sonnet-4-6", choices: [{ delta: { content: "[TOOL_CALLS]42 is the answer" }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const text = getTextDelta(events);
+    expect(toolUses).toHaveLength(0);
+    expect(text).not.toContain("[TOOL_CALLS]");
+    expect(text).toContain("42 is the answer");
+  });
+
+  it("F31: does NOT strip when afterMarker starts with valid tool name char", () => {
+    // afterMarker starts with 'R' (valid tool name) — should buffer, not strip
+    // This is a legitimate incomplete tool call waiting for second marker
+    const events = collectEvents([
+      { id: "chatcmpl-f31c", model: "claude-sonnet-4-6", choices: [{ delta: { content: "[TOOL_CALLS]Read" }, finish_reason: "stop" }] },
+    ]);
+    const text = getTextDelta(events);
+    // At finish, incomplete buffer flushes as text (preserving marker)
+    // This is acceptable — it's a rare edge case of truncated stream
+    expect(text).toContain("Read");
+  });
 });

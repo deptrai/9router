@@ -593,6 +593,16 @@ function drainGlmInlineToolCalls(state, results) {
         }
       }
     }
+    // F31: Orphan [TOOL_CALLS] marker — afterMarker doesn't start with a valid
+    // tool name character or JSON. Model emitted code/prose with marker prefix.
+    // Strip the marker and emit the text cleanly (don't leak [TOOL_CALLS] garbage).
+    // Valid tool name starts with [A-Za-z_], JSON starts with {. Anything else
+    // (digit, space, special char, newline) = not a tool call.
+    if (trimmedAfter && !/^[A-Za-z_{]/.test(trimmedAfter)) {
+      emitTextSegment(state, results, trimmedAfter);
+      state.glmTextBuffer = "";
+      return true;
+    }
     // Incomplete — keep marker + afterMarker so flush-at-finish preserves the
     // original text (no silent drop of the "[TOOL_CALLS]" we already consumed).
     state.glmTextBuffer = marker + afterMarker;
