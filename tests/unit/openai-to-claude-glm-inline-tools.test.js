@@ -971,4 +971,18 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     expect(text).toContain("Some text");
     expect(text).toContain("orphan marker");
   });
+
+  it("F36: strips model_name[ARGS]/model_name[TOOL_CALLS] loop from text before marker", () => {
+    // Production pattern: prose.glm-5-2[ARGS][TOOL_CALLS]glm-5-2[ARGS]...real text
+    // Model emits model_name[ARGS] without leading [TOOL_CALLS] — leaks into text
+    const events = collectEvents([
+      { id: "chatcmpl-f36a", model: "claude-sonnet-4-6", choices: [{ delta: { content: "I need to understand.glm-5-2[ARGS][TOOL_CALLS]glm-5-2[ARGS][TOOL_CALLS]glm-5-2[ARGS][TOOL_CALLS]real text after" }, finish_reason: "stop" }] },
+    ]);
+    const text = getTextDelta(events);
+    expect(text).not.toContain("[TOOL_CALLS]");
+    expect(text).not.toContain("[ARGS]");
+    expect(text).not.toContain("glm-5-2");
+    expect(text).toContain("I need to understand");
+    expect(text).toContain("real text after");
+  });
 });

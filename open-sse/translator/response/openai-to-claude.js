@@ -639,8 +639,14 @@ function drainGlmInlineToolCalls(state, results) {
   }
 
   // Emit text before marker
+  // F36: Strip model name loop garbage (model_name[ARGS] or model_name[TOOL_CALLS])
+  // from text before marker. Model sometimes emits these without leading [TOOL_CALLS].
   if (markerIdx > 0) {
-    emitTextSegment(state, results, buf.slice(0, markerIdx));
+    let beforeMarker = buf.slice(0, markerIdx);
+    beforeMarker = beforeMarker
+      .replace(/(glm[-_0-9.]+|claude[-_a-z0-9.]+|gpt[-_0-9.]+|sonnet[-_0-9.]+|haiku[-_0-9.]+|opus[-_0-9.]+|llama[-_0-9.]+|mistral[-_0-9.]+|qwen[-_0-9.]+|deepseek[-_0-9.]+|gemini[-_0-9.]+|swe[-_0-9.]+|devmini[-_0-9.]*)\s*\[(TOOL_CALLS|ARGS)\]/gi, "")
+      .replace(/\[(TOOL_CALLS|ARGS)\]/g, "");
+    emitTextSegment(state, results, beforeMarker);
   }
 
   const afterMarker = buf.slice(markerIdx + marker.length);
