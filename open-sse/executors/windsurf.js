@@ -103,7 +103,9 @@ export class WindsurfExecutor extends BaseExecutor {
         `- Args MUST be a valid JSON object matching the tool's expected fields.\n` +
         `- ONLY use tool names from the list above. NEVER use your model name as a tool name.\n` +
         `- Do NOT echo or repeat the user's request. Act on it directly.\n` +
-        `- For the Agent tool: subagent_type must be a real profile name (e.g. "Explore", "general", "subagent_general"), description must be a short title of the task, and prompt must be the FULL task instruction. NEVER use the same string for all three fields.\n`;
+        `- For the Agent tool: subagent_type must be a real profile name (e.g. "Explore", "general", "subagent_general"), description must be a short title of the task, and prompt must be the FULL task instruction. NEVER use the same string for all three fields.\n` +
+        `- For the Bash tool: the shell is zsh, NOT bash. ALWAYS quote glob patterns: use --include='*.js' NOT --include=*.js, use --exclude='*' NOT --exclude=*. Unquoted globs will be expanded by zsh and fail with "no matches found".\n` +
+        `- For the Bash tool: NEVER run grep -r on a large directory (home, /, /Users) without --exclude-dir. Always exclude: --exclude-dir={.git,node_modules,.next,dist,build,vendor,target,Library,.cache}. For searching a specific project, cd into it first and grep only that directory.\n`;
       const firstSysIdx = messagesForProto.findIndex(m => m.role === "system");
       if (firstSysIdx >= 0) {
         messagesForProto = messagesForProto.map((m, i) =>

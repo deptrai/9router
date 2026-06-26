@@ -260,6 +260,51 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     expect(parsed.timeout).toBe(5000);
   });
 
+  it("sanitizes Bash args: quotes unquoted glob in --include (session f60b1ef4)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm17b", model: "glm-5-2", choices: [{ delta: { content: '[TOOL_CALLS]Bash[TOOL_CALLS]{"command":"grep -r MCP /Users/luisphan --include=*.js --include=*.yaml"}' }, finish_reason: "stop" }] },
+    ]);
+
+    const inputs = getToolUseInputs(events);
+    const parsed = JSON.parse(inputs[0]);
+    expect(parsed.command).toContain("--include='*.js'");
+    expect(parsed.command).toContain("--include='*.yaml'");
+    expect(parsed.command).not.toContain("--include=*.js");
+  });
+
+  it("sanitizes Bash args: quotes unquoted glob in --exclude=*", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm17c", model: "glm-5-2", choices: [{ delta: { content: '[TOOL_CALLS]Bash[TOOL_CALLS]{"command":"grep -r devin /Users/luisphan --exclude=*"}' }, finish_reason: "stop" }] },
+    ]);
+
+    const inputs = getToolUseInputs(events);
+    const parsed = JSON.parse(inputs[0]);
+    expect(parsed.command).toContain("--exclude='*'");
+    expect(parsed.command).not.toContain("--exclude=*");
+  });
+
+  it("sanitizes Bash args: does NOT quote already-quoted globs", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm17d", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS]Bash[TOOL_CALLS]{\"command\":\"grep -r MCP /Users/luisphan --include='*.js'\"}" }, finish_reason: "stop" }] },
+    ]);
+
+    const inputs = getToolUseInputs(events);
+    const parsed = JSON.parse(inputs[0]);
+    // Already quoted — should not double-quote
+    expect(parsed.command).toContain("--include='*.js'");
+    expect(parsed.command).not.toContain("--include=''*.js''");
+  });
+
+  it("sanitizes Bash args: does NOT touch commands without globs", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm17e", model: "glm-5-2", choices: [{ delta: { content: '[TOOL_CALLS]Bash[TOOL_CALLS]{"command":"ls -la /tmp"}' }, finish_reason: "stop" }] },
+    ]);
+
+    const inputs = getToolUseInputs(events);
+    const parsed = JSON.parse(inputs[0]);
+    expect(parsed.command).toBe("ls -la /tmp");
+  });
+
   it("sanitizes Agent args: renames agent_type→subagent_type, instructions→prompt", () => {
     const events = collectEvents([
       { id: "chatcmpl-glm18", model: "glm-5-2", choices: [{ delta: { content: '[TOOL_CALLS]Agent[TOOL_CALLS]{"agent_type":"Explore","instructions":"Find the auth logic"}' }, finish_reason: "stop" }] },

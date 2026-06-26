@@ -24,6 +24,8 @@ function sanitizeToolArgs(toolName, argsJson) {
 // (notably GLM-5.2) hallucinate extra fields like `working_directory` which
 // Claude Code rejects with InputValidationError → model retries same bad
 // args → loop → session stuck. Strip unknown fields so the tool call lands.
+// Also auto-quote unquoted glob patterns in --include/--exclude to prevent
+// zsh "no matches found" errors (GLM-5.2 writes bash-style unquoted globs).
 function sanitizeBashArgs(args) {
   const allowed = new Set([
     "command", "run_in_background", "shell_id", "timeout",
@@ -32,6 +34,24 @@ function sanitizeBashArgs(args) {
   for (const key of Object.keys(args)) {
     if (!allowed.has(key)) delete args[key];
   }
+  if (typeof args.command === "string") {
+    args.command = quoteGlobPatterns(args.command);
+  }
+}
+
+// Quote unquoted glob patterns in grep/find --include/--exclude arguments.
+// zsh expands unquoted *.js → "no matches found". Wrap in single quotes.
+// Only quotes when the value after = contains * and is NOT already quoted.
+function quoteGlobPatterns(cmd) {
+  return cmd.replace(/(--include|--exclude|--include-from|--exclude-from)=(\S+)/g, (match, flag, value) => {
+    // Already quoted? Skip.
+    if (value.startsWith("'") || value.startsWith('"')) return match;
+    // Contains a glob char? Quote it.
+    if (/[*?\[\]{}]/.test(value)) {
+      return `${flag}='${value}'`;
+    }
+    return match;
+  });
 }
 
 // Claude Code Agent/Task tool requires `description` + `prompt` + optional
