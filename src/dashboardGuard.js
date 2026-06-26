@@ -49,7 +49,8 @@ const PUBLIC_API_PATHS = [
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
-const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta"];
+// /api/grpc — gRPC-web gateway cho Devin/Windsurf CLI, tự auth bằng Bearer sk-...
+const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta", "/api/grpc"];
 
 // Always require JWT token regardless of requireLogin setting
 const ALWAYS_PROTECTED = [
