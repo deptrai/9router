@@ -96,6 +96,22 @@ function sanitizeAgentArgs(args) {
     args.description = `Agent task: ${st}`;
     args.prompt = `Perform the user's requested task using the ${st} profile. Report findings.`;
   }
+  // Sonnet 4.6 via windsurf (when toolDefs are missing/corrupted) hallucinates
+  // Agent args with description===prompt===generic placeholder like "Agent task"
+  // (session 89893ae0). The call lands but the subagent runs with no real task
+  // → returns garbage → model emits raw text → end_turn → session stop.
+  // Detect this and synthesize a meaningful prompt so the subagent does
+  // something useful instead of returning garbage.
+  const GENERIC_AGENT_VALUES = new Set([
+    "agent task", "task", "do task", "perform task",
+    "agent", "subagent", "explore", "search",
+  ]);
+  const descLower = typeof args.description === "string" ? args.description.toLowerCase().trim() : "";
+  const promptLower = typeof args.prompt === "string" ? args.prompt.toLowerCase().trim() : "";
+  if (descLower && descLower === promptLower && GENERIC_AGENT_VALUES.has(descLower)) {
+    args.description = args.description.charAt(0).toUpperCase() + args.description.slice(1);
+    args.prompt = `Explore the codebase and find information relevant to the user's request. Report your findings in detail.`;
+  }
   const allowed = new Set(["prompt", "subagent_type", "description", "is_background", "resume"]);
   for (const key of Object.keys(args)) {
     if (!allowed.has(key)) delete args[key];

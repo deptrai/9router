@@ -416,4 +416,42 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     expect(parsed.prompt).not.toBe("general-purpose");
     expect(parsed.prompt).toContain("general-purpose");
   });
+
+  it("sanitizes Agent args: detect description===prompt===generic (session 89893ae0)", () => {
+    // Sonnet 4.6 via windsurf hallucinates Agent args with both fields = "Agent task"
+    const events = collectEvents([
+      { id: "chatcmpl-glm27", model: "claude-sonnet-4-6", choices: [{ delta: { content: '[TOOL_CALLS]Agent[TOOL_CALLS]{"description":"Agent task","prompt":"Agent task"}' }, finish_reason: "stop" }] },
+    ]);
+
+    const inputs = getToolUseInputs(events);
+    const parsed = JSON.parse(inputs[0]);
+    // prompt should be synthesized to something meaningful
+    expect(parsed.prompt).not.toBe("Agent task");
+    expect(parsed.prompt.length).toBeGreaterThan(20);
+    expect(parsed.prompt.toLowerCase()).toContain("explore");
+  });
+
+  it("sanitizes Agent args: detect description===prompt===generic 'task'", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm27b", model: "claude-sonnet-4-6", choices: [{ delta: { content: '[TOOL_CALLS]Agent[TOOL_CALLS]{"description":"task","prompt":"task"}' }, finish_reason: "stop" }] },
+    ]);
+
+    const inputs = getToolUseInputs(events);
+    const parsed = JSON.parse(inputs[0]);
+    expect(parsed.prompt).not.toBe("task");
+    expect(parsed.prompt.length).toBeGreaterThan(20);
+  });
+
+  it("sanitizes Agent args: does NOT touch meaningful description===prompt", () => {
+    // If both fields are the same but contain a real task, leave them alone
+    const realTask = "Find all auth-related files in the codebase and report their paths";
+    const events = collectEvents([
+      { id: "chatcmpl-glm27c", model: "claude-sonnet-4-6", choices: [{ delta: { content: `[TOOL_CALLS]Agent[TOOL_CALLS]{"description":"${realTask}","prompt":"${realTask}"}` }, finish_reason: "stop" }] },
+    ]);
+
+    const inputs = getToolUseInputs(events);
+    const parsed = JSON.parse(inputs[0]);
+    expect(parsed.prompt).toBe(realTask);
+    expect(parsed.description).toBe(realTask);
+  });
 });

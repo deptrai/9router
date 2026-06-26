@@ -458,4 +458,44 @@ describe("Story N.2 — WindsurfExecutor", () => {
     expect(toolResultMsg).toBeTruthy();
     expect(toolResultMsg.content).toContain("file contents here");
   });
+
+  it("Multi-turn: strips [TOOL_CALLS] markers from tool_result text (session 89893ae0)", async () => {
+    const { connectFrameEncode } = await import("../../open-sse/utils/windsurfProtobuf.js");
+    const testString = "ok";
+    const innerProto = Buffer.alloc(2 + testString.length);
+    innerProto[0] = 0x0a;
+    innerProto[1] = testString.length;
+    innerProto.write(testString, 2);
+    const frame = connectFrameEncode(innerProto);
+    _streamingRequest.mockResolvedValue(mockStreamResponse([frame]));
+
+    const executor = new WindsurfExecutor("windsurf", {});
+    await executor.execute({
+      model: "glm-5-2",
+      body: makeBody({
+        messages: [
+          { role: "user", content: "test" },
+          { role: "assistant", content: [
+            { type: "tool_use", id: "toolu_1", name: "Agent", input: { description: "test", prompt: "test" } },
+          ]},
+          { role: "user", content: [
+            { type: "tool_result", tool_use_id: "toolu_1", content: "[TOOL_CALLS]Bash[TOOL_CALLS]{\"command\":\"ls\"} some output" },
+          ]},
+        ],
+        tools: [{ function: { name: "Agent", description: "Agent", parameters: {} } }],
+      }),
+      stream: false,
+      credentials: makeCredentials(),
+      signal: undefined,
+    });
+
+    const callArgs = _buildRequest.mock.calls[0];
+    const messages = callArgs[2];
+    const toolResultMsg = messages.find(m =>
+      m.content && m.content.includes("[Tool Result for toolu_1]"));
+    expect(toolResultMsg).toBeTruthy();
+    // [TOOL_CALLS] should be replaced with [TOOL_RESULT] to prevent model mimicry
+    expect(toolResultMsg.content).not.toContain("[TOOL_CALLS]");
+    expect(toolResultMsg.content).toContain("[TOOL_RESULT]");
+  });
 });

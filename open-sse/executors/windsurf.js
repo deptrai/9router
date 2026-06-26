@@ -407,11 +407,17 @@ export class WindsurfExecutor extends BaseExecutor {
           return `[TOOL_CALLS]${item.name}[TOOL_CALLS]${args}`;
         }
         if (item.type === "tool_result") {
-          const result = typeof item.content === "string"
+          let result = typeof item.content === "string"
             ? item.content
             : Array.isArray(item.content)
               ? item.content.map(c => c.text || "").join("")
               : JSON.stringify(item.content || {});
+          // Strip [TOOL_CALLS] markers from tool_result text — subagents that
+          // also route through windsurf may emit raw [TOOL_CALLS] patterns in
+          // their output. If we pass these through verbatim, the parent model
+          // sees them and mimics the format → emits raw text → end_turn →
+          // session stop (session 89893ae0).
+          result = result.replace(/\[TOOL_CALLS\]/gi, "[TOOL_RESULT]");
           return `[Tool Result for ${item.tool_use_id}]: ${result}`;
         }
         return "";
