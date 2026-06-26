@@ -61,6 +61,169 @@ function stopTextBlock(state, results) {
   state.textBlockStarted = false;
 }
 
+// Helper: emit a text segment (starts text block if needed)
+function emitTextSegment(state, results, text) {
+  if (!text) return;
+  if (!state.textBlockStarted) {
+    state.textBlockIndex = state.nextBlockIndex++;
+    state.textBlockStarted = true;
+    state.textBlockClosed = false;
+    results.push({
+      type: "content_block_start",
+      index: state.textBlockIndex,
+      content_block: { type: "text", text: "" }
+    });
+  }
+  results.push({
+    type: "content_block_delta",
+    index: state.textBlockIndex,
+    delta: { type: "text_delta", text }
+  });
+}
+
+// Helper: emit a tool_use block from GLM inline tool call
+function emitGlmToolUse(state, results, toolName, argsJson) {
+  stopThinkingBlock(state, results);
+  stopTextBlock(state, results);
+
+  const toolBlockIndex = state.nextBlockIndex++;
+  const toolId = `toolu_glm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  // Strip Claude OAuth prefix if present
+  let bareName = toolName;
+  if (bareName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
+    bareName = bareName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length);
+  }
+
+  results.push({
+    type: "content_block_start",
+    index: toolBlockIndex,
+    content_block: {
+      type: "tool_use",
+      id: toolId,
+      name: bareName,
+      input: {}
+    }
+  });
+
+  // Sanitize + emit args
+  const sanitized = sanitizeToolArgs(bareName, argsJson);
+  results.push({
+    type: "content_block_delta",
+    index: toolBlockIndex,
+    delta: { type: "input_json_delta", partial_json: sanitized }
+  });
+
+  results.push({
+    type: "content_block_stop",
+    index: toolBlockIndex
+  });
+
+  // Track for finish handler (so it doesn't try to re-stop)
+  const idx = state.toolCalls.size;
+  state.toolCalls.set(idx, { id: toolId, name: bareName, blockIndex: toolBlockIndex, glmEmitted: true });
+}
+
+// Parse + drain GLM-5.2 inline tool calls from buffer.
+// Format: [TOOL_CALLS]name[TOOL_CALLS]{json} or [TOOL_CALLS]name[ARGS]{json}
+// Returns true if something was emitted (caller should loop), false if buffer
+// is empty or holds an incomplete token that needs more chunks.
+function drainGlmInlineToolCalls(state, results) {
+  if (!state.glmTextBuffer) return false;
+
+  const buf = state.glmTextBuffer;
+  const marker = "[TOOL_CALLS]";
+  const markerIdx = buf.indexOf(marker);
+
+  // No marker at all — but buffer might end with a partial marker prefix.
+  // Keep up to 12 chars (len("[TOOL_CALLS]")) at the end to avoid splitting.
+  if (markerIdx === -1) {
+    if (buf.length <= marker.length) return false; // wait for more
+    // Check if buffer ends with a partial "[TOOL_CALLS]" prefix.
+    // Only retain prefixes >= 3 chars ("[TO") — shorter prefixes like "["
+    // or "[T" are too common in normal text and would cause false buffering.
+    for (let i = marker.length - 1; i >= 3; i--) {
+      if (buf.endsWith(marker.slice(0, i))) {
+        // Emit safe text before partial marker, keep partial
+        const safeEnd = buf.length - i;
+        if (safeEnd > 0) {
+          emitTextSegment(state, results, buf.slice(0, safeEnd));
+          state.glmTextBuffer = buf.slice(safeEnd);
+        }
+        return false;
+      }
+    }
+    // No partial marker — emit everything
+    emitTextSegment(state, results, buf);
+    state.glmTextBuffer = "";
+    return false;
+  }
+
+  // Emit text before marker
+  if (markerIdx > 0) {
+    emitTextSegment(state, results, buf.slice(0, markerIdx));
+  }
+
+  const afterMarker = buf.slice(markerIdx + marker.length);
+  // Find second marker: [TOOL_CALLS] or [ARGS]
+  const secondMarkerRe = /\[(TOOL_CALLS|ARGS)\]/;
+  const m2 = afterMarker.match(secondMarkerRe);
+  if (!m2) {
+    // Incomplete — keep marker + afterMarker so flush-at-finish preserves the
+    // original text (no silent drop of the "[TOOL_CALLS]" we already consumed).
+    state.glmTextBuffer = marker + afterMarker;
+    return false;
+  }
+
+  const toolName = afterMarker.slice(0, m2.index);
+  const afterSecondMarker = afterMarker.slice(m2.index + m2[0].length);
+
+  // Find JSON object: starts with { , ends with matching }
+  const jsonStart = afterSecondMarker.indexOf("{");
+  if (jsonStart === -1) {
+    if (afterSecondMarker === "" || /^\s*$/.test(afterSecondMarker)) {
+      // JSON not started yet — wait for more chunks
+      state.glmTextBuffer = marker + afterMarker;
+      return false;
+    }
+    // Malformed (no JSON) — emit as text and move on
+    emitTextSegment(state, results, marker + toolName + m2[0] + afterSecondMarker);
+    state.glmTextBuffer = "";
+    return true;
+  }
+
+  // Find matching closing brace (handle nested + strings)
+  let depth = 0, jsonEnd = -1, inStr = false, esc = false;
+  for (let i = jsonStart; i < afterSecondMarker.length; i++) {
+    const ch = afterSecondMarker[i];
+    if (esc) { esc = false; continue; }
+    if (ch === "\\") { esc = true; continue; }
+    if (ch === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) { jsonEnd = i; break; }
+    }
+  }
+
+  if (jsonEnd === -1) {
+    // Incomplete JSON — wait for more chunks. Keep marker + afterMarker so
+    // flush-at-finish preserves original text.
+    state.glmTextBuffer = marker + afterMarker;
+    return false;
+  }
+
+  const argsJson = afterSecondMarker.slice(jsonStart, jsonEnd + 1);
+  const remainder = afterSecondMarker.slice(jsonEnd + 1);
+
+  // Emit tool_use block
+  emitGlmToolUse(state, results, toolName, argsJson);
+
+  // Continue with remainder
+  state.glmTextBuffer = remainder;
+  return true; // loop to drain more
+}
+
 // Convert OpenAI stream chunk to Claude format
 export function openaiToClaudeResponse(chunk, state) {
   if (!chunk || !chunk.choices?.[0]) return null;
@@ -152,25 +315,21 @@ export function openaiToClaudeResponse(chunk, state) {
   }
 
   // Handle regular content
+  // GLM-5.2 (and similar non-Anthropic models) may embed tool calls inline as
+  // text markers: [TOOL_CALLS]name[TOOL_CALLS]{json} or [TOOL_CALLS]name[ARGS]{json}
+  // Parse these and convert to proper tool_use blocks so Claude Code can execute them.
   if (delta?.content) {
     stopThinkingBlock(state, results);
 
-    if (!state.textBlockStarted) {
-      state.textBlockIndex = state.nextBlockIndex++;
-      state.textBlockStarted = true;
-      state.textBlockClosed = false;
-      results.push({
-        type: "content_block_start",
-        index: state.textBlockIndex,
-        content_block: { type: "text", text: "" }
-      });
-    }
+    // Initialize GLM inline-tool-call buffer if not present
+    if (!state.glmTextBuffer) state.glmTextBuffer = "";
+    state.glmTextBuffer += delta.content;
 
-    results.push({
-      type: "content_block_delta",
-      index: state.textBlockIndex,
-      delta: { type: "text_delta", text: delta.content }
-    });
+    // Drain buffer: emit text segments and tool_use blocks for complete tokens
+    let drained = drainGlmInlineToolCalls(state, results);
+    while (drained) {
+      drained = drainGlmInlineToolCalls(state, results);
+    }
   }
 
   // Tool calls
@@ -245,10 +404,24 @@ export function openaiToClaudeResponse(chunk, state) {
 
   // Finish
   if (choice.finish_reason) {
+    // Flush any remaining GLM inline-tool-call buffer as text
+    if (state.glmTextBuffer) {
+      // Try to drain once more (in case last chunk had complete token)
+      let drained = drainGlmInlineToolCalls(state, results);
+      while (drained) drained = drainGlmInlineToolCalls(state, results);
+      // Anything left is plain text (incomplete/no marker) — emit as text
+      if (state.glmTextBuffer) {
+        emitTextSegment(state, results, state.glmTextBuffer);
+        state.glmTextBuffer = "";
+      }
+    }
+
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
 
     for (const [idx, toolInfo] of state.toolCalls) {
+      // GLM-emitted tool_use blocks already stopped in emitGlmToolUse — skip
+      if (toolInfo.glmEmitted) continue;
       // Emit buffered + sanitized args as single delta before stop
       const buffered = state.toolArgBuffers?.get(idx);
       if (buffered) {

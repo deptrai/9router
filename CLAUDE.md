@@ -2,7 +2,7 @@
 
 ## Code search & navigation tool routing
 
-This project has three MCP servers plus built-in grep. Pick the tool that matches the task instead of defaulting to one.
+This project has three MCP servers plus built-in grep. Pick the tool that matches the task instead of defaulting to one. **Lưu ý: MCP servers availability phụ thuộc CLI đang dùng (Devin vs Claude Code vs Windsurf). Chỉ dùng MCP có sẵn trong session hiện tại — nếu MCP không tồn tại, fallback sang grep/glob/read.**
 
 ### 1. Deepgrep — semantic search & code discovery
 Use **first** for natural-language / exploratory questions and tracing flows across files:
