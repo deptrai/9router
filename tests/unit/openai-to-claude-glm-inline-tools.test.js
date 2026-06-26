@@ -857,4 +857,42 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     // Should preserve prose before the garbage
     expect(text).toContain("Let me examine");
   });
+
+  it("F33: strips [TOOL_CALLS][TOOL_CALLS]glm-5-2[TOOL_CALLS] loop (empty name + model name)", () => {
+    // Production pattern: [TOOL_CALLS][TOOL_CALLS]glm-5-2[TOOL_CALLS]real text
+    const events = collectEvents([
+      { id: "chatcmpl-f33a", model: "claude-sonnet-4-6", choices: [{ delta: { content: "[TOOL_CALLS][TOOL_CALLS]glm-5-2[TOOL_CALLS]Tìm các config MCP của devin trong thư mục gốc CLI:\n\n1. Mở terminal" }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const text = getTextDelta(events);
+    expect(toolUses).toHaveLength(0);
+    expect(text).not.toContain("[TOOL_CALLS]");
+    expect(text).not.toContain("glm-5-2");
+    expect(text).toContain("Tìm các config MCP");
+  });
+
+  it("F33: strips [TOOL_CALLS]glm-5-2[TOOL_CALLS] (model name + TOOL_CALLS marker)", () => {
+    // Pattern: [TOOL_CALLS]glm-5-2[TOOL_CALLS]real text
+    const events = collectEvents([
+      { id: "chatcmpl-f33b", model: "claude-sonnet-4-6", choices: [{ delta: { content: "[TOOL_CALLS]glm-5-2[TOOL_CALLS]Real content here" }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const text = getTextDelta(events);
+    expect(toolUses).toHaveLength(0);
+    expect(text).not.toContain("[TOOL_CALLS]");
+    expect(text).not.toContain("glm-5-2");
+    expect(text).toContain("Real content here");
+  });
+
+  it("F33: strips [TOOL_CALLS][TOOL_CALLS]claude-sonnet-4-6[TOOL_CALLS] loop", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f33c", model: "claude-sonnet-4-6", choices: [{ delta: { content: "[TOOL_CALLS][TOOL_CALLS]claude-sonnet-4-6[TOOL_CALLS]Useful text after loop" }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const text = getTextDelta(events);
+    expect(toolUses).toHaveLength(0);
+    expect(text).not.toContain("[TOOL_CALLS]");
+    expect(text).not.toContain("claude-sonnet-4-6");
+    expect(text).toContain("Useful text after loop");
+  });
 });

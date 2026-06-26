@@ -633,6 +633,35 @@ function drainGlmInlineToolCalls(state, results) {
     }
   }
 
+  // F33: Empty tool name + afterSecondMarker starts with model name = loop garbage
+  // Pattern: [TOOL_CALLS][TOOL_CALLS]glm-5-2[TOOL_CALLS]real text...
+  // Model emits empty tool name, then model name as "tool name" with [TOOL_CALLS]
+  // as second marker. Strip all markers, keep only real text after the model name.
+  if (!toolName.trim()) {
+    const afterTrim = afterSecondMarker.trim();
+    // Check if afterSecondMarker starts with a model name followed by [TOOL_CALLS]
+    const modelLoopMatch = afterTrim.match(/^(glm[-_0-9.]+|claude[-_a-z0-9.]+|gpt[-_0-9.]+|sonnet[-_0-9.]+|haiku[-_0-9.]+|opus[-_0-9.]+|llama[-_0-9.]+|mistral[-_0-9.]+|qwen[-_0-9.]+|deepseek[-_0-9.]+|gemini[-_0-9.]+|swe[-_0-9.]+|devmini[-_0-9.]*)\s*\[TOOL_CALLS\]/i);
+    if (modelLoopMatch) {
+      // Skip past the model name + [TOOL_CALLS], keep the rest
+      const afterModel = afterTrim.slice(modelLoopMatch[0].length);
+      state.glmTextBuffer = afterModel;
+      return true; // loop to process remaining text
+    }
+    // Also check: afterSecondMarker IS a model name (no more markers)
+    if (isModelName(afterTrim)) {
+      state.glmTextBuffer = "";
+      return true;
+    }
+  }
+
+  // F33: Non-empty tool name that IS a model name + [TOOL_CALLS] second marker
+  // Pattern: [TOOL_CALLS]glm-5-2[TOOL_CALLS]real text...
+  // Model name as tool name with [TOOL_CALLS] (not [ARGS]) as second marker.
+  if (isModelName(toolName.trim())) {
+    state.glmTextBuffer = afterSecondMarker;
+    return true; // loop to process remaining text
+  }
+
   // F24: Detect swapped format [TOOL_CALLS]prose[TOOL_CALLS]real_tool_name{args}
   // Sonnet/Claude via Cascade sometimes put explanation text as the "tool name"
   // and the real tool name after the second marker.
