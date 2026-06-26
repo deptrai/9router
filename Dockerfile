@@ -16,7 +16,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Cache-bust: bump this value to force a clean `next build` (invalidates the
 # Docker layer cache for the build step). Production was observed serving a
 # stale prerendered `/` that did not match committed source.
-ARG CACHE_BUST=2026-06-26-glm-review-patches
+ARG CACHE_BUST=2026-06-26-glm-compact-toolprompt
 RUN echo "cache-bust: ${CACHE_BUST}" && npm run build
 
 FROM ${NODE_IMAGE} AS runner

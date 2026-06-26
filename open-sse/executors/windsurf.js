@@ -89,20 +89,29 @@ export class WindsurfExecutor extends BaseExecutor {
 
     let messagesForProto = body.messages;
     if (toolDefs && toolDefs.length > 0) {
-      const toolList = toolDefs.map(t =>
-        `- ${t.name}: ${t.description}\n  args schema: ${JSON.stringify(t.schema)}`
-      ).join("\n");
+      // Compact tool list: name + first sentence of description only.
+      // Full JSON schemas are omitted to save tokens — GLM-5.2 free-tier has a
+      // limited context window and bloated tool definitions (20+ Claude Code
+      // tools × full schema ≈ 6000 tokens) can push total input past the limit,
+      // causing the model to only see the tail of the conversation and echo the
+      // user message instead of performing the task.
+      const shortDesc = (d) => {
+        if (!d) return "";
+        const firstSentence = d.split(/[.\n]/)[0];
+        return firstSentence.length > 80 ? firstSentence.slice(0, 77) + "..." : firstSentence;
+      };
+      const toolList = toolDefs.map(t => `- ${t.name}: ${shortDesc(t.description)}`).join("\n");
+      const toolNames = toolDefs.map(t => t.name).join(", ");
       const toolInstruction =
-        `You have access to these tools. Use them when needed:\n${toolList}\n\n` +
-        `To call a tool, output EXACTLY this format (no markdown, no backticks):\n` +
-        `[TOOL_CALLS]<tool_name>[TOOL_CALLS]{<json_arguments>}\n\n` +
+        `You are an agent. Use tools to accomplish the user's task. Do NOT echo or repeat the user's message.\n\n` +
+        `Available tools: ${toolNames}\n${toolList}\n\n` +
+        `To call a tool, output this exact format on its own line (no markdown, no backticks):\n` +
+        `[TOOL_CALLS]<tool_name>[TOOL_CALLS]{<json_arguments>}\n` +
         `Example: [TOOL_CALLS]Read[TOOL_CALLS]{"file_path":"/tmp/foo.txt"}\n\n` +
         `Rules:\n` +
-        `- ONLY use tool names from the list above. Do NOT invent tool names like agent__explore__medium.\n` +
-        `- NEVER use your own model name (e.g. "glm-5-2") as a tool name. The tool name MUST be one of: ${toolDefs.map(t => t.name).join(", ")}.\n` +
-        `- Arguments MUST be valid JSON matching the tool's schema.\n` +
-        `- Output the tool call on its own line. You may add brief text before it.\n` +
-        `- After a tool result is returned, continue the task or call another tool.\n`;
+        `- Pick the tool that best matches the task. Args are JSON matching the tool's expected fields.\n` +
+        `- ONLY use tool names from the list above. NEVER use your model name as a tool name.\n` +
+        `- Do NOT echo or repeat the user's request. Act on it directly.\n`;
       // Prepend to existing system message if present, else insert new one
       const firstSysIdx = messagesForProto.findIndex(m => m.role === "system");
       if (firstSysIdx >= 0) {
