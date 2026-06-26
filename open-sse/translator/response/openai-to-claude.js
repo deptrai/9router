@@ -199,13 +199,22 @@ function isValidToolName(name) {
   // "glm-5-2", "claude-sonnet-4-6") — repeating it hundreds of times in
   // a loop. Reject any name that starts with a known model family prefix
   // followed by version-like suffix (digits, dashes, dots, letters).
-  if (/^(glm|gpt|claude|sonnet|haiku|opus|llama|mistral|qwen|deepseek|gemini|swe|devmini)[\-_a-z0-9.]+$/i.test(trimmed)) return false;
+  if (isModelName(trimmed)) return false;
   return true;
+}
+
+// Check if a name looks like a model identifier (glm-5-2, claude-sonnet-4-6, etc.)
+function isModelName(name) {
+  if (!name || typeof name !== "string") return false;
+  return /^(glm|gpt|claude|sonnet|haiku|opus|llama|mistral|qwen|deepseek|gemini|swe|devmini)[\-_a-z0-9.]+$/i.test(name.trim());
 }
 
 // Helper: emit a tool_use block from GLM inline tool call.
 // If the tool name is invalid (hallucinated prose), emit the raw inline text
 // instead so nothing is silently dropped and the turn doesn't break.
+// Exception: if the tool name is a model name (e.g. "glm-5-2"), the model is
+// in a loop emitting the same pattern hundreds of times — suppress the raw
+// text entirely to avoid flooding the output with garbage.
 function emitGlmToolUse(state, results, toolName, argsJson) {
   // Strip Claude OAuth prefix if present
   let bareName = toolName;
@@ -214,6 +223,10 @@ function emitGlmToolUse(state, results, toolName, argsJson) {
   }
 
   if (!isValidToolName(bareName)) {
+    // Model name as tool name → suppress raw text (loop garbage)
+    if (isModelName(bareName)) {
+      return;
+    }
     emitTextSegment(state, results, `[TOOL_CALLS]${toolName}[TOOL_CALLS]${argsJson}`);
     return;
   }
