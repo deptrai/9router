@@ -81,15 +81,12 @@ function emitTextSegment(state, results, text) {
   });
 }
 
-// Helper: emit a tool_use block from GLM inline tool call
-function emitGlmToolUse(state, results, toolName, argsJson) {
-  stopThinkingBlock(state, results);
-  stopTextBlock(state, results);
-
-  const toolBlockIndex = state.nextBlockIndex++;
-  const toolId = `toolu_glm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+// Helper: emit a tool_use block from GLM inline tool call.
+// Returns true if a tool_use block was emitted, false if the input was
+// degenerate (empty/invalid tool name) and was emitted as text instead.
+function emitGlmToolUse(state, results, toolName, argsJson, originalText) {
   // Strip Claude OAuth prefix if present
-  let bareName = toolName;
+  let bareName = (toolName || "").trim();
   if (bareName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
     bareName = bareName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length);
   }
@@ -98,6 +95,20 @@ function emitGlmToolUse(state, results, toolName, argsJson) {
   // name. Infer the real tool from the args shape so Claude Code doesn't reject
   // with "No such tool available".
   bareName = inferToolFromNameAndArgs(bareName, argsJson);
+
+  // Guard: if the tool name is still empty/whitespace after inference, do NOT
+  // emit a tool_use block with name="" (Claude Code rejects it). Emit the raw
+  // text instead so nothing is silently dropped and the turn doesn't break.
+  if (!bareName || !bareName.trim()) {
+    emitTextSegment(state, results, originalText != null ? originalText : `[TOOL_CALLS]${toolName}[TOOL_CALLS]${argsJson}`);
+    return false;
+  }
+
+  stopThinkingBlock(state, results);
+  stopTextBlock(state, results);
+
+  const toolBlockIndex = state.nextBlockIndex++;
+  const toolId = `toolu_glm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
   results.push({
     type: "content_block_start",
@@ -162,26 +173,30 @@ function inferToolFromNameAndArgs(name, argsJson) {
   const keys = Object.keys(args);
   const has = (k) => keys.includes(k);
 
-  // Read: file_path only (no content)
-  if (has("file_path") && !has("content") && !has("command") && !has("pattern")) return "Read";
+  // IMPORTANT: order from most-specific shape to least-specific. A broad check
+  // (e.g. Read on `file_path`, or Grep on `pattern`) must not shadow a more
+  // specific tool (Edit, Glob) that shares the same key.
+
+  // Edit: file_path + old_string + new_string (most specific file op)
+  if (has("file_path") && has("old_string") && has("new_string")) return "Edit";
   // Write: file_path + content
   if (has("file_path") && has("content")) return "Write";
-  // Edit: file_path + old_string + new_string
-  if (has("file_path") && has("old_string") && has("new_string")) return "Edit";
+  // Glob: path + pattern, no file_path (more specific than Grep)
+  if (has("path") && has("pattern") && !has("file_path")) return "Glob";
+  // Read: file_path only (no content/command/pattern)
+  if (has("file_path") && !has("content") && !has("command") && !has("pattern")) return "Read";
   // Bash: command (+ optional description/timeout)
   if (has("command")) return "Bash";
-  // Grep: pattern (+ path/glob)
+  // Grep: pattern (+ optional path/glob)
   if (has("pattern")) return "Grep";
-  // Glob: path + pattern (no file_path)
-  if (has("path") && has("pattern") && !has("file_path")) return "Glob";
+  // Agent/Task: prompt + subagent_type
+  if (has("prompt") && has("subagent_type")) return "Agent";
   // WebFetch: url
   if (has("url")) return "WebFetch";
   // WebSearch: query
   if (has("query")) return "WebSearch";
   // TodoWrite: todos
   if (has("todos")) return "TodoWrite";
-  // Agent/Task: prompt + subagent_type
-  if (has("prompt") && has("subagent_type")) return "Agent";
 
   // Last resort: if name looks like a model name but we can't infer, default
   // to Bash if there's a command-like field, else Read. Better than rejecting.
@@ -295,9 +310,11 @@ function drainGlmInlineToolCalls(state, results) {
 
   const argsJson = afterSecondMarker.slice(jsonStart, jsonEnd + 1);
   const remainder = afterSecondMarker.slice(jsonEnd + 1);
+  // Original consumed text (for fallback if tool name is degenerate)
+  const consumedText = buf.slice(markerIdx, buf.length - afterSecondMarker.length + jsonEnd + 1);
 
-  // Emit tool_use block
-  emitGlmToolUse(state, results, toolName, argsJson);
+  // Emit tool_use block (or text fallback if tool name is empty/invalid)
+  emitGlmToolUse(state, results, toolName, argsJson, consumedText);
 
   // Continue with remainder
   state.glmTextBuffer = remainder;

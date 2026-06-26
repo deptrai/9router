@@ -237,4 +237,83 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     const toolUses = getToolUseBlocks(events);
     expect(toolUses[0].name).toBe("mcp__serena__find_symbol");
   });
+
+  it("keeps MCP tool names with colon pattern (no remap)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm17", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS]server:tool:action[TOOL_CALLS]{\"x\":1}" }, finish_reason: "stop" }] },
+    ]);
+
+    const toolUses = getToolUseBlocks(events);
+    expect(toolUses[0].name).toBe("server:tool:action");
+  });
+
+  it("infers Edit when model hallucinates name (file_path+old_string+new_string)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm18", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS]glm-5-2[TOOL_CALLS]{\"file_path\":\"/a.js\",\"old_string\":\"x\",\"new_string\":\"y\"}" }, finish_reason: "stop" }] },
+    ]);
+    expect(getToolUseBlocks(events)[0].name).toBe("Edit");
+  });
+
+  it("infers Grep when model hallucinates name (pattern arg)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm19", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS]glm-5-2[TOOL_CALLS]{\"pattern\":\"foo\"}" }, finish_reason: "stop" }] },
+    ]);
+    expect(getToolUseBlocks(events)[0].name).toBe("Grep");
+  });
+
+  it("infers Glob when model hallucinates name (path+pattern, no file_path)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm20", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS]glm-5-2[TOOL_CALLS]{\"path\":\"/src\",\"pattern\":\"*.js\"}" }, finish_reason: "stop" }] },
+    ]);
+    expect(getToolUseBlocks(events)[0].name).toBe("Glob");
+  });
+
+  it("infers WebFetch when model hallucinates name (url arg)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm21", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS]glm-5-2[TOOL_CALLS]{\"url\":\"https://x.com\"}" }, finish_reason: "stop" }] },
+    ]);
+    expect(getToolUseBlocks(events)[0].name).toBe("WebFetch");
+  });
+
+  it("infers WebSearch when model hallucinates name (query arg)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm22", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS]glm-5-2[TOOL_CALLS]{\"query\":\"latest node\"}" }, finish_reason: "stop" }] },
+    ]);
+    expect(getToolUseBlocks(events)[0].name).toBe("WebSearch");
+  });
+
+  it("infers TodoWrite when model hallucinates name (todos arg)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm23", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS]glm-5-2[TOOL_CALLS]{\"todos\":[]}" }, finish_reason: "stop" }] },
+    ]);
+    expect(getToolUseBlocks(events)[0].name).toBe("TodoWrite");
+  });
+
+  it("infers Agent when model hallucinates name (prompt+subagent_type)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm24", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS]glm-5-2[TOOL_CALLS]{\"prompt\":\"do x\",\"subagent_type\":\"explore\"}" }, finish_reason: "stop" }] },
+    ]);
+    expect(getToolUseBlocks(events)[0].name).toBe("Agent");
+  });
+
+  it("emits text (not a broken tool_use) when tool name is empty and args are unrecognizable", () => {
+    // [TOOL_CALLS][TOOL_CALLS]{...} → empty tool name; args don't match any
+    // known shape → must NOT emit a tool_use with name="" (Claude Code rejects).
+    const events = collectEvents([
+      { id: "chatcmpl-glm25", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS][TOOL_CALLS]{\"foo\":\"bar\"}" }, finish_reason: "stop" }] },
+    ]);
+
+    const toolUses = getToolUseBlocks(events);
+    expect(toolUses).toHaveLength(0); // no tool_use emitted
+    const text = getTextDelta(events);
+    expect(text).toContain("foo"); // raw content preserved as text
+  });
+
+  it("still infers a tool when name is empty but args have a clear shape", () => {
+    // empty name + file_path → infer Read (better than dropping)
+    const events = collectEvents([
+      { id: "chatcmpl-glm26", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS][TOOL_CALLS]{\"file_path\":\"/tmp/x.txt\"}" }, finish_reason: "stop" }] },
+    ]);
+    expect(getToolUseBlocks(events)[0].name).toBe("Read");
+  });
 });
