@@ -298,4 +298,39 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     expect(parsed).not.toHaveProperty("task");
     expect(parsed).not.toHaveProperty("actions");
   });
+
+  it("sanitizes Agent args: synthesize description when missing (session b1c002ee)", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm22", model: "glm-5-2", choices: [{ delta: { content: '[TOOL_CALLS]Agent[TOOL_CALLS]{"subagent_type":"claude-code-guide"}' }, finish_reason: "stop" }] },
+    ]);
+
+    const inputs = getToolUseInputs(events);
+    const parsed = JSON.parse(inputs[0]);
+    expect(parsed.subagent_type).toBe("claude-code-guide");
+    expect(typeof parsed.description).toBe("string");
+    expect(parsed.description.length).toBeGreaterThan(0);
+  });
+
+  it("sanitizes Agent args: synthesize description from prompt when missing", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm23", model: "glm-5-2", choices: [{ delta: { content: '[TOOL_CALLS]Agent[TOOL_CALLS]{"subagent_type":"Explore","prompt":"Find the auth logic in src/lib"}' }, finish_reason: "stop" }] },
+    ]);
+
+    const inputs = getToolUseInputs(events);
+    const parsed = JSON.parse(inputs[0]);
+    expect(parsed.subagent_type).toBe("Explore");
+    expect(parsed.prompt).toBe("Find the auth logic in src/lib");
+    expect(parsed.description).toBe("Find the auth logic in src/lib");
+  });
+
+  it("sanitizes Agent args: keeps existing description, does not overwrite", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-glm24", model: "glm-5-2", choices: [{ delta: { content: '[TOOL_CALLS]Agent[TOOL_CALLS]{"subagent_type":"Explore","prompt":"find auth","description":"Search auth code"}' }, finish_reason: "stop" }] },
+    ]);
+
+    const inputs = getToolUseInputs(events);
+    const parsed = JSON.parse(inputs[0]);
+    expect(parsed.description).toBe("Search auth code");
+    expect(parsed.prompt).toBe("find auth");
+  });
 });

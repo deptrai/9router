@@ -34,11 +34,12 @@ function sanitizeBashArgs(args) {
   }
 }
 
-// Claude Code Agent/Task tool expects `prompt` + `subagent_type` (+ optional
-// `description`, `is_background`, `resume`). Non-Anthropic models hallucinate
+// Claude Code Agent/Task tool requires `description` + `prompt` + optional
+// `subagent_type`, `is_background`, `resume`. Non-Anthropic models hallucinate
 // various field names: `agent_type` (should be `subagent_type`), `instructions`
-// or `task` (should be `prompt`). Rename to canonical fields, then strip any
-// remaining unknown fields so the tool call doesn't get rejected.
+// or `task` (should be `prompt`), and frequently omit the required `description`.
+// Rename to canonical fields, synthesize `description` if missing, then strip
+// any remaining unknown fields so the tool call doesn't get rejected.
 function sanitizeAgentArgs(args) {
   if (!("subagent_type" in args) && "agent_type" in args) {
     args.subagent_type = args.agent_type;
@@ -52,6 +53,13 @@ function sanitizeAgentArgs(args) {
       args.prompt = args.task;
       delete args.task;
     }
+  }
+  // Claude Code requires `description`. GLM-5.2 often emits only `subagent_type`
+  // + `prompt` and forgets `description` → InputValidationError → retry loop →
+  // session stuck. Synthesize a short description from the prompt if missing.
+  if (!("description" in args) || typeof args.description !== "string" || !args.description.trim()) {
+    const source = args.prompt || args.task || args.instructions || args.subagent_type || "Agent task";
+    args.description = String(source).slice(0, 80);
   }
   const allowed = new Set(["prompt", "subagent_type", "description", "is_background", "resume"]);
   for (const key of Object.keys(args)) {
