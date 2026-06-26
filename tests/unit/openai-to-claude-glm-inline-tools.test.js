@@ -764,4 +764,44 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     expect(parsed.command).toBe("invoke");
     expect(parsed.skill).toBe("devin-for-terminal");
   });
+
+  it("F30: infers Bash from {cmd,tool:Bash} envelope", () => {
+    // Run 2 pattern: [TOOL_CALLS]{"cmd":"grep -r 'mcp' /path","tool":"Bash"}
+    const events = collectEvents([
+      { id: "chatcmpl-f30a", model: "claude-sonnet-4-6", choices: [{ delta: { content: '[TOOL_CALLS]{"cmd": "grep -r \'mcp\' /Users/luisphan/Documents/9router --exclude-dir .git,.claude,node_modules,test", "exclude_dir": "test,tests", "tool": "Bash"}' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const inputs = getToolUseInputs(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Bash");
+    const parsed = JSON.parse(inputs[0]);
+    expect(parsed.command).toContain("grep -r");
+    expect(parsed.tool).toBeUndefined();
+    expect(parsed.cmd).toBeUndefined();
+  });
+
+  it("F30: infers Read from {cmd:'cat /file',tool:Read} envelope", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f30b", model: "claude-sonnet-4-6", choices: [{ delta: { content: '[TOOL_CALLS]{"cmd": "cat /Users/luisphan/.claude/settings.json", "tool": "Read"}' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const inputs = getToolUseInputs(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Read");
+    const parsed = JSON.parse(inputs[0]);
+    expect(parsed.file_path).toBe("/Users/luisphan/.claude/settings.json");
+  });
+
+  it("F30: infers Bash from {cmd} without tool wrapper", () => {
+    // Run 3 pattern: [TOOL_CALLS]{"cmd":"grep -r 'mcp' /path"}
+    const events = collectEvents([
+      { id: "chatcmpl-f30c", model: "claude-sonnet-4-6", choices: [{ delta: { content: '[TOOL_CALLS]{"cmd":"grep -r \'mcp\' --exclude-dir=\'test*,tests*\' /Users/luisphan/Documents/9router"}' }, finish_reason: "stop" }] },
+    ]);
+    const toolUses = getToolUseBlocks(events);
+    const inputs = getToolUseInputs(events);
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0].name).toBe("Bash");
+    const parsed = JSON.parse(inputs[0]);
+    expect(parsed.command).toContain("grep -r");
+  });
 });

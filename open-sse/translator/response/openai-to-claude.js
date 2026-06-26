@@ -180,7 +180,53 @@ function inferToolNameFromArgs(argsJson) {
       return { name: "Skill", argsJson: JSON.stringify(remapped) };
     }
 
+    // F30: {tool:"Bash"|"Read"|"Grep"|..., cmd|command|...} envelope
+    // Model wraps real tool name in "tool" key + uses "cmd" instead of "command"
+    // {"cmd":"grep -r 'mcp' /path","tool":"Bash"} → Bash {command:"grep..."}
+    // {"cmd":"cat /file","tool":"Read"} → Read {file_path:"/file"} (remap cmd→cat target)
+    if (has("tool") && typeof args.tool === "string" && !has("action")) {
+      const wrappedTool = args.tool.toLowerCase().trim();
+      const toolMap = {
+        bash: "Bash", read: "Read", write: "Write", edit: "Edit",
+        grep: "Grep", glob: "Glob", agent: "Agent", task: "Agent",
+        webfetch: "WebFetch", websearch: "WebSearch",
+      };
+      const mappedName = toolMap[wrappedTool];
+      if (mappedName) {
+        const remapped = { ...args };
+        delete remapped.tool;
+        // cmd → command for Bash
+        if (has("cmd") && !has("command")) {
+          remapped.command = remapped.cmd;
+          delete remapped.cmd;
+        }
+        // For Read: if has command (or cmd→command) like "cat /file", extract file_path
+        if (mappedName === "Read" && typeof remapped.command === "string") {
+          const catMatch = remapped.command.match(/cat\s+(\/[^\s]+|\.\.?[^\s]*|~[^\s]+)/);
+          if (catMatch) {
+            remapped.file_path = catMatch[1];
+            delete remapped.command;
+          }
+        }
+        // For Grep: if has command like "grep -r 'pattern' /path", extract
+        if (mappedName === "Grep" && typeof remapped.command === "string") {
+          const grepMatch = remapped.command.match(/grep\s+-\w*\s*["']?([^"'\s]+)["']?\s+(\/[^\s]+|\.\.?[^\s]*|~[^\s]+)/);
+          if (grepMatch) {
+            remapped.pattern = grepMatch[1];
+            remapped.path = grepMatch[2];
+            delete remapped.command;
+          }
+        }
+        // Strip unknown keys for clean tool args
+        return { name: mappedName, argsJson: JSON.stringify(remapped) };
+      }
+    }
+
     // F25: Direct key pattern inference (no envelope)
+    // F30 alias: cmd → command (Bash) when no tool wrapper
+    if (has("cmd") && typeof args.cmd === "string" && !has("command")) {
+      return { name: "Bash", argsJson: JSON.stringify({ command: args.cmd }) };
+    }
     // Bash: command (string), optional run_in_background/timeout
     if (has("command") && typeof args.command === "string") return { name: "Bash", argsJson };
     // Read: file_path (string)
