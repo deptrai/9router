@@ -31,7 +31,47 @@ function findJsonEnd(text) {
 
 // Tool-call format constants — must match openai-to-claude.js
 const TC_OPEN = "<tool_call>";
-const TC_CLOSE = "</tool_call>";
+const TC_CLOSE = "antml:invoke";
+
+// Legacy format constants — GLM-5.2 non-deterministically emits these
+// instead of the XML-tagged format, even with new instructions.
+const LEGACY_OPEN = "[TOOL_CALLS]";
+const LEGACY_MID = ["[ARGS]", "[TOOL_CALLS]"];
+
+// Try to parse a legacy [TOOL_CALLS]name[MARKER]{json} block from buf.
+// Returns { name, argsJson, remainder, openIdx } on success, null otherwise.
+function tryParseLegacyToolCall(buf) {
+  const openIdx = buf.indexOf(LEGACY_OPEN);
+  if (openIdx === -1) return null;
+  const afterOpen = buf.slice(openIdx + LEGACY_OPEN.length);
+  let midMarker = null, midIdx = -1;
+  for (const m of LEGACY_MID) {
+    const idx = afterOpen.indexOf(m);
+    if (idx > 0 && (midIdx === -1 || idx < midIdx)) {
+      midIdx = idx;
+      midMarker = m;
+    }
+  }
+  if (midIdx === -1) return null;
+  const name = afterOpen.slice(0, midIdx).trim();
+  if (!name) return null;
+  const afterMid = afterOpen.slice(midIdx + midMarker.length);
+  const braceStart = afterMid.indexOf("{");
+  if (braceStart === -1) return null;
+  const jsonEnd = findJsonEnd(afterMid.slice(braceStart));
+  if (jsonEnd === -1) return null;
+  const body = afterMid.slice(braceStart, braceStart + jsonEnd).trim();
+  const remainder = afterMid.slice(braceStart + jsonEnd);
+  try {
+    const parsed = JSON.parse(body);
+    const args = parsed && parsed.arguments !== undefined ? parsed.arguments : parsed;
+    const argsJson = typeof args === "string" ? args : JSON.stringify(args ?? {});
+    return { name, argsJson, remainder, openIdx };
+  } catch {
+    return null;
+  }
+}
+</tool_call>";
 
 /**
  * Convert OpenAI ChatCompletion response to Anthropic Messages format.
@@ -52,7 +92,33 @@ function openaiToClaudeNonStreaming(responseBody) {
     // Extract tool-call blocks from text
     let remaining = textContent;
     while (true) {
-      const openIdx = remaining.indexOf(TC_OPEN);
+      // ── Legacy format check: [TOOL_CALLS]name[ARGS]{json} ──
+      // GLM-5.2 non-deterministically emits this even with new instructions.
+      const legacyOpenIdx = remaining.indexOf(LEGACY_OPEN);
+      const newOpenIdx = remaining.indexOf(TC_OPEN);
+      // If legacy marker appears and (no new marker OR legacy comes first)
+      if (legacyOpenIdx !== -1 && (newOpenIdx === -1 || legacyOpenIdx < newOpenIdx)) {
+        const legacy = tryParseLegacyToolCall(remaining);
+        if (legacy && legacy.name) {
+          // Emit text before the legacy open tag
+          if (legacy.openIdx > 0) {
+            const before = remaining.slice(0, legacy.openIdx).trim();
+            if (before) content.push({ type: "text", text: before });
+          }
+          content.push({
+            type: "tool_use",
+            id: `toolu_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            name: legacy.name,
+            input: typeof legacy.argsJson === "string" ? JSON.parse(legacy.argsJson) : legacy.argsJson,
+          });
+          remaining = legacy.remainder;
+          continue;
+        }
+        // Legacy parse failed (not incomplete since non-streaming has full text)
+        // → fall through to new-format check
+      }
+
+      const openIdx = newOpenIdx;
       if (openIdx === -1) {
         // No more tool calls — emit remaining text
         const cleaned = remaining.trim();

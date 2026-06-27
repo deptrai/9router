@@ -601,7 +601,54 @@ function emitGlmToolUse(state, results, toolName, argsJson) {
 // Proven by WindsurfPoolAPI in production with GLM-5.2 and other models.
 // Models may emit whitespace between open tag and JSON — parser tolerates this.
 const TC_OPEN = "<tool_call>";
-const TC_CLOSE = "</tool_call>";
+const TC_CLOSE = "antml:invoke";
+
+// Legacy format constants — GLM-5.2 non-deterministically emits these
+// instead of the XML-tagged format, even with new instructions.
+// Patterns observed: [TOOL_CALLS]name[ARGS]{json}  and  [TOOL_CALLS]name[TOOL_CALLS]{json}
+const LEGACY_OPEN = "[TOOL_CALLS]";
+const LEGACY_MID = ["[ARGS]", "[TOOL_CALLS]"];
+
+// Try to parse a legacy [TOOL_CALLS]name[MARKER]{json} block from buf.
+// Returns { name, argsJson, remainder, openIdx } on success.
+// Returns { incomplete: true } if a legacy block is detected but JSON is incomplete.
+// Returns null if no legacy pattern found.
+function tryParseLegacyToolCall(buf) {
+  const openIdx = buf.indexOf(LEGACY_OPEN);
+  if (openIdx === -1) return null;
+  const afterOpen = buf.slice(openIdx + LEGACY_OPEN.length);
+  // Find the mid marker ([ARGS] or [TOOL_CALLS])
+  let midMarker = null, midIdx = -1;
+  for (const m of LEGACY_MID) {
+    const idx = afterOpen.indexOf(m);
+    if (idx > 0 && (midIdx === -1 || idx < midIdx)) {
+      midIdx = idx;
+      midMarker = m;
+    }
+  }
+  if (midIdx === -1) {
+    // Has [TOOL_CALLS] but no mid marker yet — could be incomplete streaming
+    return { incomplete: true };
+  }
+  const name = afterOpen.slice(0, midIdx).trim();
+  if (!name) return { incomplete: true };
+  const afterMid = afterOpen.slice(midIdx + midMarker.length);
+  // Find JSON body starting at first { — use brace matching
+  const braceStart = afterMid.indexOf("{");
+  if (braceStart === -1) return { incomplete: true };
+  const jsonEnd = findJsonEnd(afterMid.slice(braceStart));
+  if (jsonEnd === -1) return { incomplete: true }; // incomplete — wait for more
+  const body = afterMid.slice(braceStart, braceStart + jsonEnd).trim();
+  const remainder = afterMid.slice(braceStart + jsonEnd);
+  try {
+    const parsed = JSON.parse(body);
+    const args = parsed && parsed.arguments !== undefined ? parsed.arguments : parsed;
+    const argsJson = typeof args === "string" ? args : JSON.stringify(args ?? {});
+    return { name, argsJson, remainder, openIdx };
+  } catch {
+    return null;
+  }
+}
 
 // Parse + drain inline tool calls from buffer using the XML-tagged JSON format.
 // Returns true if something was emitted (caller should loop), false if buffer
@@ -610,6 +657,31 @@ function drainGlmInlineToolCalls(state, results) {
   if (!state.glmTextBuffer) return false;
 
   const buf = state.glmTextBuffer;
+
+  // ── Legacy format check: [TOOL_CALLS]name[ARGS]{json} ──
+  // GLM-5.2 non-deterministically emits this even with new instructions.
+  // Check legacy FIRST so it takes priority when both markers are present.
+  const legacy = tryParseLegacyToolCall(buf);
+  if (legacy && legacy.incomplete) {
+    // Legacy block detected but JSON incomplete — wait for more chunks.
+    // Emit any text before [TOOL_CALLS] first.
+    const legacyOpenIdx = buf.indexOf(LEGACY_OPEN);
+    if (legacyOpenIdx > 0) {
+      emitTextSegment(state, results, buf.slice(0, legacyOpenIdx));
+      state.glmTextBuffer = buf.slice(legacyOpenIdx);
+    }
+    return false;
+  }
+  if (legacy && legacy.name) {
+    // Emit text before the legacy open tag
+    if (legacy.openIdx > 0) {
+      emitTextSegment(state, results, buf.slice(0, legacy.openIdx));
+    }
+    emitGlmToolUse(state, results, legacy.name, legacy.argsJson);
+    state.glmTextBuffer = legacy.remainder;
+    return true;
+  }
+
   const openIdx = buf.indexOf(TC_OPEN);
 
   // No open tag — but buffer might end with a partial open tag prefix.
