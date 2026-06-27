@@ -441,25 +441,18 @@ export class WindsurfExecutor extends BaseExecutor {
       `2. "arguments" must be a JSON object matching the function's parameter schema.`,
       `3. You MAY emit MULTIPLE ${TC_OPEN} blocks if the request requires calling several functions in parallel. Emit ALL needed calls consecutively, then STOP generating.`,
       `4. After emitting the last ${TC_OPEN} block, STOP. Do not write any explanation after it. The caller executes all functions and returns results as <tool_result tool_call_id="...">...</tool_result> in the next user turn.`,
-      `5. NEVER say "I don't have access to tools" — the functions listed below ARE your available tools.`,
-      `6. ONLY call a function when the user's request EXPLICITLY requires it (e.g. "read file X", "run command Y", "search for Z"). For greetings, simple questions, or conversational messages, just respond normally WITHOUT calling any function.`,
-      `7. Do NOT generate fake "User:" or "Assistant:" lines — respond directly to the user's actual message.`,
-      `8. For the Agent tool: subagent_type must be a real profile name (e.g. "Explore", "general", "subagent_general"), description must be a short title of the task, and prompt must be the FULL task instruction. NEVER use the same string for all three fields.`,
-      `9. For the Bash tool: the shell is zsh, NOT bash. ALWAYS quote glob patterns: use --include='*.js' NOT --include=*.js, use --exclude='*' NOT --exclude=*. Unquoted globs will be expanded by zsh and fail with "no matches found".`,
-      `10. For the Bash tool: NEVER run grep -r on a large directory (home, /, /Users) without --exclude-dir. Always exclude: --exclude-dir={.git,node_modules,.next,dist,build,vendor,target,Library,.cache}. For searching a specific project, cd into it first and grep only that directory.`,
+      `5. ONLY call a function when the user's request EXPLICITLY requires it (e.g. "read file X", "run command Y", "search for Z"). For greetings, simple questions, or conversational messages, just respond normally WITHOUT calling any function.`,
+      `6. Do NOT generate fake "User:" or "Assistant:" lines — respond directly to the user's actual message.`,
+      `7. For the Bash tool: the shell is zsh, NOT bash. ALWAYS quote glob patterns.`,
       ``,
-      `Available functions:`,
+      `Available functions (${toolDefs.length} total — name: short description):`,
     ];
+    // COMPACT: only name + first line of description, NO full JSON schemas.
+    // Full schemas (260KB for 179 tools) overwhelm the model and bury the user's
+    // actual message. The model can infer parameters from tool name + description.
     for (const t of toolDefs) {
-      lines.push("");
-      lines.push(`### ${t.name}`);
-      if (t.description) lines.push(t.description);
-      if (t.schema && Object.keys(t.schema).length > 0) {
-        lines.push("Parameters:");
-        lines.push("```json");
-        lines.push(JSON.stringify(t.schema));
-        lines.push("```");
-      }
+      const desc = (t.description || "").split("\n")[0].slice(0, 100);
+      lines.push(`- ${t.name}: ${desc}`);
     }
     lines.push("");
     lines.push(`Respond to the user's actual message. Only use ${TC_OPEN} if the user explicitly asks for something that requires a tool.`);
