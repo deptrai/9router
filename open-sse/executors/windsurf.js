@@ -129,6 +129,10 @@ export class WindsurfExecutor extends BaseExecutor {
         `Only call functions when the user explicitly requests an action.`,
         `For greetings or questions, respond normally without tools.`,
         `Do NOT generate fake "User:" or "Assistant:" lines.`,
+        `Available functions: ${toolDefs.map(t => {
+          const params = t.schema?.properties ? Object.keys(t.schema.properties) : [];
+          return params.length > 0 ? `${t.name}(${params.join(", ")})` : t.name;
+        }).join(", ")}`,
         `--- End Tool Call Format ---`,
         ``,
       ].join("\n");
