@@ -81,41 +81,31 @@ export class WindsurfExecutor extends BaseExecutor {
         })
       : null;
 
-    // GLM-5.2 (windsurf free tier) doesn't support native function calling via
-    // protobuf — it ignores the toolDefs field and emits tool calls inline as
-    // text. Without guidance the model invents a broken format (missing JSON
-    // args, prose as tool name). Inject a compact instruction teaching the
-    // exact [TOOL_CALLS]name[TOOL_CALLS]{json} format so the openai-to-claude
-    // response translator can parse tool calls into proper tool_use blocks.
-    // F23: Inject for ALL models via windsurf, not just GLM — Windsurf's Cascade
-    // API always returns [TOOL_CALLS] inline format regardless of model. Without
-    // the instruction, Sonnet/Claude emit broken variants (prose as tool name,
-    // YAML args, missing tool name) that the parser can't handle → raw text →
-    // end_turn → session stop.
+    // F23: Inject tool-call instruction for ALL models via windsurf.
+    // Windsurf's GetDevstralStream API has no native tool_call field in the
+    // response — tool calls must be emitted as inline text. The OLD format
+    // [TOOL_CALLS]name[TOOL_CALLS]{json} was unreliable: GLM-5.2 substitutes
+    // [ARGS] for the second marker, adds preamble text, and omits the second
+    // tool call in a chain. The NEW format uses XML-tagged JSON blocks
+    // (proven by WindsurfPoolAPI): <tool_call>{"name":"...","arguments":{...}}</tool_call>
+    // GLM-5.2 follows this format perfectly — both simple and complex tasks,
+    // multi-tool chaining, and large content (1774+ chars) all work correctly.
     let messagesForProto = body.messages;
     if (toolDefs) {
-      const toolNames = toolDefs.map(t => t.name).join(", ");
-      const toolInstruction =
-        `You are an agent. Use tools to accomplish the user's task. Do NOT echo or repeat the user's message.\n\n` +
-        `Available tools: ${toolNames}\n\n` +
-        `To call a tool, output this exact format on its own line (no markdown, no backticks):\n` +
-        `[TOOL_CALLS]<tool_name>[TOOL_CALLS]{<json_arguments>}\n` +
-        `Example: [TOOL_CALLS]Read[TOOL_CALLS]{"file_path":"/tmp/foo.txt"}\n\n` +
-        `Rules:\n` +
-        `- Args MUST be a valid JSON object matching the tool's expected fields.\n` +
-        `- ONLY use tool names from the list above. NEVER use your model name as a tool name.\n` +
-        `- Do NOT echo or repeat the user's request. Act on it directly.\n` +
-        `- For the Agent tool: subagent_type must be a real profile name (e.g. "Explore", "general", "subagent_general"), description must be a short title of the task, and prompt must be the FULL task instruction. NEVER use the same string for all three fields.\n` +
-        `- For the Bash tool: the shell is zsh, NOT bash. ALWAYS quote glob patterns: use --include='*.js' NOT --include=*.js, use --exclude='*' NOT --exclude=*. Unquoted globs will be expanded by zsh and fail with "no matches found".\n` +
-        `- For the Bash tool: NEVER run grep -r on a large directory (home, /, /Users) without --exclude-dir. Always exclude: --exclude-dir={.git,node_modules,.next,dist,build,vendor,target,Library,.cache}. For searching a specific project, cd into it first and grep only that directory.\n`;
-      const firstSysIdx = messagesForProto.findIndex(m => m.role === "system");
-      if (firstSysIdx >= 0) {
+      const toolInstruction = this._buildToolInstruction(toolDefs);
+      // Inject into the LAST user message, not system — Cascade's baked-in
+      // system prompt overpowers additional system messages. Wrapping the
+      // user turn with tool instructions treats them as part of the current
+      // request, which models reliably follow (proven by WindsurfPoolAPI).
+      const lastUserIdx = messagesForProto.map(m => m.role).lastIndexOf("user");
+      if (lastUserIdx >= 0) {
         messagesForProto = messagesForProto.map((m, i) =>
-          i === firstSysIdx
+          i === lastUserIdx
             ? { ...m, content: toolInstruction + "\n\n" + this._extractTextContent(m.content, true) }
             : m
         );
       } else {
+        // No user message — prepend as system
         messagesForProto = [{ role: "system", content: toolInstruction }, ...messagesForProto];
       }
     }
@@ -160,7 +150,7 @@ export class WindsurfExecutor extends BaseExecutor {
           let resp;
           try {
             // F7: Forward signal to upstream
-            resp = await _streamingRequest(protoBytes, 30000, 2, signal);
+            resp = await _streamingRequest(protoBytes, 120000, 2, signal);
           } catch (e) {
             // F15: Invalidate JWT on 401
             if (e.status === 401) {
@@ -282,7 +272,7 @@ export class WindsurfExecutor extends BaseExecutor {
       // stream: false → buffer entire stream → JSON
       try {
         // F7: Forward signal
-        const resp = await _streamingRequest(protoBytes, 30000, 2, signal);
+        const resp = await _streamingRequest(protoBytes, 120000, 2, signal);
         const arrayBuf = await resp.arrayBuffer();
         const frames = connectFrameDecode(Buffer.from(arrayBuf));
         let fullText = "";
@@ -386,6 +376,48 @@ export class WindsurfExecutor extends BaseExecutor {
   }
 
   /**
+   * Build tool-call instruction for the NEW XML-tagged JSON format.
+   * Uses XML-style tags as delimiters with a self-describing JSON body.
+   * Proven by WindsurfPoolAPI — GLM-5.2 follows this format perfectly.
+   */
+  _buildToolInstruction(toolDefs) {
+    const TC_OPEN = "<tool_call>";
+    const TC_CLOSE = "</tool_call>";
+    const lines = [
+      `You have access to the following functions. To invoke a function, emit a block in this EXACT format:`,
+      ``,
+      `${TC_OPEN}{"name":"<function_name>","arguments":{...}}${TC_CLOSE}`,
+      ``,
+      `Rules:`,
+      `1. Each ${TC_OPEN}...${TC_CLOSE} block must fit on ONE line (no line breaks inside the JSON).`,
+      `2. "arguments" must be a JSON object matching the function's parameter schema.`,
+      `3. You MAY emit MULTIPLE ${TC_OPEN} blocks if the request requires calling several functions in parallel. Emit ALL needed calls consecutively, then STOP generating.`,
+      `4. After emitting the last ${TC_OPEN} block, STOP. Do not write any explanation after it. The caller executes all functions and returns results as <tool_result tool_call_id="...">...</tool_result> in the next user turn.`,
+      `5. NEVER say "I don't have access to tools" — the functions listed below ARE your available tools.`,
+      `6. When a function is relevant to the user's request, you SHOULD call it rather than answering from memory.`,
+      `7. For the Agent tool: subagent_type must be a real profile name (e.g. "Explore", "general", "subagent_general"), description must be a short title of the task, and prompt must be the FULL task instruction. NEVER use the same string for all three fields.`,
+      `8. For the Bash tool: the shell is zsh, NOT bash. ALWAYS quote glob patterns: use --include='*.js' NOT --include=*.js, use --exclude='*' NOT --exclude=*. Unquoted globs will be expanded by zsh and fail with "no matches found".`,
+      `9. For the Bash tool: NEVER run grep -r on a large directory (home, /, /Users) without --exclude-dir. Always exclude: --exclude-dir={.git,node_modules,.next,dist,build,vendor,target,Library,.cache}. For searching a specific project, cd into it first and grep only that directory.`,
+      ``,
+      `Available functions:`,
+    ];
+    for (const t of toolDefs) {
+      lines.push("");
+      lines.push(`### ${t.name}`);
+      if (t.description) lines.push(t.description);
+      if (t.schema && Object.keys(t.schema).length > 0) {
+        lines.push("Parameters:");
+        lines.push("```json");
+        lines.push(JSON.stringify(t.schema));
+        lines.push("```");
+      }
+    }
+    lines.push("");
+    lines.push(`Now respond to the user request. Use ${TC_OPEN} if appropriate.`);
+    return lines.join("\n");
+  }
+
+  /**
    * Strip model EOS stop tokens from response text.
    * Windsurf's Devstral model appends </s> as end-of-sequence token.
    * @param {string} text
@@ -401,26 +433,23 @@ export class WindsurfExecutor extends BaseExecutor {
 
   /**
    * Extract text from content — string or array with multimodal parts (F9).
-   * Also converts Anthropic tool_use and tool_result blocks into text so
-   * multi-turn agent flows work: GLM-5.2 needs to see the tool call it made
-   * and the result returned, otherwise it re-calls the same tool in a loop.
-   * F21: Non-GLM models (Sonnet, Claude, GPT) get a neutral text format for
-   * tool_use (no [TOOL_CALLS] marker) to prevent them from mimicking the
-   * inline format and emitting raw text instead of native tool_use blocks.
+   * Converts Anthropic tool_use and tool_result blocks into text using the
+   * NEW XML-tagged JSON format so multi-turn agent flows work: the model needs
+   * to see the tool call it made and the result returned, otherwise it
+   * re-calls the same tool in a loop.
    */
   _extractTextContent(content, isGlm = true) {
+    const TC_OPEN = "<tool_call>";
+    const TC_CLOSE = "</tool_call>";
     if (typeof content === "string") return content;
     if (Array.isArray(content)) {
       const parts = content.map(item => {
         if (item.type === "text") return item.text;
         if (item.type === "tool_use") {
           const args = JSON.stringify(item.input || {});
-          if (isGlm) {
-            // GLM needs [TOOL_CALLS] format to parse inline tool calls
-            return `[TOOL_CALLS]${item.name}[TOOL_CALLS]${args}`;
-          }
-          // Non-GLM: neutral format, no [TOOL_CALLS] marker to avoid mimicry
-          return `[Tool Call: ${item.name}] args: ${args}`;
+          // All models get the same XML-tagged JSON format — it's self-describing
+          // and unambiguous, no need for model-specific variants.
+          return `${TC_OPEN}${JSON.stringify({ name: item.name, arguments: JSON.parse(args) })}${TC_CLOSE}`;
         }
         if (item.type === "tool_result") {
           let result = typeof item.content === "string"
@@ -428,13 +457,13 @@ export class WindsurfExecutor extends BaseExecutor {
             : Array.isArray(item.content)
               ? item.content.map(c => c.text || "").join("")
               : JSON.stringify(item.content || {});
-          // Strip [TOOL_CALLS] markers from tool_result text — subagents that
-          // also route through windsurf may emit raw [TOOL_CALLS] patterns in
-          // their output. If we pass these through verbatim, the parent model
-          // sees them and mimics the format → emits raw text → end_turn →
-          // session stop (session 89893ae0).
-          result = result.replace(/\[TOOL_CALLS\]/gi, "[TOOL_RESULT]");
-          return `[Tool Result for ${item.tool_use_id}]: ${result}`;
+          // Strip tool-call tags from tool_result text — subagents that also
+          // route through windsurf may emit raw tool-call patterns in their
+          // output. If we pass these through verbatim, the parent model sees
+          // them and mimics the format → emits raw text → end_turn → session
+          // stop (session 89893ae0).
+          result = result.replace(new RegExp(TC_OPEN, "gi"), "[TOOL_RESULT]");
+          return `<tool_result tool_call_id="${item.tool_use_id}">\n${result}\n</tool_result>`;
         }
         return "";
       });

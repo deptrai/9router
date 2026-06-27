@@ -595,27 +595,28 @@ function emitGlmToolUse(state, results, toolName, argsJson) {
   state.toolCalls.set(idx, { id: toolId, name: bareName, blockIndex: toolBlockIndex, glmEmitted: true });
 }
 
-// Parse + drain GLM-5.2 inline tool calls from buffer.
-// Format: [TOOL_CALLS]name[TOOL_CALLS]{json} or [TOOL_CALLS]name[ARGS]{json}
+// Tool-call format: XML-tagged JSON blocks.
+// Open tag + JSON body + close tag, where JSON = {"name":"...","arguments":{...}}
+// This format is self-describing and unambiguous — no edge case fixes needed.
+// Proven by WindsurfPoolAPI in production with GLM-5.2 and other models.
+const TC_OPEN = "<tool_call>";
+const TC_CLOSE = "</tool_call>";
+
+// Parse + drain inline tool calls from buffer using the XML-tagged JSON format.
 // Returns true if something was emitted (caller should loop), false if buffer
 // is empty or holds an incomplete token that needs more chunks.
 function drainGlmInlineToolCalls(state, results) {
   if (!state.glmTextBuffer) return false;
 
   const buf = state.glmTextBuffer;
-  const marker = "[TOOL_CALLS]";
-  const markerIdx = buf.indexOf(marker);
+  const openIdx = buf.indexOf(TC_OPEN);
 
-  // No marker at all — but buffer might end with a partial marker prefix.
-  // Keep up to 12 chars (len("[TOOL_CALLS]")) at the end to avoid splitting.
-  if (markerIdx === -1) {
-    if (buf.length <= marker.length) return false; // wait for more
-    // Check if buffer ends with a partial "[TOOL_CALLS]" prefix.
-    // Only retain prefixes >= 3 chars ("[TO") — shorter prefixes like "["
-    // or "[T" are too common in normal text and would cause false buffering.
-    for (let i = marker.length - 1; i >= 3; i--) {
-      if (buf.endsWith(marker.slice(0, i))) {
-        // Emit safe text before partial marker, keep partial
+  // No open tag — but buffer might end with a partial open tag prefix.
+  if (openIdx === -1) {
+    // Check if buffer ends with a partial TC_OPEN prefix.
+    // TC_OPEN is 10 chars. Only retain prefixes >= 3 chars to avoid false buffering.
+    for (let i = TC_OPEN.length - 1; i >= 3; i--) {
+      if (buf.endsWith(TC_OPEN.slice(0, i))) {
         const safeEnd = buf.length - i;
         if (safeEnd > 0) {
           emitTextSegment(state, results, buf.slice(0, safeEnd));
@@ -624,270 +625,67 @@ function drainGlmInlineToolCalls(state, results) {
         return false;
       }
     }
-    // No partial marker — check for raw commands (F27) before emitting
-    const rawCmd = detectRawCommandInText(buf);
-    if (rawCmd) {
-      if (rawCmd.beforeText) emitTextSegment(state, results, rawCmd.beforeText);
-      emitGlmToolUse(state, results, rawCmd.toolName, rawCmd.argsJson);
-      state.glmTextBuffer = rawCmd.afterText;
-      return true; // loop to process remaining text
-    }
-    // No raw command found — emit everything
+    // No partial open tag — emit everything as text
     emitTextSegment(state, results, buf);
     state.glmTextBuffer = "";
     return false;
   }
 
-  // Emit text before marker
-  // F36: Strip model name loop garbage (model_name[ARGS] or model_name[TOOL_CALLS])
-  // from text before marker. Model sometimes emits these without leading [TOOL_CALLS].
-  if (markerIdx > 0) {
-    let beforeMarker = buf.slice(0, markerIdx);
-    beforeMarker = beforeMarker
-      .replace(/(glm[-_0-9.]+|claude[-_a-z0-9.]+|gpt[-_0-9.]+|sonnet[-_0-9.]+|haiku[-_0-9.]+|opus[-_0-9.]+|llama[-_0-9.]+|mistral[-_0-9.]+|qwen[-_0-9.]+|deepseek[-_0-9.]+|gemini[-_0-9.]+|swe[-_0-9.]+|devmini[-_0-9.]*)\s*\[(TOOL_CALLS|ARGS)\]/gi, "")
-      .replace(/\[(TOOL_CALLS|ARGS)\]/g, "");
-    emitTextSegment(state, results, beforeMarker);
+  // Emit text before open tag
+  if (openIdx > 0) {
+    emitTextSegment(state, results, buf.slice(0, openIdx));
   }
 
-  const afterMarker = buf.slice(markerIdx + marker.length);
-  // Find second marker: [TOOL_CALLS] or [ARGS]
-  const secondMarkerRe = /\[(TOOL_CALLS|ARGS)\]/;
-  const m2 = afterMarker.match(secondMarkerRe);
-  if (!m2) {
-    // F25: Single marker + JSON object directly after = missing tool name.
-    // Sonnet via Cascade emits: [TOOL_CALLS]{"command":"ls -la"} (no tool name).
-    // Try to parse JSON and infer tool name from args keys.
-    const trimmedAfter = afterMarker.trim();
-    if (trimmedAfter.startsWith("{")) {
-      const jsonEnd = findJsonEnd(trimmedAfter);
-      if (jsonEnd > 0) {
-        const argsJson = trimmedAfter.slice(0, jsonEnd);
-        const inferred = inferToolNameFromArgs(argsJson);
-        if (inferred) {
-          emitGlmToolUse(state, results, inferred.name, inferred.argsJson);
-          state.glmTextBuffer = trimmedAfter.slice(jsonEnd);
-          return true;
-        }
-      }
-      // F34: JSON.parse failed (malformed JSON with unescaped quotes).
-      // Try lenient extraction before giving up.
-      // Only attempt if buffer has a closing } (JSON complete, just malformed).
-      if (trimmedAfter.includes("}")) {
-        const malformed = inferToolNameFromMalformedArgs(trimmedAfter);
-        if (malformed) {
-          emitGlmToolUse(state, results, malformed.name, malformed.argsJson);
-          // Find the end: look for the last } in trimmedAfter
-          const lastBrace = trimmedAfter.lastIndexOf("}");
-          state.glmTextBuffer = lastBrace > 0 ? trimmedAfter.slice(lastBrace + 1) : "";
-          return true;
-        }
-      }
-    }
-    // F31: Orphan [TOOL_CALLS] marker — afterMarker doesn't start with a valid
-    // tool name character or JSON. Model emitted code/prose with marker prefix.
-    // Strip the marker and emit the text cleanly (don't leak [TOOL_CALLS] garbage).
-    // Valid tool name starts with [A-Za-z_], JSON starts with {. Anything else
-    // (digit, space, special char, newline) = not a tool call.
-    if (trimmedAfter && !/^[A-Za-z_{]/.test(trimmedAfter)) {
-      // F34b: Check if trimmedAfter is a partial prefix of [TOOL_CALLS] or [ARGS].
-      // If so, this is a second marker split across chunks — wait for more.
-      const isPartialMarker =
-        "[TOOL_CALLS]".startsWith(trimmedAfter) && trimmedAfter.length >= 2 ||
-        "[ARGS]".startsWith(trimmedAfter) && trimmedAfter.length >= 2;
-      if (isPartialMarker) {
-        state.glmTextBuffer = marker + afterMarker;
-        return false;
-      }
-      emitTextSegment(state, results, trimmedAfter);
-      state.glmTextBuffer = "";
-      return true;
-    }
-    // Incomplete — keep marker + afterMarker so flush-at-finish preserves the
-    // original text (no silent drop of the "[TOOL_CALLS]" we already consumed).
-    state.glmTextBuffer = marker + afterMarker;
+  const afterOpen = buf.slice(openIdx + TC_OPEN.length);
+
+  // Find close tag
+  const closeIdx = afterOpen.indexOf(TC_CLOSE);
+  if (closeIdx === -1) {
+    // Incomplete — keep from open tag onwards, wait for more chunks
+    state.glmTextBuffer = TC_OPEN + afterOpen;
     return false;
   }
 
-  let toolName = afterMarker.slice(0, m2.index);
-  let afterSecondMarker = afterMarker.slice(m2.index + m2[0].length);
+  const body = afterOpen.slice(0, closeIdx).trim();
+  const remainder = afterOpen.slice(closeIdx + TC_CLOSE.length);
 
-  // F25: Empty/whitespace tool name + JSON args = missing tool name.
-  // Sonnet emits: [TOOL_CALLS]\n[TOOL_CALLS]{"file_path":"/path"} (empty name).
-  // Infer tool name from args keys.
-  if (!toolName.trim() && afterSecondMarker.trim().startsWith("{")) {
-    const afterTrim = afterSecondMarker.trim();
-    const jsonEnd = findJsonEnd(afterTrim);
-    if (jsonEnd > 0) {
-      const argsJson = afterTrim.slice(0, jsonEnd);
-      const inferred = inferToolNameFromArgs(argsJson);
-      if (inferred) {
-        emitGlmToolUse(state, results, inferred.name, inferred.argsJson);
-        state.glmTextBuffer = afterTrim.slice(jsonEnd);
-        return true;
-      }
-      // F32: Empty tool name + empty args {} = garbage emission, strip markers
-      if (argsJson.trim() === "{}") {
-        state.glmTextBuffer = afterTrim.slice(jsonEnd);
-        return true;
-      }
-    }
-    // F34: JSON.parse failed (malformed JSON with unescaped quotes).
-    // Models emit: {"cmd":"find -name "*.js""} — quotes inside value not escaped.
-    // Try lenient extraction before giving up.
-    // Only attempt if buffer has a closing } (JSON complete, just malformed).
-    if (afterTrim.includes("}")) {
-      const malformed = inferToolNameFromMalformedArgs(afterTrim);
-      if (malformed) {
-        emitGlmToolUse(state, results, malformed.name, malformed.argsJson);
-        const lastBrace = afterTrim.lastIndexOf("}");
-        state.glmTextBuffer = lastBrace > 0 ? afterTrim.slice(lastBrace + 1) : "";
-        return true;
-      }
-    }
-  }
-
-  // F33: Empty tool name + afterSecondMarker starts with model name = loop garbage
-  // Pattern: [TOOL_CALLS][TOOL_CALLS]glm-5-2[TOOL_CALLS]real text...
-  // Model emits empty tool name, then model name as "tool name" with [TOOL_CALLS]
-  // as second marker. Strip all markers, keep only real text after the model name.
-  if (!toolName.trim()) {
-    const afterTrim = afterSecondMarker.trim();
-    // Check if afterSecondMarker starts with a model name followed by [TOOL_CALLS]
-    const modelLoopMatch = afterTrim.match(/^(glm[-_0-9.]+|claude[-_a-z0-9.]+|gpt[-_0-9.]+|sonnet[-_0-9.]+|haiku[-_0-9.]+|opus[-_0-9.]+|llama[-_0-9.]+|mistral[-_0-9.]+|qwen[-_0-9.]+|deepseek[-_0-9.]+|gemini[-_0-9.]+|swe[-_0-9.]+|devmini[-_0-9.]*)\s*\[TOOL_CALLS\]/i);
-    if (modelLoopMatch) {
-      // Skip past the model name + [TOOL_CALLS], keep the rest
-      const afterModel = afterTrim.slice(modelLoopMatch[0].length);
-      state.glmTextBuffer = afterModel;
-      return true; // loop to process remaining text
-    }
-    // Also check: afterSecondMarker IS a model name (no more markers)
-    if (isModelName(afterTrim)) {
-      state.glmTextBuffer = "";
+  // Parse JSON body: {"name":"...","arguments":{...}}
+  let parsed = null;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    // Try lenient extraction for malformed JSON with unescaped quotes
+    const malformed = inferToolNameFromMalformedArgs(body);
+    if (malformed) {
+      emitGlmToolUse(state, results, malformed.name, malformed.argsJson);
+      state.glmTextBuffer = remainder;
       return true;
     }
-  }
-
-  // F33: Non-empty tool name that IS a model name + [TOOL_CALLS] second marker
-  // Pattern: [TOOL_CALLS]glm-5-2[TOOL_CALLS]real text...
-  // Model name as tool name with [TOOL_CALLS] (not [ARGS]) as second marker.
-  if (isModelName(toolName.trim())) {
-    state.glmTextBuffer = afterSecondMarker;
-    return true; // loop to process remaining text
-  }
-
-  // F24: Detect swapped format [TOOL_CALLS]prose[TOOL_CALLS]real_tool_name{args}
-  // Sonnet/Claude via Cascade sometimes put explanation text as the "tool name"
-  // and the real tool name after the second marker.
-  // Pattern: [TOOL_CALLS]I'll help you...[TOOL_CALLS]Grep{"pattern":"mcp"}
-  // Detect: toolName has whitespace (prose) + afterSecondMarker starts with
-  // a valid compact identifier → emit prose as text, swap tool name.
-  if (/\s/.test(toolName.trim()) && toolName.trim().length > 15) {
-    const swapMatch = afterSecondMarker.match(/^([A-Za-z_][A-Za-z0-9_\-:.]*)([\s\S]*)/);
-    if (swapMatch && swapMatch[1] && !/\s/.test(swapMatch[1]) && swapMatch[1].length <= 64) {
-      emitTextSegment(state, results, toolName.trim());
-      toolName = swapMatch[1];
-      afterSecondMarker = swapMatch[2];
-      // After swap, if no args remain, emit tool call with empty args
-      if (!afterSecondMarker.trim()) {
-        emitGlmToolUse(state, results, toolName, "{}");
-        state.glmTextBuffer = "";
-        return true;
-      }
-    }
-  }
-
-  // F22: Windsurf returns [TOOL_CALLS] with non-JSON args for Sonnet/Claude too
-  // (not just GLM). E.g. [TOOL_CALLS]rg[TOOL_CALLS]"devin" or
-  // [TOOL_CALLS]rg[TOOL_CALLS]rg "mcp" --max-results 10. Map windsurf tool
-  // names to Claude Code tool names and synthesize JSON args from raw text.
-  const WINDSURF_TOOL_MAP = {
-    rg: "Grep", grep: "Grep", search: "Grep",
-    bash: "Bash", shell: "Bash", sh: "Bash",
-    read: "Read", cat: "Read", view: "Read",
-    edit: "Edit", replace: "Edit",
-    write: "Write", create: "Write",
-    find: "Glob", glob: "Glob",
-    agent: "Agent", subagent: "Agent", task: "Agent",
-  };
-
-  // Find JSON object: starts with { , ends with matching }
-  const jsonStart = afterSecondMarker.indexOf("{");
-  if (jsonStart === -1) {
-    // F28: Model name as tool name with no args (e.g. [TOOL_CALLS]claude-sonnet-4-6[ARGS])
-    // Suppress marker garbage, keep remaining text in buffer for next iteration
-    if (isModelName(toolName.trim())) {
-      state.glmTextBuffer = afterSecondMarker;
-      return true; // loop to process remaining text
-    }
-    if (afterSecondMarker === "" || /^\s*$/.test(afterSecondMarker)) {
-      // JSON not started yet — wait for more chunks
-      state.glmTextBuffer = marker + afterMarker;
-      return false;
-    }
-    // F22: No JSON args — try to map tool name + synthesize args from raw text
-    const mappedName = WINDSURF_TOOL_MAP[toolName.toLowerCase().trim()];
-    if (mappedName) {
-      const rawArgs = afterSecondMarker.trim().replace(/<\/s>\s*$/, "").trim();
-      let synthArgs;
-      if (mappedName === "Grep") {
-        // Extract quoted pattern first: rg "mcp" --max-results 10 → mcp
-        // Or unquoted first token if no quotes: devin → devin
-        const quotedMatch = rawArgs.match(/["']([^"']+)["']/);
-        const pattern = quotedMatch
-          ? quotedMatch[1]
-          : rawArgs.replace(/^(rg|grep|search)\s+/i, "").split(/\s+/)[0] || rawArgs;
-        synthArgs = JSON.stringify({ pattern: pattern });
-      } else if (mappedName === "Bash") {
-        synthArgs = JSON.stringify({ command: rawArgs });
-      } else if (mappedName === "Read") {
-        synthArgs = JSON.stringify({ file_path: rawArgs.replace(/^["']|["']$/g, "") });
-      } else if (mappedName === "Glob") {
-        synthArgs = JSON.stringify({ pattern: rawArgs.replace(/^["']|["']$/g, "") });
-      } else if (mappedName === "Agent") {
-        synthArgs = JSON.stringify({ description: rawArgs.slice(0, 80), prompt: rawArgs });
-      } else {
-        synthArgs = JSON.stringify({ input: rawArgs });
-      }
-      emitGlmToolUse(state, results, mappedName, synthArgs);
-      state.glmTextBuffer = "";
-      return true;
-    }
-    // Malformed (no JSON, no map) — emit as text and move on
-    // F35: Strip markers so they don't leak into output text
-    emitTextSegment(state, results, (toolName + afterSecondMarker).trim());
-    state.glmTextBuffer = "";
+    // Can't parse — emit as literal text so it's debuggable
+    emitTextSegment(state, results, TC_OPEN + body + TC_CLOSE);
+    state.glmTextBuffer = remainder;
     return true;
   }
 
-  // Find matching closing brace (handle nested + strings)
-  let depth = 0, jsonEnd = -1, inStr = false, esc = false;
-  for (let i = jsonStart; i < afterSecondMarker.length; i++) {
-    const ch = afterSecondMarker[i];
-    if (esc) { esc = false; continue; }
-    if (ch === "\\") { esc = true; continue; }
-    if (ch === '"') { inStr = !inStr; continue; }
-    if (inStr) continue;
-    if (ch === "{") depth++;
-    else if (ch === "}") {
-      depth--;
-      if (depth === 0) { jsonEnd = i; break; }
+  // Valid JSON with name + arguments
+  if (parsed && typeof parsed.name === "string") {
+    const args = parsed.arguments;
+    const argsJson = typeof args === "string" ? args : JSON.stringify(args ?? {});
+    emitGlmToolUse(state, results, parsed.name, argsJson);
+  } else if (parsed && typeof parsed === "object") {
+    // No "name" field — try to infer tool name from args keys (F25 legacy support)
+    const inferred = inferToolNameFromArgs(JSON.stringify(parsed));
+    if (inferred) {
+      emitGlmToolUse(state, results, inferred.name, inferred.argsJson);
+    } else {
+      // Can't infer — emit as literal text
+      emitTextSegment(state, results, TC_OPEN + body + TC_CLOSE);
     }
+  } else {
+    // Not a valid tool call — emit as literal text
+    emitTextSegment(state, results, TC_OPEN + body + TC_CLOSE);
   }
 
-  if (jsonEnd === -1) {
-    // Incomplete JSON — wait for more chunks. Keep marker + afterMarker so
-    // flush-at-finish preserves original text.
-    state.glmTextBuffer = marker + afterMarker;
-    return false;
-  }
-
-  const argsJson = afterSecondMarker.slice(jsonStart, jsonEnd + 1);
-  const remainder = afterSecondMarker.slice(jsonEnd + 1);
-
-  // Emit tool_use block
-  emitGlmToolUse(state, results, toolName, argsJson);
-
-  // Continue with remainder
   state.glmTextBuffer = remainder;
   return true; // loop to drain more
 }
@@ -983,8 +781,7 @@ export function openaiToClaudeResponse(chunk, state) {
   }
 
   // Handle regular content
-  // GLM-5.2 (and similar non-Anthropic models) may embed tool calls inline as
-  // text markers: [TOOL_CALLS]name[TOOL_CALLS]{json} or [TOOL_CALLS]name[ARGS]{json}
+  // Models via Windsurf embed tool calls inline as XML-tagged JSON blocks.
   // Parse these and convert to proper tool_use blocks so Claude Code can execute them.
   if (delta?.content) {
     stopThinkingBlock(state, results);
@@ -1072,20 +869,17 @@ export function openaiToClaudeResponse(chunk, state) {
 
   // Finish
   if (choice.finish_reason) {
-    // Flush any remaining GLM inline-tool-call buffer as text
+    // Flush any remaining inline-tool-call buffer as text
     if (state.glmTextBuffer) {
       // Try to drain once more (in case last chunk had complete token)
       let drained = drainGlmInlineToolCalls(state, results);
       while (drained) drained = drainGlmInlineToolCalls(state, results);
-      // Anything left is plain text (incomplete/no marker) — emit as text
-      // F35: Strip any remaining [TOOL_CALLS]/[ARGS] markers so they don't leak
-      // into the final text output (model hallucinated markers without valid tool call).
+      // Anything left is plain text (incomplete/no open tag) — emit as text.
+      // Strip any remaining tool-call tags so they don't leak into output.
       if (state.glmTextBuffer) {
         const cleaned = state.glmTextBuffer
-          .replace(/\[TOOL_CALLS\]/g, "")
-          .replace(/\[ARGS\]/g, "")
-          .replace(/\[TOOL_$/, "")  // partial marker at end
-          .replace(/\[ARG$/, "");   // partial marker at end
+          .split(TC_OPEN).join("")
+          .split(TC_CLOSE).join("");
         emitTextSegment(state, results, cleaned);
         state.glmTextBuffer = "";
       }
@@ -1116,12 +910,9 @@ export function openaiToClaudeResponse(chunk, state) {
     // Mark finish for later usage injection in stream.js
     state.finishReason = choice.finish_reason;
 
-    // Override stop_reason when GLM emitted inline tool_use blocks.
-    // GLM-5.2 emits [TOOL_CALLS] as text → Windsurf returns finish_reason="stop"
-    // → convertFinishReason("stop") = "end_turn". But Claude Code needs
-    // stop_reason="tool_use" to trigger tool execution. Without this override,
-    // Claude Code sees "end_turn" + tool_use block → stops without executing
-    // the tool → session idle → "dừng đột ngột".
+    // Override stop_reason when inline tool_use blocks were emitted.
+    // Windsurf returns finish_reason="stop" for tool calls emitted as text.
+    // Claude Code needs stop_reason="tool_use" to trigger tool execution.
     const hasGlmToolUse = [...state.toolCalls.values()].some(t => t.glmEmitted);
     const stopReason = hasGlmToolUse
       ? "tool_use"

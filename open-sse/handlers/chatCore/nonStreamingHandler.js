@@ -9,11 +9,125 @@ import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, sav
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 
+// Tool-call format constants — must match openai-to-claude.js
+const TC_OPEN = "<tool_call>";
+const TC_CLOSE = "</tool_call>";
+
+/**
+ * Convert OpenAI ChatCompletion response to Anthropic Messages format.
+ * Handles both native tool_calls and inline text-encoded tool calls
+ * (XML-tagged JSON format used by Windsurf executor).
+ */
+function openaiToClaudeNonStreaming(responseBody) {
+  if (!responseBody?.choices?.[0]) return responseBody;
+
+  const choice = responseBody.choices[0];
+  const message = choice.message || {};
+  const content = [];
+
+  // Parse inline tool calls from text content (Windsurf format)
+  let textContent = typeof message.content === "string" ? message.content : "";
+
+  if (textContent) {
+    // Extract tool-call blocks from text
+    let remaining = textContent;
+    while (true) {
+      const openIdx = remaining.indexOf(TC_OPEN);
+      if (openIdx === -1) {
+        // No more tool calls — emit remaining text
+        const cleaned = remaining.trim();
+        if (cleaned) content.push({ type: "text", text: cleaned });
+        break;
+      }
+      // Emit text before tool call
+      if (openIdx > 0) {
+        const before = remaining.slice(0, openIdx).trim();
+        if (before) content.push({ type: "text", text: before });
+      }
+      const afterOpen = remaining.slice(openIdx + TC_OPEN.length);
+      const closeIdx = afterOpen.indexOf(TC_CLOSE);
+      if (closeIdx === -1) {
+        // Incomplete — emit as text
+        content.push({ type: "text", text: TC_OPEN + afterOpen });
+        break;
+      }
+      const body = afterOpen.slice(0, closeIdx).trim();
+      const afterClose = afterOpen.slice(closeIdx + TC_CLOSE.length);
+      try {
+        const parsed = JSON.parse(body);
+        if (parsed && typeof parsed.name === "string") {
+          content.push({
+            type: "tool_use",
+            id: `toolu_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            name: parsed.name,
+            input: parsed.arguments || {},
+          });
+        } else {
+          content.push({ type: "text", text: TC_OPEN + body + TC_CLOSE });
+        }
+      } catch {
+        content.push({ type: "text", text: TC_OPEN + body + TC_CLOSE });
+      }
+      remaining = afterClose;
+    }
+  }
+
+  // Handle native OpenAI tool_calls
+  if (Array.isArray(message.tool_calls)) {
+    for (const tc of message.tool_calls) {
+      let input = {};
+      try { input = JSON.parse(tc.function?.arguments || "{}"); } catch {}
+      content.push({
+        type: "tool_use",
+        id: tc.id || `toolu_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        name: tc.function?.name || "unknown",
+        input,
+      });
+    }
+  }
+
+  // Ensure at least empty content
+  if (content.length === 0) content.push({ type: "text", text: "" });
+
+  // Map finish_reason → stop_reason
+  let stopReason = "end_turn";
+  if (choice.finish_reason === "tool_calls") stopReason = "tool_use";
+  else if (choice.finish_reason === "length") stopReason = "max_tokens";
+  // If we found inline tool calls but finish_reason is "stop", override
+  if (stopReason === "end_turn" && content.some(b => b.type === "tool_use")) {
+    stopReason = "tool_use";
+  }
+
+  const usage = responseBody.usage || {};
+  return {
+    id: responseBody.id?.replace("chatcmpl-", "msg_") || `msg_${Date.now()}`,
+    type: "message",
+    role: "assistant",
+    content,
+    model: responseBody.model || "unknown",
+    stop_reason: stopReason,
+    stop_sequence: null,
+    usage: {
+      input_tokens: usage.prompt_tokens || 0,
+      output_tokens: usage.completion_tokens || 0,
+    },
+  };
+}
+
 /**
  * Translate non-streaming response body from provider format → OpenAI format.
  */
 export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat) {
-  if (targetFormat === sourceFormat || targetFormat === FORMATS.OPENAI) return responseBody;
+  if (targetFormat === sourceFormat) return responseBody;
+
+  // OpenAI → Claude: translate OpenAI ChatCompletion to Anthropic Messages format
+  // This is needed when the client sends Anthropic format (/v1/messages) but the
+  // provider returns OpenAI format (e.g. Windsurf executor).
+  if (sourceFormat === FORMATS.OPENAI && targetFormat === FORMATS.CLAUDE) {
+    return openaiToClaudeNonStreaming(responseBody);
+  }
+
+  if (targetFormat === FORMATS.OPENAI) return responseBody;
 
   // Gemini / Antigravity
   if (targetFormat === FORMATS.GEMINI || targetFormat === FORMATS.ANTIGRAVITY || targetFormat === FORMATS.GEMINI_CLI || targetFormat === FORMATS.VERTEX) {
@@ -165,35 +279,43 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
     : responseBody;
 
-  // Fix finish_reason for tool_calls: some providers return non-standard values (e.g. "other")
-  if (translatedResponse?.choices?.[0]) {
-    const choice = translatedResponse.choices[0];
-    const msg = choice.message;
-    const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
-    if (hasToolCalls && choice.finish_reason !== "tool_calls") {
-      choice.finish_reason = "tool_calls";
+  // When the response is in Claude/Anthropic format (client requested /v1/messages),
+  // skip OpenAI-specific fixups — the translated response has content blocks,
+  // stop_reason, and usage in Anthropic format already.
+  const isClaudeFormat = sourceFormat === FORMATS.CLAUDE &&
+    translatedResponse?.type === "message" && Array.isArray(translatedResponse?.content);
+
+  if (!isClaudeFormat) {
+    // Fix finish_reason for tool_calls: some providers return non-standard values (e.g. "other")
+    if (translatedResponse?.choices?.[0]) {
+      const choice = translatedResponse.choices[0];
+      const msg = choice.message;
+      const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
+      if (hasToolCalls && choice.finish_reason !== "tool_calls") {
+        choice.finish_reason = "tool_calls";
+      }
     }
-  }
 
-  // Ensure OpenAI-required fields
-  if (!translatedResponse.object) translatedResponse.object = "chat.completion";
-  if (!translatedResponse.created) translatedResponse.created = Math.floor(Date.now() / 1000);
+    // Ensure OpenAI-required fields
+    if (!translatedResponse.object) translatedResponse.object = "chat.completion";
+    if (!translatedResponse.created) translatedResponse.created = Math.floor(Date.now() / 1000);
 
-  // Strip Azure-specific fields
-  delete translatedResponse.prompt_filter_results;
-  if (translatedResponse?.choices) {
-    for (const choice of translatedResponse.choices) delete choice.content_filter_results;
-  }
+    // Strip Azure-specific fields
+    delete translatedResponse.prompt_filter_results;
+    if (translatedResponse?.choices) {
+      for (const choice of translatedResponse.choices) delete choice.content_filter_results;
+    }
 
-  if (translatedResponse?.usage) {
-    translatedResponse.usage = filterUsageForFormat(addBufferToUsage(translatedResponse.usage), sourceFormat);
-  }
+    if (translatedResponse?.usage) {
+      translatedResponse.usage = filterUsageForFormat(addBufferToUsage(translatedResponse.usage), sourceFormat);
+    }
 
-  // Strip reasoning_content — some clients (e.g. Firecrawl AI SDK) have JSON parsers that
-  // break on this non-standard field, even though OpenAI allows it in extensions.
-  if (translatedResponse?.choices) {
-    for (const choice of translatedResponse.choices) {
-      if (choice?.message) delete choice.message.reasoning_content;
+    // Strip reasoning_content — some clients (e.g. Firecrawl AI SDK) have JSON parsers that
+    // break on this non-standard field, even though OpenAI allows it in extensions.
+    if (translatedResponse?.choices) {
+      for (const choice of translatedResponse.choices) {
+        if (choice?.message) delete choice.message.reasoning_content;
+      }
     }
   }
 
