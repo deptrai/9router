@@ -123,7 +123,7 @@ function openaiToClaudeNonStreaming(responseBody) {
       if (openIdx === -1) {
         // No more tool calls — emit remaining text
         const cleaned = remaining.trim();
-        if (cleaned) content.push({ type: "text", text: cleaned });
+        if (cleaned && cleaned !== TC_CLOSE) content.push({ type: "text", text: cleaned });
         break;
       }
       // Emit text before tool call

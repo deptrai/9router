@@ -492,6 +492,8 @@ function stopTextBlock(state, results) {
 // Helper: emit a text segment (starts text block if needed)
 function emitTextSegment(state, results, text) {
   if (!text) return;
+  // Strip stray tool-call close tags that model emits as text after a tool_use
+  if (text === TC_CLOSE_GLOBAL || text.trim() === TC_CLOSE_GLOBAL) return;
   if (!state.textBlockStarted) {
     state.textBlockIndex = state.nextBlockIndex++;
     state.textBlockStarted = true;
@@ -602,6 +604,8 @@ function emitGlmToolUse(state, results, toolName, argsJson) {
 // Models may emit whitespace between open tag and JSON — parser tolerates this.
 const TC_OPEN = "<tool_call>";
 const TC_CLOSE = "antml:invoke";
+// Global reference for emitTextSegment to strip stray close tags
+const TC_CLOSE_GLOBAL = TC_CLOSE;
 
 // Legacy format constants — GLM-5.2 non-deterministically emits these
 // instead of the XML-tagged format, even with new instructions.
