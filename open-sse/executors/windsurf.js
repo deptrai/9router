@@ -117,23 +117,32 @@ export class WindsurfExecutor extends BaseExecutor {
     // multi-tool chaining, and large content (1774+ chars) all work correctly.
     let messagesForProto = body.messages;
     if (toolDefs) {
-      const toolInstruction = this._buildToolInstruction(toolDefs);
-      // Inject into the LAST user message, not system — Cascade's baked-in
-      // system prompt overpowers additional system messages. Wrapping the
-      // user turn with tool instructions treats them as part of the current
-      // request, which models reliably follow (proven by WindsurfPoolAPI).
-      const lastUserIdx = messagesForProto.map(m => m.role).lastIndexOf("user");
-      if (lastUserIdx >= 0) {
+      // MINIMAL format instruction — inject into SYSTEM, not user message.
+      // Previous approach: injected full tool list (260KB) into last user
+      // message → buried user's actual message → model hallucinated.
+      // New approach: short format-only instruction in system message.
+      // Tool definitions passed via protobuf field 4 (toolDefs).
+      const formatInstruction = [
+        ``,
+        `--- Tool Call Format ---`,
+        `To call a function, emit: <tool_call>{"name":"<function_name>","arguments":{...}}</tool_call>`,
+        `Only call functions when the user explicitly requests an action.`,
+        `For greetings or questions, respond normally without tools.`,
+        `Do NOT generate fake "User:" or "Assistant:" lines.`,
+        `--- End Tool Call Format ---`,
+        ``,
+      ].join("\n");
+
+      if (messagesForProto.length > 0 && messagesForProto[0].role === "system") {
         messagesForProto = messagesForProto.map((m, i) =>
-          i === lastUserIdx
-            ? { ...m, content: toolInstruction + "\n\n" + this._extractTextContent(m.content, true) }
-            : m
+          i === 0 ? { ...m, content: m.content + "\n" + formatInstruction } : m
         );
       } else {
-        // No user message — prepend as system
-        messagesForProto = [{ role: "system", content: toolInstruction }, ...messagesForProto];
+        messagesForProto = [{ role: "system", content: formatInstruction }, ...messagesForProto];
       }
     }
+
+    // F9: Convert}
 
     // F9: Convert OpenAI messages[] to protobuf messages (extract text from multimodal)
     // D3: Include tool messages
