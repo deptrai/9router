@@ -609,7 +609,14 @@ const TC_CLOSE = "antml:invoke";
 const LEGACY_OPEN = "[TOOL_CALLS]";
 const LEGACY_MID = ["[ARGS]", "[TOOL_CALLS]"];
 
-// Try to parse a legacy [TOOL_CALLS]name[MARKER]{json} block from buf.
+// Try to parse a legacy [TOOL_CALLS]...{json} block from buf.
+// GLM-5.2 emits multiple non-deterministic variants:
+//   [TOOL_CALLS]name[ARGS]{json}          — name + args directly
+//   [TOOL_CALLS]name[TOOL_CALLS]{json}    — name + args directly
+//   [TOOL_CALLS]tool_call{"name":..,"arguments":{..}}  — JSON has name+arguments
+//   [TOOL_CALLS]name({json})              — name + JSON in parens
+// Strategy: find first { after [TOOL_CALLS], brace-match JSON, then extract
+// name+arguments from JSON (preferred) or from text before { (fallback).
 // Returns { name, argsJson, remainder, openIdx } on success.
 // Returns { incomplete: true } if a legacy block is detected but JSON is incomplete.
 // Returns null if no legacy pattern found.
@@ -617,37 +624,47 @@ function tryParseLegacyToolCall(buf) {
   const openIdx = buf.indexOf(LEGACY_OPEN);
   if (openIdx === -1) return null;
   const afterOpen = buf.slice(openIdx + LEGACY_OPEN.length);
-  // Find the mid marker ([ARGS] or [TOOL_CALLS])
-  let midMarker = null, midIdx = -1;
-  for (const m of LEGACY_MID) {
-    const idx = afterOpen.indexOf(m);
-    if (idx > 0 && (midIdx === -1 || idx < midIdx)) {
-      midIdx = idx;
-      midMarker = m;
-    }
-  }
-  if (midIdx === -1) {
-    // Has [TOOL_CALLS] but no mid marker yet — could be incomplete streaming
-    return { incomplete: true };
-  }
-  const name = afterOpen.slice(0, midIdx).trim();
-  if (!name) return { incomplete: true };
-  const afterMid = afterOpen.slice(midIdx + midMarker.length);
-  // Find JSON body starting at first { — use brace matching
-  const braceStart = afterMid.indexOf("{");
+  // Find first { — this is the JSON body start, regardless of what's between
+  // [TOOL_CALLS] and the JSON (name, markers, parens, etc.)
+  const braceStart = afterOpen.indexOf("{");
   if (braceStart === -1) return { incomplete: true };
-  const jsonEnd = findJsonEnd(afterMid.slice(braceStart));
+  const jsonEnd = findJsonEnd(afterOpen.slice(braceStart));
   if (jsonEnd === -1) return { incomplete: true }; // incomplete — wait for more
-  const body = afterMid.slice(braceStart, braceStart + jsonEnd).trim();
-  const remainder = afterMid.slice(braceStart + jsonEnd);
+  const body = afterOpen.slice(braceStart, braceStart + jsonEnd).trim();
+  const remainder = afterOpen.slice(braceStart + jsonEnd);
+  // Strip trailing ) if JSON was wrapped in parens: name({json})
+  let cleanRemainder = remainder;
+  if (cleanRemainder.startsWith(")")) cleanRemainder = cleanRemainder.slice(1);
+  // Parse JSON body
+  let parsed = null;
   try {
-    const parsed = JSON.parse(body);
-    const args = parsed && parsed.arguments !== undefined ? parsed.arguments : parsed;
-    const argsJson = typeof args === "string" ? args : JSON.stringify(args ?? {});
-    return { name, argsJson, remainder, openIdx };
+    parsed = JSON.parse(body);
   } catch {
     return null;
   }
+  if (!parsed || typeof parsed !== "object") return null;
+  // Extract name + arguments
+  let name = null, args = {};
+  if (typeof parsed.name === "string" && parsed.arguments !== undefined) {
+    // Format: {"name":"...","arguments":{...}}
+    name = parsed.name;
+    args = parsed.arguments;
+  } else {
+    // Format: {direct args} — name comes from text before {
+    // Text before { may contain: name, [ARGS], [TOOL_CALLS], (
+    const textBefore = afterOpen.slice(0, braceStart);
+    // Strip markers and parens to get clean name
+    let candidate = textBefore;
+    for (const m of LEGACY_MID) candidate = candidate.split(m)[0];
+    candidate = candidate.replace(/[()]/g, "").trim();
+    if (candidate) {
+      name = candidate;
+      args = parsed;
+    }
+  }
+  if (!name) return null;
+  const argsJson = typeof args === "string" ? args : JSON.stringify(args ?? {});
+  return { name, argsJson, remainder: cleanRemainder, openIdx };
 }
 
 // Parse + drain inline tool calls from buffer using the XML-tagged JSON format.

@@ -38,38 +38,40 @@ const TC_CLOSE = "antml:invoke";
 const LEGACY_OPEN = "[TOOL_CALLS]";
 const LEGACY_MID = ["[ARGS]", "[TOOL_CALLS]"];
 
-// Try to parse a legacy [TOOL_CALLS]name[MARKER]{json} block from buf.
+// Try to parse a legacy [TOOL_CALLS]...{json} block from buf.
+// GLM-5.2 emits multiple non-deterministic variants — see openai-to-claude.js
+// for full documentation. Generalized strategy: find first { after [TOOL_CALLS],
+// brace-match JSON, extract name+arguments from JSON or text before {.
 // Returns { name, argsJson, remainder, openIdx } on success, null otherwise.
 function tryParseLegacyToolCall(buf) {
   const openIdx = buf.indexOf(LEGACY_OPEN);
   if (openIdx === -1) return null;
   const afterOpen = buf.slice(openIdx + LEGACY_OPEN.length);
-  let midMarker = null, midIdx = -1;
-  for (const m of LEGACY_MID) {
-    const idx = afterOpen.indexOf(m);
-    if (idx > 0 && (midIdx === -1 || idx < midIdx)) {
-      midIdx = idx;
-      midMarker = m;
-    }
-  }
-  if (midIdx === -1) return null;
-  const name = afterOpen.slice(0, midIdx).trim();
-  if (!name) return null;
-  const afterMid = afterOpen.slice(midIdx + midMarker.length);
-  const braceStart = afterMid.indexOf("{");
+  const braceStart = afterOpen.indexOf("{");
   if (braceStart === -1) return null;
-  const jsonEnd = findJsonEnd(afterMid.slice(braceStart));
+  const jsonEnd = findJsonEnd(afterOpen.slice(braceStart));
   if (jsonEnd === -1) return null;
-  const body = afterMid.slice(braceStart, braceStart + jsonEnd).trim();
-  const remainder = afterMid.slice(braceStart + jsonEnd);
-  try {
-    const parsed = JSON.parse(body);
-    const args = parsed && parsed.arguments !== undefined ? parsed.arguments : parsed;
-    const argsJson = typeof args === "string" ? args : JSON.stringify(args ?? {});
-    return { name, argsJson, remainder, openIdx };
-  } catch {
-    return null;
+  const body = afterOpen.slice(braceStart, braceStart + jsonEnd).trim();
+  const remainder = afterOpen.slice(braceStart + jsonEnd);
+  let cleanRemainder = remainder;
+  if (cleanRemainder.startsWith(")")) cleanRemainder = cleanRemainder.slice(1);
+  let parsed = null;
+  try { parsed = JSON.parse(body); } catch { return null; }
+  if (!parsed || typeof parsed !== "object") return null;
+  let name = null, args = {};
+  if (typeof parsed.name === "string" && parsed.arguments !== undefined) {
+    name = parsed.name;
+    args = parsed.arguments;
+  } else {
+    const textBefore = afterOpen.slice(0, braceStart);
+    let candidate = textBefore;
+    for (const m of LEGACY_MID) candidate = candidate.split(m)[0];
+    candidate = candidate.replace(/[()]/g, "").trim();
+    if (candidate) { name = candidate; args = parsed; }
   }
+  if (!name) return null;
+  const argsJson = typeof args === "string" ? args : JSON.stringify(args ?? {});
+  return { name, argsJson, remainder: cleanRemainder, openIdx };
 }
 </tool_call>";
 
