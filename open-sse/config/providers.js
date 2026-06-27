@@ -437,6 +437,16 @@ export const PROVIDERS = {
   "nous-research": { baseUrl: "https://inference-api.nousresearch.com/v1/chat/completions", format: "openai" },
   glhf: { baseUrl: "https://glhf.chat/api/openai/v1/chat/completions", format: "openai" },
   blackbox: { baseUrl: "https://api.blackbox.ai/chat/completions", format: "openai" },
+  windsurf: {
+    baseUrl: "https://server.codeium.com/exa.api_server_pb.ApiServerService/GetChatMessage",
+    format: "claude",
+    headers: {
+      "Content-Type": "application/connect+proto",
+      "Connect-Protocol-Version": "1",
+      "TE": "trailers",
+    },
+    authType: "api_key",
+  },
 };
 
 export const OLLAMA_LOCAL_DEFAULT_HOST = "http://localhost:11434";

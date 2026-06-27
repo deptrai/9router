@@ -16,6 +16,7 @@ import { PerplexityWebExecutor } from "./perplexity-web.js";
 import { OllamaLocalExecutor } from "./ollama-local.js";
 import { CommandCodeExecutor } from "./commandcode.js";
 import { DefaultExecutor } from "./default.js";
+import { WindsurfExecutor } from "./windsurf.js";
 
 const executors = {
   antigravity: new AntigravityExecutor(),
@@ -37,6 +38,7 @@ const executors = {
   "perplexity-web": new PerplexityWebExecutor(),
   "ollama-local": new OllamaLocalExecutor(),
   commandcode: new CommandCodeExecutor(),
+  windsurf: new WindsurfExecutor(),
 };
 
 const defaultCache = new Map();
@@ -70,3 +72,4 @@ export { GrokWebExecutor } from "./grok-web.js";
 export { PerplexityWebExecutor } from "./perplexity-web.js";
 export { OllamaLocalExecutor } from "./ollama-local.js";
 export { CommandCodeExecutor } from "./commandcode.js";
+export { WindsurfExecutor } from "./windsurf.js";

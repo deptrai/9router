@@ -145,6 +145,11 @@ export const PROVIDER_MODELS = {
     { id: "text-embedding-3-small", name: "Text Embedding 3 Small (GitHub)", type: "embedding" },
     { id: "text-embedding-3-large", name: "Text Embedding 3 Large (GitHub)", type: "embedding" },
   ],
+  ws: [  // Windsurf
+    { id: "sonnet-4.6", name: "Claude Sonnet 4.6 (Thinking)", upstreamModelId: "claude-sonnet-4-6-thinking", contextWindow: 200_000, quotaFamily: "windsurf" },
+    { id: "opus-4.8", name: "Claude Opus 4.8 Medium", upstreamModelId: "claude-opus-4-8-medium", contextWindow: 200_000, quotaFamily: "windsurf" },
+    { id: "glm-5-2", name: "GLM-5.2", upstreamModelId: "glm-5-2", contextWindow: 128_000, quotaFamily: "windsurf" },
+  ],
   kr: [  // Kiro AI
     // --- Auto routing ---
     { id: "auto", name: "Auto", contextWindow: KIRO_OPUS_46_CONTEXT_WINDOW },
@@ -959,6 +964,7 @@ const OAUTH_ALIASES = {
   qoder: "qd",
   vertex: "vertex",
   "vertex-partner": "vertex-partner",
+  windsurf: "ws",
 };
 
 // Derived from PROVIDERS — no need to maintain manually
