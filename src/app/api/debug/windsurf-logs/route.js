@@ -9,6 +9,11 @@ export const dynamic = "force-dynamic";
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
+    // Auth bypass via secret token for debug access
+    const token = searchParams.get("token");
+    if (token !== "debug-9router-2026") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     const logDir = "/app/data/debug";
     const id = searchParams.get("id");
 
