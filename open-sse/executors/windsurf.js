@@ -172,6 +172,8 @@ export class WindsurfExecutor extends BaseExecutor {
             // D1: Incremental stream reading
             const reader = resp.body.getReader();
             let buffer = new Uint8Array(0);
+            // DEBUG: accumulate full stream text for logging
+            let streamFullText = "";
 
             while (true) {
               if (signal?.aborted) {
@@ -202,6 +204,7 @@ export class WindsurfExecutor extends BaseExecutor {
                   for (const text of strings) {
                     const cleaned = self._stripStopTokens(text);
                     if (!cleaned) continue;
+                    streamFullText += cleaned; // DEBUG: accumulate
                     const chunk = {
                       id: completionId,
                       object: "chat.completion.chunk",
@@ -247,6 +250,26 @@ export class WindsurfExecutor extends BaseExecutor {
             controller.enqueue(Buffer.from("data: " + JSON.stringify(self._finalChunk(completionId, model, "stop")) + "\n\n"));
             controller.enqueue(Buffer.from("data: [DONE]\n\n"));
             controller.close();
+
+            // DEBUG: log accumulated stream text
+            try {
+              const fs = await import("node:fs");
+              const pathMod = await import("node:path");
+              const logDir = "/app/data/debug";
+              fs.mkdirSync(logDir, { recursive: true });
+              const ts = new Date().toISOString().replace(/[:.]/g, "-");
+              const logFile = pathMod.join(logDir, `windsurf-raw-stream-${ts}.json`);
+              fs.writeFileSync(logFile, JSON.stringify({
+                timestamp: ts,
+                model,
+                stream: true,
+                toolDefsCount: toolDefs?.length || 0,
+                toolDefsNames: toolDefs?.map(t => t.name) || [],
+                messagesCount: messagesForProto.length,
+                lastUserContent: messagesForProto[messagesForProto.length - 1]?.content?.slice(0, 500),
+                rawResponse: streamFullText,
+              }, null, 2));
+            } catch (e) { /* debug logging best-effort */ }
           } catch (e) {
             // F17: Emit finish_reason on mid-stream error
             if (e.status === 401) invalidateJwt(apiKey);

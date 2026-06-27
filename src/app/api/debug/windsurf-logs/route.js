@@ -34,7 +34,7 @@ export async function GET(request) {
 
     const files = fs.readdirSync(logDir)
       .filter(f => f.startsWith("windsurf-raw-") && f.endsWith(".json"))
-      .sort().reverse().slice(0, 20);
+      .sort().reverse().slice(0, 50);
 
     const logs = files.map(f => {
       try {
