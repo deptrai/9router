@@ -447,12 +447,15 @@ export class WindsurfExecutor extends BaseExecutor {
       ``,
       `Available functions (${toolDefs.length} total — name: short description):`,
     ];
-    // COMPACT: only name + first line of description, NO full JSON schemas.
-    // Full schemas (260KB for 179 tools) overwhelm the model and bury the user's
-    // actual message. The model can infer parameters from tool name + description.
+    // COMPACT: name + parameter names + first line of description.
+    // Full JSON schemas (260KB for 179 tools) overwhelm the model and bury
+    // the user's actual message. Parameter names give the model enough info
+    // to construct correct arguments without the full schema overhead.
     for (const t of toolDefs) {
-      const desc = (t.description || "").split("\n")[0].slice(0, 100);
-      lines.push(`- ${t.name}: ${desc}`);
+      const desc = (t.description || "").split("\n")[0].slice(0, 80);
+      const params = t.schema?.properties ? Object.keys(t.schema.properties) : [];
+      const paramStr = params.length > 0 ? `(${params.join(", ")})` : "";
+      lines.push(`- ${t.name}${paramStr}: ${desc}`);
     }
     lines.push("");
     lines.push(`Respond to the user's actual message. Only use ${TC_OPEN} if the user explicitly asks for something that requires a tool.`);
