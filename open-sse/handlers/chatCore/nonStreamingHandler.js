@@ -9,6 +9,26 @@ import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, sav
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 
+// Find end index of a JSON object starting with { — brace matching with
+// string/escape awareness. Returns index after closing }, or -1 if incomplete.
+function findJsonEnd(text) {
+  if (!text.startsWith("{")) return -1;
+  let depth = 0, inStr = false, esc = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (esc) { esc = false; continue; }
+    if (ch === "\\") { esc = true; continue; }
+    if (ch === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return i + 1;
+    }
+  }
+  return -1;
+}
+
 // Tool-call format constants — must match openai-to-claude.js
 const TC_OPEN = "<tool_call>";
 const TC_CLOSE = "</tool_call>";
@@ -50,13 +70,27 @@ function openaiToClaudeNonStreaming(responseBody) {
       const wsLen = wsMatch ? wsMatch[0].length : 0;
       const afterWs = afterOpen.slice(wsLen);
       const closeIdx = afterWs.indexOf(TC_CLOSE);
+      let body, afterClose;
       if (closeIdx === -1) {
-        // Incomplete — emit as text
-        content.push({ type: "text", text: TC_OPEN + afterOpen });
-        break;
+        // No close tag — some models (Sonnet) emit open tag + JSON without
+        // close tag. Try to parse JSON by brace matching from the first {.
+        const braceStart = afterWs.indexOf("{");
+        if (braceStart >= 0) {
+          const jsonEnd = findJsonEnd(afterWs.slice(braceStart));
+          if (jsonEnd > 0) {
+            body = afterWs.slice(braceStart, braceStart + jsonEnd).trim();
+            afterClose = afterWs.slice(braceStart + jsonEnd);
+          }
+        }
+        if (!body) {
+          // Can't parse — emit as text
+          content.push({ type: "text", text: TC_OPEN + afterOpen });
+          break;
+        }
+      } else {
+        body = afterWs.slice(0, closeIdx).trim();
+        afterClose = afterWs.slice(closeIdx + TC_CLOSE.length);
       }
-      const body = afterWs.slice(0, closeIdx).trim();
-      const afterClose = afterWs.slice(closeIdx + TC_CLOSE.length);
       try {
         const parsed = JSON.parse(body);
         if (parsed && typeof parsed.name === "string") {

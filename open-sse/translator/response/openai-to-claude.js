@@ -647,6 +647,29 @@ function drainGlmInlineToolCalls(state, results) {
   // Find close tag
   const closeIdx = afterWs.indexOf(TC_CLOSE);
   if (closeIdx === -1) {
+    // No close tag yet. Two possibilities:
+    // 1. JSON still streaming (incomplete) — wait for more chunks
+    // 2. Model emitted open tag + JSON without close tag (Sonnet does this)
+    // Try brace matching — if JSON is complete, emit tool call without close tag.
+    const braceStart = afterWs.indexOf("{");
+    if (braceStart >= 0) {
+      const jsonEnd = findJsonEnd(afterWs.slice(braceStart));
+      if (jsonEnd > 0) {
+        // JSON complete but no close tag — emit tool call
+        const body = afterWs.slice(braceStart, braceStart + jsonEnd).trim();
+        const remainder = afterWs.slice(braceStart + jsonEnd);
+        try {
+          const parsed = JSON.parse(body);
+          if (parsed && typeof parsed.name === "string") {
+            const args = parsed.arguments;
+            const argsJson = typeof args === "string" ? args : JSON.stringify(args ?? {});
+            emitGlmToolUse(state, results, parsed.name, argsJson);
+            state.glmTextBuffer = remainder;
+            return true;
+          }
+        } catch {}
+      }
+    }
     // Incomplete — keep from open tag onwards, wait for more chunks
     state.glmTextBuffer = TC_OPEN + afterOpen;
     return false;
