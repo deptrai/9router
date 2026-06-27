@@ -599,6 +599,7 @@ function emitGlmToolUse(state, results, toolName, argsJson) {
 // Open tag + JSON body + close tag, where JSON = {"name":"...","arguments":{...}}
 // This format is self-describing and unambiguous — no edge case fixes needed.
 // Proven by WindsurfPoolAPI in production with GLM-5.2 and other models.
+// Models may emit whitespace between open tag and JSON — parser tolerates this.
 const TC_OPEN = "<tool_call>";
 const TC_CLOSE = "</tool_call>";
 
@@ -638,16 +639,21 @@ function drainGlmInlineToolCalls(state, results) {
 
   const afterOpen = buf.slice(openIdx + TC_OPEN.length);
 
+  // Skip whitespace between open tag and JSON body (model may emit "<tool_call> {...")
+  const wsMatch = afterOpen.match(/^\s*/);
+  const wsLen = wsMatch ? wsMatch[0].length : 0;
+  const afterWs = afterOpen.slice(wsLen);
+
   // Find close tag
-  const closeIdx = afterOpen.indexOf(TC_CLOSE);
+  const closeIdx = afterWs.indexOf(TC_CLOSE);
   if (closeIdx === -1) {
     // Incomplete — keep from open tag onwards, wait for more chunks
     state.glmTextBuffer = TC_OPEN + afterOpen;
     return false;
   }
 
-  const body = afterOpen.slice(0, closeIdx).trim();
-  const remainder = afterOpen.slice(closeIdx + TC_CLOSE.length);
+  const body = afterWs.slice(0, closeIdx).trim();
+  const remainder = afterWs.slice(closeIdx + TC_CLOSE.length);
 
   // Parse JSON body: {"name":"...","arguments":{...}}
   let parsed = null;

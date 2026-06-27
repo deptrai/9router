@@ -45,14 +45,18 @@ function openaiToClaudeNonStreaming(responseBody) {
         if (before) content.push({ type: "text", text: before });
       }
       const afterOpen = remaining.slice(openIdx + TC_OPEN.length);
-      const closeIdx = afterOpen.indexOf(TC_CLOSE);
+      // Skip whitespace between open tag and JSON body
+      const wsMatch = afterOpen.match(/^\s*/);
+      const wsLen = wsMatch ? wsMatch[0].length : 0;
+      const afterWs = afterOpen.slice(wsLen);
+      const closeIdx = afterWs.indexOf(TC_CLOSE);
       if (closeIdx === -1) {
         // Incomplete — emit as text
         content.push({ type: "text", text: TC_OPEN + afterOpen });
         break;
       }
-      const body = afterOpen.slice(0, closeIdx).trim();
-      const afterClose = afterOpen.slice(closeIdx + TC_CLOSE.length);
+      const body = afterWs.slice(0, closeIdx).trim();
+      const afterClose = afterWs.slice(closeIdx + TC_CLOSE.length);
       try {
         const parsed = JSON.parse(body);
         if (parsed && typeof parsed.name === "string") {
@@ -120,10 +124,12 @@ function openaiToClaudeNonStreaming(responseBody) {
 export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat) {
   if (targetFormat === sourceFormat) return responseBody;
 
-  // OpenAI → Claude: translate OpenAI ChatCompletion to Anthropic Messages format
-  // This is needed when the client sends Anthropic format (/v1/messages) but the
-  // provider returns OpenAI format (e.g. Windsurf executor).
-  if (sourceFormat === FORMATS.OPENAI && targetFormat === FORMATS.CLAUDE) {
+  // Client requested Claude format (/v1/messages) but provider returns OpenAI
+  // ChatCompletion format (e.g. Windsurf executor returns OpenAI-shaped JSON).
+  // Translate to Anthropic Messages format so the client gets proper response.
+  // Windsurf has format="windsurf" but its executor returns OpenAI ChatCompletion,
+  // so we check sourceFormat (client) === claude and treat windsurf target as openai.
+  if (sourceFormat === FORMATS.CLAUDE && targetFormat !== FORMATS.CLAUDE) {
     return openaiToClaudeNonStreaming(responseBody);
   }
 
