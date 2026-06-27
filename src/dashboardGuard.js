@@ -43,6 +43,8 @@ const PUBLIC_API_PATHS = [
   "/api/store/products",
   // Story 2.30: Supplier webhook — public, self-authenticates via timingSafeEqual secret (AC3)
   "/api/store/suppliers/webhook",
+  // Debug endpoint — token-authenticated, for diagnosing tool-call issues
+  "/api/debug/windsurf-logs",
   // Story M.6: public announcement banner — read-only active announcements, no
   // sensitive data. Admin CRUD lives under /api/admin/announcements (gated separately).
   "/api/announcements",
