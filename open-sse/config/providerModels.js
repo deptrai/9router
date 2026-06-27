@@ -643,8 +643,8 @@ export const PROVIDER_MODELS = {
     { id: "kimi-k2-7", upstreamModelId: "kimi-k2-7", name: "Kimi K2.7", contextWindow: 128000, maxOutput: 16384 },
 
     // ─── GLM-5.x ─────────────────────────────────────────────────────────────
-    { id: "glm-5-1", upstreamModelId: "glm-5-1", name: "GLM-5.1", contextWindow: 128000, maxOutput: 16384 },
-    { id: "glm-5-2", upstreamModelId: "glm-5-2", name: "GLM-5.2", contextWindow: 128000, maxOutput: 16384 },
+    { id: "glm-5-1", upstreamModelId: "glm-5-1", name: "GLM-5.1", contextWindow: 200000, maxOutput: 16384 },
+    { id: "glm-5-2", upstreamModelId: "glm-5-2", name: "GLM-5.2", contextWindow: 200000, maxOutput: 16384 },
 
     // ─── MiniMax M2.5 ────────────────────────────────────────────────────────
     { id: "minimax-m2-5", upstreamModelId: "minimax-m2-5", name: "MiniMax M2.5", contextWindow: 128000, maxOutput: 16384 },
