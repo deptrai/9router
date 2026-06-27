@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack --port 20128",
+    "dev:persist": "bash scripts/dev-persist.sh",
     "dev:full": "node scripts/callback-server.js & next dev --webpack --port 20128; kill $! 2>/dev/null; wait",
     "build": "next build --webpack",
     "start": "next start",

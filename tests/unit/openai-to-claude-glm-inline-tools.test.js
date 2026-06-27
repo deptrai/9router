@@ -985,4 +985,104 @@ describe("openaiToClaudeResponse GLM-5.2 inline tool calls", () => {
     expect(text).toContain("I need to understand");
     expect(text).toContain("real text after");
   });
+
+  // ── Function-call syntax: [TOOL_CALLS]Name(arg1="val1", arg2="val2") ──
+  // Cascade IDE emits this format (no JSON, no { character).
+  // Parser must convert to tool_use block with correct name + arguments.
+
+  it("F37: parses [TOOL_CALLS]Bash(command=\"git status\") into tool_use", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f37a", model: "glm-5-2", choices: [{ delta: { content: '[TOOL_CALLS]Bash(command="git status")' }, finish_reason: "stop" }] },
+    ]);
+    const tools = getToolUseBlocks(events);
+    expect(tools).toHaveLength(1);
+    expect(tools[0].name).toBe("Bash");
+    const inputs = JSON.parse(getToolUseInputs(events).join(""));
+    expect(inputs.command).toBe("git status");
+  });
+
+  it("F38: parses [TOOL_CALLS]Bash(command, timeout, description) multi-args", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f38a", model: "glm-5-2", choices: [{ delta: { content: '[TOOL_CALLS]Bash(command="git status", timeout=10, description="Check git status")' }, finish_reason: "stop" }] },
+    ]);
+    const tools = getToolUseBlocks(events);
+    expect(tools).toHaveLength(1);
+    expect(tools[0].name).toBe("Bash");
+    const inputs = JSON.parse(getToolUseInputs(events).join(""));
+    expect(inputs.command).toBe("git status");
+    expect(inputs.timeout).toBe(10);
+    // description is stripped by sanitizeBashArgs (not in allowed set) — that's OK
+  });
+
+  it("F39: parses [TOOL_CALLS]Read(file_path=\"/tmp/test.txt\") into tool_use", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f39a", model: "glm-5-2", choices: [{ delta: { content: '[TOOL_CALLS]Read(file_path="/tmp/test.txt")' }, finish_reason: "stop" }] },
+    ]);
+    const tools = getToolUseBlocks(events);
+    expect(tools).toHaveLength(1);
+    expect(tools[0].name).toBe("Read");
+    const inputs = JSON.parse(getToolUseInputs(events).join(""));
+    expect(inputs.file_path).toBe("/tmp/test.txt");
+  });
+
+  it("F40: parses function-call with single-quoted args", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f40a", model: "glm-5-2", choices: [{ delta: { content: "[TOOL_CALLS]Bash(command='ls -la')" }, finish_reason: "stop" }] },
+    ]);
+    const tools = getToolUseBlocks(events);
+    expect(tools).toHaveLength(1);
+    expect(tools[0].name).toBe("Bash");
+    const inputs = JSON.parse(getToolUseInputs(events).join(""));
+    expect(inputs.command).toBe("ls -la");
+  });
+
+  it("F41: parses function-call with boolean and number args", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f41a", model: "glm-5-2", choices: [{ delta: { content: '[TOOL_CALLS]Agent(description="test", run_in_background=false, timeout=30)' }, finish_reason: "stop" }] },
+    ]);
+    const tools = getToolUseBlocks(events);
+    expect(tools).toHaveLength(1);
+    expect(tools[0].name).toBe("Agent");
+    const inputs = JSON.parse(getToolUseInputs(events).join(""));
+    // sanitizeAgentArgs transforms: description→prompt, strips run_in_background/timeout
+    expect(inputs.description).toBe("test");
+    expect(inputs.prompt).toBe("test");
+  });
+
+  it("F42: parses function-call with MCP-style dotted name", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f42a", model: "glm-5-2", choices: [{ delta: { content: '[TOOL_CALLS]mcp__vibervn-context-engine__codebase-retrieval(information_request="SSE implementation", top_k=10)' }, finish_reason: "stop" }] },
+    ]);
+    const tools = getToolUseBlocks(events);
+    expect(tools).toHaveLength(1);
+    expect(tools[0].name).toBe("mcp__vibervn-context-engine__codebase-retrieval");
+    const inputs = JSON.parse(getToolUseInputs(events).join(""));
+    expect(inputs.information_request).toBe("SSE implementation");
+    expect(inputs.top_k).toBe(10);
+  });
+
+  it("F43: emits text before [TOOL_CALLS]Name(args) as text block", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f43a", model: "glm-5-2", choices: [{ delta: { content: 'I will check the git status.[TOOL_CALLS]Bash(command="git status")' }, finish_reason: "stop" }] },
+    ]);
+    const text = getTextDelta(events);
+    expect(text).toContain("I will check the git status.");
+    expect(text).not.toContain("[TOOL_CALLS]");
+    const tools = getToolUseBlocks(events);
+    expect(tools).toHaveLength(1);
+    expect(tools[0].name).toBe("Bash");
+  });
+
+  it("F44: handles streaming function-call across chunks", () => {
+    const events = collectEvents([
+      { id: "chatcmpl-f44a", model: "glm-5-2", choices: [{ delta: { content: '[TOOL_CALLS]Bash(com' } }] },
+      { id: "chatcmpl-f44a", model: "glm-5-2", choices: [{ delta: { content: 'mand="git ' } }] },
+      { id: "chatcmpl-f44a", model: "glm-5-2", choices: [{ delta: { content: 'status")' } }] },
+    ]);
+    const tools = getToolUseBlocks(events);
+    expect(tools).toHaveLength(1);
+    expect(tools[0].name).toBe("Bash");
+    const inputs = JSON.parse(getToolUseInputs(events).join(""));
+    expect(inputs.command).toBe("git status");
+  });
 });

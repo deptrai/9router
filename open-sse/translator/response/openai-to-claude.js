@@ -20,6 +20,77 @@ function findJsonEnd(str) {
   return -1; // incomplete
 }
 
+// Find end index of a parenthesized group starting AFTER '('. Returns index of
+// the matching ')'. Respects nested parens and quoted strings. -1 if incomplete.
+// Used to parse [TOOL_CALLS]Name(arg1="val1", arg2="val2") function-call syntax.
+function findParenEnd(str) {
+  let depth = 1, inStr = false, escape = false, quote = "";
+  for (let i = 0; i < str.length; i++) {
+    const c = str[i];
+    if (escape) { escape = false; continue; }
+    if (c === "\\") { escape = true; continue; }
+    if (!inStr && (c === '"' || c === "'" || c === "`")) { inStr = true; quote = c; continue; }
+    if (inStr && c === quote) { inStr = false; quote = ""; continue; }
+    if (inStr) continue;
+    if (c === "(") depth++;
+    else if (c === ")") { depth--; if (depth === 0) return i; }
+  }
+  return -1; // incomplete
+}
+
+// Parse function-call args string into a JSON object.
+// Input: command="git status", timeout=10, description="Check git status"
+// Output: { command: "git status", timeout: 10, description: "Check git status" }
+// Handles: quoted strings ("..." and '...'), numbers, booleans, null.
+// Returns object on success, null on parse failure.
+function parseFunctionCallArgs(argsStr) {
+  const args = {};
+  const s = argsStr.trim();
+  if (!s) return args; // empty args — valid, e.g. Name()
+  // Split by commas at top level (not inside quotes/parens/brackets)
+  const parts = [];
+  let depth = 0, inStr = false, escape = false, quote = "", buf = "";
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (escape) { escape = false; buf += c; continue; }
+    if (c === "\\") { escape = true; buf += c; continue; }
+    if (!inStr && (c === '"' || c === "'" || c === "`")) { inStr = true; quote = c; buf += c; continue; }
+    if (inStr && c === quote) { inStr = false; quote = ""; buf += c; continue; }
+    if (inStr) { buf += c; continue; }
+    if (c === "(" || c === "[" || c === "{") { depth++; buf += c; continue; }
+    if (c === ")" || c === "]" || c === "}") { depth--; buf += c; continue; }
+    if (c === "," && depth === 0) { parts.push(buf); buf = ""; continue; }
+    buf += c;
+  }
+  if (buf.trim()) parts.push(buf);
+  // Parse each key=value part
+  for (const part of parts) {
+    const eqIdx = part.indexOf("=");
+    if (eqIdx === -1) continue; // skip malformed
+    const key = part.slice(0, eqIdx).trim();
+    let val = part.slice(eqIdx + 1).trim();
+    if (!key) continue;
+    // Strip surrounding quotes from value
+    if ((val.startsWith('"') && val.endsWith('"')) ||
+        (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    } else if (val === "true") {
+      val = true;
+    } else if (val === "false") {
+      val = false;
+    } else if (val === "null") {
+      val = null;
+    } else if (/^-?\d+(\.\d+)?$/.test(val)) {
+      val = Number(val);
+    } else if (val.startsWith("{") || val.startsWith("[")) {
+      // JSON object/array value
+      try { val = JSON.parse(val); } catch { /* keep as string */ }
+    }
+    args[key] = val;
+  }
+  return args;
+}
+
 // F34: Lenient JSON extraction for malformed JSON with unescaped quotes.
 // Models emit: {"cmd":"find /path -name "*.js" | grep "mcp""}
 // The quotes inside the string value are NOT escaped → JSON.parse fails.
@@ -628,6 +699,29 @@ function tryParseLegacyToolCall(buf) {
   const openIdx = buf.indexOf(LEGACY_OPEN);
   if (openIdx === -1) return null;
   const afterOpen = buf.slice(openIdx + LEGACY_OPEN.length);
+
+  // ── Function-call syntax: [TOOL_CALLS]Name(arg1="val1", arg2="val2") ──
+  // Cascade IDE emits this format (no JSON, no { character).
+  // Must check BEFORE JSON path, since this format has no {.
+  // Pattern: Name(  where Name starts with letter/underscore, followed by (
+  // Allow hyphens in name (MCP tools: mcp__vibervn-context-engine__codebase-retrieval)
+  const fnMatch = afterOpen.match(/^([A-Za-z_][\w.\-]*)\s*\(/);
+  if (fnMatch) {
+    const fnName = fnMatch[1];
+    const argsStart = fnMatch[0].length; // index after the opening (
+    // Find matching closing ) — respect nested parens and quoted strings
+    const argsEnd = findParenEnd(afterOpen.slice(argsStart));
+    if (argsEnd === -1) return { incomplete: true }; // wait for more chunks
+    const argsStr = afterOpen.slice(argsStart, argsStart + argsEnd);
+    const remainder = afterOpen.slice(argsStart + argsEnd + 1); // skip closing )
+    // Parse key=value pairs into JSON object
+    const args = parseFunctionCallArgs(argsStr);
+    if (args) {
+      return { name: fnName, argsJson: JSON.stringify(args), remainder, openIdx };
+    }
+    // If parse failed, fall through to JSON path
+  }
+
   // Find first { — this is the JSON body start, regardless of what's between
   // [TOOL_CALLS] and the JSON (name, markers, parens, etc.)
   const braceStart = afterOpen.indexOf("{");

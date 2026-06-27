@@ -74,35 +74,48 @@ export class WindsurfExecutor extends BaseExecutor {
     }
 
     // D3: Build tool definitions if present
-    const toolDefs = body.tools && body.tools.length > 0
-      ? body.tools.map(t => {
+    // PHASE 2: Filter tools to prevent windsurf server "tool overload".
+    // Windsurf server injects Cascade IDE prompt when receiving too many tools
+    // (179 tools from Claude Code → model hallucinates, emits [TOOL_CALLS]Name(args)
+    // format, ignores user greeting). Limit to 30 tools, prioritizing built-in.
+    const BUILTIN_TOOLS = new Set([
+      "Bash", "Read", "Write", "Edit", "Glob", "Grep", "Agent", "WebSearch",
+      "WebFetch", "TodoWrite", "AskUserQuestion", "Skill", "NotebookEdit",
+      "NotebookRead", "Task", "Fetch",
+    ]);
+    const MAX_TOOLS = 30;
+    let filteredTools = body.tools && body.tools.length > 0 ? body.tools : null;
+    if (filteredTools && filteredTools.length > MAX_TOOLS) {
+      // Split into built-in (priority) and MCP/other tools
+      const builtin = filteredTools.filter(t => BUILTIN_TOOLS.has((t.function || t).name));
+      const others = filteredTools.filter(t => !BUILTIN_TOOLS.has((t.function || t).name));
+      // Take all built-in (usually ~16), then fill with MCP tools up to MAX_TOOLS
+      filteredTools = [...builtin, ...others].slice(0, MAX_TOOLS);
+      log?.debug?.("WINDSURF", `Filtered ${body.tools.length}→${filteredTools.length} tools (max ${MAX_TOOLS}, ${builtin.length} built-in priority)`);
+    }
+    const toolDefs = filteredTools
+      ? filteredTools.map(t => {
           const fn = t.function || t;
           return { name: fn.name, description: fn.description || "", schema: fn.parameters || {} };
         })
       : null;
 
-    // DEBUG: capture raw request BEFORE any transformation
+    // DEBUG: capture FULL raw request BEFORE any transformation
     try {
       const fs = await import("node:fs");
       const pathMod = await import("node:path");
-      const logDir = "/app/data/debug";
+      const logDir = process.env.DATA_DIR ? pathMod.join(process.env.DATA_DIR, "debug") : "/tmp/9router-debug";
       fs.mkdirSync(logDir, { recursive: true });
       const ts = new Date().toISOString().replace(/[:.]/g, "-");
       const logFile = pathMod.join(logDir, `windsurf-req-${ts}.json`);
+      // Log FULL content (not preview) to see exactly what Claude Code sends
       fs.writeFileSync(logFile, JSON.stringify({
         timestamp: ts,
         model,
         stream,
-        rawMessages: body.messages?.map((m, i) => ({
-          idx: i,
-          role: m.role,
-          contentPreview: typeof m.content === "string" ? m.content.slice(0, 500) : JSON.stringify(m.content).slice(0, 500),
-          contentLength: typeof m.content === "string" ? m.content.length : JSON.stringify(m.content).length,
-        })),
-        systemPreview: typeof body.system === "string" ? body.system.slice(0, 500) : JSON.stringify(body.system || "").slice(0, 500),
-        systemLength: typeof body.system === "string" ? body.system.length : JSON.stringify(body.system || "").length,
-        toolsCount: body.tools?.length || 0,
-        toolsNames: body.tools?.map(t => (t.function || t).name).slice(0, 20),
+        system: body.system,
+        messages: body.messages,
+        tools: body.tools,
       }, null, 2));
     } catch (e) { /* debug best-effort */ }
 
