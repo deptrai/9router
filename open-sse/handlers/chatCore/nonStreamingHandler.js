@@ -73,7 +73,6 @@ function tryParseLegacyToolCall(buf) {
   const argsJson = typeof args === "string" ? args : JSON.stringify(args ?? {});
   return { name, argsJson, remainder: cleanRemainder, openIdx };
 }
-</tool_call>";
 
 /**
  * Convert OpenAI ChatCompletion response to Anthropic Messages format.
