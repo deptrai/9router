@@ -282,6 +282,25 @@ export class WindsurfExecutor extends BaseExecutor {
         }
         fullText = this._stripStopTokens(fullText);
 
+        // DEBUG: log raw windsurf response to identify tool-call format issues
+        try {
+          const fs = await import("node:fs");
+          const path = await import("node:path");
+          const logDir = "/app/data/debug";
+          fs.mkdirSync(logDir, { recursive: true });
+          const ts = new Date().toISOString().replace(/[:.]/g, "-");
+          const logFile = path.join(logDir, `windsurf-raw-${ts}.json`);
+          fs.writeFileSync(logFile, JSON.stringify({
+            timestamp: ts,
+            model,
+            toolDefsCount: toolDefs?.length || 0,
+            toolDefsNames: toolDefs?.map(t => t.name) || [],
+            messagesCount: messagesForProto.length,
+            lastUserContent: messagesForProto[messagesForProto.length - 1]?.content?.slice(0, 500),
+            rawResponse: fullText,
+          }, null, 2));
+        } catch (e) { /* debug logging best-effort */ }
+
         const jsonBody = {
           id: completionId,
           object: "chat.completion",
