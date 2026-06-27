@@ -81,6 +81,31 @@ export class WindsurfExecutor extends BaseExecutor {
         })
       : null;
 
+    // DEBUG: capture raw request BEFORE any transformation
+    try {
+      const fs = await import("node:fs");
+      const pathMod = await import("node:path");
+      const logDir = "/app/data/debug";
+      fs.mkdirSync(logDir, { recursive: true });
+      const ts = new Date().toISOString().replace(/[:.]/g, "-");
+      const logFile = pathMod.join(logDir, `windsurf-req-${ts}.json`);
+      fs.writeFileSync(logFile, JSON.stringify({
+        timestamp: ts,
+        model,
+        stream,
+        rawMessages: body.messages?.map((m, i) => ({
+          idx: i,
+          role: m.role,
+          contentPreview: typeof m.content === "string" ? m.content.slice(0, 500) : JSON.stringify(m.content).slice(0, 500),
+          contentLength: typeof m.content === "string" ? m.content.length : JSON.stringify(m.content).length,
+        })),
+        systemPreview: typeof body.system === "string" ? body.system.slice(0, 500) : JSON.stringify(body.system || "").slice(0, 500),
+        systemLength: typeof body.system === "string" ? body.system.length : JSON.stringify(body.system || "").length,
+        toolsCount: body.tools?.length || 0,
+        toolsNames: body.tools?.map(t => (t.function || t).name).slice(0, 20),
+      }, null, 2));
+    } catch (e) { /* debug best-effort */ }
+
     // F23: Inject tool-call instruction for ALL models via windsurf.
     // Windsurf's GetDevstralStream API has no native tool_call field in the
     // response — tool calls must be emitted as inline text. The OLD format
