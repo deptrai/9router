@@ -266,6 +266,12 @@ export class WindsurfExecutor extends BaseExecutor {
                 toolDefsCount: toolDefs?.length || 0,
                 toolDefsNames: toolDefs?.map(t => t.name) || [],
                 messagesCount: messagesForProto.length,
+                allMessages: messagesForProto.map((m, i) => ({
+                  idx: i,
+                  role: m.role,
+                  contentPreview: (m.content || "").slice(0, 300),
+                  contentLength: (m.content || "").length,
+                })),
                 lastUserContent: messagesForProto[messagesForProto.length - 1]?.content?.slice(0, 500),
                 rawResponse: streamFullText,
               }, null, 2));
