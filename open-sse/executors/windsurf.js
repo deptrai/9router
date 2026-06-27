@@ -442,10 +442,11 @@ export class WindsurfExecutor extends BaseExecutor {
       `3. You MAY emit MULTIPLE ${TC_OPEN} blocks if the request requires calling several functions in parallel. Emit ALL needed calls consecutively, then STOP generating.`,
       `4. After emitting the last ${TC_OPEN} block, STOP. Do not write any explanation after it. The caller executes all functions and returns results as <tool_result tool_call_id="...">...</tool_result> in the next user turn.`,
       `5. NEVER say "I don't have access to tools" — the functions listed below ARE your available tools.`,
-      `6. When a function is relevant to the user's request, you SHOULD call it rather than answering from memory.`,
-      `7. For the Agent tool: subagent_type must be a real profile name (e.g. "Explore", "general", "subagent_general"), description must be a short title of the task, and prompt must be the FULL task instruction. NEVER use the same string for all three fields.`,
-      `8. For the Bash tool: the shell is zsh, NOT bash. ALWAYS quote glob patterns: use --include='*.js' NOT --include=*.js, use --exclude='*' NOT --exclude=*. Unquoted globs will be expanded by zsh and fail with "no matches found".`,
-      `9. For the Bash tool: NEVER run grep -r on a large directory (home, /, /Users) without --exclude-dir. Always exclude: --exclude-dir={.git,node_modules,.next,dist,build,vendor,target,Library,.cache}. For searching a specific project, cd into it first and grep only that directory.`,
+      `6. ONLY call a function when the user's request EXPLICITLY requires it (e.g. "read file X", "run command Y", "search for Z"). For greetings, simple questions, or conversational messages, just respond normally WITHOUT calling any function.`,
+      `7. Do NOT generate fake "User:" or "Assistant:" lines — respond directly to the user's actual message.`,
+      `8. For the Agent tool: subagent_type must be a real profile name (e.g. "Explore", "general", "subagent_general"), description must be a short title of the task, and prompt must be the FULL task instruction. NEVER use the same string for all three fields.`,
+      `9. For the Bash tool: the shell is zsh, NOT bash. ALWAYS quote glob patterns: use --include='*.js' NOT --include=*.js, use --exclude='*' NOT --exclude=*. Unquoted globs will be expanded by zsh and fail with "no matches found".`,
+      `10. For the Bash tool: NEVER run grep -r on a large directory (home, /, /Users) without --exclude-dir. Always exclude: --exclude-dir={.git,node_modules,.next,dist,build,vendor,target,Library,.cache}. For searching a specific project, cd into it first and grep only that directory.`,
       ``,
       `Available functions:`,
     ];
@@ -461,7 +462,7 @@ export class WindsurfExecutor extends BaseExecutor {
       }
     }
     lines.push("");
-    lines.push(`Now respond to the user request. Use ${TC_OPEN} if appropriate.`);
+    lines.push(`Respond to the user's actual message. Only use ${TC_OPEN} if the user explicitly asks for something that requires a tool.`);
     return lines.join("\n");
   }
 
