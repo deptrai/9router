@@ -19,6 +19,7 @@ const TARGET_HOSTS = [
   "api.individual.githubcopilot.com",
   "q.us-east-1.amazonaws.com",
   "api2.cursor.sh",
+  "server.codeium.com",
 ];
 
 const URL_PATTERNS = {
@@ -26,6 +27,7 @@ const URL_PATTERNS = {
   copilot: ["/chat/completions", "/v1/messages", "/responses"],
   kiro: ["/generateAssistantResponse"],
   cursor: ["/BidiAppend", "/RunSSE", "/RunPoll", "/Run"],
+  windsurf: ["/exa.api_server_pb.ApiServerService/GetChatMessage"],
 };
 
 // Synonym map: rawModel from request → canonical alias key in mitmAlias DB
@@ -67,6 +69,7 @@ function getToolForHost(host) {
   if (h === "daily-cloudcode-pa.googleapis.com" || h === "cloudcode-pa.googleapis.com") return "antigravity";
   if (h === "q.us-east-1.amazonaws.com") return "kiro";
   if (h === "api2.cursor.sh") return "cursor";
+  if (h === "server.codeium.com") return "windsurf";
   return null;
 }
 

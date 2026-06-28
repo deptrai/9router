@@ -106,6 +106,7 @@ const MITM_BYPASS_HOSTS = [
   "q.us-east-1.amazonaws.com",
   "codewhisperer.us-east-1.amazonaws.com",
   "api2.cursor.sh",
+  "server.codeium.com",
 ];
 const GOOGLE_DNS_SERVERS = ["8.8.8.8", "8.8.4.4"];
 const HTTPS_PORT = 443;
@@ -244,8 +245,10 @@ async function createBypassRequest(parsedUrl, realIP, options) {
 
   return new Promise((resolve, reject) => {
     const socket = new net.Socket();
+    socket.setTimeout(10000); // 10s connect+idle cap — prevent indefinite hang on unresponsive IP
 
     socket.connect(HTTPS_PORT, realIP, () => {
+      socket.setTimeout(0); // clear timeout once connected; rely on upstream response timing
       const reqOptions = {
         socket,
         // SNI + cert hostname are validated against the hostname the caller
@@ -281,8 +284,19 @@ async function createBypassRequest(parsedUrl, realIP, options) {
       });
 
       req.on("error", reject);
+      socket.on("timeout", () => socket.destroy(new Error("MITM bypass: connect/read timeout")));
       if (options.body) {
-        req.write(typeof options.body === "string" ? options.body : JSON.stringify(options.body));
+        // Preserve binary bodies (Buffer/Uint8Array) — JSON.stringify on a Buffer
+        // produces {"type":"Buffer","data":[...]} which corrupts Connect-RPC / proto
+        // payloads and triggers upstream 429 "internal error".
+        const body = options.body;
+        if (typeof body === "string") {
+          req.write(body);
+        } else if (Buffer.isBuffer(body) || body instanceof Uint8Array) {
+          req.write(Buffer.isBuffer(body) ? body : Buffer.from(body));
+        } else {
+          req.write(JSON.stringify(body));
+        }
       }
       req.end();
     });

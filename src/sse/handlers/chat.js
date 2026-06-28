@@ -13,6 +13,7 @@ import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse, normalizeUnavailableStatus } from "open-sse/utils/error.js";
 import { handleComboChat, getModelContextFit } from "open-sse/services/combo.js";
+import { parseModel } from "open-sse/services/model.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
@@ -113,13 +114,29 @@ export async function handleChat(request, clientRawRequest = null) {
     if (sanitized > 0) log.info("SANITIZE", `Sanitized ${sanitized}/${body.tools.length} tool schemas for Bedrock compatibility`);
   }
 
-  // Early-reject: if estimated input tokens exceed model's effective context limit by >10%,
+  // Early-reject: if estimated input tokens + output reserve exceed model's effective context limit,
   // reject immediately instead of wasting a 2-3s network roundtrip to upstream.
-  const fit = getModelContextFit(body, body.model);
+  // Windsurf auto-cap: if input alone fits but input + max_tokens doesn't, cap max_tokens to fit
+  // (Devin CLI sets max_tokens=128000 by default, which overflows when input is large).
+  let fit = getModelContextFit(body, body.model);
   if (fit && fit.effectiveLimit && !fit.fits) {
-    log.warn("CONTEXT", `Early-reject: ~${fit.estimatedTokens} tokens > ${fit.effectiveLimit} limit (model=${body.model})`);
+    // Auto-cap max_tokens for Windsurf: input fits but output reserve too large
+    const parsedModel = parseModel(body.model);
+    const isWindsurf = parsedModel?.providerAlias === "ws" || parsedModel?.provider === "windsurf";
+    const minOutputReserve = 8192;
+    const maxAllowedOutput = fit.effectiveLimit - fit.estimatedTokens - minOutputReserve;
+    if (isWindsurf && fit.estimatedTokens < fit.effectiveLimit && maxAllowedOutput >= minOutputReserve) {
+      const originalMaxTokens = body.max_tokens;
+      body.max_tokens = Math.min(originalMaxTokens || maxAllowedOutput, maxAllowedOutput);
+      log.info("CONTEXT", `Windsurf auto-cap max_tokens: ${originalMaxTokens} → ${body.max_tokens} (input ${fit.estimatedTokens} + output ${body.max_tokens} = ${fit.estimatedTokens + body.max_tokens} ≤ ${fit.effectiveLimit})`);
+      // Recompute fit with capped max_tokens
+      fit = getModelContextFit(body, body.model);
+    }
+  }
+  if (fit && fit.effectiveLimit && !fit.fits) {
+    log.warn("CONTEXT", `Early-reject: ~${fit.requiredTokens} tokens (input ${fit.estimatedTokens} + output reserve ${fit.requiredTokens - fit.estimatedTokens}) > ${fit.effectiveLimit} limit (model=${body.model})`);
     return new Response(
-      JSON.stringify({ error: { message: `Request too large: estimated ${fit.estimatedTokens} tokens exceeds model context limit of ${fit.effectiveLimit}`, type: "invalid_request_error", code: "context_length_exceeded" } }),
+      JSON.stringify({ error: { message: `Request too large: estimated ${fit.estimatedTokens} tokens + output reserve ${fit.requiredTokens - fit.estimatedTokens} exceeds model context limit of ${fit.effectiveLimit}`, type: "invalid_request_error", code: "context_length_exceeded" } }),
       { status: 400, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }
     );
   }

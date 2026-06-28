@@ -8,6 +8,7 @@ import {
   encodeVarint,
   encodeField,
   buildGetChatMessageRequest,
+  decodeGetChatMessageRequest,
   decodeGetChatMessageResponse,
   connectFrameDecode,
   resetFrameBuffer,
@@ -170,6 +171,66 @@ describe("windsurfProtobuf", () => {
 
       const decoded = new TextDecoder().decode(request);
       expect(decoded).toContain("[image content not supported]");
+    });
+
+    // P2: max_newlines derived from max_tokens (was hardcoded 400)
+    it("P2: max_newlines derived from max_tokens via roundtrip decode", () => {
+      const anthropicRequest = {
+        messages: [{ role: "user", content: "test" }],
+        max_tokens: 50000, // → maxNewlines = max(400, 50000/100) = 500
+      };
+      const request = buildGetChatMessageRequest(anthropicRequest, "test-key", "test-model");
+      const decoded = decodeGetChatMessageRequest(request);
+      expect(decoded.configuration.maxTokens).toBe(50000);
+      expect(decoded.configuration.maxNewlines).toBe(500); // 50000/100, not 400
+    });
+
+    it("P2: max_newlines floors at 400 for small max_tokens", () => {
+      const anthropicRequest = {
+        messages: [{ role: "user", content: "test" }],
+        max_tokens: 1000, // → 1000/100 = 10 → floor 400
+      };
+      const request = buildGetChatMessageRequest(anthropicRequest, "test-key", "test-model");
+      const decoded = decodeGetChatMessageRequest(request);
+      expect(decoded.configuration.maxNewlines).toBe(400);
+    });
+
+    it("P2: max_newlines caps at 100000 for huge max_tokens", () => {
+      const anthropicRequest = {
+        messages: [{ role: "user", content: "test" }],
+        max_tokens: 20000000, // → 200000 → cap 100000
+      };
+      const request = buildGetChatMessageRequest(anthropicRequest, "test-key", "test-model");
+      const decoded = decodeGetChatMessageRequest(request);
+      expect(decoded.configuration.maxNewlines).toBe(100000);
+    });
+
+    // P0: sampling params forwarded through roundtrip
+    it("P0: temperature/top_p/top_k forwarded through roundtrip", () => {
+      const anthropicRequest = {
+        messages: [{ role: "user", content: "test" }],
+        max_tokens: 4096,
+        temperature: 0.3,
+        top_p: 0.8,
+        top_k: 25,
+      };
+      const request = buildGetChatMessageRequest(anthropicRequest, "test-key", "test-model");
+      const decoded = decodeGetChatMessageRequest(request);
+      expect(decoded.configuration.temperature).toBeCloseTo(0.3, 5);
+      expect(decoded.configuration.topP).toBeCloseTo(0.8, 5);
+      expect(decoded.configuration.topK).toBe(25);
+    });
+
+    it("P0: defaults when sampling params not set", () => {
+      const anthropicRequest = {
+        messages: [{ role: "user", content: "test" }],
+        max_tokens: 4096,
+      };
+      const request = buildGetChatMessageRequest(anthropicRequest, "test-key", "test-model");
+      const decoded = decodeGetChatMessageRequest(request);
+      expect(decoded.configuration.temperature).toBeCloseTo(1.0, 5);
+      expect(decoded.configuration.topP).toBeCloseTo(0.95, 5);
+      expect(decoded.configuration.topK).toBe(40);
     });
   });
 

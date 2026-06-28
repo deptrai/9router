@@ -39,6 +39,7 @@ const handlers = {
   copilot: require("./handlers/copilot"),
   kiro: require("./handlers/kiro"),
   cursor: require("./handlers/cursor"),
+  windsurf: require("./handlers/windsurf"),
 };
 
 // ── SSL / SNI ─────────────────────────────────────────────────
@@ -337,9 +338,10 @@ const server = https.createServer(sslOptions, async (req, res) => {
     const isChat = patterns.some(p => req.url.includes(p));
     if (!isChat) return passthrough(req, res, bodyBuffer);
 
-    // Cursor uses binary proto — model extraction not possible at this layer.
-    // Delegate directly to handler which decodes proto internally.
-    if (tool === "cursor") {
+    // Cursor/Windsurf use binary proto — model extraction not possible at this layer.
+    // Delegate directly to handler which decodes proto internally. (Phase 1: windsurf
+    // handler is a passthrough spike; Phase 2 will add real decode/translate here.)
+    if (tool === "cursor" || tool === "windsurf") {
       return handlers[tool].intercept(req, res, bodyBuffer, null, passthrough);
     }
 

@@ -2,35 +2,30 @@
 
 ## Code search & navigation tool routing
 
-This project has three MCP servers plus built-in grep. Pick the tool that matches the task instead of defaulting to one.
+This project has two MCP servers plus built-in grep. Pick the tool that matches the task instead of defaulting to one.
 
-### 1. Deepgrep — semantic search & code discovery
+### 1. vibervn-context-engine — natural-language code discovery
 Use **first** for natural-language / exploratory questions and tracing flows across files:
 - "where is X handled?", "trace the payment webhook flow", "find the rate-limit logic"
 - broad cross-file discovery when you don't yet know the file or symbol name
-- `deepgrep_search` (quick) by default; deep mode only for complex multi-hop tracing (slower, uses quota)
+- `mcp__vibervn-context-engine__codebase-retrieval` (truyền `workspace_full_path` = repo root)
+- Khi đã biết line range, dùng `file-retrieval` thay vì Read cả file.
+- Chỉ dùng khi server MCP đang chạy (port 6699); nếu server chết → fallback sang grep/glob.
 
 ### 2. Serena — symbol-aware reading & editing
 Use when you know the symbol/structure and need precision:
 - find symbol / references, rename symbol, replace symbol body, insert before/after symbol
 - `get_symbols_overview` to understand a large file without reading the whole thing
 - prefer Serena's symbolic edits over raw text replace when changing a whole function/class
-
-### 3. code-review-graph — impact & review analysis
-Use for system-level review and refactoring:
-- diff impact / blast radius, affected execution flows, test-coverage gaps
-- large/complex function audits, dead-code detection, refactor suggestions
-- architecture/community overview
+- Activate project trước: `mcp__serena__activate_project`
 
 ### Built-in grep/ripgrep — exact lookups
 Use for precise, known-target searches where semantic understanding isn't needed:
 - exact string, filename, or known symbol lookups (fast, local, no quota)
-- Do NOT route simple exact-match searches through Deepgrep.
 
 ### Default order
-1. Deepgrep → discover / understand / trace
+1. vibervn-context-engine → discover / understand / trace (nếu server chạy), không thì grep/glob
 2. Serena → read symbols & edit precisely
-3. code-review-graph → review diff, impact radius, architecture
 
 ## Testing
 - Project root `node_modules` is empty. Test deps live in `/tmp/node_modules`; run from `tests/`.
@@ -53,3 +48,4 @@ Use for precise, known-target searches where semantic understanding isn't needed
 | Ngày | Thay đổi | Đối tượng | Lý do |
 |------|----------|-----------|-------|
 | 2026-06-24 | Khởi tạo harness | 6 agent (router-architect, core-implementer, route-implementer, contract-tester, boundary-qa, deploy-gate) + 7 skill (9r-feature-orchestrator + 6 skill chuyên) | Cấu hình ban đầu cho domain phát triển feature end-to-end |
+| 2026-06-28 | Rút gọn MCP hiểu code | Bỏ deepgrep, code-review-graph, codebase-memory-mcp khỏi devin config.json + .claude.json; chỉ giữ serena + vibervn-context-engine | Giảm tải MCP không dùng, đơn giản hóa routing rules |

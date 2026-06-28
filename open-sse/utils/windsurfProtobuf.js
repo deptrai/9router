@@ -201,17 +201,30 @@ function buildToolDefinition(anthropicTool) {
 function buildConfiguration(anthropicRequest) {
   const maxTokens = anthropicRequest.max_tokens || 128000;
 
-  // Double encoding using BigInt for precision
-  // temperature = 1.0 → 0x3FF0000000000000n
-  // top_p = 0.95 → 0x3FEE666666666666n
+  // P2: max_newlines derived from max_tokens (was hardcoded 400).
+  // Heuristic: ~100 tokens per line of code/output. Hard floor 400 to preserve
+  // original behavior for small max_tokens; ceiling 100000 to avoid absurd values
+  // that could overflow upstream's line budget parser.
+  const maxNewlines = Math.max(400, Math.min(100000, Math.floor(maxTokens / 100)));
+
+  // Sampling params: prefer values from anthropicRequest (forwarded by MITM handler
+  // in P0), fall back to Windsurf defaults. Encode as f64 via BigInt bitcast.
+  // Defaults: temperature=1.0 → 0x3FF0000000000000n, top_p=0.95 → 0x3FEE666666666666n.
+  const temperature = typeof anthropicRequest.temperature === "number"
+    ? BigInt(new DataView(new Float64Array([anthropicRequest.temperature]).buffer).getBigUint64(0, true))
+    : 0x3FF0000000000000n;
+  const topP = typeof anthropicRequest.top_p === "number"
+    ? BigInt(new DataView(new Float64Array([anthropicRequest.top_p]).buffer).getBigUint64(0, true))
+    : 0x3FEE666666666666n;
+  const topK = typeof anthropicRequest.top_k === "number" ? anthropicRequest.top_k : 40;
 
   return concatArrays(
     encodeField(1, WIRE_TYPE.VARINT, 1), // num_completions
     encodeField(2, WIRE_TYPE.VARINT, maxTokens),
-    encodeField(3, WIRE_TYPE.VARINT, 400), // max_newlines
-    encodeField(5, WIRE_TYPE.FIXED64, 0x3FF0000000000000n), // temperature = 1.0
-    encodeField(7, WIRE_TYPE.VARINT, 40), // top_k
-    encodeField(8, WIRE_TYPE.FIXED64, 0x3FEE666666666666n) // top_p = 0.95
+    encodeField(3, WIRE_TYPE.VARINT, maxNewlines), // max_newlines (P2: derived from max_tokens)
+    encodeField(5, WIRE_TYPE.FIXED64, temperature),
+    encodeField(7, WIRE_TYPE.VARINT, topK),
+    encodeField(8, WIRE_TYPE.FIXED64, topP)
   );
 }
 
@@ -298,12 +311,15 @@ export function decodeField(buffer, offset) {
     [value, pos] = decodeVarint(buffer, pos);
   } else if (wireType === WIRE_TYPE.LEN) {
     const [length, pos2] = decodeVarint(buffer, pos);
+    if (pos2 + length > buffer.length) throw new Error("Protobuf LEN field out of bounds");
     value = buffer.slice(pos2, pos2 + length);
     pos = pos2 + length;
   } else if (wireType === WIRE_TYPE.FIXED64) {
+    if (pos + 8 > buffer.length) throw new Error("Protobuf FIXED64 field out of bounds");
     value = buffer.slice(pos, pos + 8);
     pos += 8;
   } else if (wireType === WIRE_TYPE.FIXED32) {
+    if (pos + 4 > buffer.length) throw new Error("Protobuf FIXED32 field out of bounds");
     value = buffer.slice(pos, pos + 4);
     pos += 4;
   } else {
@@ -448,19 +464,17 @@ function decodeUsage(data) {
       model_uid: ""
     };
 
+    // VARINT values are already-decoded numbers from decodeField.
     if (fields.has(2)) {
-      const [value] = decodeVarint(fields.get(2)[0].value, 0);
-      usage.input_tokens = value;
+      usage.input_tokens = fields.get(2)[0].value;
     }
 
     if (fields.has(3)) {
-      const [value] = decodeVarint(fields.get(3)[0].value, 0);
-      usage.output_tokens = value;
+      usage.output_tokens = fields.get(3)[0].value;
     }
 
     if (fields.has(5)) {
-      const [value] = decodeVarint(fields.get(5)[0].value, 0);
-      usage.cache_read_tokens = value;
+      usage.cache_read_tokens = fields.get(5)[0].value;
     }
 
     if (fields.has(9)) {
@@ -567,6 +581,242 @@ export function mapConnectErrorToAnthropic(connectError) {
       }
     }
   };
+}
+
+// ==================== INBOUND: DECODE REQUEST (Devin CLI → 9router) ====================
+// Added for MITM feature `mitm-windsurf-devin-cli` (Phase 2). See _workspace/01-spec.md.
+// These are the inverse of the outbound builders above — they decode a Connect-RPC
+// GetChatMessageRequest payload (sent by Devin CLI) into a shape that can be translated
+// to an Anthropic /v1/messages request and forwarded to 9router.
+
+/**
+ * Pure Connect-RPC frame splitter — stateless inverse of the streaming connectFrameDecode.
+ * connectFrameDecode uses a module-level frameBuffer (not reentrant); this pure version
+ * takes an explicit buffer and returns all complete frames within it. A buffer that ends
+ * mid-frame returns only the fully-parsed frames (the trailing partial is the caller's
+ * responsibility — for the inbound MITM path the full bodyBuffer is collected up-front by
+ * server.js collectBodyRaw, so partial trailing frames should not occur in practice).
+ *
+ * Frame layout: [flags:1B][length:4B BE][payload:length B]
+ *   flags 0x00 = data frame, 0x02 = end frame (payload = JSON error or empty on success)
+ *
+ * @param {Buffer|Uint8Array} buffer
+ * @returns {Array<{flags:number, payload:Uint8Array}>}
+ */
+export function splitConnectFrames(buffer) {
+  const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+  const frames = [];
+  let pos = 0;
+  const MAX_FRAME_SIZE = 10_000_000; // 10MB cap — larger than any valid chat frame
+  while (pos + 5 <= buf.length) {
+    const flags = buf[pos];
+    const length = (buf[pos + 1] << 24) | (buf[pos + 2] << 16) | (buf[pos + 3] << 8) | buf[pos + 4];
+    if (length < 0 || length > MAX_FRAME_SIZE) break; // malicious/malformed length
+    if (pos + 5 + length > buf.length) break; // incomplete trailing frame
+    const payload = buf.subarray(pos + 5, pos + 5 + length);
+    frames.push({ flags, payload: new Uint8Array(payload) });
+    pos += 5 + length;
+  }
+  return frames;
+}
+
+/**
+ * Decode Metadata protobuf message (inverse of buildMetadata in windsurfAuth.js).
+ * Fields: 1=ide_name, 2=extension_version, 3=api_key, 4=locale, 5=os, 7=ide_version, 12=extension_name
+ */
+function decodeMetadata(data) {
+  const fields = decodeMessage(data);
+  const get = (n) => fields.has(n) ? textDecoder.decode(fields.get(n)[0].value) : "";
+  return {
+    ideName: get(1),
+    extensionVersion: get(2),
+    apiKey: get(3),
+    locale: get(4),
+    os: get(5),
+    ideVersion: get(7),
+    extensionName: get(12),
+  };
+}
+
+/**
+ * Decode ChatMessagePrompt protobuf message (inverse of buildChatMessagePrompt).
+ * Fields: 1=message_id, 2=source(varint), 3=prompt, 6=tool_calls(repeated), 7=tool_call_id, 11=thinking
+ */
+function decodeChatMessagePrompt(data) {
+  const fields = decodeMessage(data);
+  const messageId = fields.has(1) ? textDecoder.decode(fields.get(1)[0].value) : "";
+  const source = fields.has(2) ? fields.get(2)[0].value : 0;
+  const prompt = fields.has(3) ? textDecoder.decode(fields.get(3)[0].value) : "";
+  const thinking = fields.has(11) ? textDecoder.decode(fields.get(11)[0].value) : null;
+  const toolCallId = fields.has(7) ? textDecoder.decode(fields.get(7)[0].value) : null;
+  const toolCalls = [];
+  if (fields.has(6)) {
+    for (const item of fields.get(6)) {
+      const tc = decodeToolCall(item.value);
+      if (tc) toolCalls.push(tc);
+    }
+  }
+  return { messageId, source, prompt, thinking, toolCallId, toolCalls };
+}
+
+/**
+ * Decode ChatToolDefinition protobuf message (inverse of buildToolDefinition).
+ * Fields: 1=name, 2=description, 3=input_schema_str
+ */
+function decodeToolDefinition(data) {
+  const fields = decodeMessage(data);
+  const name = fields.has(1) ? textDecoder.decode(fields.get(1)[0].value) : "";
+  const description = fields.has(2) ? textDecoder.decode(fields.get(2)[0].value) : "";
+  const inputSchemaStr = fields.has(3) ? textDecoder.decode(fields.get(3)[0].value) : "{}";
+  return { name, description, inputSchemaStr };
+}
+
+/**
+ * Decode CompletionConfiguration protobuf message (inverse of buildConfiguration).
+ * Fields: 1=num_completions, 2=max_tokens, 3=max_newlines, 5=temperature(fixed64), 7=top_k, 8=top_p(fixed64)
+ */
+function decodeConfiguration(data) {
+  const fields = decodeMessage(data);
+  // NOTE: decodeField returns VARINT values already-decoded as numbers (see decodeField).
+  // So fields.get(n)[0].value is a number for VARINT wire type, NOT a buffer.
+  const vint = (n) => fields.has(n) ? fields.get(n)[0].value : 0;
+  const f64 = (n) => {
+    if (!fields.has(n)) return 0;
+    const v = fields.get(n)[0].value;
+    const view = new DataView(v.buffer, v.byteOffset, 8);
+    return view.getFloat64(0, true);
+  };
+  return {
+    numCompletions: vint(1),
+    maxTokens: vint(2),
+    maxNewlines: vint(3),
+    temperature: f64(5),
+    topK: vint(7),
+    topP: f64(8),
+  };
+}
+
+/**
+ * Decode full GetChatMessageRequest protobuf payload (the body of the first 0x00 frame).
+ * Inverse of buildGetChatMessageRequest. See spec lines 163-178 for field map.
+ *
+ * @param {Uint8Array|Buffer} payload
+ * @returns {{metadata, system, messages, requestType, configuration, tools, cascadeId, plannerMode, modelUid, executionId}}
+ */
+export function decodeGetChatMessageRequest(payload) {
+  const fields = decodeMessage(payload);
+  const str = (n) => fields.has(n) ? textDecoder.decode(fields.get(n)[0].value) : "";
+  // VARINT values come back already-decoded as numbers from decodeField.
+  const vint = (n) => fields.has(n) ? fields.get(n)[0].value : 0;
+
+  const result = {
+    metadata: fields.has(1) ? decodeMetadata(fields.get(1)[0].value) : null,
+    system: str(2),
+    messages: [],
+    requestType: vint(7),
+    configuration: fields.has(8) ? decodeConfiguration(fields.get(8)[0].value) : null,
+    tools: [],
+    cascadeId: str(16),
+    plannerMode: vint(20),
+    modelUid: str(21),
+    executionId: str(22),
+  };
+
+  // Field 3: chat_message_prompts (repeated)
+  if (fields.has(3)) {
+    for (const item of fields.get(3)) {
+      result.messages.push(decodeChatMessagePrompt(item.value));
+    }
+  }
+
+  // Field 10: tools (repeated)
+  if (fields.has(10)) {
+    for (const item of fields.get(10)) {
+      result.tools.push(decodeToolDefinition(item.value));
+    }
+  }
+
+  return result;
+}
+
+// ==================== INBOUND: BUILD RESPONSE (9router → Devin CLI) ====================
+
+/**
+ * Build a single delta_tool_call protobuf message (subset of buildToolCall that
+ * uses the streaming field names — id, name, arguments_json). Reuses buildToolCall
+ * because the wire schema is identical (fields 1=id, 2=name, 3=arguments_json).
+ */
+function buildDeltaToolCall(tc) {
+  const id = tc.id || "";
+  const name = tc.name || "";
+  const args = typeof tc.arguments === "string" ? tc.arguments : (tc.arguments_json || "{}");
+  return concatArrays(
+    encodeField(1, WIRE_TYPE.LEN, id),
+    encodeField(2, WIRE_TYPE.LEN, name),
+    encodeField(3, WIRE_TYPE.LEN, args)
+  );
+}
+
+/**
+ * Build ModelUsageStats protobuf message (inverse of decodeUsage).
+ * Fields: 2=input_tokens, 3=output_tokens, 5=cache_read_tokens, 9=model_uid
+ */
+export function buildUsage(usage) {
+  const fields = [];
+  if (usage.input_tokens != null) fields.push(encodeField(2, WIRE_TYPE.VARINT, usage.input_tokens));
+  if (usage.output_tokens != null) fields.push(encodeField(3, WIRE_TYPE.VARINT, usage.output_tokens));
+  if (usage.cache_read_tokens != null) fields.push(encodeField(5, WIRE_TYPE.VARINT, usage.cache_read_tokens));
+  if (usage.model_uid) fields.push(encodeField(9, WIRE_TYPE.LEN, usage.model_uid));
+  return concatArrays(...fields);
+}
+
+/**
+ * Build a GetChatMessageResponse protobuf payload (inverse of decodeGetChatMessageResponse).
+ * Accepts a delta object with optional fields:
+ *   { delta_text, stop_reason, delta_tool_calls[], usage, delta_thinking }
+ * Maps to: field 3=delta_text, 5=stop_reason, 6=delta_tool_calls(repeated), 7=usage, 9=delta_thinking
+ *
+ * @param {object} delta
+ * @returns {Uint8Array}
+ */
+export function buildGetChatMessageResponse(delta) {
+  const fields = [];
+  if (delta.delta_text != null) {
+    fields.push(encodeField(3, WIRE_TYPE.LEN, delta.delta_text));
+  }
+  if (delta.stop_reason != null) {
+    fields.push(encodeField(5, WIRE_TYPE.VARINT, delta.stop_reason));
+  }
+  if (Array.isArray(delta.delta_tool_calls)) {
+    for (const tc of delta.delta_tool_calls) {
+      fields.push(encodeField(6, WIRE_TYPE.LEN, buildDeltaToolCall(tc)));
+    }
+  }
+  if (delta.usage) {
+    fields.push(encodeField(7, WIRE_TYPE.LEN, buildUsage(delta.usage)));
+  }
+  if (delta.delta_thinking != null) {
+    fields.push(encodeField(9, WIRE_TYPE.LEN, delta.delta_thinking));
+  }
+  return concatArrays(...fields);
+}
+
+/**
+ * Wrap a protobuf payload in a Connect-RPC frame with an explicit flags byte.
+ * flags: 0x00 = data frame, 0x02 = end frame (empty payload = success, JSON = error).
+ *
+ * This is the pure, parametrized version. WindsurfExecutor.buildConnectFrame() (outbound)
+ * hardcodes flag 0x00 — kept as-is for backward compat; new inbound code uses this.
+ *
+ * @param {0x00|0x02} flags
+ * @param {Uint8Array|Buffer} payload
+ * @returns {Buffer}
+ */
+export function buildConnectFrame(flags, payload) {
+  const body = Buffer.isBuffer(payload) ? payload : Buffer.from(payload);
+  const lengthBytes = Buffer.alloc(4);
+  lengthBytes.writeUInt32BE(body.length, 0);
+  return Buffer.concat([Buffer.from([flags]), lengthBytes, body]);
 }
 
 // ==================== DEBUG UTILITIES ====================

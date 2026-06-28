@@ -53,6 +53,22 @@ export const MITM_TOOLS = {
       { id: "simple-task", name: "Qwen3 Coder Next", alias: "simple-task" },
     ],
   },
+  windsurf: {
+    id: "windsurf",
+    name: "Windsurf / Devin CLI",
+    image: "/providers/windsurf.png",
+    color: "#00D4AA",
+    description: "Windsurf / Devin CLI (Connect-RPC) with MITM",
+    configType: "mitm",
+    mitmDomain: "server.codeium.com",
+    defaultModels: [
+      { id: "ws/sonnet-4.6", name: "Claude Sonnet 4.6 (Thinking)", alias: "ws/sonnet-4.6" },
+      { id: "ws/opus-4.8", name: "Claude Opus 4.8 (Medium)", alias: "ws/opus-4.8" },
+      { id: "ws/glm-5-2", name: "GLM 5.2", alias: "ws/glm-5-2" },
+      { id: "ws/swe-1-6", name: "SWE 1.6", alias: "ws/swe-1-6" },
+      { id: "ws/minimax-m2.7", name: "MiniMax M2.7", alias: "ws/minimax-m2.7" },
+    ],
+  },
   // cursor: {
   //   id: "cursor",
   //   name: "Cursor",
