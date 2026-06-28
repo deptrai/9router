@@ -213,10 +213,11 @@ export class WindsurfExecutor extends BaseExecutor {
   /**
    * W-FIX: Truncate tool descriptions to stay under Windsurf's request size limit.
    * Windsurf rejects requests with large tool payloads (~50KB+ tool descriptions)
-   * with "internal error occurred". Truncating descriptions to 200 chars keeps
-   * all tools while staying under the limit. Schema is preserved as-is.
+   * with "internal error occurred". Truncating descriptions to 100 chars keeps
+   * all tools (even 117+ tool sets) while staying under the ~90KB frame limit.
+   * Schema is preserved as-is.
    */
-  _truncateToolDescriptions(body, maxLen = 200) {
+  _truncateToolDescriptions(body, maxLen = 100) {
     if (!Array.isArray(body.tools) || body.tools.length === 0) return body;
     let changed = false;
     const newTools = body.tools.map((t) => {
