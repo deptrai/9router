@@ -359,6 +359,63 @@ export class WindsurfExecutor extends BaseExecutor {
   }
 
   /**
+   * W-FIX: Peek first chunks to detect end-frame-only errors before committing
+   * to SSE stream. Windsurf returns HTTP 200 even for errors (Connect-RPC puts
+   * errors in end frames). If we emit message_start then error event, Claude
+   * Code sees "empty or malformed response (HTTP 200)". Instead, detect early
+   * errors and return HTTP error response.
+   *
+   * Strategy: read up to 3 chunks. If we see an end frame (flag 0x02) with
+   * error before any data frame (flag 0x00), return it as HTTP error.
+   * If we see any data frame, stop peeking — assume content follows.
+   * Buffered chunks are replayed into the stream.
+   *
+   * Note: we deliberately do NOT decode data frames here (only check flags) to
+   * avoid consuming stateful mock counters in tests and to keep peek cheap.
+   */
+  async _peekForEarlyError(reader) {
+    const bufferedChunks = [];
+    let hasData = false;
+    let earlyError = null;
+    let earlyStatus = 500;
+
+    for (let i = 0; i < 3 && !hasData && !earlyError; i++) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      bufferedChunks.push(value);
+      const frames = connectFrameDecode(Buffer.from(value));
+
+      for (const frame of frames) {
+        if (frame.flags === 0x02) {
+          // End frame — check for error
+          const endError = parseConnectEndFrame(frame.payload);
+          if (endError) {
+            const anthropicError = mapConnectErrorToAnthropic(endError);
+            // Claude Code expects body: { error: { type, message } }
+            earlyError = anthropicError.error.error;
+            earlyStatus = anthropicError.status;
+            debugLog(`Peek: early end-frame error: ${endError.code} → HTTP ${earlyStatus}`);
+          }
+          break;
+        } else if (frame.flags === 0x00) {
+          // Any data frame — stop peeking, let stream handle it
+          hasData = true;
+          debugLog(`Peek: data frame found in chunk ${i}, continuing to stream`);
+          break;
+        }
+      }
+    }
+
+    if (earlyError) {
+      return { error: earlyError, status: earlyStatus, bufferedChunks: [] };
+    }
+
+    // No early error — continue streaming, replay buffered chunks
+    return { error: null, bufferedChunks };
+  }
+
+  /**
    * Transform streaming response to Anthropic SSE events
    * Architecture §4.2: Anthropic SSE event sequence
    */
@@ -366,6 +423,22 @@ export class WindsurfExecutor extends BaseExecutor {
     const reader = response.body.getReader();
     const responseId = `msg_${randomUUID()}`;
     const encoder = new TextEncoder();
+
+    // W-FIX: Peek first chunk to detect end-frame-only errors (e.g. rate limit,
+    // permission_denied) BEFORE committing to SSE stream. If Windsurf returns
+    // 200 + end frame error with no content, return HTTP error response instead
+    // of emitting message_start + error event (which Claude Code sees as
+    // "empty or malformed response (HTTP 200)").
+    resetFrameBuffer();
+    const peekResult = await this._peekForEarlyError(reader);
+    if (peekResult.error) {
+      debugLog(`Early error detected: ${JSON.stringify(peekResult.error)}`);
+      resetFrameBuffer();
+      return new Response(JSON.stringify({ error: peekResult.error }), {
+        status: peekResult.status,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
 
     // State for tracking blocks
     const state = {
@@ -380,7 +453,9 @@ export class WindsurfExecutor extends BaseExecutor {
       currentToolCallId: null, // tracks active tool call for chunked args
       usage: null,
       stopReason: null,
-      incomplete: false
+      incomplete: false,
+      // Buffered chunks from peek that need to be replayed into the stream
+      bufferedChunks: peekResult.bufferedChunks,
     };
 
     // Bind methods to preserve `this` context
@@ -412,14 +487,23 @@ export class WindsurfExecutor extends BaseExecutor {
 
           state.messageStarted = true;
 
+          // Replay buffered chunks from peek first
+          for (const chunk of state.bufferedChunks) {
+            const frames = connectFrameDecode(Buffer.from(chunk));
+            debugLog(`Replaying ${frames.length} frames from peek buffer`);
+            for (const frame of frames) {
+              await processFrame(frame, state, controller, encoder, responseId, {
+                emitTextDelta,
+                emitToolCalls,
+                emitThinkingDelta,
+                mapStopReason
+              });
+            }
+          }
+
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-
-            // Mark TTFT received (first byte)
-            if (!state.messageStarted) {
-              // Already emitted message_start above
-            }
 
             // Decode frames from chunk
             const frames = connectFrameDecode(Buffer.from(value));
@@ -768,7 +852,8 @@ export class WindsurfExecutor extends BaseExecutor {
             const endError = parseConnectEndFrame(frame.payload);
             if (endError) {
               const anthropicError = mapConnectErrorToAnthropic(endError);
-              return new Response(JSON.stringify(anthropicError.error), {
+              // Claude Code expects { error: { type, message } }
+              return new Response(JSON.stringify({ error: anthropicError.error.error }), {
                 status: anthropicError.status,
                 headers: { "Content-Type": "application/json" }
               });

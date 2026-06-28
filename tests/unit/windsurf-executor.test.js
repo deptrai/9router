@@ -240,6 +240,39 @@ describe("WindsurfExecutor", () => {
       expect(errorBody.error.type).toBe("rate_limit_error");
     });
 
+    it("W-FIX: returns HTTP 429 when Windsurf sends 200 + end-frame rate limit error (no content)", async () => {
+      // Windsurf returns HTTP 200 but puts permission_denied/rate_limit in end frame.
+      // Without peek, Claude Code sees "empty or malformed response (HTTP 200)".
+      connectFrameDecode.mockReturnValue([
+        { flags: 0x02, payload: Buffer.from('{"error":{"code":"permission_denied","message":"Reached overall message rate limit. Please try again later."}}') },
+      ]);
+      parseConnectEndFrame.mockReturnValue({
+        code: "permission_denied",
+        message: "Reached overall message rate limit. Please try again later.",
+      });
+      mapConnectErrorToAnthropic.mockReturnValue({
+        status: 403,
+        error: { type: "error", error: { type: "permission_error", message: "Reached overall message rate limit." } },
+      });
+
+      proxyAwareFetch.mockResolvedValue(makeMockStreamResponse(["chunk1"]));
+
+      const result = await executor.execute({
+        model: "ws/glm-5-2",
+        body: { messages: [] },
+        stream: true,
+        credentials: { apiKey: "test-key" },
+        signal: null,
+        log: null,
+      });
+
+      // Should return HTTP 403 (not 200 with empty SSE stream)
+      expect(result.response.status).toBe(403);
+      const errorBody = await result.response.json();
+      expect(errorBody.error.type).toBe("permission_error");
+      expect(errorBody.error.message).toContain("rate limit");
+    });
+
     it("retries on network error pre-TTFT (W-H2)", async () => {
       proxyAwareFetch
         .mockRejectedValueOnce(new Error("Network error"))
