@@ -178,8 +178,14 @@ describe("WindsurfExecutor", () => {
         log: null,
       });
 
+      // W-FIX: system prompt is replaced with a neutral placeholder to bypass
+      // Windsurf content policy. Verify the replacement happened.
       expect(buildGetChatMessageRequest).toHaveBeenCalledWith(
-        body,
+        expect.objectContaining({
+          messages: [{ role: "user", content: "hello" }],
+          system: [{ type: "text", text: expect.stringContaining("interactive coding assistant") }],
+          max_tokens: 4096
+        }),
         "test-key",
         "claude-sonnet-4-6-thinking"
       );
