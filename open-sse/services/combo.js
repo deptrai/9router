@@ -92,6 +92,98 @@ export function estimateRequestInputTokens(body) {
   }
 }
 
+/**
+ * Windsurf-aware estimator: accounts for nuclear sanitization that happens
+ * inside WindsurfExecutor.execute() BEFORE the request is sent upstream.
+ *
+ * The default estimator measures the raw body (full system prompt, full tool
+ * descriptions, full schema descriptions) — but Windsurf strips all of these,
+ * so the actual sent size is ~10-15x smaller. Without this adjustment, the
+ * combo preflight blocks ws/* models with a false "exceeds context window".
+ *
+ * Sanitization mimicked (see WindsurfExecutor.execute):
+ * - system: replaced with ~200 char neutral prompt
+ * - tools[].description: replaced with `Tool: <name>` (~20 chars)
+ * - tools[].input_schema: all descriptions stripped (structure kept only)
+ * - messages: <system-reminder> blocks stripped
+ */
+export function estimateWindsurfInputTokens(body) {
+  try {
+    if (!body || typeof body !== "object") return 0;
+
+    // System: replaced with ~200 char neutral prompt
+    let systemChars = 200;
+
+    // Tools: name + "Tool: " prefix + structural schema (no descriptions)
+    // Measured: ~100 chars per tool after stripping descriptions from schema
+    let toolsChars = 0;
+    if (Array.isArray(body.tools)) {
+      for (const t of body.tools) {
+        if (!t) continue;
+        // description → "Tool: <name>" (~20 chars)
+        toolsChars += 20;
+        // input_schema structure (type, required, properties keys, enum) — no descriptions
+        // Rough estimate: ~80 chars per tool for typical schema structure
+        if (t.input_schema && typeof t.input_schema === "object") {
+          toolsChars += 80;
+        }
+      }
+    }
+
+    // Messages: strip <system-reminder>...</system-reminder> blocks, keep rest
+    let messagesChars = 0;
+    if (Array.isArray(body.messages)) {
+      for (const msg of body.messages) {
+        if (!msg) continue;
+        if (typeof msg.content === "string") {
+          messagesChars += stripSystemReminderEstimate(msg.content).length;
+        } else if (Array.isArray(msg.content)) {
+          for (const block of msg.content) {
+            if (block?.type === "text" && typeof block.text === "string") {
+              messagesChars += stripSystemReminderEstimate(block.text).length;
+            } else {
+              messagesChars += JSON.stringify(block || {}).length;
+            }
+          }
+        } else {
+          messagesChars += JSON.stringify(msg.content || "").length;
+        }
+        // role + overhead
+        messagesChars += 30;
+      }
+    }
+
+    // Other fields (model, max_tokens, stream, etc.) — small overhead
+    const otherChars = 200;
+
+    const totalChars = systemChars + toolsChars + messagesChars + otherChars;
+    return Math.ceil(totalChars / CHARS_PER_TOKEN_ESTIMATE);
+  } catch {
+    return 0;
+  }
+}
+
+function stripSystemReminderEstimate(text) {
+  if (typeof text !== "string") return text || "";
+  // Greedy match + unclosed fallback (same as WindsurfExecutor)
+  let result = text.replace(/<system-reminder>[\s\S]*<\/system-reminder>/gi, "");
+  result = result.replace(/<system-reminder>[\s\S]*$/gi, "");
+  return result;
+}
+
+/**
+ * Pick the appropriate token estimator based on provider.
+ * Windsurf sanitizes the body heavily before sending, so it needs a
+ * provider-aware estimator to avoid false context-window rejections.
+ */
+function pickEstimator(modelStr) {
+  const parsed = parseModel(modelStr);
+  if (parsed?.providerAlias === "ws" || parsed?.provider === "windsurf") {
+    return estimateWindsurfInputTokens;
+  }
+  return estimateRequestInputTokens;
+}
+
 function getRequestedOutputReserve(body) {
   const raw = body?.max_tokens ?? body?.max_completion_tokens ?? body?.max_output_tokens ?? 0;
   const parsed = Number.parseInt(raw, 10);
@@ -213,11 +305,13 @@ function extractComboErrorInfo(errorBody, fallbackText = "") {
   };
 }
 
-export function getModelContextFit(body, modelStr, estimateInputTokens = estimateRequestInputTokens, reserveTokens = DEFAULT_CONTEXT_RESERVE_TOKENS) {
+export function getModelContextFit(body, modelStr, estimateInputTokens = null, reserveTokens = DEFAULT_CONTEXT_RESERVE_TOKENS) {
   const { contextWindow, inputLimit, effectiveLimit } = resolveModelContextLimits(modelStr);
   if (!effectiveLimit) return { fits: true, contextWindow: null, inputLimit: null, effectiveLimit: null, estimatedTokens: 0, requiredTokens: 0 };
 
-  const estimatedTokens = Math.ceil((estimateInputTokens(body) || 0) * CONTEXT_ESTIMATE_SAFETY_RATIO);
+  // Pick estimator: if caller provides one, use it; otherwise auto-select by provider
+  const estimator = estimateInputTokens || pickEstimator(modelStr);
+  const estimatedTokens = Math.ceil((estimator(body) || 0) * CONTEXT_ESTIMATE_SAFETY_RATIO);
   const requestedReserve = getRequestedOutputReserve(body);
   const outputReserve = Math.max(reserveTokens, requestedReserve);
   const requiredTokens = estimatedTokens + outputReserve;
@@ -271,7 +365,7 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, estimateInputTokens = estimateRequestInputTokens, bufferedFallbackEnabled = false, bufferTimeoutMs = undefined }) {
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, estimateInputTokens = null, bufferedFallbackEnabled = false, bufferTimeoutMs = undefined }) {
   // Apply rotation strategy if enabled
   const rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
   

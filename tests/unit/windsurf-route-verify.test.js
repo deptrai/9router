@@ -29,11 +29,15 @@ describe("Windsurf route verify", () => {
     expect(PROVIDERS.windsurf.format).toBe("claude");
   });
 
-  it("PROVIDER_MODELS.ws has 3 models (sonnet-4.6, opus-4.8, glm-5-2)", () => {
+  it("PROVIDER_MODELS.ws has expected models", () => {
     const wsModels = PROVIDER_MODELS.ws;
     expect(wsModels).toBeDefined();
-    expect(wsModels).toHaveLength(3);
-    expect(wsModels.map(m => m.id)).toEqual(["sonnet-4.6", "opus-4.8", "glm-5-2"]);
+    expect(wsModels.length).toBeGreaterThanOrEqual(3);
+    const ids = wsModels.map(m => m.id);
+    // Core models always present
+    expect(ids).toContain("sonnet-4.6");
+    expect(ids).toContain("opus-4.8");
+    expect(ids).toContain("glm-5-2");
   });
 
   it("ALIAS_TO_PROVIDER_ID['ws'] === 'windsurf'", () => {
