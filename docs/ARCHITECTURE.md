@@ -1,6 +1,6 @@
 # Kiến trúc 9Router
 
-_Cập nhật lần cuối: 2026-06-16_
+_Cập nhật lần cuối: 2026-08-18_
 
 ## Tóm tắt điều hành (Executive Summary)
 
@@ -591,10 +591,88 @@ Specialized executors:
 - `kiro`
 - `codex`
 - `cursor`
+- `windsurf` — Connect-RPC protobuf executor (xem mục "Provider: Windsurf" bên dưới)
 
 Default executor path:
 
 - Tất cả provider khác, bao gồm compatible node providers, dùng `open-sse/executors/default.js`
+
+## Provider: Windsurf
+
+Windsurf (server.codeium.com) là provider đặc biệt: dùng **Connect-RPC + protobuf** thay vì REST/JSON. Executor riêng tại `open-sse/executors/windsurf.js`, translator protobuf tại `open-sse/utils/windsurfProtobuf.js`, auth tại `open-sse/utils/windsurfAuth.js`.
+
+### Endpoint và framing (INV-1, INV-4)
+
+```
+POST https://server.codeium.com/exa.api_server_pb.ApiServerService/GetChatMessage
+Content-Type: application/connect+proto
+Connect-Protocol-Version: 1
+Authorization: Basic <windsurf_api_key>-<windsurf_api_key>
+TE: trailers
+```
+
+- Request frame: `[0x00][4-byte BE uint32 length][protobuf payload]`
+- Response: nhiều frames, flag `0x00` = data, `0x02` = end (JSON error nếu có)
+- Auth: đọc `windsurf_api_key` trực tiếp (format: `devin-session-token$<JWT>`), header `Basic <key>-<key>` (token duplicate với dash). Không exchange JWT, không gọi `/GetUserJwt`.
+
+### Native tool calls (INV-2)
+
+- Tools truyền qua protobuf field 10 (`repeated ChatToolDefinition`)
+- Tool calls trong response qua field 6 (`repeated ChatToolCall delta_tool_calls`)
+- KHÔNG inject tool instruction vào system prompt
+- KHÔNG parse `[TOOL_CALLS]` text format
+
+### Content policy constraints (W-FIX)
+
+Windsurf có content policy aggressive — block request chứa các term technical phổ biến (security, shell, command, monitor, session, kill, delete, root, token, force, v.v.). Khi client là Claude Code (81+ tools, system prompt dài), request bị block với `403 permission_denied: an internal error occurred`.
+
+Giải pháp (trong `WindsurfExecutor.execute()`):
+
+1. **System prompt replacement**: Replace toàn bộ system prompt bằng neutral instruction: `"You are an interactive coding assistant. Help the user with software engineering tasks..."`. Không sanitize từng term — thay luôn.
+
+2. **`<system-reminder>` stripping**: Claude Code inject `<system-reminder>` blocks (chứa CLAUDE.md instructions) vào user messages. Strip bằng regex greedy `/<system-reminder>[\s\S]*<\/system-reminder>/gi` + fallback cho unclosed tags `/<system-reminder>[\s\S]*$/gi`. Empty string sau strip → placeholder `" "`.
+
+3. **Nuclear tool description stripping**: Replace ALL tool descriptions bằng `Tool: <name>` placeholder. Strip ALL schema property descriptions recursively (giữ chỉ structural schema: types, required, properties). Lý do: binary search chứng minh tool descriptions (không chỉ từng term) trigger content policy khi đủ số lượng (~11+ tools).
+
+### Frame size limit (~90KB)
+
+Windsurf accept protobuf frame tối đa ~90KB. 9router set `MAX_FRAME = 85000` bytes (safety margin). Sau nuclear strip, mỗi tool chiếm rất ít bytes — chỉ còn structure. Ngưỡng thực tế: ~350-400 tools trước khi drop bắt đầu.
+
+Nếu frame vẫn vượt limit: drop tools từ cuối mảng cho đến khi vừa (`body.tools.pop()` loop). Tool nào bị drop là tool ở cuối danh sách — MCP server load sau sẽ mất tool trước. Nếu hết tools mà vẫn vượt → proceed anyway (Windsurf sẽ reject, better than silent failure).
+
+### Streaming behavior
+
+Windsurf luôn stream nội bộ (Connect-RPC streaming). Nếu client yêu cầu `stream=false`, executor convert streamed response sang JSON qua `transformStreamToJSON`.
+
+### Model registry
+
+| Model ID | Upstream Model UID | Context Window | Quota Family |
+|----------|-------------------|----------------|--------------|
+| `sonnet-4.6` | `claude-sonnet-4-6-thinking` | 200K | windsurf |
+| `opus-4.8` | `claude-opus-4-8-medium` | 200K | windsurf |
+| `glm-5-2` | `glm-5-2` | 200K | windsurf |
+| `swe-1-6` | `swe-1-6` | 200K | windsurf |
+| `minimax-m2.7` | `MODEL_MINIMAX_M2_1` | 200K | windsurf |
+| `minimax-m2.5` | `MODEL_MINIMAX_M2_1` | 200K | windsurf |
+| `minimax-m2.1` | `MODEL_MINIMAX_M2_1` | 200K | windsurf |
+
+Lưu ý: cả 3 model MiniMax (m2.1, m2.5, m2.7) đều map đến cùng `MODEL_MINIMAX_M2_1` — Windsurf API chỉ accept ID này, các ID khác (M2_5, M2_7) trả `permission_denied`.
+
+### Error mapping
+
+| HTTP Status | Anthropic Error Type |
+|-------------|---------------------|
+| 401 | `authentication_error` |
+| 403 | `permission_error` |
+| 429 | `rate_limit_error` |
+| 400 | `invalid_request_error` |
+| other | `api_error` |
+
+Retry logic: `MAX_RETRIES=2`, chỉ retry pre-TTFT (chưa có byte content tới client), delay 1s.
+
+### Trade-off đã biết
+
+Vì tool descriptions bị replace bằng `Tool: <name>`, model không biết tool làm gì chi tiết — chỉ biết tên. Điều này giảm chất lượng tool selection. Nếu Windsurf fix content policy trong tương lai, có thể rollback nuclear strip và dùng sanitize từng term (code cũ đã xóa, nhưng git history còn).
 
 ## Phạm vi Format Translation Coverage
 
