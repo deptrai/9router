@@ -211,21 +211,59 @@ export class WindsurfExecutor extends BaseExecutor {
   }
 
   /**
-   * W-FIX: Truncate tool descriptions to stay under Windsurf's request size limit.
-   * Windsurf rejects requests with large tool payloads (~50KB+ tool descriptions)
-   * with "internal error occurred". Truncating descriptions to 100 chars keeps
-   * all tools (even 117+ tool sets) while staying under the ~90KB frame limit.
-   * Schema is preserved as-is.
+   * W-FIX: Truncate tool descriptions AND schema property descriptions to stay
+   * under Windsurf's ~90KB request frame limit. Windsurf rejects oversized frames
+   * with 403 "internal error occurred".
+   *
+   * Measurement (88 tools): truncating only tool description (even to 0 chars)
+   * leaves frame at ~150KB because JSON-encoded input_schema dominates the size.
+   * Truncating schema property descriptions to ≤50 chars brings 88-tool frame
+   * to ~79KB — safely under the limit.
+   *
+   * Strategy: tool description ≤100 chars, schema property description ≤50 chars.
+   * Schema structure (type, required, enum, properties) is preserved.
    */
-  _truncateToolDescriptions(body, maxLen = 100) {
+  _truncateToolDescriptions(body, descMaxLen = 100, schemaDescMaxLen = 50) {
     if (!Array.isArray(body.tools) || body.tools.length === 0) return body;
+
+    const truncateSchemaDescs = (schema) => {
+      if (!schema || typeof schema !== 'object') return schema;
+      const out = { ...schema };
+      if (typeof out.description === 'string' && out.description.length > schemaDescMaxLen) {
+        out.description = out.description.substring(0, schemaDescMaxLen);
+      }
+      if (out.properties && typeof out.properties === 'object') {
+        out.properties = {};
+        for (const [key, val] of Object.entries(schema.properties)) {
+          out.properties[key] = truncateSchemaDescs(val);
+        }
+      }
+      if (Array.isArray(out.items)) {
+        out.items = out.items.map(truncateSchemaDescs);
+      } else if (out.items && typeof out.items === 'object') {
+        out.items = truncateSchemaDescs(out.items);
+      }
+      return out;
+    };
+
     let changed = false;
     const newTools = body.tools.map((t) => {
-      if (t?.description && t.description.length > maxLen) {
-        changed = true;
-        return { ...t, description: t.description.substring(0, maxLen) };
+      let modified = { ...t };
+      let toolChanged = false;
+      if (typeof t?.description === 'string' && t.description.length > descMaxLen) {
+        modified.description = t.description.substring(0, descMaxLen);
+        toolChanged = true;
       }
-      return t;
+      if (t?.input_schema && typeof t.input_schema === 'object') {
+        const truncatedSchema = truncateSchemaDescs(t.input_schema);
+        // Only replace if actually changed (compare via JSON to detect deep diff)
+        if (JSON.stringify(truncatedSchema) !== JSON.stringify(t.input_schema)) {
+          modified.input_schema = truncatedSchema;
+          toolChanged = true;
+        }
+      }
+      if (toolChanged) changed = true;
+      return modified;
     });
     return changed ? { ...body, tools: newTools } : body;
   }
