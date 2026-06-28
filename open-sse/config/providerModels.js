@@ -149,6 +149,10 @@ export const PROVIDER_MODELS = {
     { id: "sonnet-4.6", name: "Claude Sonnet 4.6 (Thinking)", upstreamModelId: "claude-sonnet-4-6-thinking", contextWindow: 200_000, quotaFamily: "windsurf" },
     { id: "opus-4.8", name: "Claude Opus 4.8 Medium", upstreamModelId: "claude-opus-4-8-medium", contextWindow: 200_000, quotaFamily: "windsurf" },
     { id: "glm-5-2", name: "GLM-5.2", upstreamModelId: "glm-5-2", contextWindow: 200_000, quotaFamily: "windsurf" },
+    { id: "swe-1-6", name: "SWE-1.6", upstreamModelId: "swe-1-6", contextWindow: 200_000, quotaFamily: "windsurf" },
+    { id: "minimax-m2.7", name: "MiniMax M2.7", upstreamModelId: "MODEL_MINIMAX_M2_1", contextWindow: 200_000, quotaFamily: "windsurf" },
+    { id: "minimax-m2.5", name: "MiniMax M2.5", upstreamModelId: "MODEL_MINIMAX_M2_1", contextWindow: 200_000, quotaFamily: "windsurf" },
+    { id: "minimax-m2.1", name: "MiniMax M2.1", upstreamModelId: "MODEL_MINIMAX_M2_1", contextWindow: 200_000, quotaFamily: "windsurf" },
   ],
   kr: [  // Kiro AI
     // --- Auto routing ---

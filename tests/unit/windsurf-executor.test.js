@@ -112,6 +112,14 @@ describe("WindsurfExecutor", () => {
       expect(executor.getModelUid("ws/glm-5-2")).toBe("glm-5-2");
     });
 
+    it("maps ws/swe-1-6 to swe-1-6", () => {
+      expect(executor.getModelUid("ws/swe-1-6")).toBe("swe-1-6");
+    });
+
+    it("maps ws/minimax-m2.7 to MODEL_MINIMAX_M2_1", () => {
+      expect(executor.getModelUid("ws/minimax-m2.7")).toBe("MODEL_MINIMAX_M2_1");
+    });
+
     it("returns modelId as-is for unknown models", () => {
       expect(executor.getModelUid("ws/unknown-model")).toBe("unknown-model");
     });

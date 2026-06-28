@@ -55,7 +55,11 @@ export class WindsurfExecutor extends BaseExecutor {
     const modelMap = {
       "sonnet-4.6": "claude-sonnet-4-6-thinking",
       "opus-4.8": "claude-opus-4-8-medium",
-      "glm-5-2": "glm-5-2"
+      "glm-5-2": "glm-5-2",
+      "swe-1-6": "swe-1-6",
+      "minimax-m2.1": "MODEL_MINIMAX_M2_1",
+      "minimax-m2.5": "MODEL_MINIMAX_M2_1",
+      "minimax-m2.7": "MODEL_MINIMAX_M2_1"
     };
     return modelMap[modelId] || modelId;
   }

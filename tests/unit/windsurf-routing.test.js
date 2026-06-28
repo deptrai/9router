@@ -67,5 +67,15 @@ describe("Windsurf Routing (Story 1.4b)", () => {
       const upstreamId = getModelUpstreamId("ws", "glm-5-2");
       expect(upstreamId).toBe("glm-5-2");
     });
+
+    it("should map swe-1-6 to swe-1-6", () => {
+      const upstreamId = getModelUpstreamId("ws", "swe-1-6");
+      expect(upstreamId).toBe("swe-1-6");
+    });
+
+    it("should map minimax-m2.7 to MODEL_MINIMAX_M2_1", () => {
+      const upstreamId = getModelUpstreamId("ws", "minimax-m2.7");
+      expect(upstreamId).toBe("MODEL_MINIMAX_M2_1");
+    });
   });
 });
