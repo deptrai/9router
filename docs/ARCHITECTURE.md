@@ -674,6 +674,18 @@ Retry logic: `MAX_RETRIES=2`, chỉ retry pre-TTFT (chưa có byte content tới
 
 Vì tool descriptions bị replace bằng `Tool: <name>`, model không biết tool làm gì chi tiết — chỉ biết tên. Điều này giảm chất lượng tool selection. Nếu Windsurf fix content policy trong tương lai, có thể rollback nuclear strip và dùng sanitize từng term (code cũ đã xóa, nhưng git history còn).
 
+### Context estimator (combo preflight)
+
+Combo preflight (`open-sse/services/combo.js`) estimate token count TRƯỚC khi dispatch. Mặc định dùng `estimateRequestInputTokens` — đo `JSON.stringify(body).length / 4`. Nhưng Windsurf sanitize body nặng trước khi gửi (system prompt replacement, nuclear tool desc strip, schema desc strip, system-reminder strip), nên raw body size overestimate ~13x.
+
+`estimateWindsurfInputTokens()` là provider-aware estimator cho `ws/*`:
+- System: 225 chars (neutral prompt thực tế)
+- Tools: `6 + name.length` chars cho description + 80 chars cho structural schema
+- Messages: strip `<system-reminder>` blocks (non-greedy + unclosed fallback), giữ rest
+- Other: 200 chars overhead
+
+`pickEstimator(modelStr)` auto-select theo provider: `ws/*` → Windsurf estimator, others → default. `getModelContextFit()` và `handleComboChat()` gọi `pickEstimator` khi caller không truyền estimator riêng.
+
 ## Phạm vi Format Translation Coverage
 
 Detected source formats gồm:

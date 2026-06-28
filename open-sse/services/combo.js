@@ -111,17 +111,16 @@ export function estimateWindsurfInputTokens(body) {
   try {
     if (!body || typeof body !== "object") return 0;
 
-    // System: replaced with ~200 char neutral prompt
-    let systemChars = 200;
+    // System: replaced with neutral prompt (~225 chars in windsurf.js execute())
+    const systemChars = 225;
 
-    // Tools: name + "Tool: " prefix + structural schema (no descriptions)
-    // Measured: ~100 chars per tool after stripping descriptions from schema
+    // Tools: "Tool: <name>" + structural schema (no descriptions)
     let toolsChars = 0;
     if (Array.isArray(body.tools)) {
       for (const t of body.tools) {
         if (!t) continue;
-        // description → "Tool: <name>" (~20 chars)
-        toolsChars += 20;
+        // description → "Tool: <name>" (6 + name.length) or "Tool" (4)
+        toolsChars += t.name ? 6 + (t.name.length || 0) : 4;
         // input_schema structure (type, required, properties keys, enum) — no descriptions
         // Rough estimate: ~80 chars per tool for typical schema structure
         if (t.input_schema && typeof t.input_schema === "object") {
@@ -164,9 +163,9 @@ export function estimateWindsurfInputTokens(body) {
 }
 
 function stripSystemReminderEstimate(text) {
-  if (typeof text !== "string") return text || "";
-  // Greedy match + unclosed fallback (same as WindsurfExecutor)
-  let result = text.replace(/<system-reminder>[\s\S]*<\/system-reminder>/gi, "");
+  if (typeof text !== "string") return String(text || "");
+  // Non-greedy match for closed tags + unclosed fallback (same as WindsurfExecutor)
+  let result = text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, "");
   result = result.replace(/<system-reminder>[\s\S]*$/gi, "");
   return result;
 }
@@ -178,7 +177,9 @@ function stripSystemReminderEstimate(text) {
  */
 function pickEstimator(modelStr) {
   const parsed = parseModel(modelStr);
-  if (parsed?.providerAlias === "ws" || parsed?.provider === "windsurf") {
+  const alias = parsed?.providerAlias?.toLowerCase();
+  const provider = parsed?.provider?.toLowerCase();
+  if (alias === "ws" || provider === "windsurf") {
     return estimateWindsurfInputTokens;
   }
   return estimateRequestInputTokens;

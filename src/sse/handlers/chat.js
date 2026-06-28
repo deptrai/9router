@@ -12,7 +12,7 @@ import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse, normalizeUnavailableStatus } from "open-sse/utils/error.js";
-import { handleComboChat, getModelContextFit, estimateRequestInputTokens } from "open-sse/services/combo.js";
+import { handleComboChat, getModelContextFit } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
@@ -115,7 +115,7 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Early-reject: if estimated input tokens exceed model's effective context limit by >10%,
   // reject immediately instead of wasting a 2-3s network roundtrip to upstream.
-  const fit = getModelContextFit(body, body.model, estimateRequestInputTokens);
+  const fit = getModelContextFit(body, body.model);
   if (fit && fit.effectiveLimit && !fit.fits) {
     log.warn("CONTEXT", `Early-reject: ~${fit.estimatedTokens} tokens > ${fit.effectiveLimit} limit (model=${body.model})`);
     return new Response(
