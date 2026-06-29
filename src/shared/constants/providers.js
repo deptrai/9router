@@ -288,4 +288,5 @@ export const USAGE_APIKEY_PROVIDERS = [
   "kiro",
   "minimax",
   "minimax-cn",
+  "windsurf",
 ];
