@@ -1113,13 +1113,9 @@ export default function ProviderLimits() {
                     </span>
                     <p className="mt-1.5 text-xs text-text-muted">{error}</p>
                   </div>
-                ) : quota?.message ? (
-                  <div className="text-center py-5">
-                    <p className="text-xs text-text-muted">{quota.message}</p>
-                  </div>
                 ) : conn.provider === "windsurf" ? (
                   <div className="space-y-4">
-                    {quota?.quotas?.map((quota, index) => {
+                    {quota?.quotas?.length > 0 && quota.quotas.map((quota, index) => {
                       const percentage =
                         quota.remainingPercentage !== undefined
                           ? Math.round(((quota.total - quota.used) / quota.total) * 100)
@@ -1138,6 +1134,11 @@ export default function ProviderLimits() {
                         />
                       );
                     })}
+                    {quota?.message && !quota?.usageStats && (
+                      <div className="text-center py-5">
+                        <p className="text-xs text-text-muted">{quota.message}</p>
+                      </div>
+                    )}
                     {quota?.usageStats && (
                       <div className="mt-4 pt-4 border-t border-black/5 dark:border-white/5">
                         <div className="grid grid-cols-3 gap-3">
