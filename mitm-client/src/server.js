@@ -8,7 +8,7 @@ const path = require("path");
 const dns = require("dns");
 const { promisify } = require("util");
 const { execSync } = require("child_process");
-const { log, err, dumpRequest, createResponseDumper, clearDumpDir } = require("./logger");
+const { log, err, dumpRequest, createResponseDumper, clearDumpDir, enableServerLogFile } = require("./logger");
 const { TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, MODEL_PATTERNS, getToolForHost } = require("./mitmConfig");
 const { DATA_DIR, MITM_DIR } = require("./paths");
 const { getCertForDomain } = require("./cert/rootCA");
@@ -20,6 +20,10 @@ const IS_WIN = process.platform === "win32";
 const MITM_INSECURE_UPSTREAM = process.env.MITM_INSECURE_UPSTREAM === "1";
 const UPSTREAM_REJECT_UNAUTHORIZED = !MITM_INSECURE_UPSTREAM;
 const ENABLE_FILE_LOG = loadConfig().mitmDebug === true;
+
+// AC2 — in-memory connection stats (reset on every server start, not persisted).
+const stats = { active: 0, total: 0, success: 0, error: 0 };
+function getStats() { return { ...stats }; }
 
 // Clear stale dump files on every MITM start
 clearDumpDir();
@@ -274,9 +278,24 @@ const server = https.createServer(sslOptions, async (req, res) => {
         return;
       }
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, pid: process.pid }));
+      res.end(JSON.stringify({ ok: true, pid: process.pid, stats: getStats() }));
       return;
     }
+
+    // AC2 — track request lifecycle: active++ on enter, total++ on enter,
+    // success/error++ on response finish based on status code.
+    stats.active++;
+    stats.total++;
+    const cleanup = () => {
+      if (stats.active > 0) stats.active--;
+    };
+    res.on("finish", () => {
+      const code = res.statusCode || 0;
+      if (code >= 200 && code < 400) stats.success++;
+      else stats.error++;
+      cleanup();
+    });
+    res.on("close", cleanup);
 
     const bodyBuffer = await collectBodyRaw(req);
     if (ENABLE_FILE_LOG) dumpRequest(req, bodyBuffer, "raw");
@@ -330,6 +349,8 @@ function killPort(port) {
 }
 
 function start() {
+  // AC1 — enable server log file so TUI can tail live logs.
+  enableServerLogFile();
   try { killPort(LOCAL_PORT); } catch (e) {
     err(`Cannot kill process on port ${LOCAL_PORT}: ${e.message}`);
     process.exit(1);
@@ -357,4 +378,4 @@ function start() {
   process.on("SIGINT", shutdown);
 }
 
-module.exports = { start, server, passthrough };
+module.exports = { start, server, passthrough, getStats };

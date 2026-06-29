@@ -9,8 +9,30 @@ function time() {
   return new Date().toLocaleTimeString("en-US", { hour12: false });
 }
 
-const log = (msg) => console.log(`[${time()}] [MITM] ${msg}`);
-const err = (msg) => console.error(`[${time()}] ❌ [MITM] ${msg}`);
+// AC1 — server log file for TUI live tailing.
+// Only enabled in the server process (via enableServerLogFile()).
+const SERVER_LOG_FILE = path.join(DATA_DIR, "logs", "server.log");
+let _fileLogEnabled = false;
+
+function enableServerLogFile() {
+  _fileLogEnabled = true;
+  // Truncate on each server start — fresh log session.
+  try { fs.writeFileSync(SERVER_LOG_FILE, ""); } catch { /* ignore */ }
+}
+
+function getServerLogFile() {
+  return SERVER_LOG_FILE;
+}
+
+function _appendLog(level, msg) {
+  if (!_fileLogEnabled) return;
+  try {
+    fs.appendFileSync(SERVER_LOG_FILE, `[${time()}] [${level}] ${msg}\n`);
+  } catch { /* ignore */ }
+}
+
+const log = (msg) => { console.log(`[${time()}] [MITM] ${msg}`); _appendLog("INFO", msg); };
+const err = (msg) => { console.error(`[${time()}] ❌ [MITM] ${msg}`); _appendLog("ERROR", msg); };
 
 const DUMP_DIR = path.join(DATA_DIR, "logs", "mitm");
 if (!fs.existsSync(DUMP_DIR)) fs.mkdirSync(DUMP_DIR, { recursive: true });
@@ -100,4 +122,4 @@ function createResponseDumper(req, tag = "raw") {
   };
 }
 
-module.exports = { log, err, dumpRequest, createResponseDumper, clearDumpDir };
+module.exports = { log, err, dumpRequest, createResponseDumper, clearDumpDir, enableServerLogFile, getServerLogFile };

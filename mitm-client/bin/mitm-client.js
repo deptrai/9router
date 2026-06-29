@@ -5,9 +5,10 @@
 const { loadConfig, saveConfig } = require("../src/config");
 const { generateRootCA, ROOT_CA_CERT_PATH } = require("../src/cert/rootCA");
 const { trustCert, untrustCert } = require("../src/cert/install");
-const { addDNSEntry, removeDNSEntry, removeAllDNSEntries, checkAllDNSStatus, isSudoPasswordRequired } = require("../src/dns/dnsConfig");
+const { addDNSEntry, removeDNSEntry, removeAllDNSEntries, checkAllDNSStatus } = require("../src/dns/dnsConfig");
 const { TOOL_HOSTS } = require("../src/mitmConfig");
 const { log, err } = require("../src/logger");
+const { readSudoPassword } = require("../src/ui/password");
 const fs = require("fs");
 const { CONFIG_FILE, DATA_DIR, MITM_DIR } = require("../src/paths");
 
@@ -44,25 +45,8 @@ Examples:
 `);
 }
 
-async function readSudoPassword() {
-  if (!isSudoPasswordRequired()) return "";
-  const readline = require("readline");
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-  return new Promise((resolve) => {
-    process.stdout.write("sudo password: ");
-    const onData = (char) => {
-      // mute typed chars (best-effort)
-      if (process.stdout.isTTY) process.stdout.write("\b \b");
-    };
-    process.stdin.on("data", onData);
-    rl.question("", (pwd) => {
-      process.stdin.removeListener("data", onData);
-      rl.close();
-      console.log();
-      resolve(pwd.trim());
-    });
-  });
-}
+// AC5 — readSudoPassword now imported from src/ui/password.js
+// (supports non-TTY fallback: env SUDO_PASSWORD, file ~/.sudo-password).
 
 async function main() {
   switch (cmd) {
