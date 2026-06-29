@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
+import ProviderLimitCard from "./ProviderLimitCard";
 import Toggle from "@/shared/components/Toggle";
 import { parseQuotaData, calculatePercentage } from "./utils";
 import Card from "@/shared/components/Card";
@@ -1115,6 +1116,18 @@ export default function ProviderLimits() {
                   <div className="text-center py-5">
                     <p className="text-xs text-text-muted">{quota.message}</p>
                   </div>
+                ) : conn.provider === "windsurf" ? (
+                  <ProviderLimitCard
+                    provider={conn.provider}
+                    name={getConnectionLabel(conn) || conn.provider}
+                    plan={quota?.plan}
+                    quotas={quota?.quotas}
+                    message={quota?.message}
+                    loading={isLoading}
+                    error={error}
+                    onRefresh={() => refreshProvider(conn.id, conn.provider)}
+                    usageStats={quota?.usageStats}
+                  />
                 ) : (
                   <QuotaTable
                     quotas={quota?.quotas}
@@ -1123,7 +1136,6 @@ export default function ProviderLimits() {
                     showSortLabel={
                       conn.provider === "codex" && quotaSortMode !== "default"
                     }
-                    showUsage={conn.provider === "windsurf"}
                   />
                 )}
               </div>

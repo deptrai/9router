@@ -82,25 +82,6 @@ function sortQuotas(quotas, sortMode) {
 }
 
 /**
- * Format tokens for display
- */
-function formatTokens(n) {
-  if (typeof n !== "number" || !Number.isFinite(n) || n < 0) return "0";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-}
-
-/**
- * Format cost for display
- */
-function formatCost(n) {
-  if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) return "$0.00";
-  if (n < 0.01) return `$${n.toFixed(4)}`;
-  return `$${n.toFixed(2)}`;
-}
-
-/**
  * Quota Table Component - Table-based display for quota data
  */
 export default function QuotaTable({
@@ -108,7 +89,6 @@ export default function QuotaTable({
   compact = false,
   sortMode = "default",
   showSortLabel = false,
-  showUsage = false, // Story N.3: show usage columns (Today, 7d, Cost)
 }) {
   const [page, setPage] = useState(1);
 
@@ -153,12 +133,6 @@ export default function QuotaTable({
   const resetSecondary = compact ? "text-[10px] leading-tight" : "text-xs";
   const sortLabel = "Sorted by account remaining";
 
-  // Dynamic column widths based on showUsage
-  const nameWidth = showUsage ? "w-[20%]" : "w-[30%]";
-  const progressWidth = showUsage ? "w-[30%]" : "w-[45%]";
-  const resetWidth = showUsage ? "w-[15%]" : "w-[25%]";
-  const usageWidth = "w-[11.66%]"; // 35% / 3 columns
-
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
@@ -185,7 +159,7 @@ export default function QuotaTable({
                   key={`${quota.name}-${quota.index}`}
                   className="border-b border-black/5 dark:border-white/5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors"
                 >
-                  <td className={`${cellPad} ${nameWidth}`}>
+                  <td className={`${cellPad} w-[30%]`}>
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span className="text-[10px] shrink-0">{colors.emoji}</span>
                       <span className={`${nameText} font-medium text-text-primary truncate`}>
@@ -194,7 +168,7 @@ export default function QuotaTable({
                     </div>
                   </td>
 
-                  <td className={`${cellPad} ${progressWidth}`}>
+                  <td className={`${cellPad} w-[45%]`}>
                     <div className={compact ? "space-y-1" : "space-y-1.5"}>
                       <div className={`${compact ? "h-1" : "h-1.5"} rounded-full overflow-hidden border ${colors.bgLight} ${
                         quota.remaining === 0 ? "border-black/10 dark:border-white/10" : "border-transparent"
@@ -216,7 +190,7 @@ export default function QuotaTable({
                     </div>
                   </td>
 
-                  <td className={`${cellPad} ${resetWidth}`}>
+                  <td className={`${cellPad} w-[25%]`}>
                     {countdown !== "-" || resetDisplay ? (
                       compact ? (
                         <div
@@ -243,35 +217,6 @@ export default function QuotaTable({
                       <div className={`${resetPrimary} text-text-muted italic`}>N/A</div>
                     )}
                   </td>
-
-                  {showUsage && quota.usageStats && (
-                    <>
-                      <td className={`${cellPad} ${usageWidth}`}>
-                        <div className="space-y-0.5">
-                          <div className={`${nameText} text-text-muted`}>Today</div>
-                          <div className={`${nameText} text-text-primary font-medium`}>
-                            {formatTokens(quota.usageStats.today?.tokens || 0)}
-                          </div>
-                        </div>
-                      </td>
-                      <td className={`${cellPad} ${usageWidth}`}>
-                        <div className="space-y-0.5">
-                          <div className={`${nameText} text-text-muted`}>7d</div>
-                          <div className={`${nameText} text-text-primary font-medium`}>
-                            {formatTokens(quota.usageStats.last7d?.tokens || 0)}
-                          </div>
-                        </div>
-                      </td>
-                      <td className={`${cellPad} ${usageWidth}`}>
-                        <div className="space-y-0.5">
-                          <div className={`${nameText} text-text-muted`}>Cost</div>
-                          <div className={`${nameText} text-text-primary font-medium`}>
-                            {formatCost(quota.usageStats.last7d?.cost || 0)}
-                          </div>
-                        </div>
-                      </td>
-                    </>
-                  )}
                 </tr>
               );
             })}
