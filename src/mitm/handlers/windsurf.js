@@ -277,6 +277,11 @@ async function pipeAnthropicSseAsConnectFrames(routerRes, res) {
     }
     if (!dataStr) return;
 
+    // Defense in depth: tolerate OpenAI `[DONE]` sentinel that older 9router
+    // instances may emit after `message_stop`. Anthropic SSE has no `[DONE]`;
+    // silently skip it instead of failing JSON.parse.
+    if (dataStr === "[DONE]" || dataStr.startsWith("[DONE]")) return;
+
     let data;
     try { data = JSON.parse(dataStr); } catch { return; }
 

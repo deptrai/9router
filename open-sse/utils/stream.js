@@ -528,9 +528,15 @@ export function createSSEStream(options = {}) {
           // Some clients (e.g. OpenClaw) expect the OpenAI-style sentinel:
           //   data: [DONE]\n\n
           // Without it they can hang until timeout and trigger failover.
-          const doneOutput = "data: [DONE]\n\n";
-          reqLogger?.appendConvertedChunk?.(doneOutput);
-          controller.enqueue(sharedEncoder.encode(doneOutput));
+          // BUT: Claude/Anthropic clients use `event: message_stop` as the
+          // terminator — emitting `data: [DONE]` after it breaks strict Anthropic
+          // parsers (the `[DONE]` is not valid Anthropic JSON). Skip the sentinel
+          // for Claude format; the upstream already emitted message_stop.
+          const doneOutput = sourceFormat === FORMATS.CLAUDE ? null : "data: [DONE]\n\n";
+          if (doneOutput) {
+            reqLogger?.appendConvertedChunk?.(doneOutput);
+            controller.enqueue(sharedEncoder.encode(doneOutput));
+          }
           terminatorEmitted = true;
 
           if (onStreamComplete) {
@@ -605,9 +611,15 @@ export function createSSEStream(options = {}) {
           return;
         }
 
-        const doneOutput = "data: [DONE]\n\n";
-        reqLogger?.appendConvertedChunk?.(doneOutput);
-        controller.enqueue(sharedEncoder.encode(doneOutput));
+        // Claude clients use `event: message_stop` as the terminator — emitting
+        // `data: [DONE]` after it breaks strict Anthropic parsers (the `[DONE]`
+        // is not valid Anthropic JSON). Skip the sentinel for Claude format;
+        // the upstream already emitted message_stop.
+        const doneOutput = sourceFormat === FORMATS.CLAUDE ? null : "data: [DONE]\n\n";
+        if (doneOutput) {
+          reqLogger?.appendConvertedChunk?.(doneOutput);
+          controller.enqueue(sharedEncoder.encode(doneOutput));
+        }
         terminatorEmitted = true;
 
         if (!hasValidUsage(state?.usage) && outputState.totalContentLength > 0) {
@@ -635,7 +647,11 @@ export function createSSEStream(options = {}) {
         // state machine after a successful end.
         if (!terminatorEmitted) {
           try {
-            const doneOutput = mode === STREAM_MODE.PASSTHROUGH || sourceFormat !== FORMATS.CLAUDE
+            // Claude clients expect `event: error` (Anthropic format), not the
+            // OpenAI `[DONE]` sentinel. The `mode === PASSTHROUGH` check was
+            // wrong — passthrough with Claude format still needs Anthropic
+            // terminator, not OpenAI [DONE].
+            const doneOutput = sourceFormat !== FORMATS.CLAUDE
               ? "data: [DONE]\n\n"
               : `event: error\ndata: ${JSON.stringify({ type: "error", error: { type: "api_error", message: "stream finalization failed" } })}\n\n`;
             controller.enqueue(sharedEncoder.encode(doneOutput));
@@ -663,7 +679,7 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, billingSource = undefined) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, billingSource = undefined, sourceFormat = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
@@ -673,6 +689,7 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
     body,
     onStreamComplete,
     apiKey,
-    billingSource
+    billingSource,
+    sourceFormat
   });
 }

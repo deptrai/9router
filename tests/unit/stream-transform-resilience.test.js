@@ -99,7 +99,10 @@ describe("createSSEStream — transform() per-line resilience", () => {
       ]
     );
 
-    expect(out).toContain("data: [DONE]");
+    // Claude clients use `event: message_stop` as the terminator, NOT the
+    // OpenAI `data: [DONE]` sentinel. Before the format-aware terminator fix,
+    // this test expected [DONE] — now correctly suppressed for Claude format.
+    expect(out).not.toContain("data: [DONE]");
     expect(completion.content.content).toContain("[tool_call:Bash]");
     expect(completion.content.content).toContain("git status");
   });

@@ -222,4 +222,80 @@ describe("createSSEStream — flush() terminator regression guards", () => {
     // Empty stream still gets a [DONE] terminator from the success path.
     expect(out).toContain("data: [DONE]");
   });
+
+  // ─── New: PASSTHROUGH + Claude format (MITM Windsurf use case) ───────────────
+  // Before the fix, PASSTHROUGH mode always emitted `data: [DONE]\n\n` regardless
+  // of sourceFormat. For Claude clients (e.g. MITM Windsurf → 9router /v1/messages),
+  // the `[DONE]` is OpenAI-specific and not valid Anthropic JSON — strict Anthropic
+  // parsers (like the MITM's pipeAnthropicSseAsConnectFrames) fail JSON.parse on it.
+  it("PASSTHROUGH with sourceFormat=CLAUDE: does NOT emit [DONE] after message_stop", async () => {
+    const out = await runStream(
+      {
+        mode: "passthrough",
+        sourceFormat: FORMATS.CLAUDE,
+        provider: "test",
+        model: "test-model",
+      },
+      [
+        'event: message_start\ndata: {"type":"message_start","message":{"id":"m_1","type":"message","role":"assistant","content":[],"model":"test-model","stop_reason":null,"usage":{"input_tokens":1,"output_tokens":0}}}\n\n',
+        'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n',
+        'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}\n\n',
+        'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+        'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}\n\n',
+        'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+      ]
+    );
+    expect(out).toContain("event: message_stop");
+    expect(out).not.toContain("data: [DONE]");
+  });
+
+  it("PASSTHROUGH with sourceFormat=CLAUDE and onStreamComplete throws: does NOT emit [DONE] (stream already terminated by message_stop)", async () => {
+    // For Claude passthrough, message_stop IS the terminator. If onStreamComplete
+    // throws AFTER message_stop was forwarded, the catch block must NOT emit
+    // another terminator (no [DONE], no event: error) — the stream is already
+    // properly ended. Before the fix, the catch block emitted [DONE] because of
+    // the `mode === PASSTHROUGH ||` condition.
+    const out = await runStream(
+      {
+        mode: "passthrough",
+        sourceFormat: FORMATS.CLAUDE,
+        provider: "test",
+        model: "test-model",
+        onStreamComplete: () => {
+          throw new Error("boom in onStreamComplete");
+        },
+      },
+      [
+        'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+      ]
+    );
+    expect(out).toContain("event: message_stop");
+    expect(out).not.toContain("data: [DONE]");
+    // No error event should be emitted — the stream was properly terminated
+    // by message_stop, so the catch block's terminator guard correctly skips.
+    expect(out).not.toContain("event: error");
+  });
+
+  it("TRANSLATE with sourceFormat=CLAUDE: does NOT emit [DONE] after finish_reason", async () => {
+    // TRANSLATE mode success flush must also respect Claude format — before the
+    // fix, the TRANSLATE success path unconditionally emitted `data: [DONE]`.
+    // The translator may emit its own terminator (e.g. `data: null` or
+    // `event: message_stop`); the key assertion is NO `data: [DONE]`.
+    const out = await runStream(
+      {
+        mode: "translate",
+        targetFormat: FORMATS.OPENAI,
+        sourceFormat: FORMATS.CLAUDE,
+        provider: "test",
+        model: "test-model",
+      },
+      [
+        'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant"}}]}\n\n',
+        'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"hi"}}]}\n\n',
+        'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}\n\n',
+      ]
+    );
+    // Key assertion: no OpenAI [DONE] sentinel for Claude clients.
+    expect(out).not.toContain("data: [DONE]");
+  });
 });
