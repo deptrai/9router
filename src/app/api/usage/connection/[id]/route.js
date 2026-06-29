@@ -18,6 +18,11 @@ export async function GET(request, { params }) {
     }
 
     const { id } = await params;
+    // Validate connectionId — reject non-UUID strings (chống SQL injection / DoS)
+    if (!id || typeof id !== "string" || id.length > 100 || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+      return NextResponse.json({ error: "Invalid connection ID" }, { status: 400 });
+    }
+
     const connection = await getProviderConnectionById(id);
     if (!connection) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
@@ -26,7 +31,10 @@ export async function GET(request, { params }) {
     // Chống IDOR: non-admin chỉ xem được connection thuộc sở hữu (ownerUserId match).
     // ownerUserId = null = shared admin pool → admin thấy hết, user không thấy.
     if (role !== "admin") {
-      if (connection.ownerUserId && connection.ownerUserId !== session.userId) {
+      if (!session.userId) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      if (connection.ownerUserId !== session.userId) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
     }

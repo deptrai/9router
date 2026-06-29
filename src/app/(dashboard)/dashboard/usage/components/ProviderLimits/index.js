@@ -362,6 +362,14 @@ export default function ProviderLimits() {
         raw: data,
       };
 
+      // For Windsurf, fetch usage stats (Story N.3)
+      if (provider === "windsurf") {
+        const usageStats = await fetchUsageStats(connectionId);
+        if (usageStats) {
+          quotaEntry.usageStats = usageStats;
+        }
+      }
+
       setQuotaData((prev) => ({
         ...prev,
         [connectionId]: quotaEntry,
@@ -378,6 +386,22 @@ export default function ProviderLimits() {
       }));
     } finally {
       setLoading((prev) => ({ ...prev, [connectionId]: false }));
+    }
+  }, [fetchUsageStats]);
+
+  // Fetch usage stats for Windsurf (Story N.3)
+  const fetchUsageStats = useCallback(async (connectionId) => {
+    try {
+      const response = await fetch(`/api/usage/connection/${connectionId}`);
+      if (!response.ok) {
+        console.warn(`[ProviderLimits] Failed to fetch usage stats for ${connectionId}`);
+        return null;
+      }
+      const data = await response.json();
+      return data.stats || null;
+    } catch (error) {
+      console.warn(`[ProviderLimits] Error fetching usage stats for ${connectionId}:`, error);
+      return null;
     }
   }, []);
 
@@ -1099,6 +1123,7 @@ export default function ProviderLimits() {
                     showSortLabel={
                       conn.provider === "codex" && quotaSortMode !== "default"
                     }
+                    showUsage={conn.provider === "windsurf"}
                   />
                 )}
               </div>

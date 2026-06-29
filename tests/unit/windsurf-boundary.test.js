@@ -54,7 +54,7 @@ describe("Windsurf route ↔ core boundary", () => {
     const executor = new WindsurfExecutor();
 
     const wsModels = PROVIDER_MODELS.ws;
-    expect(wsModels).toHaveLength(7);
+    expect(wsModels).toHaveLength(8);
 
     for (const m of wsModels) {
       const expectedUpstream = m.upstreamModelId;

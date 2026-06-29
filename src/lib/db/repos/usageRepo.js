@@ -845,10 +845,18 @@ export async function appendRequestLog() {}
  * @returns {Promise<{ tokens: number, requests: number, cost: number }>}
  */
 export async function sumUsageByConnection(connectionId, model, sinceISO) {
+  if (!connectionId || typeof connectionId !== "string") {
+    return { tokens: 0, requests: 0, cost: 0 };
+  }
   const db = await getAdapter();
   const conds = ["connectionId = ?"];
   const params = [connectionId];
   if (sinceISO) {
+    // Validate ISO timestamp — reject invalid date strings
+    const date = new Date(sinceISO);
+    if (isNaN(date.getTime())) {
+      return { tokens: 0, requests: 0, cost: 0 };
+    }
     conds.push("timestamp >= ?");
     params.push(sinceISO);
   }
@@ -880,7 +888,17 @@ export async function sumUsageByConnection(connectionId, model, sinceISO) {
  *   perModel = top 5 models by tokens (allTime).
  */
 export async function getConnectionUsageStats(connectionId) {
-  const db = await getAdapter();
+  if (!connectionId) {
+    return {
+      today: { tokens: 0, requests: 0, cost: 0 },
+      last24h: { tokens: 0, requests: 0, cost: 0 },
+      last7d: { tokens: 0, requests: 0, cost: 0 },
+      allTime: { tokens: 0, requests: 0, cost: 0 },
+      perModel: [],
+    };
+  }
+  try {
+    const db = await getAdapter();
 
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
@@ -915,7 +933,17 @@ export async function getConnectionUsageStats(connectionId) {
     })(),
   ]);
 
-  return { today, last24h, last7d, allTime, perModel: perModelRows };
+    return { today, last24h, last7d, allTime, perModel: perModelRows };
+  } catch (error) {
+    console.error("[usageRepo] getConnectionUsageStats failed:", error.message);
+    return {
+      today: { tokens: 0, requests: 0, cost: 0 },
+      last24h: { tokens: 0, requests: 0, cost: 0 },
+      last7d: { tokens: 0, requests: 0, cost: 0 },
+      allTime: { tokens: 0, requests: 0, cost: 0 },
+      perModel: [],
+    };
+  }
 }
 
 export async function getRecentLogs(limit = 200, userId = null) {
