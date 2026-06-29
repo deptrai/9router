@@ -84,3 +84,9 @@ gitbook/README.md
 /playwright/.auth/
 /blob-report/
 /.playwright-mcp/
+
+# mitm-client standalone — dependencies, generated certs, user config, logs
+mitm-client/node_modules/
+mitm-client/package-lock.json
+mitm-client/src/utils/windsurfProtobuf.js.bak
+mitm-client/src/utils/windsurfAuth.js.bak

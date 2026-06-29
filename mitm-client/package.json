@@ -1,0 +1,25 @@
+{
+  "name": "9r-mitm-client",
+  "version": "0.1.0",
+  "description": "Standalone MITM client for 9router — intercept Devin CLI / Windsurf traffic and forward to remote 9router instance",
+  "type": "commonjs",
+  "main": "src/server.js",
+  "bin": {
+    "mitm-client": "bin/mitm-client.js"
+  },
+  "scripts": {
+    "start": "node bin/mitm-client.js start",
+    "stop": "node bin/mitm-client.js stop",
+    "status": "node bin/mitm-client.js status",
+    "dns:on": "node bin/mitm-client.js dns-on",
+    "dns:off": "node bin/mitm-client.js dns-off",
+    "tui": "node bin/mitm-client.js tui",
+    "setup": "node bin/mitm-client.js setup"
+  },
+  "dependencies": {
+    "node-forge": "^1.3.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
