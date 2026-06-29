@@ -1,5 +1,29 @@
 {
   "css.lint.unknownAtRules": "ignore",
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/.next/**": true,
+    "**/build/**": true,
+    "**/coverage/**": true,
+    "**/playwright-report/**": true,
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/_bmad-output/**": true
+  },
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/.next": true,
+    "**/coverage": true,
+    "**/playwright-report": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/.next": true,
+    "**/build": true,
+    "**/coverage": true,
+    "**/playwright-report": true,
+    "**/_bmad-output": true
+  },
   "sonarlint.rules": {
     "css:S4662": {
       "level": "off"

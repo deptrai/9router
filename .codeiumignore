@@ -1,0 +1,7 @@
+node_modules/
+.next/
+build/
+coverage/
+playwright-report/
+_bmad-output/
+.git/

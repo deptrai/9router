@@ -100,7 +100,7 @@ So that MITM works out-of-the-box across multiple machines and 9router instances
 
 ## Dev Notes
 
-- **Spike R1 (BLOCKER):** Proposal gốc (`proposal-9router-devin-autoswap.md` §4 R1, line 78) đã nêu câu hỏi này nhưng chưa verify. Nếu Devin CLI honor DNS redirect → `link-devin` không cần, đơn giản hóa đáng kể. Test trước khi build. FR12 trong epics coverage map là conditional — nếu spike trả lời YES thì FR12 marked "not needed (DNS sufficient)".
+- **Spike R1 (BLOCKER) — RESULT: YES, DNS sufficient.** Verified 2026-06-29: Devin CLI v2026.8.18 honors DNS redirect — request tới `server.codeium.com` bị redirect tới `127.0.0.1:443` (MITM) mà không cần sửa `credentials.toml`. Evidence: `~/.9r-mitm-client/logs/mitm/windsurf-intercept-*01-decoded.json` có file intercept (modelUid glm-5-2, 96 messages, 23 tools). **FR12 marked "not needed (DNS sufficient)"** — `link-devin` (AC3) giữ làm fallback nhưng không bắt buộc. "Model provider unreachable" error là do 9router không có credentials cho provider `ws` (Windsurf), không phải MITM bug.
 - **TOML parsing:** Devin CLI `credentials.toml` — simple key=value format. Inline parser (no `toml` dep). Handle: `api_server_url = "..."`, `api_key = "..."`.
 - **launchd plist node path:** Dùng `process.execPath` khi tạo plist (runtime detect), không hardcode `/usr/local/bin/node`. Hoặc dùng shebang `#!/usr/bin/env node` + `ProgramArguments` = `[binPath, start]`.
 - **npm files field:** `"files": ["bin/", "src/", "package.json", "README.md"]` — exclude tests, .bak, logs, scripts/ (dev only).
