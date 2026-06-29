@@ -18,7 +18,7 @@
  *   can't be JSON.parse'd for extractModel). The handler extracts modelUid from
  *   protobuf field 21 and resolves the alias via getMitmAlias("windsurf") if needed.
  */
-const { err: errLog } = require("../logger");
+const { err: errLog, log } = require("../logger");
 const { fetchRouter } = require("./base");
 const {
   splitConnectFrames,
