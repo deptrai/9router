@@ -77,9 +77,13 @@ const WINDSURF_MODEL_UID_TO_ALIAS = {
   "claude-opus-4-8-medium": "ws/opus-4.8",
   "glm-5-2": "ws/glm-5-2",
   "glm-5-2-max-1m": "ws/glm-5-2",
+  "glm-5-2-1m": "ws/glm-5-2",
   "swe-1-6": "ws/swe-1-6",
   "swe-1-6-fast": "ws/swe-1-6",
   "MODEL_MINIMAX_M2_1": "ws/minimax-m2.7",
+  // "summarizer" is Windsurf's internal summarization model — passthrough
+  // (don't route via 9router, it's a lightweight internal call, not user chat).
+  // Removed from alias map; falls through to passthrough naturally.
 };
 
 /**

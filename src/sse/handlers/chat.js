@@ -123,7 +123,10 @@ export async function handleChat(request, clientRawRequest = null) {
     // Auto-cap max_tokens for Windsurf: input fits but output reserve too large
     const parsedModel = parseModel(body.model);
     const isWindsurf = parsedModel?.providerAlias === "ws" || parsedModel?.provider === "windsurf";
-    const minOutputReserve = 8192;
+    // Min output reserve = 1024 tokens — enough for short replies.
+    // Previously 8192 which rejected sessions near the limit (e.g. 188K input + 8K = 196K < 200K
+    // but 200K - 188K - 8K = 3537 < 8192 → auto-cap skipped → early-reject).
+    const minOutputReserve = 1024;
     const maxAllowedOutput = fit.effectiveLimit - fit.estimatedTokens - minOutputReserve;
     if (isWindsurf && fit.estimatedTokens < fit.effectiveLimit && maxAllowedOutput >= minOutputReserve) {
       const originalMaxTokens = body.max_tokens;
