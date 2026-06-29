@@ -1,0 +1,199 @@
+# generated: 2026-06-07
+# last_updated: 2026-06-08 (E.3b 2-13-credit-ledger → ready-for-dev; ledger-first resolves 3-credit×ledger conflict; E.1 2-11-plans-schema-repo → review; 916 tests pass)
+# project: 9router
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: docs/stories
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+#
+# GENERATION NOTES (2026-06-07, corrected v2):
+# ===============
+# - SaaS epics + story->epic mapping are taken verbatim from docs/epics-saas.md and each
+#   story file's frontmatter `epic:` field. Epics are LETTERS (A-H), stories numbered 2.N.
+# - Epic order follows the doc's phasing: MVP-1 (A, B, C, G) -> MVP-2 (D, F, C-full) -> MVP-3 (E, H).
+# - Story files live in docs/stories/ (not implementation_artifacts) - story_location reflects reality.
+# - MVP-1 epics A/B/C/G are "(co ban)"; deferred FRs (per-key limit, 3-credit, enrichment, models page)
+#   extend epics B/C/G in MVP-2/3, so those epics stay 'in-progress' (not 'done').
+# - "2-2-users-repo.md" (superseded partial of story 2.2, consolidated into "2-2-user-account.md")
+#   was DELETED 2026-06-07 to avoid a zombie story; recoverable via git history if needed.
+# - Epic 1 (stories 1-x) = pre-SaaS proxy/Kiro fixes, documented in docs/epics-proxy-fixes.md.
+
+generated: 2026-06-07
+last_updated: 2026-06-26   # Auth fixes: forgot-password BASE_URL Host injection fix, auto-login sau reset, inactive user check, kimi-k2-7+glm-5-2 Windsurf free models, Devin executor error parsing. Adversarial review 4 commit: 2 critical fixed (C1 Host injection, C2 inactive bypass), 3 high/4 medium/4 low deferred.
+project: 9router
+project_key: NOKEY
+tracking_system: file-system
+story_location: docs/stories
+
+development_status:
+  # ================================================================
+  # SaaS - MVP-2 Deferred Backlog (approved correct-course 2026-06-10)
+  # ================================================================
+  2-20-credit-bucket-priority-multiplier: done   # Code review 2026-06-10: 5 patches (multiplier over-draw, m=0 guard, expiry filter, idempotency null, 401/403). 47 tests pass.
+  2-21-credit-expiry-cleanup: done   # Code review 2026-06-10: 5 patches (reconcile txn-wrap race, setMetaSync only-on-success, cold-start epoch scan, sweep error log, test file). D1=standard never expires. 43 tests pass.
+  2-22-telegram-google-login: done   # Code review 2026-06-11: D1 resolved (link existing email), 5 patches (social-providers public path blocker, Google callback UNIQUE-crash, authProviders derived, password "!" guard). 16 tests pass.
+  2-23-per-key-credit-limit: done   # Code review 2026-06-11: D1=Option2 (checkPerKeyLimit all billing paths), 3 patches (whitespace-trim, Unlimited label, negative-validation tests). 40 tests pass.
+  2-24-dashboard-credit-breakdown: done   # Code review 2026-06-11: 4 patches (restore balance route, hasPassword/authProviders fix, Tokens column, catch logging+test path). 23 tests pass. MVP-2 deferred backlog COMPLETE.
+
+  # ================================================================
+  # Epic 1 - Proxy / Kiro fixes (source: docs/epics-proxy-fixes.md)
+  # ================================================================
+  epic-1: in-progress
+  1-1-tool-choice-honoring: done
+  1-2-kiro-toolcall-token-count: done
+  1-3-key-quota: done
+  1-4-kiro-maxtokens-usage-fix: done
+  1-5-usage-apikey-filter: done   # superseded — SaaS key ownership (story 2.3/2.5) đã filter usage theo user
+  1-6-kiro-fallback-optimization: done   # Kiro 429 fallback optimization: no same-account retry, 8s backoff, health-aware account selection, all-locked negative cache, combo preset guidance
+  1-7-request-queue-backpressure: done   # Code review 2026-06-15: 1 decision (queueKey scope → b, defer), 3 patches (wrong-key wakeup + cleanup leak + real tests). 28 tests pass.
+  epic-1-retrospective: optional
+
+  # ================================================================
+  # 9Router SaaS (docs/epics-saas.md) - MVP-1
+  # ================================================================
+  # Epic A - User Accounts & Authentication
+  epic-a: in-progress
+  2-1-schema-users-apikeys: done
+  2-2-user-account: done
+  2-6-email-verification: done   # MVP-2 (FR-5); review fixes applied (11 patch + 1 decision), full suite green
+  2-7-forgot-password: done   # A — forgot/reset password. Code review 2026-06-10: 10 patches applied (recordFail, HTML escape, token invalidation, peek+remove, isEmailVerified gate, email validation, BASE_URL warn, error log, login hint revert, new tests). 6 targeted tests pass.
+  epic-a-retrospective: optional
+
+  # Epic B - API Key Ownership  (FR-9 per-key limit deferred -> MVP-2)
+  epic-b: in-progress
+  2-3-api-key-ownership: done
+  epic-b-retrospective: optional
+
+  # Epic C (co ban) - Credit & Billing  (3-credit/expiry deferred -> MVP-2)
+  epic-c: in-progress
+  2-4-credit-billing: done
+  epic-c-retrospective: optional
+
+  # Epic G (co ban) - Dashboard phan quyen  (enrichment/FR-32 deferred -> MVP-2/3)
+  epic-g: in-progress
+  2-5-dashboard-admin: done
+  epic-g-retrospective: optional
+
+  # ================================================================
+  # SaaS - MVP-2 (no story files yet)
+  # ================================================================
+  # Epic D - Payment & Topup (Casso + Crypto + VND)
+  epic-d: in-progress
+  2-8-crypto-payment: done   # Code review round 2 (Tasks 2–7) complete: 7 patches applied, 702 unit tests pass.
+  2-9-bitcart-provider: done   # Code review on 13ba0da: 12 patches applied (75bffef), 8 dismissed. 743 tests pass; verified e2e on live app. Merged to origin/develop.
+  2-39-vnd-bank-transfer-topup: done   # VND bank transfer via SePay webhook + VietQR + bot /topup. All ACs verified production 2026-06-22.
+  epic-d-retrospective: optional
+  # Epic F - Gift Code
+  epic-f: done
+  2-10-gift-code: done        # Gift code / promo code credit topup. Code review: 4 patches applied (addCredits vs recordCreditTxn, updateGiftCode race, PATCH maxRedemptions validation, double getDashboardAuthSession); 48 targeted tests pass.
+  epic-f-retrospective: optional
+
+  # ================================================================
+  # SaaS - MVP-3 (no story files yet)
+  # ================================================================
+  # Epic E - Subscription Plans (redesigned 2026-06-08: free/pro/max, 5h+weekly quota + RPM per user, Model B credit-overflow + ledger)
+  epic-e: done
+  2-11-plans-schema-repo: done   # E.1 — plans table + users.planId/planExpiresAt + seed free/pro/max + resolveUserLimits + sumUsageTokensByUser. Code review 2026-06-08: 5 patches applied (name validation, soft-delete existence check, malformed-date fail-safe, sinceISO guard), 3 deferred, 6 dismissed. 29 new tests, full suite 918 pass / 0 fail.
+  2-12-rpm-per-user-limit: done   # E.2 — window 1m, checkRpmLimit(apiKey) per-user pooled, handleChat BEFORE combo, hard 429+Retry-After, fail-closed/fail-open. Code review 2026-06-08: 1 patch (test cleanup), 2 deferred (counter race, future-startedAt), 7 dismissed. Full suite 971 pass / 0 fail.
+  2-13-credit-ledger: done   # E.3b — creditTransactions immutable ledger (BP-1..7): recordCreditTxn, rebuildBalanceFromLedger, reverseTxn; 4 call-sites refactored; 31 new tests, 1002 pass / 0 fail. Code review 2026-06-10: 2 patches applied; targeted suite 56+33 pass.
+  2-14-plan-quota-enforcement: done   # E.3 — checkPlanQuota 5h/weekly per-user, Model B billingSource {plan/overflow/credit}, allowCreditOverflow toggle, conditional deduction. Code review 2026-06-08: 3 patches (CRITICAL stream.js billingSource threading, HIGH fail-open-no-charge, MEDIUM exhausted-branch), 2 deferred, 7 dismissed. Full suite 1034 pass / 0 fail.
+  2-15-user-quota-ui: done       # E.4 — /dashboard/plan UI + quota/ledger APIs. Code review 2026-06-09: 5 patches applied (RPM counter display, role gate, ledger load race, toggle refetch, date fallback). Targeted tests 7 pass; full suite 1040 pass / 1 pre-existing xai flake.
+  2-16-plans-admin-ui: done              # E.5 — admin CRUD plans + assign/upgrade plan + topup (ledger-backed). Code review 2026-06-09: 3 patches applied; targeted tests green; full suite had known xai flake documented.
+  2-17-per-model-quota: done        # E.6 — per-model quota enforcement from plan overrides. Code review: 3 patches applied (sinceISO epoch-ms bug, perModelLimitsEnforced flag, reverseTxn partial-row); 56 targeted tests pass.
+  2-18-plan-purchase-flow: done        # E.7 — self-serve buy/renew/change plan (credit+payment), window handling on change. Code review: 3 patches applied; targeted 36 pass; lint/build pass.
+  epic-e-retrospective: optional
+  # Epic H - Landing & Public
+  epic-h: done
+  2-19-landing-and-models-page: done        # H.1 — landing page completion + models page. Code review: 5 patches (reloadTranslations await, setLocale ghost-toggle, Zustand SSR hydration, Pricing r.ok check, formatPrice sub-cent). 14 tests pass.
+  epic-h-retrospective: optional
+
+  # ================================================================
+  # Epic I — Telegram Store & Product Fulfillment (source: _bmad-output/planning-artifacts/epics.md)
+  # ================================================================
+  epic-i: in-progress
+  2-25-telegram-user-linking-product-catalog: done   # Epic I story đầu — bot infra (pure-fetch + webhook secret), products schema+repo, /start link/create, /products catalog, GET /api/store/products. Code review 2026-06-11: 2 fix (H1 setup-webhook → ADMIN_ONLY_API_PATHS, M1 webhook secret → timingSafeEqual); M2 race + L1-L5 deferred. 16 tests pass, build 149 routes OK.
+  2-26-telegram-checkout-9router-packages: done   # Checkout thật: confirm → trừ credit nguyên tử (ledger store_purchase) → orders+orderItems (state machine) → instant fulfill / admin_fulfill chờ. Idempotency 2 lớp (pre-check + in-txn recheck + UNIQUE index). Commit be773ae, storeCheckout.test.js 8/8 pass. Story file docs/stories/2-26-telegram-checkout-orders.md.
+  2-27-inventory-fulfillment-other-products: done   # Code review 2026-06-12: 2 patches (NO_INVENTORY error code in storeCheckout + CHECKOUT_ERROR_MESSAGES entry in router, 2 tests updated). 3 items deferred to 2.28 (reserved state, catalog stock display, productHasInventory).
+  2-28-admin-product-inventory-order-management: done   # E2E verified 2026-06-12: 19/19 Playwright API tests pass (admin-store.api.spec.ts, AC1–AC9). Bug fixed: productHasOrders queried `orders` instead of `orderItems`. 51 unit tests pass.
+  2-29a-entitlement-schema: done   # Code review 2026-06-12: 3 review layers, 3 false-positives dismissed. D1=chặn quantity>1 self_connect. 8 patch fixed (POST route, xoá dup linkConnectionToEntitlement, findPendingEntitlement IS NULL, hijack guard, createEntitlementSync validation, /orders label, enum E8). 3 defer→2.29b. +27 test. Full suite 1359 pass (xai flake không liên quan, pass khi chạy riêng).
+  2-29b-entitlement-routing: done   # Code review 2026-06-13: 3 layers, 3 dismissed. 6 patch fixed: P1 BLOCKER (getApiKeyByKey thiếu export localDb.js → routingUserId luôn null prod), P2/P3 HIGH security (null-path M5 leak, negative-cache cross-user poison), P4/P5 MEDIUM (entitlement DESC, owned_only semantics), P6 LOW (harden userId!=null). 4 defer (mutex perf, unknown-policy log, block-signal future, JSDoc). +11 test (18 total entitlement-routing). Full suite 1385 pass (xai flake không liên quan, pass khi chạy riêng).
+  # ── Epic I external-store stories (nạp 2026-06-13 qua sprint-planning từ epics.md) ──
+  2-30-external-telegram-store-sources-catalog-sync: done   # Code review 2026-06-14: 3 layers, 4 dismissed. 16 patch fixed: HIGH security (secretMatches timing-length leak→SHA256, supplierApi SSRF source.name fallback, silent auth-decrypt→authError signal, STORE_ENC_KEY name leak in 422), MED (updateSupplierSource re-validate auth AC1/QĐ4, webhook syncMode guard, syncSource skip webhook-type no spurious degrade, upsert giữ admin isActive, webhook 404/401 oracle→uniform 401), LOW (webhookAdapter scrape-check order AC2, syncIntervalSec MIN_SYNC_INTERVAL_SEC=60 guard, isProductStale threshold<=0 guard, getSupplierSourceWithAuth barrel-export removed, normalizeProduct skipped-count surfaced). 3 decisions: D1 cascade-delete external products, D2 keep computed isProductStale, D3 exclude unhealthy from poll. 2 defer (syncVersion race, async-driver txn). Full suite 1427 pass.
+  2-31-external-product-markup-publishing: done
+  2-32-external-vendor-checkout-supplier-qr-handoff: done   # Code review 2026-06-16: 3 layers (Edge Case Hunter stalled→relaunched+verified by hand), 1 patch applied (EXTERNAL_SOURCE const thay hardcode string, E8), 4 defer (→2.33/2.34), 14 dismissed (4 blind "critical" + 2 "major" đều false-positive trên code thật). 53 tests pass.
+  2-33-external-order-status-sync-delivery-forwarding: done   # Code review 2026-06-16: 3-layer adversarial, 3 patch applied (forward-after-terminal guard, forward_failed path, HTML-escape untrusted supplier payload) + 4 defer + ~17 dismissed (incl false-positive SCHEMA_VERSION). Implemented + committed 9360ab4. Capability-gated: order-status webhook endpoint (tách product webhook) + status mapping reuse canTransition terminal-guard + delivery forward text/credential qua sendMessage + supplierDeliveries audit table (KHÔNG log payload, NFR8). fulfilled delivery-gated. Polling/getOrderStatus + sendDocument DEFER. KHÔNG auto-refund (→2.34). migration 013, SCHEMA_VERSION 15. Full suite 1691 pass.
+  2-34-supplier-operations-reconciliation-fallback-controls: done   # Code review 2026-06-16: 3-layer adversarial (Blind+Edge+Auditor). 1 patch applied (detectNegativeMargins thêm AND o.status='paid' — không flag/clobber resolved orders + regression test) / 4 defer (AC2 warning-banner no-order-detail-page, setOrderNoteSync overwrite pre-existing, detectOrphanOrders adapter-param cosmetic, isActive=0 gap pre-existing-adjacent) / 9 dismiss (false-positive: failure-counter/orphan-products/note-field/singleton-adapter/TOCTOU/CSRF/FK-null + fail-open-UI/Tạm-ngừng-vs-ẩn). 92 regression pass. Admin dashboard (supplier health/dual-status), reconciliation sweep (orphan+margin+stale, flag-only no auto-refund), fail-closed gate (unhealthy→block checkout + hide products), hourly scheduled sweep. KHÔNG schema mới (reuse orders.note).
+  2-35-reseller-apikey-code-inventory: superseded   # Superseded 2026-06-15: thiết kế lại thành 2 story tách biệt (2-35a + 2-35b). v98store = pay-as-you-go pool key (như OpenRouter); viber.vn = plan proxy (entitlement). Xem docs/stories/2-35a-v98store-payg-api.md và 2-35b-viber-plan-proxy.md.
+  2-35a-v98store-payg-api: ready-for-dev   # v98store pool key pay-as-you-go: 500+ models, per-user balance tracking, topup ratio, /models public page, routing provider mới.
+  2-35b-viber-plan-proxy: ready-for-dev   # viber.vn Claude plans: API verified (GET/POST /api-packages), auto-purchase + entitlement + proxy routing, /plans public page.
+  2-36-telegram-wallet-api-support-plans: review   # Telegram bot: /wallet, /api, /support implemented + plan checkout hook. 12 new tests, 1736 pass.
+  2-38-telegram-bot-scraper-supplier-adapter: done   # Bot-to-bot scraper adapter verified on production. Relay service running, 3 products synced from tainguyenvibebot. 18 tests, code review patches applied.
+  epic-i-retrospective: optional
+
+  # ================================================================
+  # Epic M — Affiliate / Referral Program
+  # ================================================================
+  epic-m: in-progress
+  2-37-affiliate-referral-simple: review   # Affiliate: refCode, commission topup 10% + store 5%, /ref command, deeplink, referral list. 13 new tests, 1749 pass.
+  epic-m-retrospective: optional
+
+  # ================================================================
+  # Epic J — Proxy/API Process Separation (Winston arch 2026-06-16)
+  # ================================================================
+  epic-j: in-progress
+  j-0-role-aware-seam-foundation: ready-for-dev   # CHẶN J.1/J.2 — NINEROUTER_ROLE seam trong usageDb.js (lazy-resolve KHÔNG TLA — 14 import site); proxy→usageSinkHttp, management→direct SQLite; open-sse KHÔNG đổi. Token refresh/health proxy write providerConnections TRỰC TIẾP (Amelia rev3: single-writer=money path only). Story file: docs/stories/j-0-role-aware-seam-foundation.md
+  j-1-internal-write-api: backlog        # /internal/write/{usage,log,detail,rpm-check} wrap hàm sẵn có; cost server-side (calculateCost, KHÔNG nhận từ proxy); management tự statsEmitter.emit khi nhận usage (dashboard SSE cross-process fix); RPM soft-limit (quotaRepo JSON blob); X-Internal-Token auth
+  j-2-two-role-process-split: backlog    # output:standalone → node .next/standalone/server.js + PORT env (KHÔNG next start -p — Amelia BLOCKER-2); verify outputFileTracing cover open-sse+better-sqlite3+sql.js wasm; Nginx /v1→proxy /*→management; fire-and-forget + retry queue
+  j-3-nginx-pm2-hardening: backlog       # Nginx upstream pool, rate limiting, /internal deny external, PM2 ecosystem role-based (script=.next/standalone/server.js), DDoS protection
+  epic-j-retrospective: optional
+
+  # ================================================================
+  # Epic K — v98store Pay-as-you-go API Integration
+  # ================================================================
+  epic-k: in-progress   # Story 2.35a đã ready-for-dev
+  2-35a-v98store-payg-api: ready-for-dev
+  epic-k-retrospective: optional
+
+  # ================================================================
+  # Epic L — viber.vn Plan Proxy Integration
+  # ================================================================
+  epic-l: in-progress   # Story 2.35b đã ready-for-dev
+  2-35b-viber-plan-proxy: ready-for-dev
+  epic-l-retrospective: optional
+
+  # ================================================================
+  # Epic N — Devin Provider Integration
+  # ================================================================
+  epic-n: in-progress   # Story N.1+N.2 done; N.3 ready-for-dev (windsurf usage quota tracker)
+  n-1-devin-provider-config-auth-models: done   # Devin provider: APIKEY_PROVIDERS + PROVIDERS + PROVIDER_MODELS (4 modes) + validate/test case "devin" (GET /v3/organizations/{org_id}/sessions, best-practice 2xx-only valid) + DEVIN_API_KEY+DEVIN_ORG_ID env shortcut cho /v1/models + UI field orgId (AddApiKeyModal + EditConnectionModal). 17 tests, full suite 2000 pass. KHÔNG executor (→N.2).
+  n-2-devin-windsurf-executor: done   # N.2: DevinExecutor (REST v3 poll, 4 modes) + WindsurfExecutor (Cascade WS protobuf, true streaming) + windsurf provider registry (3 file) + WINDSURF_API_KEY env shortcut + auto-extract state.vscdb + validate/testUtils case windsurf. Code review 2026-08-18: 20 patches applied (F1 devin_mode RefError CRITICAL, F3 TLS fallback removal, F4 modeMap keys, F5 credentials.apiKey first, F7 signal forwarding, F8 proxyAwareFetch, F9 multimodal content, F10 synthetic error Response, F11-F14 poll loop hardening, F15-F16 JWT cache, F17 finish_reason on error, F18 frame bounds check, D1 true streaming rework, D3 tool support, F2 test files), 7 deferred, 2 dismissed. 44 tests pass (13 devin-executor + 7 windsurf-executor + 7 windsurf-provider-config + 17 N.1).
+  n-3-windsurf-usage-quota-tracker: ready-for-dev   # N.3: per-connection usage aggregation (sumUsageByConnection + getConnectionUsageStats) + GET /api/usage/connection/:id + getWindsurfUsage upstream API (research /usage endpoint) + /dashboard/quota integration (ConnectionUsageCard). KHÔNG proactive rotation. Story file: docs/stories/n-3-windsurf-usage-quota-tracker.md
+  epic-n-retrospective: optional
