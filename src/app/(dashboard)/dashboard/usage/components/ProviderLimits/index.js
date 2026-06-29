@@ -305,6 +305,23 @@ export default function ProviderLimits() {
     [accountFilter, expiringFirst, page, pageSize, providerFilter],
   );
 
+  // Fetch usage stats for Windsurf (Story N.3)
+  // Must be defined before fetchQuota (used in its dependency array)
+  const fetchUsageStats = useCallback(async (connectionId) => {
+    try {
+      const response = await fetch(`/api/usage/connection/${connectionId}`);
+      if (!response.ok) {
+        console.warn(`[ProviderLimits] Failed to fetch usage stats for ${connectionId}`);
+        return null;
+      }
+      const data = await response.json();
+      return data.stats || null;
+    } catch (error) {
+      console.warn(`[ProviderLimits] Error fetching usage stats for ${connectionId}:`, error);
+      return null;
+    }
+  }, []);
+
   // Fetch quota for a specific connection
   const fetchQuota = useCallback(async (connectionId, provider) => {
     setLoading((prev) => ({ ...prev, [connectionId]: true }));
@@ -389,22 +406,6 @@ export default function ProviderLimits() {
       setLoading((prev) => ({ ...prev, [connectionId]: false }));
     }
   }, [fetchUsageStats]);
-
-  // Fetch usage stats for Windsurf (Story N.3)
-  const fetchUsageStats = useCallback(async (connectionId) => {
-    try {
-      const response = await fetch(`/api/usage/connection/${connectionId}`);
-      if (!response.ok) {
-        console.warn(`[ProviderLimits] Failed to fetch usage stats for ${connectionId}`);
-        return null;
-      }
-      const data = await response.json();
-      return data.stats || null;
-    } catch (error) {
-      console.warn(`[ProviderLimits] Error fetching usage stats for ${connectionId}:`, error);
-      return null;
-    }
-  }, []);
 
   // Refresh quota for a specific provider
   const refreshProvider = useCallback(

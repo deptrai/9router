@@ -14,19 +14,6 @@ const planVariants = {
   enterprise: "info",
 };
 
-function formatTokens(n) {
-  if (typeof n !== "number" || !Number.isFinite(n) || n < 0) return "0";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-}
-
-function formatCost(n) {
-  if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) return "$0.00";
-  if (n < 0.01) return `$${n.toFixed(4)}`;
-  return `$${n.toFixed(2)}`;
-}
-
 export default function ProviderLimitCard({
   provider,
   name,
@@ -36,7 +23,6 @@ export default function ProviderLimitCard({
   loading = false,
   error = null,
   onRefresh,
-  usageStats = null, // Story N.3: usage stats for Windsurf
 }) {
   const [refreshing, setRefreshing] = useState(false);
 
@@ -182,41 +168,6 @@ export default function ProviderLimitCard({
               />
             );
           })}
-        </div>
-      )}
-
-      {/* Usage Stats (Story N.3 - Windsurf) */}
-      {!loading && !error && !message && usageStats && (
-        <div className="mt-4 pt-4 border-t border-black/5 dark:border-white/5">
-          <div className="grid grid-cols-3 gap-3">
-            <div className="rounded-lg bg-black/[0.02] dark:bg-white/[0.02] p-3">
-              <p className="text-[10px] text-text-muted uppercase tracking-wide mb-1">Today</p>
-              <p className="text-sm font-medium text-text-primary">
-                {formatTokens(usageStats.today?.tokens || 0)}
-              </p>
-              <p className="text-[10px] text-text-muted">
-                {usageStats.today?.requests || 0} req
-              </p>
-            </div>
-            <div className="rounded-lg bg-black/[0.02] dark:bg-white/[0.02] p-3">
-              <p className="text-[10px] text-text-muted uppercase tracking-wide mb-1">7 days</p>
-              <p className="text-sm font-medium text-text-primary">
-                {formatTokens(usageStats.last7d?.tokens || 0)}
-              </p>
-              <p className="text-[10px] text-text-muted">
-                {usageStats.last7d?.requests || 0} req
-              </p>
-            </div>
-            <div className="rounded-lg bg-black/[0.02] dark:bg-white/[0.02] p-3">
-              <p className="text-[10px] text-text-muted uppercase tracking-wide mb-1">Cost</p>
-              <p className="text-sm font-medium text-text-primary">
-                {formatCost(usageStats.last7d?.cost || 0)}
-              </p>
-              <p className="text-[10px] text-text-muted">
-                7d total
-              </p>
-            </div>
-          </div>
         </div>
       )}
 
