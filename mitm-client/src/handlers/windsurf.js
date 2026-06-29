@@ -82,10 +82,10 @@ const WINDSURF_MODEL_UID_TO_ALIAS = {
   "claude-sonnet-4-6-thinking": "ws/sonnet-4.6",
   "claude-sonnet-4-6": "ws/sonnet-4.6",
   "claude-opus-4-8-medium": "ws/opus-4.8",
-  // GLM variants (200k + 1M context)
+  // GLM variants — preserve context window variant (200K vs 1M)
   "glm-5-2": "ws/glm-5-2",
-  "glm-5-2-max-1m": "ws/glm-5-2",
-  "glm-5-2-1m": "ws/glm-5-2",
+  "glm-5-2-max-1m": "ws/glm-5-2-1m",
+  "glm-5-2-1m": "ws/glm-5-2-1m",
   // SWE variants
   "swe-1-6": "ws/swe-1-6",
   "swe-1-6-fast": "ws/swe-1-6",
