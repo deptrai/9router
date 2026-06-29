@@ -832,6 +832,92 @@ function formatLogDate(date = new Date()) {
 // No-op: request log is now derived from usageHistory table on read.
 export async function appendRequestLog() {}
 
+// ── Per-connection aggregation (Story N.3) ───────────────────────────────────
+
+/**
+ * Tính tổng usage (tokens, requests, cost) từ usageHistory cho một connectionId
+ * trong một khoảng thời gian, tùy chọn lọc theo model. Mirror sumUsageTokens
+ * (per-key) nhưng keyed theo connectionId.
+ *
+ * @param {string} connectionId - usageHistory.connectionId
+ * @param {string | null} model - canonical model id, null = mọi model (*)
+ * @param {string} sinceISO - ISO timestamp lower bound (inclusive), null = allTime
+ * @returns {Promise<{ tokens: number, requests: number, cost: number }>}
+ */
+export async function sumUsageByConnection(connectionId, model, sinceISO) {
+  const db = await getAdapter();
+  const conds = ["connectionId = ?"];
+  const params = [connectionId];
+  if (sinceISO) {
+    conds.push("timestamp >= ?");
+    params.push(sinceISO);
+  }
+  if (model && model !== "*") {
+    conds.push("model = ?");
+    params.push(model);
+  }
+  const row = db.get(
+    `SELECT COALESCE(SUM(promptTokens + completionTokens), 0) AS tokens,
+            COUNT(*) AS requests,
+            COALESCE(SUM(cost), 0) AS cost
+       FROM usageHistory
+      WHERE ${conds.join(" AND ")}`,
+    params
+  );
+  return {
+    tokens: row?.tokens ?? 0,
+    requests: row?.requests ?? 0,
+    cost: row?.cost ?? 0,
+  };
+}
+
+/**
+ * Tính usage stats per-connection qua nhiều time windows.
+ *
+ * @param {string} connectionId
+ * @returns {Promise<{ today, last24h, last7d, allTime, perModel }>}
+ *   Mỗi window có { requests, tokens, cost }.
+ *   perModel = top 5 models by tokens (allTime).
+ */
+export async function getConnectionUsageStats(connectionId) {
+  const db = await getAdapter();
+
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const todayISO = startOfDay.toISOString();
+  const last24hISO = new Date(Date.now() - 86400000).toISOString();
+  const last7dISO = new Date(Date.now() - 604800000).toISOString();
+
+  const [today, last24h, last7d, allTime, perModelRows] = await Promise.all([
+    sumUsageByConnection(connectionId, null, todayISO),
+    sumUsageByConnection(connectionId, null, last24hISO),
+    sumUsageByConnection(connectionId, null, last7dISO),
+    sumUsageByConnection(connectionId, null, null),
+    (async () => {
+      const rows = db.all(
+        `SELECT model,
+                COALESCE(SUM(promptTokens + completionTokens), 0) AS tokens,
+                COUNT(*) AS requests,
+                COALESCE(SUM(cost), 0) AS cost
+           FROM usageHistory
+          WHERE connectionId = ?
+          GROUP BY model
+          ORDER BY tokens DESC
+          LIMIT 5`,
+        [connectionId]
+      );
+      return rows.map((r) => ({
+        model: r.model,
+        tokens: r.tokens,
+        requests: r.requests,
+        cost: r.cost,
+      }));
+    })(),
+  ]);
+
+  return { today, last24h, last7d, allTime, perModel: perModelRows };
+}
+
 export async function getRecentLogs(limit = 200, userId = null) {
   try {
     const db = await getAdapter();

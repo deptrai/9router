@@ -91,6 +91,10 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
     case "minimax":
     case "minimax-cn":
       return await getMiniMaxUsage(apiKey, provider, proxyOptions);
+    case "windsurf":
+      // Placeholder — endpoint research pending (Story N.3 B1: capture traffic).
+      // Fail-open như default case, trả message thay vì throw.
+      return { message: "Windsurf usage API not yet implemented — pending endpoint research" };
     default:
       return { message: `Usage API not implemented for ${provider}` };
   }

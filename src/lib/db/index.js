@@ -152,6 +152,7 @@ export {
   statsEmitter, trackPendingRequest, getActiveRequests,
   saveRequestUsage, getUsageHistory, getUsageStats, getChartData,
   appendRequestLog, getRecentLogs,
+  sumUsageByConnection, getConnectionUsageStats,
 } from "./repos/usageRepo.js";
 
 // Request details
