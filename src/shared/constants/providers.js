@@ -278,6 +278,7 @@ export const USAGE_SUPPORTED_PROVIDERS = [
   "glm-cn",
   "minimax",
   "minimax-cn",
+  "windsurf",
 ];
 
 // Subset that uses apikey auth (still surfaced on quota page)
