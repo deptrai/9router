@@ -28,11 +28,13 @@ async function fetchRouter(openaiBody, path = "/v1/chat/completions", clientHead
     if (!STRIP_HEADERS.has(k.toLowerCase())) forwarded[k] = v;
   }
 
-  // P2: 5min timeout for streaming requests (Windsurf with 54+ messages + 23 tools
-  // can stream >30s). 30s timeout only for non-streaming requests.
+  // P2: Timeout strategy:
+  // - Non-streaming: 30s absolute timeout (AbortSignal.timeout)
+  // - Streaming: NO absolute timeout — idle timer in pipeAnthropicSseAsConnectFrames()
+  //   handles stall detection. AbortSignal.timeout is absolute (counts from fetch start,
+  //   not from last data), so it would cut off long streams even when data flows.
   const isStreaming = openaiBody?.stream === true;
-  const timeoutMs = isStreaming ? 300000 : 30000;
-  const response = await fetch(`${routerBase}${path}`, {
+  const fetchOptions = {
     method: "POST",
     headers: {
       ...forwarded,
@@ -40,8 +42,11 @@ async function fetchRouter(openaiBody, path = "/v1/chat/completions", clientHead
       ...(cfg.apiKey && { "Authorization": `Bearer ${cfg.apiKey}` })
     },
     body: JSON.stringify(openaiBody),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+  };
+  if (!isStreaming) {
+    fetchOptions.signal = AbortSignal.timeout(30000);
+  }
+  const response = await fetch(`${routerBase}${path}`, fetchOptions);
 
   return response;
 }

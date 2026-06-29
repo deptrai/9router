@@ -246,12 +246,38 @@ async function pipeAnthropicSseAsConnectFrames(routerRes, res) {
   // delta_tool_calls frame when the block closes (content_block_stop).
   const toolUseState = {}; // index → { id, name, args }
 
+  // Safe write helper — guard against res.writableEnded + try-catch.
+  // Prevents crash when client disconnects mid-stream.
+  const safeWrite = (frame) => {
+    if (res.writableEnded) return;
+    try { res.write(frame); } catch (e) {
+      errLog(`[Windsurf MITM] res.write failed: ${e.message}`);
+    }
+  };
+
   const sendEnd = (errorObj) => {
     if (endSent) return;
     endSent = true;
+    if (res.writableEnded) return;
     const payload = errorObj ? Buffer.from(JSON.stringify({ error: errorObj })) : Buffer.from("{}");
-    res.write(buildConnectFrame(0x02, payload));
+    try {
+      res.write(buildConnectFrame(0x02, payload));
+    } catch (e) {
+      errLog(`[Windsurf MITM] sendEnd write failed: ${e.message}`);
+    }
   };
+
+  // Idle timer: 5min — reset on each chunk. Prevents infinite stall when upstream
+  // stops sending data but doesn't close stream. Does NOT limit total stream duration.
+  let idleTimer = null;
+  const resetIdleTimer = () => {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      try { reader.cancel(); } catch {}
+      if (!endSent) sendEnd({ code: "deadline_exceeded", message: "Stream idle timeout (5min no data)" });
+    }, 300000);
+  };
+  resetIdleTimer();
 
   // Anthropic stop_reason string → Windsurf stop_reason enum (best-effort mapping).
   // Windsurf enum values (observed): 1=stop, 2=length, 3=tool_use, ... We map the
@@ -268,6 +294,8 @@ async function pipeAnthropicSseAsConnectFrames(routerRes, res) {
       const { done, value } = await reader.read();
       if (done) break;
 
+      resetIdleTimer();
+
       sseBuffer += decoder.decode(value, { stream: true });
 
       // SSE events are separated by blank lines; each event has `event:` and `data:` lines.
@@ -282,8 +310,20 @@ async function pipeAnthropicSseAsConnectFrames(routerRes, res) {
     // Flush any trailing buffered event (some servers don't end with \n\n).
     if (sseBuffer.trim()) processSseEvent(sseBuffer);
   } finally {
+    if (idleTimer) clearTimeout(idleTimer);
+    // Flush any pending tool_use state before sending end frame — prevents
+    // Devin CLI hang when stream is cut between content_block_start and content_block_stop.
+    for (const idx in toolUseState) {
+      const tus = toolUseState[idx];
+      if (tus) {
+        safeWrite(buildConnectFrame(0x00, buildGetChatMessageResponse({
+          delta_tool_calls: [{ id: tus.id, name: tus.name, arguments: tus.args || "{}" }],
+        })));
+        delete toolUseState[idx];
+      }
+    }
     if (!endSent) sendEnd();
-    res.end();
+    if (!res.writableEnded) res.end();
   }
 
   function processSseEvent(rawEvent) {
@@ -296,9 +336,15 @@ async function pipeAnthropicSseAsConnectFrames(routerRes, res) {
     if (!dataStr) return;
 
     let data;
-    try { data = JSON.parse(dataStr); } catch { return; }
+    try { data = JSON.parse(dataStr); } catch (e) {
+      errLog(`[Windsurf MITM] Failed to parse SSE data: ${e.message}, event: ${eventType}`);
+      return;
+    }
 
     switch (eventType) {
+      case "message_start":
+        // No Connect-RPC frame needed — message metadata is in the initial response frame.
+        break;
       case "content_block_start": {
         const block = data.content_block;
         if (block?.type === "tool_use") {
@@ -311,11 +357,9 @@ async function pipeAnthropicSseAsConnectFrames(routerRes, res) {
         const delta = data.delta;
         if (!delta) break;
         if (delta.type === "text_delta") {
-          const frame = buildConnectFrame(0x00, buildGetChatMessageResponse({ delta_text: delta.text }));
-          res.write(frame);
+          safeWrite(buildConnectFrame(0x00, buildGetChatMessageResponse({ delta_text: delta.text })));
         } else if (delta.type === "thinking_delta") {
-          const frame = buildConnectFrame(0x00, buildGetChatMessageResponse({ delta_thinking: delta.thinking }));
-          res.write(frame);
+          safeWrite(buildConnectFrame(0x00, buildGetChatMessageResponse({ delta_thinking: delta.thinking })));
         } else if (delta.type === "input_json_delta") {
           const idx = data.index ?? 0;
           if (toolUseState[idx]) toolUseState[idx].args += delta.partial_json || "";
@@ -327,10 +371,9 @@ async function pipeAnthropicSseAsConnectFrames(routerRes, res) {
         const tus = toolUseState[idx];
         if (tus) {
           // Emit accumulated tool call as one delta_tool_calls frame.
-          const frame = buildConnectFrame(0x00, buildGetChatMessageResponse({
+          safeWrite(buildConnectFrame(0x00, buildGetChatMessageResponse({
             delta_tool_calls: [{ id: tus.id, name: tus.name, arguments: tus.args || "{}" }],
-          }));
-          res.write(frame);
+          })));
           delete toolUseState[idx];
         }
         break;
@@ -347,11 +390,10 @@ async function pipeAnthropicSseAsConnectFrames(routerRes, res) {
             output_tokens: Math.max(0, usage.output_tokens || 0),
             cache_read_tokens: Math.max(0, usage.cache_read_input_tokens || 0),
           } : null;
-          const frame = buildConnectFrame(0x00, buildGetChatMessageResponse({
+          safeWrite(buildConnectFrame(0x00, buildGetChatMessageResponse({
             ...(stopReason != null && { stop_reason: stopReason }),
             ...(usageOut && { usage: usageOut }),
-          }));
-          res.write(frame);
+          })));
         }
         break;
       }
@@ -488,11 +530,15 @@ async function intercept(req, res, bodyBuffer, mappedModel, passthrough) {
 
     await pipeAnthropicSseAsConnectFrames(routerRes, res);
   } catch (error) {
-    errLog(`[Windsurf MITM] ${error.message}`);
-    // Guard: nếu response đã end (pipe đã close stream do timeout/abort),
+    // Distinguish error types for debugging.
+    const errType = error.name === "TimeoutError" ? "timeout"
+      : error.name === "AbortError" ? "aborted"
+      : "error";
+    errLog(`[Windsurf MITM] ${errType}: ${error.message}`);
+    // Guard: nếu response đã end (pipe đã close stream do idle timeout/abort),
     // KHÔNG gọi res.end() lại — gây ERR_STREAM_WRITE_AFTER_END crash.
     if (res.writableEnded) {
-      dumpIntercept("04-exception-after-end", { message: error.message, stack: error.stack });
+      dumpIntercept("04-exception-after-end", { errorType: errType, message: error.message, stack: error.stack });
       return;
     }
     if (!res.headersSent) {
@@ -503,7 +549,7 @@ async function intercept(req, res, bodyBuffer, mappedModel, passthrough) {
         "Transfer-Encoding": "chunked",
       });
     }
-    dumpIntercept("04-exception", { message: error.message, stack: error.stack });
+    dumpIntercept("04-exception", { errorType: errType, message: error.message, stack: error.stack });
     res.end(buildConnectFrame(0x02, Buffer.from(JSON.stringify({
       error: { code: "internal", message: error.message },
     }))));
