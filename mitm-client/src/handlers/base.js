@@ -28,7 +28,10 @@ async function fetchRouter(openaiBody, path = "/v1/chat/completions", clientHead
     if (!STRIP_HEADERS.has(k.toLowerCase())) forwarded[k] = v;
   }
 
-  // P2: 30s timeout — prevent indefinite hang when router unreachable.
+  // P2: 5min timeout for streaming requests (Windsurf with 54+ messages + 23 tools
+  // can stream >30s). 30s timeout only for non-streaming requests.
+  const isStreaming = openaiBody?.stream === true;
+  const timeoutMs = isStreaming ? 300000 : 30000;
   const response = await fetch(`${routerBase}${path}`, {
     method: "POST",
     headers: {
@@ -37,7 +40,7 @@ async function fetchRouter(openaiBody, path = "/v1/chat/completions", clientHead
       ...(cfg.apiKey && { "Authorization": `Bearer ${cfg.apiKey}` })
     },
     body: JSON.stringify(openaiBody),
-    signal: AbortSignal.timeout(30000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   return response;
