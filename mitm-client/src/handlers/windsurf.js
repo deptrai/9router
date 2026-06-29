@@ -72,18 +72,25 @@ const SOURCE_TO_ROLE = {
 // Maps upstream Windsurf modelUid → 9router alias so /v1/messages routes to WindsurfExecutor.
 // Keep in sync with getModelUid when adding models. Three minimax aliases (m2.1/m2.5/m2.7)
 // all collapse to MODEL_MINIMAX_M2_1 outbound; inbound picks the newest (.7).
+//
+// Models NOT in this map → passthrough (internal Windsurf calls, lightweight, no 9router needed):
+//   - "summarizer" — internal summarization
+//   - "gemini-3-5-flash-minimal" — internal lightweight model (no gemini provider in 9router)
+//   - "claude-sonnet-4-6" — non-thinking variant (route via ws/sonnet-4.6 if 9router has it)
 const WINDSURF_MODEL_UID_TO_ALIAS = {
+  // Claude variants
   "claude-sonnet-4-6-thinking": "ws/sonnet-4.6",
+  "claude-sonnet-4-6": "ws/sonnet-4.6",
   "claude-opus-4-8-medium": "ws/opus-4.8",
+  // GLM variants (200k + 1M context)
   "glm-5-2": "ws/glm-5-2",
   "glm-5-2-max-1m": "ws/glm-5-2",
   "glm-5-2-1m": "ws/glm-5-2",
+  // SWE variants
   "swe-1-6": "ws/swe-1-6",
   "swe-1-6-fast": "ws/swe-1-6",
+  // Minimax
   "MODEL_MINIMAX_M2_1": "ws/minimax-m2.7",
-  // "summarizer" is Windsurf's internal summarization model — passthrough
-  // (don't route via 9router, it's a lightweight internal call, not user chat).
-  // Removed from alias map; falls through to passthrough naturally.
 };
 
 /**
@@ -427,9 +434,9 @@ async function intercept(req, res, bodyBuffer, mappedModel, passthrough) {
   const uiAlias = loadConfig().windsurfAlias || null;
   const resolvedModel = mappedModel || resolveModelAlias(decoded.modelUid, uiAlias);
 
-  // 3. Model không resolve được → passthrough (đừng crash 9router với model lạ)
+  // 3. Model không resolve được → passthrough (internal Windsurf model, không route qua 9router)
   if (!resolvedModel) {
-    errLog(`[Windsurf MITM] modelUid "${decoded.modelUid}" not in alias map → passthrough`);
+    log(`[Windsurf MITM] modelUid "${decoded.modelUid}" not in alias map → passthrough (internal)`);
     return passthrough(req, res, bodyBuffer);
   }
 
