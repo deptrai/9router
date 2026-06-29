@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
-import ProviderLimitCard from "./ProviderLimitCard";
+import QuotaProgressBar from "./QuotaProgressBar";
 import Toggle from "@/shared/components/Toggle";
 import { parseQuotaData, calculatePercentage } from "./utils";
 import Card from "@/shared/components/Card";
@@ -1117,17 +1117,64 @@ export default function ProviderLimits() {
                     <p className="text-xs text-text-muted">{quota.message}</p>
                   </div>
                 ) : conn.provider === "windsurf" ? (
-                  <ProviderLimitCard
-                    provider={conn.provider}
-                    name={getConnectionLabel(conn) || conn.provider}
-                    plan={quota?.plan}
-                    quotas={quota?.quotas}
-                    message={quota?.message}
-                    loading={isLoading}
-                    error={error}
-                    onRefresh={() => refreshProvider(conn.id, conn.provider)}
-                    usageStats={quota?.usageStats}
-                  />
+                  <div className="space-y-4">
+                    {quota?.quotas?.map((quota, index) => {
+                      const percentage =
+                        quota.remainingPercentage !== undefined
+                          ? Math.round(((quota.total - quota.used) / quota.total) * 100)
+                          : calculatePercentage(quota.used, quota.total);
+                      const unlimited = quota.total === 0 || quota.total === null;
+
+                      return (
+                        <QuotaProgressBar
+                          key={`${quota.name}-${index}`}
+                          label={quota.name}
+                          used={quota.used}
+                          total={quota.total}
+                          percentage={percentage}
+                          unlimited={unlimited}
+                          resetTime={quota.resetAt}
+                        />
+                      );
+                    })}
+                    {quota?.usageStats && (
+                      <div className="mt-4 pt-4 border-t border-black/5 dark:border-white/5">
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="rounded-lg bg-black/[0.02] dark:bg-white/[0.02] p-3">
+                            <p className="text-[10px] text-text-muted uppercase tracking-wide mb-1">Today</p>
+                            <p className="text-sm font-medium text-text-primary">
+                              {quota.usageStats.today?.tokens >= 1_000
+                                ? `${(quota.usageStats.today.tokens / 1_000).toFixed(1)}K`
+                                : quota.usageStats.today?.tokens || 0}
+                            </p>
+                            <p className="text-[10px] text-text-muted">
+                              {quota.usageStats.today?.requests || 0} req
+                            </p>
+                          </div>
+                          <div className="rounded-lg bg-black/[0.02] dark:bg-white/[0.02] p-3">
+                            <p className="text-[10px] text-text-muted uppercase tracking-wide mb-1">7 days</p>
+                            <p className="text-sm font-medium text-text-primary">
+                              {quota.usageStats.last7d?.tokens >= 1_000
+                                ? `${(quota.usageStats.last7d.tokens / 1_000).toFixed(1)}K`
+                                : quota.usageStats.last7d?.tokens || 0}
+                            </p>
+                            <p className="text-[10px] text-text-muted">
+                              {quota.usageStats.last7d?.requests || 0} req
+                            </p>
+                          </div>
+                          <div className="rounded-lg bg-black/[0.02] dark:bg-white/[0.02] p-3">
+                            <p className="text-[10px] text-text-muted uppercase tracking-wide mb-1">Cost</p>
+                            <p className="text-sm font-medium text-text-primary">
+                              ${((quota.usageStats.last7d?.cost || 0)).toFixed(2)}
+                            </p>
+                            <p className="text-[10px] text-text-muted">
+                              7d total
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <QuotaTable
                     quotas={quota?.quotas}
