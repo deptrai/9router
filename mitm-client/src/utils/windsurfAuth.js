@@ -4,7 +4,6 @@
  */
 
 const { randomUUID } = require("crypto");
-
 const WIRE_TYPE = { VARINT: 0, FIXED64: 1, LEN: 2, FIXED32: 5 };
 
 function encodeVarint(value) {
@@ -85,4 +84,5 @@ function buildAuthHeader(apiKey) {
   return `Basic ${base64}`;
 }
 
-module.exports = { buildMetadata, buildAuthHeader };
+// Auto-generated module.exports (ESM→CJS conversion)
+module.exports = { buildAuthHeader, buildMetadata };

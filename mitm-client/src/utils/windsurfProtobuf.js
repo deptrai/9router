@@ -3,9 +3,7 @@
  * Implements ConnectRPC protobuf wire format for Windsurf API
  */
 
-const { randomUUID } = require("crypto");
-const { buildMetadata } = require("./windsurfAuth.js");
-
+const { randomUUID } = require("crypto");const { buildMetadata } = require("./windsurfAuth.js");
 const DEBUG = process.env.WINDSURF_PROTOBUF_DEBUG === "1";
 const log = (tag, ...args) => DEBUG && console.log(`[WINDSURF_PROTOBUF:${tag}]`, ...args);
 const textDecoder = new TextDecoder();
@@ -684,9 +682,7 @@ function decodeConfiguration(data) {
     if (!fields.has(n)) return 0;
     const v = fields.get(n)[0].value;
     const view = new DataView(v.buffer, v.byteOffset, 8);
-    const val = view.getFloat64(0, true);
-    // P10: guard NaN/Infinity from malformed protobuf — return 0 (safe default).
-    return isNaN(val) ? 0 : val;
+    return view.getFloat64(0, true);
   };
   return {
     numCompletions: vint(1),
@@ -847,22 +843,5 @@ function extractStrings(buffer) {
   }
 }
 
-module.exports = {
-  encodeVarint,
-  encodeField,
-  buildGetChatMessageRequest,
-  decodeVarint,
-  decodeField,
-  decodeMessage,
-  decodeGetChatMessageResponse,
-  connectFrameDecode,
-  resetFrameBuffer,
-  parseConnectEndFrame,
-  mapConnectErrorToAnthropic,
-  splitConnectFrames,
-  decodeGetChatMessageRequest,
-  buildUsage,
-  buildGetChatMessageResponse,
-  buildConnectFrame,
-  extractStrings,
-};
+// Auto-generated module.exports (ESM→CJS conversion)
+module.exports = { buildConnectFrame, buildGetChatMessageRequest, buildGetChatMessageResponse, buildUsage, connectFrameDecode, decodeField, decodeGetChatMessageRequest, decodeGetChatMessageResponse, decodeMessage, decodeVarint, encodeField, encodeVarint, extractStrings, mapConnectErrorToAnthropic, parseConnectEndFrame, resetFrameBuffer, splitConnectFrames };

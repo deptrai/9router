@@ -90,3 +90,4 @@ mitm-client/node_modules/
 mitm-client/package-lock.json
 mitm-client/src/utils/windsurfProtobuf.js.bak
 mitm-client/src/utils/windsurfAuth.js.bak
+mitm-client/*.tgz

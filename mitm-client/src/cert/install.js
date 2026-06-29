@@ -38,9 +38,16 @@ function untrustCert() {
       execSync(`sudo security delete-certificate -c "9R MITM Client Root CA"`, { stdio: "ignore" });
       log("🔐 Cert removed from macOS Keychain");
     } catch { /* not present */ }
+  } else if (!IS_WIN) {
+    // Linux: remove from ca-certificates + update.
+    try {
+      execSync(`sudo rm -f /usr/local/share/ca-certificates/9r-mitm-root.crt && sudo update-ca-certificates --fresh`, { stdio: "ignore" });
+      log("🔐 Cert removed from Linux ca-certificates");
+    } catch { /* not present */ }
   } else if (IS_WIN) {
     try {
       execSync(`certutil -delstore "ROOT" "9R MITM Client Root CA"`, { stdio: "ignore" });
+      log("🔐 Cert removed from Windows ROOT store");
     } catch { /* not present */ }
   }
 }
