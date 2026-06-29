@@ -478,6 +478,12 @@ async function intercept(req, res, bodyBuffer, mappedModel, passthrough) {
     await pipeAnthropicSseAsConnectFrames(routerRes, res);
   } catch (error) {
     errLog(`[Windsurf MITM] ${error.message}`);
+    // Guard: nếu response đã end (pipe đã close stream do timeout/abort),
+    // KHÔNG gọi res.end() lại — gây ERR_STREAM_WRITE_AFTER_END crash.
+    if (res.writableEnded) {
+      dumpIntercept("04-exception-after-end", { message: error.message, stack: error.stack });
+      return;
+    }
     if (!res.headersSent) {
       // P1: use 500 for internal errors (was always 200)
       res.writeHead(500, {
