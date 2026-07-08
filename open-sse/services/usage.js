@@ -92,9 +92,7 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
     case "minimax-cn":
       return await getMiniMaxUsage(apiKey, provider, proxyOptions);
     case "windsurf":
-      // Placeholder — endpoint research pending (Story N.3 B1: capture traffic).
-      // Fail-open như default case, trả message thay vì throw.
-      return { message: "Windsurf usage API not yet implemented — pending endpoint research" };
+      return await getWindsurfUsage(apiKey, proxyOptions);
     default:
       return { message: `Usage API not implemented for ${provider}` };
   }
@@ -1245,5 +1243,90 @@ async function getQoderUsage(accessToken, proxyOptions = null) {
     };
   } catch (error) {
     return { message: `Qoder connected. Unable to fetch usage: ${error.message}` };
+  }
+}
+
+/**
+ * Windsurf (Codeium) Usage
+ * Calls SeatManagementService/GetUserStatus cloud endpoint via Connect-RPC (JSON).
+ * Returns daily + weekly quota remaining percentages and reset timestamps.
+ *
+ * Auth: Basic <base64(apiKey:apiKey)> where apiKey = "devin-session-token$<JWT>"
+ * (token duplicated with colon — same pattern as buildAuthHeader in windsurfAuth.js)
+ */
+async function getWindsurfUsage(apiKey, proxyOptions = null) {
+  if (!apiKey) {
+    return { message: "No Windsurf API key available. Please re-authorize the connection." };
+  }
+
+  try {
+    const url = "https://server.codeium.com/exa.seat_management_pb.SeatManagementService/GetUserStatus";
+    const credentials = `${apiKey}:${apiKey}`;
+    const basicAuth = Buffer.from(credentials).toString("base64");
+
+    const response = await proxyAwareFetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Connect-Protocol-Version": "1",
+        "Authorization": `Basic ${basicAuth}`,
+      },
+      body: JSON.stringify({
+        metadata: {
+          ideName: "chisel",
+          ideVersion: "2026.8.18",
+          extensionName: "chisel",
+          extensionVersion: "2026.8.18",
+          locale: "en",
+          os: "mac",
+          apiKey: apiKey,
+        },
+      }),
+    }, proxyOptions);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Windsurf API error: ${response.status} ${errorText}`);
+    }
+
+    const data = await response.json();
+    const planStatus = data?.userStatus?.planStatus;
+
+    if (!planStatus) {
+      return { message: "Windsurf connected. Unable to parse quota data." };
+    }
+
+    const dailyRemaining = Number(planStatus.dailyQuotaRemainingPercent) || 0;
+    const weeklyRemaining = Number(planStatus.weeklyQuotaRemainingPercent) || 0;
+    const dailyResetUnix = Number(planStatus.dailyQuotaResetAtUnix) || 0;
+    const weeklyResetUnix = Number(planStatus.weeklyQuotaResetAtUnix) || 0;
+
+    const dailyResetAt = dailyResetUnix > 0
+      ? new Date(dailyResetUnix * 1000).toISOString()
+      : null;
+    const weeklyResetAt = weeklyResetUnix > 0
+      ? new Date(weeklyResetUnix * 1000).toISOString()
+      : null;
+
+    return {
+      plan: planStatus.planInfo?.planName || "Unknown",
+      resetDate: planStatus.planEnd || null,
+      quotas: {
+        daily: {
+          used: 100 - dailyRemaining,
+          total: 100,
+          remainingPercentage: dailyRemaining,
+          resetAt: dailyResetAt,
+        },
+        weekly: {
+          used: 100 - weeklyRemaining,
+          total: 100,
+          remainingPercentage: weeklyRemaining,
+          resetAt: weeklyResetAt,
+        },
+      },
+    };
+  } catch (error) {
+    return { message: `Failed to fetch Windsurf usage: ${error.message}` };
   }
 }

@@ -133,6 +133,20 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "windsurf":
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([quotaType, quota]) => {
+            normalizedQuotas.push({
+              name: quotaType === "daily" ? "Daily Quota" : quotaType === "weekly" ? "Weekly Quota" : quotaType,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              remainingPercentage: quota.remainingPercentage,
+              resetAt: quota.resetAt || null,
+            });
+          });
+        }
+        break;
+
       case "codex":
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([quotaType, quota]) => {
