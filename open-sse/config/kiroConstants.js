@@ -195,6 +195,14 @@ export function stripThinkingSuffix(model) {
  * @param {string} model
  * @returns {{ upstream: string, agentic: boolean, thinking: boolean }}
  */
+// Normalize digit-hyphen-digit to digit-dot-digit so clients can send either
+// "claude-sonnet-4-5" or "claude-sonnet-4.5" and the canonical dot version is
+// sent to Kiro upstream.
+function normalizeVersionSeparators(id) {
+  if (typeof id !== "string") return id;
+  return id.replace(/(\d)-(\d)/g, "$1.$2");
+}
+
 export function resolveKiroModel(model) {
   let upstream = model;
   let agentic = false;
@@ -207,6 +215,7 @@ export function resolveKiroModel(model) {
     thinking = true;
     upstream = stripThinkingSuffix(upstream);
   }
+  upstream = normalizeVersionSeparators(upstream);
   return { upstream, agentic, thinking };
 }
 

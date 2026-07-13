@@ -904,6 +904,31 @@ export const PROVIDER_MODELS = {
   ],
 };
 
+// Providers whose registry uses dots in version numbers (e.g. "claude-sonnet-4.5").
+// For these, we tolerate clients sending dashes ("claude-sonnet-4-5") by normalizing
+// digit-hyphen-digit to digit-dot-digit before lookup. Other providers are left untouched.
+// Ported from upstream commit 5041494e (fix(kiro): tolerate dash version ids).
+const DOT_VERSION_PROVIDERS = new Set(["kr", "kiro"]);
+
+// Normalize a model id by converting digit-hyphen-digit to digit-dot-digit.
+// e.g. "claude-sonnet-4-5" -> "claude-sonnet-4.5". Non-string passthrough.
+function normalizeModelId(modelId) {
+  if (typeof modelId !== "string") return modelId;
+  return modelId.replace(/(\d)-(\d)/g, "$1.$2");
+}
+
+// Find a registry entry by id. For Kiro models, tolerates dash/dot version separators
+// ("claude-sonnet-4-5" ~= "claude-sonnet-4.5"). Other providers use exact match only.
+function findModel(models, modelId, aliasOrId) {
+  if (!models) return undefined;
+  const found = models.find(m => m.id === modelId);
+  if (found) return found;
+  if (!DOT_VERSION_PROVIDERS.has(aliasOrId)) return undefined;
+  const normalized = normalizeModelId(modelId);
+  if (normalized === modelId) return undefined;
+  return models.find(m => m.id === normalized);
+}
+
 // Helper functions
 export function getProviderModels(aliasOrId) {
   return PROVIDER_MODELS[aliasOrId] || [];
@@ -918,27 +943,28 @@ export function isValidModel(aliasOrId, modelId, passthroughProviders = new Set(
   if (passthroughProviders.has(aliasOrId)) return true;
   const models = PROVIDER_MODELS[aliasOrId];
   if (!models) return false;
-  return models.some(m => m.id === modelId);
+  return !!findModel(models, modelId, aliasOrId);
 }
 
 export function findModelName(aliasOrId, modelId) {
   const models = PROVIDER_MODELS[aliasOrId];
   if (!models) return modelId;
-  const found = models.find(m => m.id === modelId);
+  const found = findModel(models, modelId, aliasOrId);
   return found?.name || modelId;
 }
 
 export function getModelTargetFormat(aliasOrId, modelId) {
   const models = PROVIDER_MODELS[aliasOrId];
   if (!models) return null;
-  const found = models.find(m => m.id === modelId);
+  const found = findModel(models, modelId, aliasOrId);
   return found?.targetFormat || null;
 }
 
 export function getModelUpstreamId(aliasOrId, modelId) {
   const models = PROVIDER_MODELS[aliasOrId];
-  const found = models?.find(m => m.id === modelId);
+  const found = findModel(models, modelId, aliasOrId);
   if (found?.upstreamModelId) return found.upstreamModelId;
+  if (found?.id) return found.id;
   if (aliasOrId === "cx" && typeof modelId === "string" && modelId.endsWith(CODEX_REVIEW_SUFFIX)) {
     return modelId.slice(0, -CODEX_REVIEW_SUFFIX.length);
   }
@@ -947,13 +973,13 @@ export function getModelUpstreamId(aliasOrId, modelId) {
 
 export function getModelQuotaFamily(aliasOrId, modelId) {
   const models = PROVIDER_MODELS[aliasOrId];
-  const found = models?.find(m => m.id === modelId);
+  const found = findModel(models, modelId, aliasOrId);
   return found?.quotaFamily || "normal";
 }
 
 export function getModelContextWindow(aliasOrId, modelId) {
   const models = PROVIDER_MODELS[aliasOrId];
-  const found = models?.find(m => m.id === modelId);
+  const found = findModel(models, modelId, aliasOrId);
   if (Number.isFinite(found?.contextWindow)) return found.contextWindow;
   if (Number.isFinite(found?.contextLength)) return found.contextLength;
   return null;
@@ -993,6 +1019,6 @@ export function getModelsByProviderId(providerId) {
 // Get strip list for a model entry (explicit opt-in only)
 // Returns array of content types to strip, e.g. ["image", "audio"]
 export function getModelStrip(alias, modelId) {
-  const entry = PROVIDER_MODELS[alias]?.find(m => m.id === modelId);
+  const entry = findModel(PROVIDER_MODELS[alias], modelId, alias);
   return entry?.strip || [];
 }
