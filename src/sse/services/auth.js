@@ -1,4 +1,5 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
+import { ensureKiroApiKeySeeded } from "@/lib/kiro/seedApiKeyFromEnv.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
@@ -134,6 +135,11 @@ export function _acquireLeaseForTest(connectionId) {
  * @param {string|null} model - Model name for per-model rate limit filtering
  */
 export async function getProviderCredentials(provider, excludeConnectionIds = null, model = null, options = {}) {
+  // Lazy seed for env-based Kiro API keys so the connection exists before selection.
+  if (provider === "kiro") {
+    await ensureKiroApiKeySeeded().catch(() => {});
+  }
+
   // Normalize to Set for consistent handling
   const excludeSet = excludeConnectionIds instanceof Set
     ? excludeConnectionIds

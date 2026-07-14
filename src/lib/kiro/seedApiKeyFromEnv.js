@@ -11,6 +11,22 @@
 import { KiroService } from "@/lib/oauth/services/kiro.js";
 import { createProviderConnection, getProviderConnections } from "@/models";
 
+let seedPromise = null;
+
+/**
+ * Ensure the Kiro API key is seeded exactly once per process.
+ * Called lazily from chat/auth paths so it runs in the same worker that
+ * handles the request, regardless of whether initializeApp has run there.
+ */
+export async function ensureKiroApiKeySeeded() {
+  if (seedPromise) return seedPromise;
+  if (global.__kiroApiKeySeeded) return;
+  seedPromise = seedKiroApiKeyFromEnv().finally(() => {
+    global.__kiroApiKeySeeded = true;
+  });
+  return seedPromise;
+}
+
 // In-memory status for observability (no secrets exposed)
 export const seedStatus = {
   envPresent: false,
