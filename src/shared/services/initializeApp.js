@@ -21,6 +21,7 @@ import { runExpirySweep } from "@/lib/billing/creditExpirySweep.js";
 import { runPaymentExpirySweep } from "@/lib/billing/paymentExpirySweep.js";
 import { reconcileSupplierOrders } from "@/lib/store/supplierReconciliation.js";
 import { runScheduledBackup } from "@/lib/db/scheduledBackup.js";
+import { seedKiroApiKeyFromEnv } from "@/lib/kiro/seedApiKeyFromEnv.js";
 
 // Inject correct paths and DB hooks into manager.js (CJS) from ESM context
 (function bootstrapMitm() {
@@ -62,6 +63,9 @@ export async function initializeApp() {
   try {
     await cleanupProviderConnections();
     const settings = await getSettings();
+
+    // Seed Kiro API-key from env if provided (production key rotation without dashboard login)
+    seedKiroApiKeyFromEnv().catch((e) => console.log("[InitApp] Kiro API key seed failed:", e.message));
 
     // Auto-resume tunnel (once per process)
     if (settings.tunnelEnabled && !g.tunnelAutoResumed) {
