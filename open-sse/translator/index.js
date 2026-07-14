@@ -238,7 +238,19 @@ export function initState(sourceFormat) {
       funcCallIds: {},
       funcArgsDone: {},
       funcItemDone: {},
-      completedSent: false
+      completedSent: false,
+      // Global output_index counter — each output item (reasoning, message,
+      // function_call, custom_tool_call) gets a UNIQUE output_index, matching
+      // OpenAI Responses API semantics. Previously reasoning and tool_call
+      // shared index 0 (both derived from choice.index / tc.index), causing
+      // Codex to drop tool execution when reasoning closed output_index=0
+      // first. This bug manifests as apply_patch loop in Codex sessions.
+      nextOutputIndex: 0,
+      msgOutputIndex: {},
+      funcOutputIndex: {},
+      // Set of freeform tool names (e.g. apply_patch) that should emit
+      // custom_tool_call items instead of function_call (#1371).
+      customTools: new Set()
     };
   }
 
