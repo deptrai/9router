@@ -6,7 +6,7 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { normalizeResponsesInput } from "../formats/responsesApi.js";
+import { normalizeResponsesInput, normalizeResponsesTools } from "../formats/responsesApi.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
 
 // Responses API enforces max 64 chars on call_id (#393)
@@ -96,7 +96,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       }
       result.messages.push(msg);
     }
-    else if (itemType === RESPONSES_ITEM.FUNCTION_CALL) {
+    else if (itemType === RESPONSES_ITEM.FUNCTION_CALL || itemType === "custom_tool_call") {
       // Start or append to assistant message with tool_calls
       if (!currentAssistantMsg) {
         currentAssistantMsg = {
@@ -108,16 +108,22 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       }
       // Skip items with empty/missing name — Codex/OpenAI reject nameless tool calls (#444)
       if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
+      // custom_tool_call carries a raw freeform `input` string instead of JSON
+      // `arguments`. Re-wrap as `{ "input": "<raw>" }` so the synthesized
+      // function tool schema round-trips (#1371).
+      const argsString = itemType === "custom_tool_call"
+        ? JSON.stringify({ input: typeof item.input === "string" ? item.input : (item.input ?? "") })
+        : (item.arguments ?? "{}");
       currentAssistantMsg.tool_calls.push({
         id: item.call_id,
         type: OPENAI_BLOCK.FUNCTION,
         function: {
           name: item.name,
-          arguments: item.arguments
+          arguments: argsString
         }
       });
     }
-    else if (itemType === RESPONSES_ITEM.FUNCTION_CALL_OUTPUT) {
+    else if (itemType === RESPONSES_ITEM.FUNCTION_CALL_OUTPUT || itemType === "custom_tool_call_output") {
       // Flush assistant message first if exists
       if (currentAssistantMsg) {
         result.messages.push(currentAssistantMsg);
@@ -161,31 +167,12 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
     }
   }
 
-  // Convert tools format.
-  // Responses API supports "hosted" tools (e.g. { type: "request_user_input" }) that carry no
-  // explicit `name` field and cannot be represented as Chat Completions function declarations.
-  // Filter them out to avoid sending nameless functionDeclarations to downstream providers
-  // such as Gemini, which strictly validates function names.
+  // Convert tools format (function + freeform custom tools, see #1371).
+  // Hosted tools without a `name` (e.g. `{ type: "request_user_input" }`) are
+  // dropped so downstream providers that strictly validate function names
+  // (Gemini etc.) don't see nameless function declarations.
   if (body.tools && Array.isArray(body.tools)) {
-    result.tools = body.tools
-      .map(tool => {
-        // Already in Chat Completions format: { type: "function", function: { name, ... } }
-        if (tool.function) return tool;
-        // Responses API function tool: { type: "function", name, description, parameters }
-        // Only convert when a non-empty name is present; skip hosted tools without one.
-        const name = tool.name;
-        if (!name || typeof name !== "string" || name.trim() === "") return null;
-        return {
-          type: OPENAI_BLOCK.FUNCTION,
-          function: {
-            name,
-            description: String(tool.description || ""),
-            parameters: normalizeToolParameters(tool.parameters),
-            strict: tool.strict
-          }
-        };
-      })
-      .filter(Boolean);
+    result.tools = normalizeResponsesTools(body.tools);
   }
 
   // Cleanup Responses API specific fields

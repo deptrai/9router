@@ -51,7 +51,27 @@ export function createResponsesLogger(model, logsDir = null) {
  * @param {Object} logger - Optional logger instance
  * @returns {TransformStream}
  */
-export function createResponsesApiTransformStream(logger = null) {
+export function createResponsesApiTransformStream(logger = null, customTools = null) {
+  const customToolSet = customTools instanceof Set
+    ? customTools
+    : (Array.isArray(customTools) ? new Set(customTools) : new Set());
+  const isCustomToolName = (name) => !!(name && customToolSet.has(name));
+
+  const unwrapCustomInput = (rawArgs) => {
+    if (!rawArgs) return "";
+    try {
+      const parsed = JSON.parse(rawArgs);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        if (typeof parsed.input === "string") return parsed.input;
+        if (typeof parsed.patch === "string") return parsed.patch;
+      }
+      if (typeof parsed === "string") return parsed;
+    } catch {
+      // Not JSON — treat as raw text
+    }
+    return rawArgs;
+  };
+
   const state = {
     seq: 0,
     responseId: `resp_${Date.now()}`,
@@ -73,7 +93,12 @@ export function createResponsesApiTransformStream(logger = null) {
     funcArgsDone: {},
     funcItemDone: {},
     buffer: "",
-    completedSent: false
+    completedSent: false,
+    // Global output_index counter — each output item gets a UNIQUE output_index.
+    // See open-sse/translator/index.js for full rationale.
+    nextOutputIndex: 0,
+    msgOutputIndex: {},
+    funcOutputIndex: {}
   };
 
   const encoder = new TextEncoder();
@@ -87,14 +112,19 @@ export function createResponsesApiTransformStream(logger = null) {
   };
 
   // Helper to start reasoning
+  const ensureOutputIndex = () => {
+    if (typeof state.nextOutputIndex !== "number") state.nextOutputIndex = 0;
+  };
   const startReasoning = (controller, idx) => {
     if (!state.reasoningId) {
-      state.reasoningId = `rs_${state.responseId}_${idx}`;
-      state.reasoningIndex = idx;
-      
+      ensureOutputIndex();
+      const outIdx = state.nextOutputIndex++;
+      state.reasoningIndex = outIdx;
+      state.reasoningId = `rs_${state.responseId}_${outIdx}`;
+
       emit(controller, "response.output_item.added", {
         type: "response.output_item.added",
-        output_index: idx,
+        output_index: outIdx,
         item: {
           id: state.reasoningId,
           type: "reasoning",
@@ -105,7 +135,7 @@ export function createResponsesApiTransformStream(logger = null) {
       emit(controller, "response.reasoning_summary_part.added", {
         type: "response.reasoning_summary_part.added",
         item_id: state.reasoningId,
-        output_index: idx,
+        output_index: outIdx,
         summary_index: 0,
         part: { type: "summary_text", text: "" }
       });
@@ -161,12 +191,13 @@ export function createResponsesApiTransformStream(logger = null) {
     if (state.msgItemAdded[idx] && !state.msgItemDone[idx]) {
       state.msgItemDone[idx] = true;
       const fullText = state.msgTextBuf[idx] || "";
-      const msgId = `msg_${state.responseId}_${idx}`;
+      const outIdx = state.msgOutputIndex[idx];
+      const msgId = `msg_${state.responseId}_${outIdx}`;
 
       emit(controller, "response.output_text.done", {
         type: "response.output_text.done",
         item_id: msgId,
-        output_index: parseInt(idx),
+        output_index: outIdx,
         content_index: 0,
         text: fullText,
         logprobs: []
@@ -175,14 +206,14 @@ export function createResponsesApiTransformStream(logger = null) {
       emit(controller, "response.content_part.done", {
         type: "response.content_part.done",
         item_id: msgId,
-        output_index: parseInt(idx),
+        output_index: outIdx,
         content_index: 0,
         part: { type: "output_text", annotations: [], logprobs: [], text: fullText }
       });
 
       emit(controller, "response.output_item.done", {
         type: "response.output_item.done",
-        output_index: parseInt(idx),
+        output_index: outIdx,
         item: {
           id: msgId,
           type: "message",
@@ -195,31 +226,67 @@ export function createResponsesApiTransformStream(logger = null) {
 
   const closeToolCall = (controller, idx) => {
     const callId = state.funcCallIds[idx];
-    if (callId && !state.funcItemDone[idx]) {
-      const args = state.funcArgsBuf[idx] || "{}";
-      
-      emit(controller, "response.function_call_arguments.done", {
-        type: "response.function_call_arguments.done",
-        item_id: `fc_${callId}`,
-        output_index: parseInt(idx),
-        arguments: args
+    if (!callId || state.funcItemDone[idx]) return;
+
+    const name = state.funcNames[idx] || "";
+    const rawArgs = state.funcArgsBuf[idx] || "{}";
+    const outIdx = state.funcOutputIndex[idx];
+
+    if (isCustomToolName(name)) {
+      // Codex freeform tools (apply_patch etc.) — emit custom_tool_call shape (#1371)
+      const input = unwrapCustomInput(rawArgs);
+      const itemId = `ctc_${callId}`;
+
+      if (input) {
+        emit(controller, "response.custom_tool_call_input.delta", {
+          type: "response.custom_tool_call_input.delta",
+          item_id: itemId,
+          output_index: outIdx,
+          delta: input
+        });
+      }
+
+      emit(controller, "response.custom_tool_call_input.done", {
+        type: "response.custom_tool_call_input.done",
+        item_id: itemId,
+        output_index: outIdx,
+        input
       });
 
       emit(controller, "response.output_item.done", {
         type: "response.output_item.done",
-        output_index: parseInt(idx),
+        output_index: outIdx,
+        item: {
+          id: itemId,
+          type: "custom_tool_call",
+          name,
+          call_id: callId,
+          input
+        }
+      });
+    } else {
+      emit(controller, "response.function_call_arguments.done", {
+        type: "response.function_call_arguments.done",
+        item_id: `fc_${callId}`,
+        output_index: outIdx,
+        arguments: rawArgs
+      });
+
+      emit(controller, "response.output_item.done", {
+        type: "response.output_item.done",
+        output_index: outIdx,
         item: {
           id: `fc_${callId}`,
           type: "function_call",
-          arguments: args,
+          arguments: rawArgs,
           call_id: callId,
-          name: state.funcNames[idx] || ""
+          name
         }
       });
-
-      state.funcItemDone[idx] = true;
-      state.funcArgsDone[idx] = true;
     }
+
+    state.funcItemDone[idx] = true;
+    state.funcArgsDone[idx] = true;
   };
 
   const sendCompleted = (controller) => {
@@ -335,31 +402,37 @@ export function createResponsesApiTransformStream(logger = null) {
           if (content) {
             if (!state.msgItemAdded[idx]) {
               state.msgItemAdded[idx] = true;
-              const msgId = `msg_${state.responseId}_${idx}`;
-              
+              ensureOutputIndex();
+              const outIdx = state.nextOutputIndex++;
+              state.msgOutputIndex[idx] = outIdx;
+              const msgId = `msg_${state.responseId}_${outIdx}`;
+
               emit(controller, "response.output_item.added", {
                 type: "response.output_item.added",
-                output_index: idx,
+                output_index: outIdx,
                 item: { id: msgId, type: "message", content: [], role: "assistant" }
               });
             }
 
             if (!state.msgContentAdded[idx]) {
               state.msgContentAdded[idx] = true;
-              
+              const outIdx = state.msgOutputIndex[idx];
+              const msgId = `msg_${state.responseId}_${outIdx}`;
+
               emit(controller, "response.content_part.added", {
                 type: "response.content_part.added",
-                item_id: `msg_${state.responseId}_${idx}`,
-                output_index: idx,
+                item_id: msgId,
+                output_index: outIdx,
                 content_index: 0,
                 part: { type: "output_text", annotations: [], logprobs: [], text: "" }
               });
             }
 
+            const outIdx = state.msgOutputIndex[idx];
             emit(controller, "response.output_text.delta", {
               type: "response.output_text.delta",
-              item_id: `msg_${state.responseId}_${idx}`,
-              output_index: idx,
+              item_id: `msg_${state.responseId}_${outIdx}`,
+              output_index: outIdx,
               content_index: 0,
               delta: content,
               logprobs: []
@@ -381,35 +454,60 @@ export function createResponsesApiTransformStream(logger = null) {
 
             if (funcName) state.funcNames[tcIdx] = funcName;
 
+            const custom = isCustomToolName(state.funcNames[tcIdx]);
+
             if (!state.funcCallIds[tcIdx] && newCallId) {
               state.funcCallIds[tcIdx] = newCallId;
-              
-              emit(controller, "response.output_item.added", {
-                type: "response.output_item.added",
-                output_index: tcIdx,
-                item: {
-                  id: `fc_${newCallId}`,
-                  type: "function_call",
-                  arguments: "",
-                  call_id: newCallId,
-                  name: state.funcNames[tcIdx] || ""
-                }
-              });
+              ensureOutputIndex();
+              const outIdx = state.nextOutputIndex++;
+              state.funcOutputIndex[tcIdx] = outIdx;
+
+              if (custom) {
+                emit(controller, "response.output_item.added", {
+                  type: "response.output_item.added",
+                  output_index: outIdx,
+                  item: {
+                    id: `ctc_${newCallId}`,
+                    type: "custom_tool_call",
+                    name: state.funcNames[tcIdx] || "",
+                    call_id: newCallId,
+                    input: ""
+                  }
+                });
+              } else {
+                emit(controller, "response.output_item.added", {
+                  type: "response.output_item.added",
+                  output_index: outIdx,
+                  item: {
+                    id: `fc_${newCallId}`,
+                    type: "function_call",
+                    arguments: "",
+                    call_id: newCallId,
+                    name: state.funcNames[tcIdx] || ""
+                  }
+                });
+              }
             }
 
             if (!state.funcArgsBuf[tcIdx]) state.funcArgsBuf[tcIdx] = "";
 
             if (tc.function?.arguments) {
-              const refCallId = state.funcCallIds[tcIdx] || newCallId;
-              if (refCallId) {
-                emit(controller, "response.function_call_arguments.delta", {
-                  type: "response.function_call_arguments.delta",
-                  item_id: `fc_${refCallId}`,
-                  output_index: tcIdx,
-                  delta: tc.function.arguments
-                });
-              }
               state.funcArgsBuf[tcIdx] += tc.function.arguments;
+
+              // For custom (freeform) tools, defer emission to closeToolCall so
+              // we can unwrap the JSON envelope back to a raw `input` string.
+              if (!custom) {
+                const refCallId = state.funcCallIds[tcIdx] || newCallId;
+                const outIdx = state.funcOutputIndex[tcIdx];
+                if (refCallId) {
+                  emit(controller, "response.function_call_arguments.delta", {
+                    type: "response.function_call_arguments.delta",
+                    item_id: `fc_${refCallId}`,
+                    output_index: outIdx,
+                    delta: tc.function.arguments
+                  });
+                }
+              }
             }
           }
         }
