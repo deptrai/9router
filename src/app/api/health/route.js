@@ -26,12 +26,6 @@ export async function GET() {
       db: dbOk,
       uptime: Math.floor((Date.now() - startedAt) / 1000),
       semaphore: getSemaphoreMetrics(),
-      envChecks: {
-        kiroApiKey: !!process.env.KIRO_API_KEY,
-        baseUrl: !!process.env.BASE_URL,
-        dataDir: !!process.env.DATA_DIR,
-        nodeEnv: process.env.NODE_ENV || null,
-      },
       kiroSeed: {
         envPresent: seedStatus.envPresent,
         checkedAt: seedStatus.checkedAt,
