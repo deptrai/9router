@@ -60,8 +60,6 @@ export default {
     { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
     // Haiku
     { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
-    // Sonnet 4.6 (released Feb 17, 2026 — full upgrade from 4.5, approaches Opus 4.6)
-    { id: "claude-sonnet-4.6", name: "Claude Sonnet 4.6" },
     // Non-Anthropic
     { id: "deepseek-3.2", name: "DeepSeek 3.2", strip: ["image","audio"] },
     { id: "qwen3-coder-next", name: "Qwen3 Coder Next", strip: ["image","audio"] },
@@ -69,17 +67,14 @@ export default {
     { id: "MiniMax-M2.5", name: "MiniMax M2.5" },
     // Thinking variants
     { id: "claude-sonnet-5-thinking", name: "Claude Sonnet 5 (Thinking)" },
-    { id: "claude-sonnet-4.6-thinking", name: "Claude Sonnet 4.6 (Thinking)" },
     { id: "claude-sonnet-4.5-thinking", name: "Claude Sonnet 4.5 (Thinking)" },
     { id: "claude-haiku-4.5-thinking", name: "Claude Haiku 4.5 (Thinking)" },
     // Agentic variants
     { id: "claude-sonnet-5-agentic", name: "Claude Sonnet 5 (Agentic)" },
-    { id: "claude-sonnet-4.6-agentic", name: "Claude Sonnet 4.6 (Agentic)" },
     { id: "claude-sonnet-4.5-agentic", name: "Claude Sonnet 4.5 (Agentic)" },
     { id: "claude-haiku-4.5-agentic", name: "Claude Haiku 4.5 (Agentic)" },
     // Thinking + Agentic variants
     { id: "claude-sonnet-5-thinking-agentic", name: "Claude Sonnet 5 (Thinking + Agentic)" },
-    { id: "claude-sonnet-4.6-thinking-agentic", name: "Claude Sonnet 4.6 (Thinking + Agentic)" },
     { id: "claude-sonnet-4.5-thinking-agentic", name: "Claude Sonnet 4.5 (Thinking + Agentic)" },
     { id: "claude-haiku-4.5-thinking-agentic", name: "Claude Haiku 4.5 (Thinking + Agentic)" },
     // GPT-5.6 Luna (thinking model for Codex CLI)
