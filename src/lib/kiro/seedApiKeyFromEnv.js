@@ -11,9 +11,27 @@
 import { KiroService } from "@/lib/oauth/services/kiro.js";
 import { createProviderConnection, getProviderConnections } from "@/models";
 
+// In-memory status for observability (no secrets exposed)
+export const seedStatus = {
+  envPresent: false,
+  checkedAt: null,
+  existingCount: 0,
+  created: false,
+  skipped: false,
+  error: null,
+  profileArn: null,
+};
+
 export async function seedKiroApiKeyFromEnv() {
   const apiKey = process.env.KIRO_API_KEY;
-  if (!apiKey || typeof apiKey !== "string" || !apiKey.trim()) {
+  seedStatus.envPresent = !!(apiKey && typeof apiKey === "string" && apiKey.trim());
+  seedStatus.checkedAt = new Date().toISOString();
+  seedStatus.created = false;
+  seedStatus.skipped = false;
+  seedStatus.error = null;
+  seedStatus.profileArn = null;
+
+  if (!seedStatus.envPresent) {
     return;
   }
 
@@ -23,6 +41,7 @@ export async function seedKiroApiKeyFromEnv() {
 
     // Idempotency: avoid creating duplicate connections on every restart/HMR.
     const existing = await getProviderConnections({ provider: "kiro" });
+    seedStatus.existingCount = existing.length;
     const alreadyExists = existing.some(
       (c) =>
         c.authType === "apikey" &&
@@ -31,16 +50,19 @@ export async function seedKiroApiKeyFromEnv() {
         c.isActive === 1
     );
     if (alreadyExists) {
+      seedStatus.skipped = true;
       console.log("[KiroSeed] API key connection already exists, skipping seed");
       return;
     }
 
     const credential = await kiroService.validateApiKey(apiKey, region);
+    seedStatus.profileArn = credential.profileArn || null;
     const email = kiroService.extractEmailFromJWT(credential.accessToken);
 
     await createProviderConnection({
       provider: "kiro",
       authType: "apikey",
+      name: "Seeded API Key",
       accessToken: credential.accessToken,
       refreshToken: null,
       expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
@@ -54,8 +76,10 @@ export async function seedKiroApiKeyFromEnv() {
       testStatus: "active",
     });
 
+    seedStatus.created = true;
     console.log("[KiroSeed] API key connection created successfully");
   } catch (error) {
-    console.error("[KiroSeed] Failed to seed Kiro API key:", error?.message || error);
+    seedStatus.error = error?.message || String(error);
+    console.error("[KiroSeed] Failed to seed Kiro API key:", seedStatus.error);
   }
 }

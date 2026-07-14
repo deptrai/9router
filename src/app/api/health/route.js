@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdapter } from "@/lib/db/driver.js";
 import { getSemaphoreMetrics } from "@/sse/services/auth.js";
+import { seedStatus } from "@/lib/kiro/seedApiKeyFromEnv.js";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -20,7 +21,21 @@ export async function GET() {
 
   const status = dbOk ? 200 : 503;
   return NextResponse.json(
-    { ok: dbOk, db: dbOk, uptime: Math.floor((Date.now() - startedAt) / 1000), semaphore: getSemaphoreMetrics() },
+    {
+      ok: dbOk,
+      db: dbOk,
+      uptime: Math.floor((Date.now() - startedAt) / 1000),
+      semaphore: getSemaphoreMetrics(),
+      kiroSeed: {
+        envPresent: seedStatus.envPresent,
+        checkedAt: seedStatus.checkedAt,
+        existingCount: seedStatus.existingCount,
+        created: seedStatus.created,
+        skipped: seedStatus.skipped,
+        error: seedStatus.error,
+        profileArn: !!seedStatus.profileArn,
+      },
+    },
     { status, headers: CORS_HEADERS },
   );
 }
