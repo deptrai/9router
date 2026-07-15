@@ -77,8 +77,22 @@ export default {
     { id: "claude-sonnet-5-thinking-agentic", name: "Claude Sonnet 5 (Thinking + Agentic)" },
     { id: "claude-sonnet-4.5-thinking-agentic", name: "Claude Sonnet 4.5 (Thinking + Agentic)" },
     { id: "claude-haiku-4.5-thinking-agentic", name: "Claude Haiku 4.5 (Thinking + Agentic)" },
-    // GPT-5.6 Luna (thinking model for Codex CLI)
+    // GPT-5.6 — full 4-variant set per model (base/thinking/agentic/thinking+agentic).
+    // Static fallback when dynamic Kiro catalog fetch fails (all credentials expired).
+    // Suffixes are 9router-synthetic; resolveKiroModel strips them before upstream call.
+    // Sol = frontier, Terra = mid-tier, Luna = value tier (pricing in providers/pricing.js).
+    { id: "gpt-5.6-sol", name: "GPT 5.6 Sol" },
+    { id: "gpt-5.6-sol-thinking", name: "GPT 5.6 Sol (Thinking)" },
+    { id: "gpt-5.6-sol-agentic", name: "GPT 5.6 Sol (Agentic)" },
+    { id: "gpt-5.6-sol-thinking-agentic", name: "GPT 5.6 Sol (Thinking + Agentic)" },
+    { id: "gpt-5.6-terra", name: "GPT 5.6 Terra" },
+    { id: "gpt-5.6-terra-thinking", name: "GPT 5.6 Terra (Thinking)" },
+    { id: "gpt-5.6-terra-agentic", name: "GPT 5.6 Terra (Agentic)" },
+    { id: "gpt-5.6-terra-thinking-agentic", name: "GPT 5.6 Terra (Thinking + Agentic)" },
+    { id: "gpt-5.6-luna", name: "GPT 5.6 Luna" },
     { id: "gpt-5.6-luna-thinking", name: "GPT 5.6 Luna (Thinking)" },
+    { id: "gpt-5.6-luna-agentic", name: "GPT 5.6 Luna (Agentic)" },
+    { id: "gpt-5.6-luna-thinking-agentic", name: "GPT 5.6 Luna (Thinking + Agentic)" },
   ],
   oauth: {
     ssoOidcEndpoint: "https://oidc.us-east-1.amazonaws.com",
