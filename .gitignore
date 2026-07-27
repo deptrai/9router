@@ -39,6 +39,11 @@ yarn-error.log*
 .env*
 !.env.example
 
+# Telegram scraper relay (Story 2-38) — holds MTProto session strings in plaintext.
+# A session string is equivalent to full account access; never commit it.
+relay-accounts.json
+relay-accounts.json.tmp
+
 # vercel
 .vercel
 

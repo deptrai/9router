@@ -12,6 +12,16 @@ const originalDataDir = process.env.DATA_DIR;
 const originalEncKey = process.env.STORE_ENC_KEY;
 const TEST_ENC_KEY = "0".repeat(64);
 
+// telegram_bot_scraper validate() is fail-closed on the relay endpoint + token as well as
+// the exchange rate (code review 2026-07-28), so a valid scraper config needs all four.
+const SCRAPER_AUTH = Object.freeze({
+  botUsername: "tainguyenvibebot",
+  command: "/products",
+  vndPerCredit: 1000,
+  relayUrl: "http://127.0.0.1:3800/relay",
+  relayToken: "test-relay-token",
+});
+
 let repo, getAdapter;
 
 async function loadModules() {
@@ -164,6 +174,190 @@ describe("supplierSourcesRepo — health lifecycle (AC5/QĐ6)", () => {
     expect(afterFail.status).toBe("unsupported");
     const afterOk = await repo.recordSyncSuccess(src.id, { syncVersion: 1 });
     expect(afterOk.status).toBe("unsupported");
+  });
+});
+
+describe("supplierSourcesRepo — telegram_bot_scraper interval guard (AC7, course correction)", () => {
+  it("create rejects syncIntervalSec < 3600 instead of clamping to the generic 60s minimum", async () => {
+    await expect(repo.createSupplierSource({
+      name: "Tài Nguyên Vibe",
+      adapterType: "telegram_bot_scraper",
+      syncIntervalSec: 300,
+      auth: { ...SCRAPER_AUTH },
+    })).rejects.toThrow(/syncIntervalSec must be >= 3600 for telegram_bot_scraper/);
+    // Must not write a row on rejection.
+    expect(await repo.listSupplierSources()).toHaveLength(0);
+  });
+
+  it("create accepts syncIntervalSec >= 3600 for telegram_bot_scraper", async () => {
+    const src = await repo.createSupplierSource({
+      name: "Tài Nguyên Vibe",
+      adapterType: "telegram_bot_scraper",
+      syncIntervalSec: 3600,
+      auth: { ...SCRAPER_AUTH },
+    });
+    expect(src.status).toBe("active");
+    expect(src.syncIntervalSec).toBe(3600);
+  });
+
+  it("other adapter types keep the generic 60s minimum on create (no regression)", async () => {
+    const src = await repo.createSupplierSource({
+      name: "Acme", adapterType: "supplier_api", syncIntervalSec: 10,
+      auth: { apiUrl: "https://acme/api", apiKey: "k" },
+    });
+    expect(src.syncIntervalSec).toBe(60);
+  });
+
+  it("update rejects syncIntervalSec < 3600 for telegram_bot_scraper even without an auth patch", async () => {
+    const src = await repo.createSupplierSource({
+      name: "Tài Nguyên Vibe",
+      adapterType: "telegram_bot_scraper",
+      syncIntervalSec: 3600,
+      auth: { ...SCRAPER_AUTH },
+    });
+
+    await expect(repo.updateSupplierSource(src.id, { syncIntervalSec: 120 }))
+      .rejects.toThrow(/syncIntervalSec must be >= 3600 for telegram_bot_scraper/);
+
+    // Row must remain unchanged after the rejected update.
+    const unchanged = await repo.getSupplierSourceById(src.id);
+    expect(unchanged.syncIntervalSec).toBe(3600);
+  });
+
+  it("update accepts syncIntervalSec >= 3600 for telegram_bot_scraper", async () => {
+    const src = await repo.createSupplierSource({
+      name: "Tài Nguyên Vibe",
+      adapterType: "telegram_bot_scraper",
+      syncIntervalSec: 3600,
+      auth: { ...SCRAPER_AUTH },
+    });
+    const updated = await repo.updateSupplierSource(src.id, { syncIntervalSec: 7200 });
+    expect(updated.syncIntervalSec).toBe(7200);
+  });
+
+  it("update still applies the generic 60s minimum for non-scraper adapters (no regression)", async () => {
+    const src = await repo.createSupplierSource({
+      name: "Acme", adapterType: "supplier_api",
+      auth: { apiUrl: "https://acme/api", apiKey: "k" },
+    });
+    const updated = await repo.updateSupplierSource(src.id, { syncIntervalSec: 10 });
+    expect(updated.syncIntervalSec).toBe(60);
+  });
+
+  it.each([Infinity, -Infinity, NaN, "abc"])(
+    "rejects a non-finite syncIntervalSec (%s) instead of creating a source that never polls",
+    async (syncIntervalSec) => {
+      // Math.max(60, Infinity) used to survive and produce a source whose next poll is
+      // never due — a silently dead source.
+      const promise = repo.createSupplierSource({
+        name: "Acme", adapterType: "supplier_api", syncIntervalSec,
+        auth: { apiUrl: "https://acme/api", apiKey: "k" },
+      });
+      if (Number.isFinite(Number(syncIntervalSec))) {
+        await expect(promise).resolves.toBeTruthy();
+      } else {
+        await expect(promise).rejects.toThrow(/syncIntervalSec must be a finite number/);
+      }
+    },
+  );
+});
+
+describe("supplierSourcesRepo — update auth merge semantics (code review 2026-07-28, D4)", () => {
+  it("merges a partial auth patch instead of replacing the whole blob", async () => {
+    // maskSource never returns auth, so a client cannot read relayUrl/interactionSteps back
+    // in order to re-send them. Replace semantics silently dropped everything omitted.
+    const src = await repo.createSupplierSource({
+      name: "Tài Nguyên Vibe",
+      adapterType: "telegram_bot_scraper",
+      syncIntervalSec: 3600,
+      auth: { ...SCRAPER_AUTH },
+    });
+
+    await repo.updateSupplierSource(src.id, { auth: { vndPerCredit: 2000 } });
+
+    const withAuth = await repo.getSupplierSourceWithAuth(src.id);
+    expect(withAuth.auth.vndPerCredit).toBe(2000);
+    expect(withAuth.auth.relayUrl).toBe(SCRAPER_AUTH.relayUrl);
+    expect(withAuth.auth.relayToken).toBe(SCRAPER_AUTH.relayToken);
+    expect(withAuth.auth.botUsername).toBe(SCRAPER_AUTH.botUsername);
+  });
+
+  it("a partial patch that would break the merged config is rejected", async () => {
+    const src = await repo.createSupplierSource({
+      name: "Tài Nguyên Vibe", adapterType: "telegram_bot_scraper",
+      syncIntervalSec: 3600, auth: { ...SCRAPER_AUTH },
+    });
+
+    await expect(repo.updateSupplierSource(src.id, { auth: { vndPerCredit: 0 } }))
+      .rejects.toThrow(/invalid config.*vndPerCredit/i);
+  });
+
+  it("auth: null clears the stored credentials", async () => {
+    const src = await repo.createSupplierSource({
+      name: "Acme", adapterType: "supplier_api",
+      auth: { apiUrl: "https://acme/api", apiKey: "k" },
+    });
+
+    const updated = await repo.updateSupplierSource(src.id, { auth: null });
+
+    expect(updated.hasAuth).toBe(false);
+  });
+
+  it("heals unsupported → active only on a real config change, not on a name patch", async () => {
+    const src = await repo.createSupplierSource({
+      name: "Private Bot", adapterType: "supplier_api",
+      auth: { apiUrl: "https://x", apiKey: "k", scrape: true },
+    });
+    expect(src.status).toBe("unsupported");
+
+    // A rename is not a config change — `unsupported` must stay sticky, as it does for
+    // recordSyncSuccess / recordSyncFailure / enableSupplierSource.
+    const renamed = await repo.updateSupplierSource(src.id, { name: "Private Bot v2" });
+    expect(renamed.status).toBe("unsupported");
+
+    // Supplying a valid config is the one event that legitimately clears it.
+    const fixed = await repo.updateSupplierSource(src.id, {
+      auth: { apiUrl: "https://x", apiKey: "k", scrape: false },
+    });
+    expect(fixed.status).toBe("active");
+  });
+});
+
+describe("supplierSourcesRepo — undecryptable auth stays operable (code review 2026-07-28)", () => {
+  async function corruptAuth(id) {
+    const db = await getAdapter();
+    db.run(`UPDATE supplierSources SET authEnc = ? WHERE id = ?`, ["not-a-valid-ciphertext", id]);
+  }
+
+  it("allows rename and disable, and reports a decryption error rather than 'invalid config'", async () => {
+    // validate() now runs on EVERY update, so falling back to {} on a decrypt failure made
+    // the row impossible to rename OR switch off — removing the operator's only way to stop
+    // the bleeding — and blamed "invalid config" for a key/ciphertext problem.
+    const src = await repo.createSupplierSource({
+      name: "Acme", adapterType: "supplier_api",
+      auth: { apiUrl: "https://acme/api", apiKey: "k" },
+    });
+    await corruptAuth(src.id);
+
+    const disabled = await repo.updateSupplierSource(src.id, { name: "Acme (broken)", isActive: false });
+
+    expect(disabled.name).toBe("Acme (broken)");
+    expect(disabled.isActive).toBe(false);
+    expect(disabled.lastSyncError).toMatch(/could not be decrypted/i);
+  });
+
+  it("re-entering full credentials recovers the source", async () => {
+    const src = await repo.createSupplierSource({
+      name: "Acme", adapterType: "supplier_api",
+      auth: { apiUrl: "https://acme/api", apiKey: "k" },
+    });
+    await corruptAuth(src.id);
+
+    await repo.updateSupplierSource(src.id, { auth: { apiUrl: "https://acme/api", apiKey: "fresh" } });
+
+    const withAuth = await repo.getSupplierSourceWithAuth(src.id);
+    expect(withAuth.authError).toBeNull();
+    expect(withAuth.auth.apiKey).toBe("fresh");
   });
 });
 

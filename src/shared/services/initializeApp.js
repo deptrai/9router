@@ -243,6 +243,7 @@ function startCreditSweep() {
 
 function startSupplierReconcile() {
   if (g.supplierReconcileInterval) return;
+  // Out-of-band (QĐ1): flag-only, never auto-refund. Log failures instead of swallowing.
   reconcileSupplierOrders().catch((e) =>
     console.error("[supplierReconciliation] startup sweep failed:", e?.message || e)
   );

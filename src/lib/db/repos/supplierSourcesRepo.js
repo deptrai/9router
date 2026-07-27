@@ -14,6 +14,26 @@ export const SOURCE_STATUSES = ["active", "degraded", "unhealthy", "unsupported"
 // Min polling interval — chặn syncIntervalSec=0/âm hammer supplier ở full rate (edge-case guard).
 export const MIN_SYNC_INTERVAL_SEC = 60;
 
+// Reported instead of a misleading "invalid config" when authEnc cannot be decrypted.
+const AUTH_DECRYPT_ERROR = "auth credentials could not be decrypted (corrupted or key mismatch) — re-enter the source credentials to recover";
+
+/**
+ * Normalize syncIntervalSec to the generic floor. Adapter-specific minimums (e.g.
+ * telegram_bot_scraper requires >= 3600) are enforced separately via adapter.validate(),
+ * which must REJECT rather than clamp (AC7/QĐ6).
+ *
+ * Number.isFinite rejects NaN AND Infinity: `Math.max(60, Infinity)` used to survive and
+ * produce a source whose next poll is never due, i.e. a silently dead source.
+ */
+function resolveSyncInterval(value, fallback, caller) {
+  if (value == null) return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${caller}: syncIntervalSec must be a finite number, got ${String(value)}`);
+  }
+  return Math.max(MIN_SYNC_INTERVAL_SEC, Math.floor(parsed) || 0);
+}
+
 // External product source marker. Defined locally (NOT imported from catalogSync.js) to keep
 // the db-layer repo free of store-layer deps and avoid a circular import
 // (catalogSync → markupEngine → markupRulesRepo). Mirrors productsRepo.js (story 2.31).
@@ -70,13 +90,13 @@ export async function createSupplierSource(data) {
     throw new Error(`createSupplierSource: syncMode must be one of [${SYNC_MODES.join(", ")}]`);
   }
   // Min-interval guard — syncIntervalSec=0/âm sẽ làm runDuePolls hammer supplier ở full rate.
-  const syncIntervalSec = data.syncIntervalSec != null
-    ? Math.max(MIN_SYNC_INTERVAL_SEC, Number(data.syncIntervalSec) || 0)
-    : 3600;
+  const syncIntervalSec = resolveSyncInterval(data.syncIntervalSec, 3600, "createSupplierSource");
 
   const adapter = getSupplierAdapter(data.adapterType);
   const auth = data.auth || {};
-  const validation = adapter.validate(auth);
+  // Pass the resolved syncIntervalSec into validate() so adapters with a stricter minimum
+  // (AC7/QĐ6) can reject before anything is written — validate() must throw, not clamp.
+  const validation = adapter.validate({ ...auth, syncIntervalSec });
   // Hard reject only for non-unsupported config errors (AC1). `unsupported` → create + flag (AC2).
   if (!validation.ok && !validation.unsupported) {
     throw new Error(`createSupplierSource: invalid config — ${validation.reason}`);
@@ -152,13 +172,50 @@ export async function updateSupplierSource(id, patch = {}) {
   if (patch.syncMode && !SYNC_MODES.includes(patch.syncMode)) {
     throw new Error(`updateSupplierSource: syncMode must be one of [${SYNC_MODES.join(", ")}]`);
   }
-  // Re-validate auth via adapter when credentials change (AC1/QĐ4 — validate runs on every save,
-  // not only at create; blocks swapping in invalid/scrape config post-creation).
+  const nextSyncIntervalSec = resolveSyncInterval(
+    patch.syncIntervalSec, row.syncIntervalSec, "updateSupplierSource",
+  );
+
+  // Re-validate via adapter on EVERY update (AC1/QĐ4/AC7) — not only when patch.auth is
+  // supplied. Course correction: a syncIntervalSec-only patch must still be checked against
+  // adapter-specific minimums (e.g. telegram_bot_scraper requires >= 3600), otherwise AC7
+  // is bypassed by omitting auth from the patch.
   let nextStatus = row.status;
   let nextLastError = row.lastSyncError;
-  if (patch.auth && typeof patch.auth === "object") {
-    const adapter = getSupplierAdapter(row.adapterType);
-    const validation = adapter.validate(patch.auth);
+  const adapter = getSupplierAdapter(row.adapterType);
+  // `auth: null` clears the credentials; `auth: {...}` merges; omitting it leaves them alone.
+  const clearAuth = patch.auth === null;
+  const hasAuthPatch = !clearAuth && patch.auth && typeof patch.auth === "object";
+
+  let existingAuth = {};
+  let authUnreadable = false;
+  if (row.authEnc) {
+    try {
+      existingAuth = JSON.parse(decrypt(row.authEnc));
+    } catch {
+      // Corrupted blob / rotated STORE_ENC_KEY. Do NOT silently fall back to {} and let
+      // validate() fail: that reported "invalid config" for what is really a decryption
+      // failure, and since validate() now runs on EVERY update it also made the row
+      // impossible to rename or disable — removing the operator's only way to stop the
+      // bleeding on a broken source.
+      authUnreadable = true;
+    }
+  }
+
+  // MERGE, don't replace (code review 2026-07-28, D4). maskSource never returns auth, so a
+  // client cannot read the current credentials back in order to re-send them in full;
+  // replace semantics silently dropped whatever the caller omitted (e.g. losing relayUrl and
+  // interactionSteps while changing only vndPerCredit).
+  const mergedAuth = hasAuthPatch
+    ? { ...(authUnreadable ? {} : existingAuth), ...patch.auth }
+    : existingAuth;
+
+  if (authUnreadable && !hasAuthPatch) {
+    // Nothing validatable. Let operational patches (name / isActive / syncMode / interval)
+    // through so the source can be renamed or switched off, and surface the real cause.
+    nextLastError = AUTH_DECRYPT_ERROR;
+  } else {
+    const validation = adapter.validate({ ...mergedAuth, syncIntervalSec: nextSyncIntervalSec });
     if (!validation.ok && !validation.unsupported) {
       throw new Error(`updateSupplierSource: invalid config — ${validation.reason}`);
     }
@@ -166,20 +223,27 @@ export async function updateSupplierSource(id, patch = {}) {
     if (validation.unsupported) {
       nextStatus = STATUS.UNSUPPORTED;
       nextLastError = validation.reason;
+    } else if (row.status === STATUS.UNSUPPORTED && hasAuthPatch) {
+      // Heal out of `unsupported` only on a real config change. That status is deliberately
+      // sticky against sync/enable events (recordSyncSuccess, recordSyncFailure,
+      // enableSupplierSource); a config update is the one event that legitimately clears it,
+      // and a `{ name }` patch is not a config change.
+      nextStatus = STATUS.ACTIVE;
+      nextLastError = null;
     }
   }
   const next = {
     name: patch.name ?? row.name,
     syncMode: patch.syncMode ?? row.syncMode,
-    syncIntervalSec: patch.syncIntervalSec != null
-      ? Math.max(MIN_SYNC_INTERVAL_SEC, Number(patch.syncIntervalSec) || 0)
-      : row.syncIntervalSec,
+    syncIntervalSec: nextSyncIntervalSec,
     isActive: patch.isActive !== undefined ? (patch.isActive ? 1 : 0) : row.isActive,
     authEnc: row.authEnc,
   };
-  // Re-encrypt auth only if a new auth object is supplied.
-  if (patch.auth && typeof patch.auth === "object") {
-    next.authEnc = Object.keys(patch.auth).length > 0 ? encrypt(JSON.stringify(patch.auth)) : null;
+  // Re-encrypt the MERGED config, so an omitted key keeps its stored value.
+  if (clearAuth) {
+    next.authEnc = null;
+  } else if (hasAuthPatch) {
+    next.authEnc = Object.keys(mergedAuth).length > 0 ? encrypt(JSON.stringify(mergedAuth)) : null;
   }
   db.run(
     `UPDATE supplierSources SET name=?, syncMode=?, syncIntervalSec=?, isActive=?, authEnc=?, status=?, lastSyncError=?, updatedAt=? WHERE id=?`,
