@@ -19,33 +19,27 @@ export async function POST(request) {
       return NextResponse.json({ error: "Bot token not configured" }, { status: 500 });
     }
 
-    // Parse raw query-string pairs without URL-decoding values.
-    // Telegram's hash is computed over the raw key=value pairs as they appear in initData.
-    const rawPairs = [];
-    for (const part of initData.split("&")) {
-      const eq = part.indexOf("=");
-      const key = eq >= 0 ? part.slice(0, eq) : part;
-      const value = eq >= 0 ? part.slice(eq + 1) : "";
-      rawPairs.push([key, value]);
-    }
-
-    const hashPair = rawPairs.find(([k]) => k === "hash");
-    const hash = hashPair ? hashPair[1] : "";
+    // Parse initData as a query string. Telegram signs the decoded key=value pairs,
+    // so we must use URLSearchParams to decode values before computing the hash.
+    const params = new URLSearchParams(initData);
+    const hash = params.get("hash");
     if (!hash) {
       return NextResponse.json({ error: "hash missing" }, { status: 400 });
     }
 
-    const authDatePair = rawPairs.find(([k]) => k === "auth_date");
-    const authDate = Number(authDatePair?.[1] || "0");
+    const authDate = Number(params.get("auth_date") || "0");
     const now = Math.floor(Date.now() / 1000);
     if (!authDate || now - authDate > 86400) {
       return NextResponse.json({ error: "initData expired" }, { status: 401 });
     }
 
-    const dataCheckPairs = rawPairs
-      .filter(([k]) => k !== "hash")
-      .sort(([a], [b]) => a.localeCompare(b));
-    const dataCheckString = dataCheckPairs.map(([k, v]) => `${k}=${v}`).join("\n");
+    params.delete("hash");
+    const pairs = [];
+    for (const [key, value] of params.entries()) {
+      pairs.push(`${key}=${value}`);
+    }
+    pairs.sort();
+    const dataCheckString = pairs.join("\n");
 
     const secretKey = crypto
       .createHmac("sha256", "WebAppData")
@@ -60,11 +54,11 @@ export async function POST(request) {
       return NextResponse.json({ error: "invalid hash" }, { status: 401 });
     }
 
-    const userPair = rawPairs.find(([k]) => k === "user");
+    const userRaw = params.get("user");
     let user = null;
-    if (userPair?.[1]) {
+    if (userRaw) {
       try {
-        user = JSON.parse(decodeURIComponent(userPair[1]));
+        user = JSON.parse(userRaw);
       } catch {}
     }
 
