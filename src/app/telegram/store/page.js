@@ -111,7 +111,7 @@ export default function TelegramStorePage() {
       : products;
   }, [products, search]);
 
-  const isBuyable = (p) => {
+  const isProductAvailable = (p) => {
     if (!p.isActive) return false;
     if (p.stock !== null && p.stock !== undefined && p.stock <= 0) return false;
     return true;
@@ -132,6 +132,14 @@ export default function TelegramStorePage() {
     if (!balances) return null;
     return Object.values(balances).reduce((s, v) => s + (v || 0), 0);
   }, [balances]);
+
+  const getButtonState = (p) => {
+    const available = isProductAvailable(p);
+    const hasInitData = !!initDataRef.current;
+    if (!available) return { disabled: true, label: "Tạm hết hàng" };
+    if (!hasInitData) return { disabled: true, label: "Mở từ bot để mua" };
+    return { disabled: buyingId === p.id, label: buyingId === p.id ? "Đang gửi..." : "Mua ngay" };
+  };
 
   if (loading) {
     return (
@@ -187,7 +195,7 @@ export default function TelegramStorePage() {
         ) : (
           <div className="space-y-3">
             {filtered.map((p) => {
-              const buyable = isBuyable(p) && !!user && !!initDataRef.current;
+              const { disabled, label } = getButtonState(p);
               return (
                 <div
                   key={p.id}
@@ -211,14 +219,14 @@ export default function TelegramStorePage() {
                   </div>
                   <button
                     onClick={() => handleBuy(p.id)}
-                    disabled={!buyable || buyingId === p.id}
+                    disabled={disabled}
                     className={`mt-3 w-full py-2.5 rounded-xl font-semibold text-white transition-colors ${
-                      buyable
-                        ? "bg-[#f97815] hover:bg-[#e0650a]"
-                        : "bg-[#D1D5DB] cursor-not-allowed"
+                      disabled
+                        ? "bg-[#D1D5DB] cursor-not-allowed"
+                        : "bg-[#f97815] hover:bg-[#e0650a]"
                     }`}
                   >
-                    {buyable ? "Mua ngay" : "Tạm hết hàng"}
+                    {label}
                   </button>
                 </div>
               );

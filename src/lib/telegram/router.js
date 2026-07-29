@@ -168,12 +168,17 @@ const EXTERNAL_CHECKOUT_ERROR_MESSAGES = {
   SUPPLIER_NOT_FOUND: "Không tìm thấy nguồn cung cấp — liên hệ admin.",
 };
 
-async function handleBuyExecute(chatId, telegramId, productId, callbackQueryId) {
+async function handleBuyExecute(chatId, from, productId, callbackQueryId) {
   try {
-    const user = await getUserByTelegramId(telegramId);
+    const telegramId = String(from.id);
+    let user = await getUserByTelegramId(telegramId);
     if (!user) {
-      await sendMessage(chatId, "Vui lòng /start trước khi mua hàng.");
-      return;
+      const displayName =
+        [from.first_name, from.last_name].filter(Boolean).join(" ").trim() ||
+        `tg_${telegramId}`;
+      const placeholderEmail = `telegram_${telegramId}@placeholder.local`;
+      user = await createUser(placeholderEmail, null, displayName);
+      await updateUser(user.id, { telegramId });
     }
 
     const idempotencyKey = `tg:${telegramId}:${productId}:${callbackQueryId}`;
@@ -902,7 +907,7 @@ export async function handleUpdate(update) {
     }
     if (data?.startsWith("buyc:")) {
       const productId = data.slice("buyc:".length);
-      await handleBuyExecute(chatId, String(cq.from.id), productId, cq.id);
+      await handleBuyExecute(chatId, cq.from, productId, cq.id);
       return;
     }
     if (data?.startsWith("buy:")) {
