@@ -37,13 +37,14 @@ export default function TelegramStorePage() {
       initDataRef.current = initData;
 
       try {
+        let init = null;
         if (initData) {
           const res = await fetch("/api/telegram/validate-init-data", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ initData }),
           });
-          const init = await res.json();
+          init = await res.json();
           if (res.ok && init.ok) {
             setUser(init.user);
           } else {
@@ -54,7 +55,7 @@ export default function TelegramStorePage() {
 
         const [productsRes, userInfoRes] = await Promise.all([
           fetch("/api/store/products"),
-          init.user?.id && initData
+          init?.user?.id && initData
             ? fetch("/api/telegram/user-info", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
