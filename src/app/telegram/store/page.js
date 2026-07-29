@@ -27,12 +27,16 @@ export default function TelegramStorePage() {
       tg.ready();
       tg.expand();
 
-      // Lấy initData từ Telegram.WebApp hoặc dự phòng từ URL hash.
+      // Lấy initData từ Telegram.WebApp, global fallback, hoặc URL hash/query.
       const rawHash = window.location.hash ? window.location.hash.replace(/^#/, "") : "";
       const hashParams = new URLSearchParams(rawHash);
+      const rawSearch = window.location.search ? window.location.search.replace(/^\?/, "") : "";
+      const searchParams = new URLSearchParams(rawSearch);
       const initData =
         tg.initData ||
+        (typeof window !== "undefined" ? window.__telegramInitData : "") ||
         hashParams.get("tgWebAppData") ||
+        searchParams.get("tgWebAppData") ||
         "";
       initDataRef.current = initData;
 

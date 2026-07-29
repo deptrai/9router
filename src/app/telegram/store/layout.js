@@ -13,7 +13,14 @@ export const viewport = {
 export default function TelegramStoreLayout({ children }) {
   return (
     <html lang="vi">
-      <head />
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){ try { const h = new URLSearchParams((window.location.hash||"").replace(/^#/,"")); const s = new URLSearchParams((window.location.search||"").replace(/^\\?/,"")); const raw = h.get("tgWebAppData") || s.get("tgWebAppData") || ""; if (raw) window.__telegramInitData = raw; } catch(e){} })();`,
+          }}
+        />
+        <script src="https://telegram.org/js/telegram-web-app.js" defer />
+      </head>
       <body className="bg-[#F5F5F5] text-[#1a1a1a] font-sans antialiased">
         {children}
       </body>
