@@ -242,8 +242,8 @@ describe("handleUpdate /products — Mini App button + AC3 error fallback", () =
     const [chatId, text, opts] = calls[0];
     expect(chatId).toBe(999);
     expect(text).toMatch(/Mở cửa hàng/);
-    expect(opts?.reply_markup?.inline_keyboard).toBeTruthy();
-    const buttons = opts.reply_markup.inline_keyboard.flat();
+    expect(opts?.reply_markup?.keyboard).toBeTruthy();
+    const buttons = opts.reply_markup.keyboard.flat();
     const webAppBtn = buttons.find((b) => b.web_app);
     expect(webAppBtn).toBeTruthy();
     expect(webAppBtn.web_app.url).toBe("https://test.example.com/telegram/store");

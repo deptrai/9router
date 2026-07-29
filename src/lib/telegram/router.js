@@ -100,14 +100,7 @@ async function handleProducts(chatId) {
     await sendMessage(
       chatId,
       "🛍 Mở cửa hàng bên dưới để xem danh sách sản phẩm:",
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "🛒 Xem danh sách sản phẩm", web_app: { url: getStoreUrl() } }],
-            BACK_TO_MENU_ROW,
-          ],
-        },
-      }
+      { reply_markup: PERSISTENT_MENU }
     );
   } catch (e) {
     console.error("[telegram/router] /products lỗi:", e?.message);
