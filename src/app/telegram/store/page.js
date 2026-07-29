@@ -54,7 +54,7 @@ export default function TelegramStorePage() {
 
         const [productsRes, userInfoRes] = await Promise.all([
           fetch("/api/store/products"),
-          user && initData
+          init.user?.id && initData
             ? fetch("/api/telegram/user-info", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
