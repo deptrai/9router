@@ -13,9 +13,7 @@ export const viewport = {
 export default function TelegramStoreLayout({ children }) {
   return (
     <html lang="vi">
-      <head>
-        <script src="https://telegram.org/js/telegram-web-app.js" defer />
-      </head>
+      <head />
       <body className="bg-[#F5F5F5] text-[#1a1a1a] font-sans antialiased">
         {children}
       </body>

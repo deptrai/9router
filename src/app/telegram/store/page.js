@@ -27,7 +27,7 @@ export default function TelegramStorePage() {
       tg.ready();
       tg.expand();
 
-      // Lấy initData: Telegram.WebApp.initData hoặc dự phòng từ URL hash.
+      // Lấy initData từ Telegram.WebApp hoặc dự phòng từ URL hash.
       const rawHash = window.location.hash ? window.location.hash.replace(/^#/, "") : "";
       const hashParams = new URLSearchParams(rawHash);
       const initData =
@@ -49,7 +49,6 @@ export default function TelegramStorePage() {
             setUser(init.user);
           } else {
             console.error("[telegram/store] validate error:", init.error);
-            // Vẫn cho xem catalog; lỗi initData không chặn product listing.
           }
         }
 
@@ -81,7 +80,23 @@ export default function TelegramStorePage() {
       }
     };
 
-    attempt();
+    const run = () => {
+      if (window.Telegram?.WebApp) {
+        attempt();
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "https://telegram.org/js/telegram-web-app.js";
+      script.defer = true;
+      script.onload = attempt;
+      script.onerror = () => {
+        setError("Không tải được Telegram WebApp SDK.");
+        setLoading(false);
+      };
+      document.head.appendChild(script);
+    };
+
+    run();
     return () => {
       cancelled = true;
     };
