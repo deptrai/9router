@@ -33,6 +33,22 @@ const COLLECT_BOUNDS = Object.freeze({
 const STEP_KEYS = new Set(["action", "text", "match", "collect"]);
 const COLLECT_KEYS = new Set(["timeoutMs", "idleMs", "maxMessages"]);
 
+async function getLatestMessageButtons(client, entity, minMessageId, limit = 20) {
+  const messages = await readMessages(client, entity, limit);
+  const candidates = [...(messages ?? [])]
+    .filter((message) => message?.out !== true && messageId(message) >= minMessageId)
+    .sort((left, right) => messageId(right) - messageId(left));
+  for (const message of candidates) {
+    const rows = await getMessageButtons(message);
+    if (rows && rows.length) {
+      return rows.flat().map((button) => ({
+        text: typeof button.text === "string" ? button.text : String(button.text ?? ""),
+      }));
+    }
+  }
+  return [];
+}
+
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -167,6 +183,7 @@ export function validateRelayRequest(request) {
   if (idle.value > timeout.value) {
     return { ok: false, error: "collect.idleMs must not exceed collect.timeoutMs" };
   }
+  const includeButtons = request.includeButtons === true;
 
   return {
     ok: true,
@@ -178,6 +195,7 @@ export function validateRelayRequest(request) {
         idleMs: idle.value,
         maxMessages: maxMessages.value,
       },
+      includeButtons,
     },
   };
 }
@@ -446,9 +464,13 @@ export async function runInteraction(client, entity, request, options = {}) {
     );
   }
 
-  return {
+  const result = {
     baselineId,
     messageIds: collected.map((message) => message.id),
     messages: collected.map((message) => message.text),
   };
+  if (flow.includeButtons) {
+    result.buttons = await getLatestMessageButtons(client, entity, baselineId, runtime.readLimit);
+  }
+  return result;
 }

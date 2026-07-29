@@ -13,7 +13,7 @@
  */
 
 import crypto from "node:crypto";
-import { validateRelayRequest, flowTimeoutMs } from "../../telegram/relayCore.js";
+import { validateRelayRequest, flowTimeoutMs, normalizeButtonText } from "../../telegram/relayCore.js";
 
 const TIMEOUT_MS = 35_000;
 const TIMEOUT_MARGIN_MS = 5_000;
@@ -70,6 +70,25 @@ export function validate(config) {
   if (!config.command && !config.interactionSteps) {
     return { ok: false, reason: "command or interactionSteps is required (ví dụ: /products hoặc bounded send/press steps)" };
   }
+  // Story 2-38.2: auto_fulfill requires purchaseCommand or purchaseSteps + purchaseCollect.
+  if (config.paymentMode === "auto_fulfill") {
+    if (!config.purchaseCommand && !config.purchaseSteps) {
+      return { ok: false, reason: "paymentMode='auto_fulfill' requires purchaseCommand or purchaseSteps" };
+    }
+    if (config.purchaseCommand && config.purchaseSteps) {
+      return { ok: false, reason: "chỉ được chọn purchaseCommand HOẶC purchaseSteps" };
+    }
+    if (config.purchaseSteps && (!Array.isArray(config.purchaseSteps) || config.purchaseSteps.length === 0)) {
+      return { ok: false, reason: "purchaseSteps phải là mảng có ít nhất 1 bước" };
+    }
+    const purchaseRelayValidation = validateRelayRequest({
+      botUsername: config.botUsername,
+      command: config.purchaseCommand,
+      steps: config.purchaseSteps,
+      collect: config.purchaseCollect,
+    });
+    if (!purchaseRelayValidation.ok) return { ok: false, reason: purchaseRelayValidation.error };
+  }
   // Reject at create/update instead of accepting a source that is `active` but whose every
   // sync fails with a config error (code review 2026-07-28).
   if (!resolveRelayUrl(config)) {
@@ -90,6 +109,75 @@ export function validate(config) {
   // `reason`. Translate explicitly rather than papering over the mismatch with `??`.
   if (!relayValidation.ok) return { ok: false, reason: relayValidation.error };
   return { ok: true };
+}
+
+// Matches button text formats observed from @tongmmobot and similar suppliers:
+// "86đ|0.003308$|Gmail edu .live 10 phút . mua tối đa 100s..."
+// "🛍️ 4k|0.15$|30 ngày [ ID 717 ]"
+// "7k|0.27$|TikTok United Kingdom- UK,GB Reg 30Days M..."
+const BUTTON_ID_RE = /\[\s*ID\s+(\d+)\s*\]/i;
+
+function parseButtonPrice(priceToken) {
+  const normalized = stripLeadingEmoji(priceToken).replace(/[\s,]/g, "").toLowerCase();
+  const match = normalized.match(/^([\d.]+)\s*k?\s*đ?$/);
+  if (!match) return null;
+  let value = Number(match[1]);
+  if (Number.isNaN(value) || value <= 0) return null;
+  if (normalized.includes("k")) value *= 1000;
+  return Math.floor(value);
+}
+
+export function parseTelegramButtonCatalog(buttons, { botUsername = "", vndPerCredit } = {}) {
+  const rate = positiveNumber(vndPerCredit);
+  if (!rate) {
+    throw new Error("parseTelegramButtonCatalog: vndPerCredit is required and must be > 0");
+  }
+
+  const products = [];
+  for (const button of buttons ?? []) {
+    const raw = typeof button === "string" ? button : button?.text;
+    if (typeof raw !== "string" || !raw.trim()) continue;
+    const text = stripLeadingEmoji(raw.trim());
+    if (!text) continue;
+
+    const parts = text.split("|");
+    if (parts.length < 3) continue;
+
+    const priceVnd = parseButtonPrice(parts[0]);
+    if (!priceVnd) continue;
+
+    const namePart = parts[2].trim();
+    if (!namePart) continue;
+
+    const idMatch = namePart.match(BUTTON_ID_RE);
+    const productId = idMatch ? `${botUsername}-${idMatch[1]}` : null;
+
+    const fullName = namePart.replace(BUTTON_ID_RE, "").replace(/\.\.\.$/, "").trim();
+    if (!fullName) continue;
+
+    const name = fullName;
+    const description = `${fullName}${idMatch ? ` [ID ${idMatch[1]}]` : ""}`.trim();
+
+    const supplierProductId = productId || crypto
+      .createHash("md5")
+      .update(`${botUsername}:${fullName}`)
+      .digest("hex")
+      .slice(0, 16);
+
+    products.push({
+      supplierProductId,
+      name,
+      description,
+      priceCredits: Math.ceil(priceVnd / rate),
+      priceVnd,
+      stock: null,
+      isActive: true,
+      deliveryMode: "admin_fulfill",
+      targetType: "telegram_bot_scraper",
+      targetId: botUsername,
+    });
+  }
+  return products;
 }
 
 export async function fetchCatalog(source, auth = {}) {
@@ -114,8 +202,9 @@ export async function fetchCatalog(source, auth = {}) {
     return { products: [], error: "command or interactionSteps missing in source config — refusing to send a default command to the supplier bot" };
   }
   const relayBody = isInteractive
-    ? { botUsername, steps: auth.interactionSteps, collect: auth.collect }
+    ? { botUsername, steps: auth.interactionSteps, collect: auth.collect, includeButtons: true }
     : { botUsername, command: auth.command };
+  if (auth.session) relayBody.session = auth.session;
 
   // The HTTP timeout MUST exceed the relay's own worst-case run for this flow, otherwise
   // the fetch aborts first and a generic AbortError masks the real relay error (AC8
@@ -145,6 +234,15 @@ export async function fetchCatalog(source, auth = {}) {
     }
     if (!data.ok) throw new Error(data.error || "Relay returned not-ok");
 
+    const botUsernameDiscovered = auth.discoveredBotUsername || botUsername;
+    if (auth.parseMode === "buttons" || (data.buttons && data.buttons.length)) {
+      const products = parseTelegramButtonCatalog(data.buttons, { botUsername: botUsernameDiscovered, vndPerCredit });
+      if (!products.length) {
+        return { products: [], error: "Button parser returned 0 products from bot response (format mismatch or empty catalog)" };
+      }
+      return { products };
+    }
+
     const messagesText = Array.isArray(data.messages) ? data.messages.join("\n") : "";
     if (!messagesText.trim()) return { products: [], error: "Relay returned empty messages" };
 
@@ -158,6 +256,72 @@ export async function fetchCatalog(source, auth = {}) {
     return { products };
   } catch (err) {
     return { products: [], error: err.message };
+  }
+}
+
+export async function discoverTelegramCatalog({ relayUrl, relayToken, botUsername, session, vndPerCredit = 1 }) {
+  if (!relayUrl || !relayToken) return { products: [], steps: [], error: "relayUrl/relayToken required" };
+  if (!botUsername) return { products: [], steps: [], error: "botUsername required" };
+
+  const CATEGORY_HINTS = ["tất cả sản phẩm", "sản phẩm", "all products", "danh sách sản phẩm"];
+
+  async function runFlow(steps, includeButtons = true, collect) {
+    const body = {
+      botUsername,
+      steps,
+      collect: collect || { timeoutMs: 45_000, idleMs: 5_000, maxMessages: 20 },
+      includeButtons,
+    };
+    if (session) body.session = session;
+    const validation = validateRelayRequest(body);
+    if (!validation.ok) throw new Error(validation.error);
+    const relayBudgetMs = flowTimeoutMs(validation.value);
+    const res = await postToRelay(relayUrl, {
+      body: JSON.stringify(body),
+      token: relayToken,
+    }, Math.max(TIMEOUT_MS, relayBudgetMs) + TIMEOUT_MARGIN_MS + 10_000);
+    if (!res.ok) throw new Error(`Relay HTTP ${res.status}: ${res.text.slice(0, 200)}`);
+    const data = JSON.parse(res.text);
+    if (!data.ok) throw new Error(data.error || "Relay returned not-ok");
+    return data;
+  }
+
+  async function startChat() {
+    // Many supplier bots ignore messages until the user explicitly /start them.
+    // Send /start with a short collect and ignore "no response" errors.
+    try {
+      await runFlow([{ action: "send", text: "/start" }], false, { timeoutMs: 8_000, idleMs: 2_000, maxMessages: 5 });
+    } catch {
+      // no-op: bot may not reply to /start, but the chat is now opened.
+    }
+  }
+
+  try {
+    await startChat();
+    let data = await runFlow([{ action: "send", text: "/products" }]);
+
+    // If the first screen is a category menu, press the "all products" category.
+    const categoryButton = data.buttons?.find((button) =>
+      CATEGORY_HINTS.some((hint) => normalizeButtonText(button.text).includes(hint))
+    );
+    let steps = [{ action: "send", text: "/products" }];
+    if (categoryButton) {
+      const match = normalizeButtonText(categoryButton.text).length >= 8 ? "contains" : "exact";
+      steps = [
+        ...steps,
+        { action: "press", text: categoryButton.text, match },
+      ];
+      data = await runFlow(steps);
+    }
+
+    if (!data.buttons || !data.buttons.length) {
+      return { products: [], steps, error: "No buttons found after product flow; bot may not use button-based catalog" };
+    }
+
+    const products = parseTelegramButtonCatalog(data.buttons, { botUsername, vndPerCredit });
+    return { products, steps, parseMode: "buttons" };
+  } catch (err) {
+    return { products: [], steps: [], error: err.message };
   }
 }
 
@@ -177,6 +341,109 @@ export function normalizeProduct(raw) {
     targetType: raw.targetType || "telegram_bot_scraper",
     targetId: raw.targetId || null,
   };
+}
+
+/**
+ * Substitute template placeholders in purchase command / step text.
+ */
+function substitutePlaceholders(text, { product, auth }) {
+  if (typeof text !== "string") return text;
+  const botUsername = auth.botUsername || "";
+  const productName = product.name || "";
+  const supplierProductId = product.supplierProductId || "";
+  return text
+    .replace(/\{\{productName\}\}/g, productName)
+    .replace(/\{\{supplierProductId\}\}/g, supplierProductId)
+    .replace(/\{\{botUsername\}\}/g, botUsername);
+}
+
+function substituteSteps(steps, { product, auth }) {
+  if (!Array.isArray(steps)) return steps;
+  return steps.map((step) => ({
+    ...step,
+    text: substitutePlaceholders(step.text, { product, auth }),
+  }));
+}
+
+/**
+ * Story 2-38.2: purchase a product from the supplier bot and return delivery payload.
+ */
+export async function purchaseProduct(source, auth, product, opts = {}) {
+  const relayUrl = resolveRelayUrl(auth);
+  if (!relayUrl) {
+    return { ok: false, error: "relayUrl not configured" };
+  }
+  const relayToken = resolveRelayToken(auth);
+  if (!relayToken) {
+    return { ok: false, error: "relayToken not configured" };
+  }
+  const vndPerCredit = positiveNumber(auth.vndPerCredit);
+  if (!vndPerCredit) {
+    return { ok: false, error: "vndPerCredit missing or invalid" };
+  }
+
+  const botUsername = auth.botUsername;
+  const isInteractive = Array.isArray(auth.purchaseSteps) && auth.purchaseSteps.length > 0;
+  if (!isInteractive && !auth.purchaseCommand) {
+    return { ok: false, error: "purchaseCommand or purchaseSteps missing in source config" };
+  }
+
+  const relayBody = isInteractive
+    ? {
+        botUsername,
+        steps: substituteSteps(auth.purchaseSteps, { product, auth }),
+        collect: auth.purchaseCollect,
+      }
+    : {
+        botUsername,
+        command: substitutePlaceholders(auth.purchaseCommand, { product, auth }),
+      };
+
+  const parsedFlow = validateRelayRequest(relayBody);
+  const relayBudgetMs = parsedFlow.ok ? flowTimeoutMs(parsedFlow.value) : TIMEOUT_MS;
+  const timeoutMs = Math.max(TIMEOUT_MS, relayBudgetMs) + TIMEOUT_MARGIN_MS;
+
+  try {
+    const res = await postToRelay(relayUrl, {
+      body: JSON.stringify(relayBody),
+      token: relayToken,
+    }, timeoutMs);
+
+    if (!res.ok) {
+      throw new Error(`Relay HTTP ${res.status}: ${res.text.slice(0, 200)}`);
+    }
+
+    let data;
+    try {
+      data = JSON.parse(res.text);
+    } catch {
+      throw new Error(`Relay returned non-JSON response: ${res.text.slice(0, 200)}`);
+    }
+    if (!data.ok) throw new Error(data.error || "Relay returned not-ok");
+
+    const messagesText = Array.isArray(data.messages) ? data.messages.join("\n") : "";
+    if (!messagesText.trim()) {
+      return { ok: false, error: "Relay returned empty messages" };
+    }
+
+    const deliveryType = looksLikeCredential(messagesText) ? "credential" : "text";
+    return {
+      ok: true,
+      supplierOrderId: opts.orderId || null,
+      delivery: { type: deliveryType, payload: messagesText },
+    };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+function looksLikeCredential(text) {
+  const t = text.toLowerCase();
+  const patterns = [
+    /tài khoản|username|user name/i,
+    /mật khẩu|password|pass/i,
+  ];
+  return patterns.some((re) => re.test(t));
 }
 
 // Strip a leading emoji/symbol marker (📦, 👑, 🔥, ...) from a product name line —

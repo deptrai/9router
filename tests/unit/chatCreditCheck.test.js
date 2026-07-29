@@ -4,6 +4,10 @@
 // The actual insertion point is verified via code inspection + the checkCredits tests.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 // Test the credit check admission decision logic directly
 // (simulates what chat.js does after inserting checkCredits)
@@ -105,8 +109,7 @@ describe("credit admission — chat.js integration pattern", () => {
 describe("chat.js source — checkCredits import", () => {
   it("chat.js imports checkCredits from @/lib/billing/checkCredits.js", async () => {
     const fs = await import("node:fs");
-    const path = await import("node:path");
-    const chatPath = path.default.resolve("/Users/luisphan/Documents/9router/src/sse/handlers/chat.js");
+    const chatPath = path.resolve(repoRoot, "src/sse/handlers/chat.js");
     const content = fs.default.readFileSync(chatPath, "utf8");
 
     expect(content).toContain("checkCredits");

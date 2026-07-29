@@ -27,6 +27,7 @@ vi.mock("@/lib/telegram/botClient.js", () => ({
 
 let tempDir;
 const origDataDir = process.env.DATA_DIR;
+const origBaseUrl = process.env.BASE_URL;
 const origBotToken = process.env.TELEGRAM_BOT_TOKEN;
 const origWebhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
 
@@ -43,6 +44,8 @@ afterEach(() => {
   try { global._dbAdapter?.instance?.close?.(); } catch {}
   delete global._dbAdapter;
   if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+  if (origBaseUrl === undefined) delete process.env.BASE_URL;
+  else process.env.BASE_URL = origBaseUrl;
   if (origDataDir === undefined) delete process.env.DATA_DIR;
   else process.env.DATA_DIR = origDataDir;
   if (origBotToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
@@ -219,19 +222,15 @@ describe("handleUpdate /start — AC1 user linking", () => {
   });
 });
 
-// ── handleUpdate /products — AC2 active filter + AC3 error fallback ───────────
+// ── handleUpdate /products — Mini App button + AC3 error fallback ─────────────
 
-describe("handleUpdate /products — AC2 active filter + AC3 error fallback", () => {
+describe("handleUpdate /products — Mini App button + AC3 error fallback", () => {
   function productsUpdate(chatId = 999) {
     return { message: { text: "/products", from: { id: chatId }, chat: { id: chatId } } };
   }
 
-  it("chỉ hiển thị product active; hết hàng → không có nút mua", async () => {
-    const { createProduct } = await import("@/lib/db/repos/productsRepo.js");
-    await createProduct({ kind: "plan", name: "Active No Stock", priceCredits: 5, deliveryMode: "instant", stock: 0 });
-    await createProduct({ kind: "service", name: "Inactive", priceCredits: 3, deliveryMode: "admin_fulfill", isActive: false });
-    await createProduct({ kind: "api_package", name: "Active In Stock", priceCredits: 8, deliveryMode: "instant", stock: 10 });
-
+  it("gửi một tin nhắn với web_app button mở Mini App", async () => {
+    process.env.BASE_URL = "https://test.example.com";
     const { handleUpdate } = await import("@/lib/telegram/router.js");
     const { sendMessage } = await import("@/lib/telegram/botClient.js");
     vi.mocked(sendMessage).mockClear();
@@ -239,39 +238,79 @@ describe("handleUpdate /products — AC2 active filter + AC3 error fallback", ()
     await handleUpdate(productsUpdate());
 
     const calls = vi.mocked(sendMessage).mock.calls;
-    // 2 active products + 1 "back to menu" message → 3 sendMessage calls
-    expect(calls.length).toBe(3);
-
-    // "Active No Stock" (stock=0) → không có nút mua
-    const noStockCall = calls.find((c) => c[1].includes("Active No Stock"));
-    expect(noStockCall).toBeTruthy();
-    expect(noStockCall[2]?.reply_markup).toBeUndefined();
-
-    // "Active In Stock" (stock=10) → có nút mua
-    const inStockCall = calls.find((c) => c[1].includes("Active In Stock"));
-    expect(inStockCall).toBeTruthy();
-    expect(inStockCall[2]?.reply_markup?.inline_keyboard).toBeTruthy();
+    expect(calls.length).toBe(1);
+    const [chatId, text, opts] = calls[0];
+    expect(chatId).toBe(999);
+    expect(text).toMatch(/Mở cửa hàng/);
+    expect(opts?.reply_markup?.inline_keyboard).toBeTruthy();
+    const buttons = opts.reply_markup.inline_keyboard.flat();
+    const webAppBtn = buttons.find((b) => b.web_app);
+    expect(webAppBtn).toBeTruthy();
+    expect(webAppBtn.web_app.url).toBe("https://test.example.com/telegram/store");
   });
 
-  it("AC3: lỗi trong listActiveProducts → message ngắn, không leak stack", async () => {
-    const productsRepo = await import("@/lib/db/repos/productsRepo.js");
-    vi.spyOn(productsRepo, "listActiveProducts").mockRejectedValue(
-      new Error("DB connection lost\n    at Object.<anonymous> (/secret/path.js:42:10)")
-    );
-
+  it("menu chính có nút Sản phẩm mở Mini App", async () => {
+    process.env.BASE_URL = "https://test.example.com";
     const { handleUpdate } = await import("@/lib/telegram/router.js");
     const { sendMessage } = await import("@/lib/telegram/botClient.js");
+    vi.mocked(sendMessage).mockClear();
+
+    await handleUpdate({ message: { text: "/start", from: { id: 333 }, chat: { id: 333 } } });
+
+    const calls = vi.mocked(sendMessage).mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    const keyboard = calls[0][2]?.reply_markup?.keyboard;
+    expect(keyboard).toBeTruthy();
+    const allButtons = keyboard.flat();
+    const productBtn = allButtons.find((b) => b.text === "🛍 Sản phẩm");
+    expect(productBtn).toBeTruthy();
+    expect(productBtn.web_app).toBeTruthy();
+    expect(productBtn.web_app.url).toBe("https://test.example.com/telegram/store");
+  });
+
+  it("web_app_data action=buy gọi handleBuyConfirm", async () => {
+    const { handleUpdate } = await import("@/lib/telegram/router.js");
+    const { sendMessage } = await import("@/lib/telegram/botClient.js");
+    const { createProduct, getProductById } = await import("@/lib/db/repos/productsRepo.js");
+    const product = await createProduct({
+      kind: "plan",
+      name: "Test Product",
+      priceCredits: 10,
+      deliveryMode: "instant",
+      stock: 5,
+    });
+    vi.mocked(sendMessage).mockClear();
+
+    const productId = product.id;
+    await handleUpdate({
+      message: {
+        web_app_data: { data: JSON.stringify({ action: "buy", productId }) },
+        from: { id: 333 },
+        chat: { id: 333 },
+      },
+    });
+
+    const calls = vi.mocked(sendMessage).mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls[0][1]).toMatch(/Test Product/);
+    expect(calls[0][2]?.reply_markup?.inline_keyboard).toBeTruthy();
+  });
+
+  it("AC3: lỗi khi gửi tin nhắn → message ngắn, không leak stack", async () => {
+    const { handleUpdate } = await import("@/lib/telegram/router.js");
+    const { sendMessage } = await import("@/lib/telegram/botClient.js");
+    vi.mocked(sendMessage)
+      .mockRejectedValueOnce(new Error("DB connection lost\n    at Object.<anonymous> (/secret/path.js:42:10)"))
+      .mockResolvedValueOnce({ ok: true });
 
     await handleUpdate(productsUpdate());
 
     const calls = vi.mocked(sendMessage).mock.calls;
     expect(calls.length).toBeGreaterThan(0);
     const errorMsg = calls[calls.length - 1][1];
-    // Không leak stack trace (AC3)
     expect(errorMsg).not.toMatch(/DB connection lost/);
     expect(errorMsg).not.toMatch(/at Object/);
     expect(errorMsg).not.toMatch(/secret\/path/);
-    // Gợi ý /support
     expect(errorMsg).toMatch(/support/i);
   });
 });

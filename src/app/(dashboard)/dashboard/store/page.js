@@ -175,6 +175,23 @@ export default function StorePage() {
     } catch { setError("Network error"); }
   };
 
+  const publishAllInGroup = async (groupId) => {
+    if (!confirm("Publish tất cả variants trong group này?")) return;
+    try {
+      const res = await fetch("/api/store/admin/products/publish-group", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groupId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Failed to publish group");
+      } else {
+        await loadProducts();
+      }
+    } catch { setError("Network error"); }
+  };
+
   const deleteProduct = async (id) => {
     if (!confirm("Xóa sản phẩm này?")) return;
     try {
@@ -223,6 +240,76 @@ export default function StorePage() {
     } catch { setError("Network error"); }
     setPurchasing(false);
   };
+
+  const productRow = (p) => (
+    <div className="p-3 rounded-lg border border-border-subtle bg-surface-1/50">
+      <div className="flex items-center gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-text-main text-sm truncate">{p.name}</span>
+            <span className={`px-2 py-0.5 rounded text-xs font-medium ${p.isActive ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-500"}`}>
+              {p.isActive ? "Active" : "Inactive"}
+            </span>
+            {p.source !== "local" && (
+              <>
+                <span className={`px-2 py-0.5 rounded text-xs font-medium ${p.isPublished ? "bg-blue-500/10 text-blue-600" : "bg-yellow-500/10 text-yellow-600"}`}>
+                  {p.isPublished ? "Published" : "Draft"}
+                </span>
+                <span className="px-2 py-0.5 rounded text-xs bg-blue-500/10 text-blue-600">external</span>
+              </>
+            )}
+            <span className="px-2 py-0.5 rounded text-xs bg-surface-2 text-text-muted">{p.kind}</span>
+          </div>
+          <div className="text-xs text-text-muted mt-1">
+            {(p.priceCredits ?? 0).toLocaleString()} credits
+            {p.supplierPrice !== null && ` (Supplier: ${p.supplierPrice} credits)`}
+            {` · ${p.deliveryMode}`}
+            {p.stock !== null && ` · stock: ${p.stock}`}
+            {p.description && ` · ${p.description}`}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {p.source !== "local" && (
+            <button
+              onClick={() => publishAction(p.id, !p.isPublished)}
+              className={`px-2 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                p.isPublished
+                  ? "border-yellow-500/20 text-yellow-600 hover:bg-yellow-500/10"
+                  : "border-green-500/20 text-green-600 hover:bg-green-500/10"
+              }`}
+              title={p.isPublished ? "Unpublish (Hạ xuống)" : "Publish (Duyệt bán)"}
+            >
+              {p.isPublished ? "Unpublish" : "Publish"}
+            </button>
+          )}
+
+          <button
+            onClick={() => startEdit(p)}
+            className="p-1.5 rounded-lg hover:bg-surface-2 text-text-muted hover:text-text-main transition-colors"
+            title="Edit (Sửa)"
+          >
+            <span className="material-symbols-outlined text-[18px]">edit</span>
+          </button>
+
+          <button
+            onClick={() => toggleProduct(p.id, p.isActive)}
+            className="p-1.5 rounded-lg hover:bg-surface-2 text-text-muted hover:text-text-main transition-colors"
+            title={p.isActive ? "Deactivate" : "Activate"}
+          >
+            <span className="material-symbols-outlined text-[18px]">{p.isActive ? "toggle_on" : "toggle_off"}</span>
+          </button>
+
+          <button
+            onClick={() => deleteProduct(p.id)}
+            className="p-1.5 rounded-lg hover:bg-red-500/10 text-text-muted hover:text-red-500 transition-colors"
+            title="Delete"
+          >
+            <span className="material-symbols-outlined text-[18px]">delete</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 
   if (role === null) return <div className="p-6"><div className="h-8 rounded bg-surface-2 animate-pulse w-48" /></div>;
 
@@ -474,79 +561,57 @@ export default function StorePage() {
               })}
             </div>
           ) : (
-            /* Admin list view */
-            <div className="space-y-2">
-              {products.map((p) => (
-                <Card key={p.id}>
-                  <div className="p-4 flex items-center gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-text-main text-sm truncate">{p.name}</span>
-                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${p.isActive ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-500"}`}>
-                          {p.isActive ? "Active" : "Inactive"}
-                        </span>
-                        {p.source !== "local" && (
-                          <>
-                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${p.isPublished ? "bg-blue-500/10 text-blue-600" : "bg-yellow-500/10 text-yellow-600"}`}>
-                              {p.isPublished ? "Published" : "Draft"}
-                            </span>
-                            <span className="px-2 py-0.5 rounded text-xs bg-blue-500/10 text-blue-600">external</span>
-                          </>
-                        )}
-                        <span className="px-2 py-0.5 rounded text-xs bg-surface-2 text-text-muted">{p.kind}</span>
+            /* Admin list view — grouped by productGroupId */
+            <div className="space-y-4">
+              {(() => {
+                const groups = new Map();
+                for (const p of products) {
+                  const key = p.productGroupId || p.id;
+                  if (!groups.has(key)) groups.set(key, { key, products: [] });
+                  groups.get(key).products.push(p);
+                }
+                return Array.from(groups.values()).map((g) => {
+                  const externalVariants = g.products.filter((p) => p.source !== "local");
+                  const allPublished = externalVariants.length > 0 && externalVariants.every((p) => p.isPublished);
+                  const hasGroup = g.products.some((p) => p.productGroupId);
+                  return (
+                    <Card key={g.key}>
+                      <div className="p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="font-semibold text-text-main text-sm">
+                              {g.products[0]?.name}
+                              {g.products.length > 1 && (
+                                <span className="ml-2 text-xs text-text-muted">
+                                  ({g.products.length} variant{g.products.length > 1 ? "s" : ""})
+                                </span>
+                              )}
+                            </div>
+                            {hasGroup && <div className="text-xs text-text-muted font-mono">group: {g.key}</div>}
+                          </div>
+                          {externalVariants.length > 0 && (
+                            <button
+                              onClick={() => publishAllInGroup(g.key)}
+                              disabled={allPublished}
+                              className={`px-2 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                                allPublished
+                                  ? "border-gray-500/20 text-gray-500 cursor-not-allowed"
+                                  : "border-green-500/20 text-green-600 hover:bg-green-500/10"
+                              }`}
+                              title="Publish all variants in group"
+                            >
+                              {allPublished ? "All Published" : "Publish all variants"}
+                            </button>
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          {g.products.map((p) => <div key={p.id}>{productRow(p)}</div>)}
+                        </div>
                       </div>
-                      <div className="text-xs text-text-muted mt-1">
-                        {(p.priceCredits ?? 0).toLocaleString()} credits
-                        {p.supplierPrice !== null && ` (Supplier: ${p.supplierPrice} credits)`}
-                        {` · ${p.deliveryMode}`}
-                        {p.stock !== null && ` · stock: ${p.stock}`}
-                        {p.description && ` · ${p.description}`}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {/* Publish / Unpublish action for external products */}
-                      {p.source !== "local" && (
-                        <button
-                          onClick={() => publishAction(p.id, !p.isPublished)}
-                          className={`px-2 py-1 rounded-lg text-xs font-medium border transition-colors ${
-                            p.isPublished
-                              ? "border-yellow-500/20 text-yellow-600 hover:bg-yellow-500/10"
-                              : "border-green-500/20 text-green-600 hover:bg-green-500/10"
-                          }`}
-                          title={p.isPublished ? "Unpublish (Hạ xuống)" : "Publish (Duyệt bán)"}
-                        >
-                          {p.isPublished ? "Unpublish" : "Publish"}
-                        </button>
-                      )}
-
-                      {/* Edit button */}
-                      <button
-                        onClick={() => startEdit(p)}
-                        className="p-1.5 rounded-lg hover:bg-surface-2 text-text-muted hover:text-text-main transition-colors"
-                        title="Edit (Sửa)"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">edit</span>
-                      </button>
-
-                      <button
-                        onClick={() => toggleProduct(p.id, p.isActive)}
-                        className="p-1.5 rounded-lg hover:bg-surface-2 text-text-muted hover:text-text-main transition-colors"
-                        title={p.isActive ? "Deactivate" : "Activate"}
-                      >
-                        <span className="material-symbols-outlined text-[18px]">{p.isActive ? "toggle_on" : "toggle_off"}</span>
-                      </button>
-
-                      <button
-                        onClick={() => deleteProduct(p.id)}
-                        className="p-1.5 rounded-lg hover:bg-red-500/10 text-text-muted hover:text-red-500 transition-colors"
-                        title="Delete"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">delete</span>
-                      </button>
-                    </div>
-                  </div>
-                </Card>
-              ))}
+                    </Card>
+                  );
+                });
+              })()}
             </div>
           )}
         </div>

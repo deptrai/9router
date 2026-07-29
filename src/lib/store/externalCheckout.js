@@ -14,6 +14,7 @@ import { setOrderNoteSync } from "../db/repos/ordersRepo.js";
 import { storeCheckout } from "./storeCheckout.js";
 import { EXTERNAL_SOURCE } from "./catalogSync.js";
 import { PAYMENT_MODES, DEFAULT_PAYMENT_MODE } from "./constants.js";
+import { processAutoPurchase } from "./purchaseWorker.js";
 
 export class ExternalCheckoutError extends Error {
   constructor(code, message) {
@@ -132,7 +133,7 @@ export async function externalCheckout(
     );
   }
 
-  // ── 4. Margin guard (AC2 + QĐ5) — only for proxy_checkout path ──
+  // ── 4. Margin guard (AC2 + QĐ5) — required for proxy_checkout and auto_fulfill ──
   // a) retailPrice must be set and strictly > supplierPrice (positive margin)
   if (
     product.retailPrice == null ||
@@ -152,7 +153,7 @@ export async function externalCheckout(
     );
   }
 
-  // ── proxy_checkout path ──
+  // ── proxy_checkout / auto_fulfill path ──
   // Delegate to storeCheckout (unchanged — QĐ8).
   // storeCheckout handles: idempotency recheck, balance gate, credit debit, order insert.
   const checkoutResult = await storeCheckout(userId, productId, {
@@ -168,6 +169,10 @@ export async function externalCheckout(
   // AC5: idempotent — recheck existing before insert; if already present, return existing.
   // Orphan-recovery: storeCheckout already committed (money taken); we MUST not silently
   // swallow insert failures — flag order.note for reconciliation sweep (2.34).
+  const lockTs = paymentMode === "auto_fulfill"
+    ? new Date(Date.now() + 5 * 60 * 1000).toISOString()
+    : null;
+
   let supplierOrder = null;
   try {
     adapter.transaction(() => {
@@ -184,9 +189,21 @@ export async function externalCheckout(
         supplierPrice: product.supplierPrice,
         retailPrice: product.retailPrice,
         expectedMargin: product.retailPrice - product.supplierPrice,
+        supplierStatus: paymentMode === "auto_fulfill" ? "purchasing" : null,
+        purchaseLockExpiresAt: lockTs,
         now: ts,
       });
     });
+
+    // Story 2-38.2: auto_fulfill purchase is asynchronous; kick off the worker
+    // without awaiting so the checkout response returns immediately.
+    if (paymentMode === "auto_fulfill" && supplierOrder) {
+      setTimeout(() => {
+        processAutoPurchase(orderId).catch((err) => {
+          console.error(`[externalCheckout] auto_purchase failed for ${orderId}:`, err);
+        });
+      }, 0);
+    }
   } catch (err) {
     // Money is already taken — do NOT refund. Flag order for reconciliation.
     console.error(

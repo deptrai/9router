@@ -37,6 +37,10 @@ function rowToProduct(row) {
     retailPrice: row.retailPrice ?? null,
     expectedMargin: row.expectedMargin ?? null,
     isPublished: row.isPublished === 1 || row.isPublished === true,
+    // Story 2-38.2: product group for multi-supplier aggregation
+    productGroupId: row.productGroupId ?? null,
+    variantCount: row.variantCount ?? null,
+    bestSupplierName: row.bestSupplierName ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -59,14 +63,92 @@ function rowToProduct(row) {
  */
 export async function listActiveProducts() {
   const db = await getAdapter();
+  // Story 2-38.2: group by productGroupId (or id for local/un-grouped) and pick
+  // the active variant. Prefer in-stock (stock > 0 or unlimited), then lowest
+  // priceCredits, then supplierPrice, then id. Returns the representative product
+  // + variantCount. We do NOT drop out-of-stock products here — the public
+  // catalog and Telegram /products still need to show them, disabling the buy
+  // button in the UI (Story 2.25 AC2).
   const rows = db.all(
-    `SELECT p.* FROM products p
-     LEFT JOIN supplierSources s ON s.id = p.supplierSourceId
-     WHERE p.isActive = 1
-       AND (s.id IS NULL OR s.status != 'unhealthy')
-     ORDER BY p.name ASC`
+    `
+    WITH active AS (
+      SELECT p.*, s.name AS supplierName,
+             COALESCE(p.productGroupId, p.id) AS groupKey
+      FROM products p
+      LEFT JOIN supplierSources s ON s.id = p.supplierSourceId
+      WHERE p.isActive = 1
+        AND (s.id IS NULL OR s.status != 'unhealthy')
+    ),
+    ranked AS (
+      SELECT a.*,
+             COUNT(*) OVER (PARTITION BY a.groupKey) AS variantCount,
+             ROW_NUMBER() OVER (
+               PARTITION BY a.groupKey
+               ORDER BY CASE WHEN a.stock IS NULL OR a.stock > 0 THEN 0 ELSE 1 END ASC,
+                        a.priceCredits ASC,
+                        CASE WHEN a.supplierPrice IS NULL THEN 1 ELSE 0 END ASC,
+                        a.supplierPrice ASC,
+                        a.id ASC
+             ) AS r
+      FROM active a
+    )
+    SELECT r.*, r.supplierName AS bestSupplierName
+    FROM ranked r
+    WHERE r.r = 1
+    ORDER BY r.name ASC
+    `
   );
   return rows.map(rowToProduct);
+}
+
+/**
+ * Story 2-38.2: list all active/published variants in a product group that are
+ * in stock and from a healthy source. Sorted by supplierPrice (cost) ascending,
+ * then priceCredits, then id. Caller can filter by paidPrice and payment mode.
+ */
+export async function listProductGroupVariants(groupId) {
+  if (!groupId) return [];
+  const db = await getAdapter();
+  const rows = db.all(
+    `
+    SELECT p.*, s.name AS supplierName, s.status AS supplierStatus,
+           s.paymentMode AS sourcePaymentMode, s.adapterType AS adapterType
+    FROM products p
+    LEFT JOIN supplierSources s ON s.id = p.supplierSourceId
+    WHERE p.productGroupId = ?
+      AND p.isActive = 1
+      AND p.isPublished = 1
+      AND (s.id IS NULL OR s.status != 'unhealthy')
+      AND (p.stock IS NULL OR p.stock > 0)
+    ORDER BY CASE WHEN p.supplierPrice IS NULL THEN 1 ELSE 0 END ASC,
+             p.supplierPrice ASC,
+             p.priceCredits ASC,
+             p.id ASC
+    `,
+    [groupId]
+  );
+  return rows.map(rowToProduct);
+}
+
+/**
+ * Story 2-38.2: count active in-stock variants in a product group.
+ */
+export async function countGroupVariants(groupId) {
+  if (!groupId) return 0;
+  const db = await getAdapter();
+  const row = db.get(
+    `
+    SELECT COUNT(*) AS c
+    FROM products p
+    LEFT JOIN supplierSources s ON s.id = p.supplierSourceId
+    WHERE p.productGroupId = ?
+      AND p.isActive = 1
+      AND (s.id IS NULL OR s.status != 'unhealthy')
+      AND (p.stock IS NULL OR p.stock > 0)
+    `,
+    [groupId]
+  );
+  return row?.c ?? 0;
 }
 
 /**

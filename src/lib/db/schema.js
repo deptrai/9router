@@ -300,6 +300,8 @@ export const TABLES = {
       isPublished: "INTEGER DEFAULT 0",  // 1 = admin published; invariant isPublished=1 ⇒ isActive=1
       // Story 2.32: per-product payment mode override (null = use supplierSources.paymentMode default)
       paymentModeOverride: "TEXT",
+      // Story 2-38.2: product group for multi-supplier aggregation (hash of normalized name)
+      productGroupId: "TEXT",
       createdAt: "TEXT NOT NULL",
       updatedAt: "TEXT NOT NULL",
     },
@@ -307,6 +309,7 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_products_active ON products(isActive)",
       "CREATE INDEX IF NOT EXISTS idx_products_source ON products(source)",
       "CREATE INDEX IF NOT EXISTS idx_products_supplier ON products(supplierSourceId, supplierProductId)",
+      "CREATE INDEX IF NOT EXISTS idx_products_group ON products(productGroupId)",
     ],
   },
 
@@ -505,12 +508,35 @@ export const TABLES = {
       retailPrice: "REAL",                   // snapshot retail price at checkout (audit)
       expectedMargin: "REAL",               // snapshot retailPrice - supplierPrice
       supplierStatus: "TEXT",               // raw supplier-side status (for 2.33 sync)
+      // Story 2-38.2: lock timestamp to prevent concurrent/duplicate purchase attempts
+      purchaseLockExpiresAt: "TEXT",
       createdAt: "TEXT NOT NULL",
       updatedAt: "TEXT NOT NULL",
     },
     indexes: [
       "CREATE INDEX IF NOT EXISTS idx_supplier_order_order ON supplierOrders(orderId)",
       "CREATE INDEX IF NOT EXISTS idx_supplier_order_source ON supplierOrders(supplierSourceId)",
+      "CREATE INDEX IF NOT EXISTS idx_supplier_order_status ON supplierOrders(supplierStatus, purchaseLockExpiresAt)",
+    ],
+  },
+
+  // Story 2-38.2: audit trail of fallback attempts for auto_fulfill orders.
+  // One row per supplier attempted for a given order.
+  supplierOrderAttempts: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      orderId: "TEXT NOT NULL",             // FK-less ref orders.id
+      supplierSourceId: "TEXT NOT NULL",    // FK-less ref supplierSources.id
+      supplierProductId: "TEXT",            // snapshot products.supplierProductId
+      supplierPrice: "REAL",                // snapshot supplier price at attempt
+      attemptIndex: "INTEGER NOT NULL DEFAULT 0",
+      status: "TEXT NOT NULL",              // attempting|success|failed
+      error: "TEXT",                        // error note when failed
+      createdAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_supplier_attempts_order ON supplierOrderAttempts(orderId)",
+      "CREATE INDEX IF NOT EXISTS idx_supplier_attempts_supplier ON supplierOrderAttempts(supplierSourceId)",
     ],
   },
 };

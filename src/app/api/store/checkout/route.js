@@ -52,16 +52,20 @@ export async function POST(request) {
     const isExternal = product.source === EXTERNAL_SOURCE;
 
     if (isExternal) {
-      const { order, alreadyProcessed } = await externalCheckout(
+      const { order, alreadyProcessed, paymentMode } = await externalCheckout(
         session.userId,
         productId,
         { quantity, idempotencyKey }
       );
+      const message = paymentMode === "auto_fulfill"
+        ? "Đã thanh toán, đang tìm supplier tự động..."
+        : "Đơn hàng đã được tạo. Đang xử lý với nhà cung cấp.";
       return NextResponse.json({
         success: true,
         order,
         alreadyProcessed,
-        message: "Đơn hàng đã được tạo. Đang xử lý với nhà cung cấp.",
+        paymentMode,
+        message,
       });
     }
 

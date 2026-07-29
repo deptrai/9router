@@ -15,8 +15,19 @@ import { listActiveProducts } from "@/lib/db/repos/productsRepo.js";
 export async function GET() {
   try {
     const products = await listActiveProducts();
+    const publicProducts = products.map((p) => ({
+      id: p.id,
+      kind: p.kind,
+      name: p.name,
+      description: p.description,
+      priceCredits: p.priceCredits,
+      deliveryMode: p.deliveryMode,
+      stock: p.stock,
+      variantCount: p.variantCount,
+      bestSupplierName: p.bestSupplierName ?? undefined,
+    }));
     return NextResponse.json(
-      { products },
+      { products: publicProducts },
       {
         headers: {
           "Cache-Control": "public, max-age=30, stale-while-revalidate=60",

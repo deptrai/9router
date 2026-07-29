@@ -168,6 +168,37 @@ export async function unpublishProduct(productId) {
 }
 
 /**
+ * Story 2-38.2: publish every variant in a product group at once.
+ * For each external product in the group: apply the applicable markup rule,
+ * then set isPublished=1 + isActive=1. Returns count of published variants.
+ */
+export async function publishAllVariantsInGroup(groupId) {
+  if (!groupId) throw new Error("publishAllVariantsInGroup: groupId bắt buộc");
+  const adapter = await getAdapter();
+  const rows = adapter.all(
+    `SELECT * FROM products WHERE productGroupId = ? AND source = ?`,
+    [groupId, EXTERNAL_SOURCE]
+  );
+  const now = new Date().toISOString();
+  let published = 0;
+  for (const product of rows) {
+    if (product.supplierPrice == null) continue;
+    const rule = findApplicableRule(adapter, product.id, product.supplierSourceId);
+    if (rule && product.retailPrice == null) {
+      applyMarkupWithAdapter(product.id, adapter, true);
+    }
+    const after = adapter.get(`SELECT * FROM products WHERE id = ?`, [product.id]);
+    if (after.retailPrice == null || after.retailPrice <= 0) continue;
+    adapter.run(
+      `UPDATE products SET isPublished=1, isActive=1, updatedAt=? WHERE id=?`,
+      [now, product.id]
+    );
+    published += 1;
+  }
+  return { published };
+}
+
+/**
  * Safe price for catalog display — prefers retailPrice (markup applied),
  * falls back to priceCredits (raw supplier price for unpriced products).
  *

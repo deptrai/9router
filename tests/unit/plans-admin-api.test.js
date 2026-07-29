@@ -1,7 +1,10 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 let tempDir;
 const originalDataDir = process.env.DATA_DIR;
@@ -148,8 +151,7 @@ describe("/api/plans admin CRUD", () => {
   });
 
   it("dashboard plans page labels per-model limits as enforced", async () => {
-    const fs = await import("node:fs");
-    const content = fs.readFileSync("/Users/luisphan/Documents/9router/src/app/(dashboard)/dashboard/plans/page.js", "utf8");
+    const content = fs.readFileSync(path.resolve(repoRoot, "src/app/(dashboard)/dashboard/plans/page.js"), "utf8");
     expect(content).not.toContain("not enforced yet");
     expect(content).toContain("canonical model");
     expect(content).toContain("enforced");

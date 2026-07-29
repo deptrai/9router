@@ -49,7 +49,7 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual, randomUUID } from "node:crypto";
 import { runInteraction, validateRelayRequest } from "../src/lib/telegram/relayCore.js";
 
 const PORT = Number(process.env.RELAY_PORT || 3800);
@@ -69,6 +69,16 @@ const LOGIN_MODE = process.argv.includes("--login");
 
 let accounts = [];
 let rotationIndex = 0;
+const pendingLogins = new Map();
+
+const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
+
+async function createClientFromSession(sessionString = "") {
+  const { TelegramClient } = await import("telegram");
+  const { StringSession } = await import("telegram/sessions/index.js");
+  const session = new StringSession(sessionString || "");
+  return new TelegramClient(session, API_ID, API_HASH, { connectionRetries: 3 });
+}
 
 /** Mask a phone for logs/responses — the phone is both PII and an account identifier. */
 function maskPhone(phone) {
@@ -218,10 +228,7 @@ function markUnhealthy(account, reason) {
 }
 
 async function createClient(account) {
-  const { TelegramClient } = await import("telegram");
-  const { StringSession } = await import("telegram/sessions/index.js");
-  const session = new StringSession(account.session || "");
-  return new TelegramClient(session, API_ID, API_HASH, { connectionRetries: 3 });
+  return createClientFromSession(account.session);
 }
 
 /**
@@ -308,6 +315,82 @@ async function runLoginMode() {
   }
 }
 
+async function startLogin(phone) {
+  if (!phone || typeof phone !== "string") throw new Error("phone is required");
+  const client = await createClientFromSession("");
+  const loginId = randomUUID();
+  const state = {
+    phone,
+    client,
+    codePromise: null,
+    codeResolve: null,
+    startPromise: null,
+    createdAt: Date.now(),
+    timeout: null,
+  };
+  state.codePromise = new Promise((resolve, reject) => {
+    state.codeResolve = resolve;
+    state.codeReject = reject;
+  });
+  let codeSent = false;
+  state.getCode = () => {
+    if (codeSent) return Promise.reject(new Error("PHONE_CODE_INVALID"));
+    codeSent = true;
+    return state.codePromise;
+  };
+  state.timeout = setTimeout(() => {
+    state.codeReject?.(new Error("login timeout"));
+    try { client.disconnect().catch(() => {}); } catch {}
+    pendingLogins.delete(loginId);
+  }, LOGIN_TIMEOUT_MS);
+  state.timeout.unref?.();
+
+  state.startPromise = client.start({
+    phoneNumber: () => Promise.resolve(phone),
+    phoneCode: state.getCode,
+    password: () => Promise.reject(new Error("2FA password not supported in web login flow — use CLI --login")),
+    onError: (error) => console.error("[relay] login error:", error?.message),
+  });
+  state.startPromise
+    .then(async () => {
+      clearTimeout(state.timeout);
+    })
+    .catch(async (error) => {
+      clearTimeout(state.timeout);
+      console.error("[relay] login failed:", error?.message);
+      pendingLogins.delete(loginId);
+      try { await client.disconnect().catch(() => {}); } catch {}
+    });
+
+  pendingLogins.set(loginId, state);
+  return { loginId, phone: maskPhone(phone) };
+}
+
+async function verifyLogin(loginId, phoneCode) {
+  const state = pendingLogins.get(loginId);
+  if (!state) throw new Error("login not found or expired");
+  if (typeof phoneCode !== "string" || !phoneCode.trim()) throw new Error("phoneCode is required");
+  state.codeResolve(phoneCode.trim());
+  await state.startPromise;
+  const session = state.client.session.save();
+  const phone = state.phone;
+  try { await state.client.disconnect().catch(() => {}); } catch {}
+  pendingLogins.delete(loginId);
+  return { phone: maskPhone(phone), session };
+}
+
+async function relayInteractionWithSession(sessionString, request) {
+  const client = await createClientFromSession(sessionString);
+  try {
+    await client.connect();
+    const entity = await client.getEntity(request.botUsername);
+    const result = await runInteraction(client, entity, request, { pollIntervalMs: POLL_INTERVAL_MS });
+    return result;
+  } finally {
+    try { await client.disconnect().catch(() => {}); } catch {}
+  }
+}
+
 async function relayInteraction(account, request) {
   const client = await initClient(account);
   const entity = await client.getEntity(request.botUsername);
@@ -348,12 +431,33 @@ async function handleRelay(req, res) {
     return;
   }
 
+  // Request-scoped session lets the caller supply an MTProto session string directly.
+  // When present, we bypass the accounts file and create a one-off client.
+  const sessionOverride = typeof parsed.session === "string" ? parsed.session : null;
+  if (sessionOverride) {
+    delete parsed.session;
+  }
+
   const validation = validateRelayRequest(parsed);
   if (!validation.ok) {
     sendJson(res, 400, { ok: false, error: validation.error });
     return;
   }
   const request = validation.value;
+
+  if (sessionOverride) {
+    try {
+      const result = await relayInteractionWithSession(sessionOverride, request);
+      const response = { ok: true, messages: result.messages };
+      if (result.buttons) response.buttons = result.buttons;
+      sendJson(res, 200, response);
+      return;
+    } catch (error) {
+      const message = String(error?.message || "Relay interaction failed").slice(0, 500);
+      sendJson(res, 503, { ok: false, error: message });
+      return;
+    }
+  }
 
   const tried = new Set();
   let lastError = "All accounts unavailable";
@@ -395,14 +499,65 @@ async function handleRelay(req, res) {
   // loop replayed the entire send/press flow on another account — a real risk of pressing
   // a buy/confirm button twice for a single request.
   if (result) {
-    sendJson(res, 200, {
+    const response = {
       ok: true,
       messages: result.messages,
       account: maskPhone(usedAccount?.phone),
-    });
+    };
+    if (result.buttons) response.buttons = result.buttons;
+    sendJson(res, 200, response);
     return;
   }
   sendJson(res, 503, { ok: false, error: `All accounts failed: ${lastError}` });
+}
+
+async function handleLoginStart(req, res) {
+  const body = await readBody(req, res);
+  if (body === null) return;
+  let parsed;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    sendJson(res, 400, { ok: false, error: "Invalid JSON" });
+    return;
+  }
+  const phone = typeof parsed.phone === "string" ? parsed.phone.trim() : "";
+  if (!phone) {
+    sendJson(res, 422, { ok: false, error: "phone is required" });
+    return;
+  }
+  try {
+    const { loginId, phone: masked } = await startLogin(phone);
+    sendJson(res, 200, { ok: true, loginId, phone: masked });
+  } catch (error) {
+    const message = String(error?.message || "Login start failed").slice(0, 500);
+    sendJson(res, 500, { ok: false, error: message });
+  }
+}
+
+async function handleLoginVerify(req, res) {
+  const body = await readBody(req, res);
+  if (body === null) return;
+  let parsed;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    sendJson(res, 400, { ok: false, error: "Invalid JSON" });
+    return;
+  }
+  const loginId = typeof parsed.loginId === "string" ? parsed.loginId.trim() : "";
+  const phoneCode = typeof parsed.phoneCode === "string" ? parsed.phoneCode.trim() : "";
+  if (!loginId || !phoneCode) {
+    sendJson(res, 422, { ok: false, error: "loginId and phoneCode are required" });
+    return;
+  }
+  try {
+    const result = await verifyLogin(loginId, phoneCode);
+    sendJson(res, 200, { ok: true, ...result });
+  } catch (error) {
+    const message = String(error?.message || "Login verify failed").slice(0, 500);
+    sendJson(res, 500, { ok: false, error: message });
+  }
 }
 
 function handleHealth(res) {
@@ -430,6 +585,12 @@ function route(req, res) {
   }
   if (req.method === "POST" && req.url === "/relay") {
     return handleRelay(req, res);
+  }
+  if (req.method === "POST" && req.url === "/login/start") {
+    return handleLoginStart(req, res);
+  }
+  if (req.method === "POST" && req.url === "/login/verify") {
+    return handleLoginVerify(req, res);
   }
   sendJson(res, 404, { ok: false, error: "Not found" });
   return Promise.resolve();
@@ -474,7 +635,9 @@ if (LOGIN_MODE) {
       console.warn(`[relay] WARNING: bound to ${HOST} — relay is reachable beyond loopback. Ensure RELAY_AUTH_TOKEN is strong and the port is firewalled.`);
     }
     console.log("[relay] POST /relay → { botUsername, command } or { botUsername, steps, collect }");
+    console.log("[relay] POST /login/start → { phone }");
+    console.log("[relay] POST /login/verify → { loginId, phoneCode }");
     console.log("[relay] GET /health → account status");
-    console.log("[relay] Both endpoints require: Authorization: Bearer $RELAY_AUTH_TOKEN");
+    console.log("[relay] All endpoints require: Authorization: Bearer $RELAY_AUTH_TOKEN");
   });
 }

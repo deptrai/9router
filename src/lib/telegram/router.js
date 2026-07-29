@@ -12,9 +12,9 @@ function escapeHtml(str) {
 }
 
 import { getUserByTelegramId, createUser, updateUser, getUserByRefCode, getReferrals, getReferralCount } from "../db/repos/usersRepo.js";
-import { listActiveProducts, getProductById } from "../db/repos/productsRepo.js";
+import { getProductById } from "../db/repos/productsRepo.js";
 import { listOrdersByUser } from "../db/repos/ordersRepo.js";
-import { getDecryptedPayload, countAvailableCredentials, productHasInventory } from "../db/repos/credentialsRepo.js";
+import { getDecryptedPayload } from "../db/repos/credentialsRepo.js";
 import { storeCheckout, CheckoutError } from "../store/storeCheckout.js";
 import { externalCheckout, ExternalCheckoutError } from "../store/externalCheckout.js";
 import { EXTERNAL_SOURCE } from "../store/catalogSync.js";
@@ -23,16 +23,25 @@ import { getApiKeysByUser, createApiKey, updateApiKey } from "../db/repos/apiKey
 import { getPlanById } from "../db/repos/plansRepo.js";
 import { isConfigured as isVndConfigured, generateMemo, creditsToVnd, generateVietQRUrl, getBankInfo, getPaymentTimeoutMs } from "../payment/vndBank.js";
 
+function getStoreUrl() {
+  const baseUrl = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "https://router.chainlens.net";
+  return `${baseUrl}/telegram/store`;
+}
+
 // Persistent reply keyboard — luôn hiện ở bottom (như các bot shop khác)
-const PERSISTENT_MENU = {
-  keyboard: [
-    [{ text: "🛍 Sản phẩm" }, { text: "💰 Ví" }],
-    [{ text: "📦 Đơn hàng" }, { text: "🔑 API" }, { text: "🆘 Hỗ trợ" }],
-    [{ text: "👥 Giới thiệu" }],
-  ],
-  resize_keyboard: true,
-  is_persistent: true,
-};
+function buildPersistentMenu() {
+  return {
+    keyboard: [
+      [{ text: "🛍 Sản phẩm", web_app: { url: getStoreUrl() } }, { text: "💰 Ví" }],
+      [{ text: "📦 Đơn hàng" }, { text: "🔑 API" }, { text: "🆘 Hỗ trợ" }],
+      [{ text: "👥 Giới thiệu" }],
+    ],
+    resize_keyboard: true,
+    is_persistent: true,
+  };
+}
+
+const PERSISTENT_MENU = buildPersistentMenu();
 
 const BACK_TO_MENU_ROW = [{ text: "🏠 Menu", callback_data: "cmd:menu" }];
 
@@ -88,53 +97,20 @@ async function handleStart(update) {
 
 async function handleProducts(chatId) {
   try {
-    const products = await listActiveProducts();
-
-    if (!products.length) {
-      await sendMessage(chatId, "Hiện chưa có sản phẩm nào. Vui lòng thử lại sau.");
-      return;
-    }
-
-    for (const p of products) {
-      const isInstant = p.deliveryMode === "instant";
-
-      let buyable;
-      let stockText;
-
-      // D3 (QĐ1): inventory là nguồn chân lý CHỈ khi product thực sự có credential.
-      // Dùng productHasInventory thay vì product.kind để tránh credential product
-      // chưa seed bị kẹt ở nhánh inventory (luôn báo hết hàng).
-      if (isInstant && (await productHasInventory(p.id))) {
-        // D2: tồn kho lấy từ số credential `available`.
-        const available = await countAvailableCredentials(p.id);
-        buyable = available > 0;
-        stockText = buyable ? `${available}` : "⛔ Tạm hết hàng";
-      } else {
-        // Sản phẩm theo stock field (Story 2.26).
-        buyable = p.stock === null || p.stock > 0;
-        stockText = p.stock === null ? "Không giới hạn" : `${p.stock}`;
+    await sendMessage(
+      chatId,
+      "🛍 Mở cửa hàng bên dưới để xem danh sách sản phẩm:",
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🛒 Xem danh sách sản phẩm", web_app: { url: getStoreUrl() } }],
+            BACK_TO_MENU_ROW,
+          ],
+        },
       }
-
-      const lines = [
-        `<b>${p.name}</b>`,
-        p.description ? p.description : null,
-        `💰 Giá: <b>${p.priceCredits} credits</b>`,
-        `📦 Tồn kho: ${stockText}`,
-      ].filter(Boolean);
-
-      // Nút mua chỉ hiện khi còn hàng và product active (AC2)
-      const keyboard =
-        buyable && p.isActive
-          ? { inline_keyboard: [[{ text: "🛒 Mua ngay", callback_data: `buy:${p.id}` }]] }
-          : undefined;
-
-      await sendMessage(chatId, lines.join("\n"), keyboard ? { reply_markup: keyboard } : {});
-    }
-    // Sau danh sách sản phẩm, hiện nút quay về menu
-    await sendMessage(chatId, "⬆️ Chọn sản phẩm hoặc quay về menu:", { reply_markup: { inline_keyboard: [BACK_TO_MENU_ROW] } });
+    );
   } catch (e) {
     console.error("[telegram/router] /products lỗi:", e?.message);
-    // AC3: không leak stack — chỉ gửi thông báo ngắn gợi ý /support
     await sendMessage(
       chatId,
       "Có lỗi khi tải danh sách sản phẩm. Thử lại hoặc /support để được hỗ trợ."
@@ -846,6 +822,25 @@ export async function handleUpdate(update) {
         ).catch(() => {});
         return;
     }
+  }
+
+  // ── Xử lý Mini App data (web_app_data) ──
+  if (update.message?.web_app_data) {
+    const { chat } = update.message;
+    const chatId = chat?.id;
+    if (chatId) {
+      try {
+        const raw = update.message.web_app_data.data || "";
+        const data = raw ? JSON.parse(raw) : {};
+        if (data.action === "buy" && data.productId) {
+          await handleBuyConfirm(chatId, data.productId);
+          return;
+        }
+      } catch (e) {
+        console.error("[telegram/router] web_app_data lỗi:", e?.message);
+      }
+    }
+    return;
   }
 
   // ── Xử lý callback query (inline keyboard) ──

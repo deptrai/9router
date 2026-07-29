@@ -61,7 +61,7 @@ describe("GET /api/users/me/plans", () => {
     const other = await createPlan({ name: "other", priceCredits: 15, durationDays: 30, sortOrder: 2 });
     (await getAdapter()).run(
       `UPDATE users SET creditsBalance = ?, planId = ?, planExpiresAt = ? WHERE id = ?`,
-      [20, current.id, "2026-07-01T00:00:00.000Z", user.id]
+      [20, current.id, "2099-07-01T00:00:00.000Z", user.id]
     );
     mockSession = { role: "user", userId: user.id };
 

@@ -94,9 +94,10 @@ export async function createSupplierSource(data) {
 
   const adapter = getSupplierAdapter(data.adapterType);
   const auth = data.auth || {};
+  const paymentMode = data.paymentMode || "proxy_checkout";
   // Pass the resolved syncIntervalSec into validate() so adapters with a stricter minimum
   // (AC7/QĐ6) can reject before anything is written — validate() must throw, not clamp.
-  const validation = adapter.validate({ ...auth, syncIntervalSec });
+  const validation = adapter.validate({ ...auth, syncIntervalSec, paymentMode });
   // Hard reject only for non-unsupported config errors (AC1). `unsupported` → create + flag (AC2).
   if (!validation.ok && !validation.unsupported) {
     throw new Error(`createSupplierSource: invalid config — ${validation.reason}`);
@@ -117,15 +118,16 @@ export async function createSupplierSource(data) {
     lastSyncError: validation.unsupported ? validation.reason : null,
     syncVersion: 0,
     isActive: 1,
+    paymentMode,
     createdAt: now,
     updatedAt: now,
   };
   db.run(
-    `INSERT INTO supplierSources(id, name, adapterType, authEnc, syncMode, syncIntervalSec, status, lastSyncedAt, lastSyncError, syncVersion, isActive, createdAt, updatedAt)
-     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO supplierSources(id, name, adapterType, authEnc, syncMode, syncIntervalSec, status, lastSyncedAt, lastSyncError, syncVersion, isActive, paymentMode, createdAt, updatedAt)
+     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [source.id, source.name, source.adapterType, source.authEnc, source.syncMode,
      source.syncIntervalSec, source.status, source.lastSyncedAt, source.lastSyncError,
-     source.syncVersion, source.isActive, source.createdAt, source.updatedAt]
+     source.syncVersion, source.isActive, source.paymentMode, source.createdAt, source.updatedAt]
   );
   return maskSource(source);
 }
@@ -210,12 +212,13 @@ export async function updateSupplierSource(id, patch = {}) {
     ? { ...(authUnreadable ? {} : existingAuth), ...patch.auth }
     : existingAuth;
 
+  const paymentMode = patch.paymentMode || row.paymentMode || "proxy_checkout";
   if (authUnreadable && !hasAuthPatch) {
     // Nothing validatable. Let operational patches (name / isActive / syncMode / interval)
     // through so the source can be renamed or switched off, and surface the real cause.
     nextLastError = AUTH_DECRYPT_ERROR;
   } else {
-    const validation = adapter.validate({ ...mergedAuth, syncIntervalSec: nextSyncIntervalSec });
+    const validation = adapter.validate({ ...mergedAuth, syncIntervalSec: nextSyncIntervalSec, paymentMode });
     if (!validation.ok && !validation.unsupported) {
       throw new Error(`updateSupplierSource: invalid config — ${validation.reason}`);
     }
@@ -237,6 +240,7 @@ export async function updateSupplierSource(id, patch = {}) {
     syncMode: patch.syncMode ?? row.syncMode,
     syncIntervalSec: nextSyncIntervalSec,
     isActive: patch.isActive !== undefined ? (patch.isActive ? 1 : 0) : row.isActive,
+    paymentMode,
     authEnc: row.authEnc,
   };
   // Re-encrypt the MERGED config, so an omitted key keeps its stored value.
@@ -246,8 +250,8 @@ export async function updateSupplierSource(id, patch = {}) {
     next.authEnc = Object.keys(mergedAuth).length > 0 ? encrypt(JSON.stringify(mergedAuth)) : null;
   }
   db.run(
-    `UPDATE supplierSources SET name=?, syncMode=?, syncIntervalSec=?, isActive=?, authEnc=?, status=?, lastSyncError=?, updatedAt=? WHERE id=?`,
-    [next.name, next.syncMode, next.syncIntervalSec, next.isActive, next.authEnc, nextStatus, nextLastError, new Date().toISOString(), id]
+    `UPDATE supplierSources SET name=?, syncMode=?, syncIntervalSec=?, isActive=?, authEnc=?, status=?, lastSyncError=?, paymentMode=?, updatedAt=? WHERE id=?`,
+    [next.name, next.syncMode, next.syncIntervalSec, next.isActive, next.authEnc, nextStatus, nextLastError, next.paymentMode, new Date().toISOString(), id]
   );
   return getSupplierSourceById(id);
 }

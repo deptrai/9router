@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card } from "@/shared/components";
+import { Card, AddSupplierSourceModal, EditSupplierSourceModal, AutoOnboardTelegramModal } from "@/shared/components";
 
 const STATUS_BADGE = {
   active: "bg-green-500/10 text-green-500",
@@ -34,6 +34,11 @@ export default function SuppliersPage() {
   const [busyId, setBusyId] = useState(null);
   const [reconciling, setReconciling] = useState(false);
   const [reconcileMsg, setReconcileMsg] = useState("");
+  const [runningPurchases, setRunningPurchases] = useState(false);
+  const [purchaseMsg, setPurchaseMsg] = useState("");
+  const [addOpen, setAddOpen] = useState(false);
+  const [onboardOpen, setOnboardOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
 
   // Role guard: admin-only. role=user → redirect away.
   useEffect(() => {
@@ -106,6 +111,23 @@ export default function SuppliersPage() {
     setReconciling(false);
   };
 
+  const runPurchases = async () => {
+    setRunningPurchases(true);
+    setPurchaseMsg("");
+    try {
+      const res = await fetch("/api/store/admin/run-purchases", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) setPurchaseMsg(data.error || "Run purchases failed");
+      else {
+        const succeeded = data.results?.filter((r) => r.ok).length || 0;
+        setPurchaseMsg(`Processed ${data.processed || 0} — success: ${succeeded}`);
+      }
+    } catch {
+      setPurchaseMsg("Network error");
+    }
+    setRunningPurchases(false);
+  };
+
   if (role === null || role === "user") {
     return (
       <div className="p-6 max-w-6xl mx-auto">
@@ -119,8 +141,23 @@ export default function SuppliersPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-text-main">Supplier Sources</h1>
         <div className="flex gap-2">
+          <button
+            onClick={() => setAddOpen(true)}
+            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary/90 transition-colors"
+          >
+            Add supplier source
+          </button>
+          <button
+            onClick={() => setOnboardOpen(true)}
+            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors"
+          >
+            Auto-onboard Telegram
+          </button>
           <button onClick={runReconcile} disabled={reconciling} className="px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-white disabled:opacity-60">
             {reconciling ? "Reconciling…" : "Run reconciliation"}
+          </button>
+          <button onClick={runPurchases} disabled={runningPurchases} className="px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-white disabled:opacity-60">
+            {runningPurchases ? "Running purchases…" : "Run purchases"}
           </button>
           <button onClick={loadSources} className="px-3 py-1.5 rounded-lg text-sm font-medium bg-surface-2 text-text-muted hover:bg-surface-3 transition-colors">
             Refresh
@@ -129,6 +166,7 @@ export default function SuppliersPage() {
       </div>
 
       {reconcileMsg && <p className="text-sm text-text-muted">{reconcileMsg}</p>}
+      {purchaseMsg && <p className="text-sm text-text-muted">{purchaseMsg}</p>}
       {error && <p className="text-sm text-red-500">{error}</p>}
 
       <Card className="p-0 overflow-hidden">
@@ -169,6 +207,7 @@ export default function SuppliersPage() {
                   <td className="px-4 py-3 text-text-muted max-w-[200px] truncate" title={s.lastSyncError || ""}>{s.lastSyncError || "—"}</td>
                   <td className="px-4 py-3 text-right whitespace-nowrap space-x-2">
                     <button onClick={() => forceSync(s.id)} disabled={busyId === s.id} className="px-2.5 py-1 rounded-lg text-xs font-medium bg-surface-2 text-text-muted hover:bg-surface-3 disabled:opacity-60">Sync</button>
+                    <button onClick={() => setEditing(s)} className="px-2.5 py-1 rounded-lg text-xs font-medium bg-surface-2 text-text-muted hover:bg-surface-3">Edit</button>
                     {s.isActive ? (
                       <button onClick={() => act(s.id, "disable")} disabled={busyId === s.id} className="px-2.5 py-1 rounded-lg text-xs font-medium bg-red-500/10 text-red-500 hover:bg-red-500/20 disabled:opacity-60">Disable</button>
                     ) : (
@@ -181,6 +220,27 @@ export default function SuppliersPage() {
           </table>
         )}
       </Card>
+
+      <AddSupplierSourceModal
+        isOpen={addOpen}
+        onClose={() => setAddOpen(false)}
+        onCreated={() => loadSources()}
+      />
+
+      <AutoOnboardTelegramModal
+        isOpen={onboardOpen}
+        onClose={() => setOnboardOpen(false)}
+        onCreated={() => loadSources()}
+      />
+
+      {editing && (
+        <EditSupplierSourceModal
+          isOpen={!!editing}
+          source={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => loadSources()}
+        />
+      )}
     </div>
   );
 }

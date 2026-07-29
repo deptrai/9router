@@ -11,6 +11,8 @@ context:
 
 Status: done
 
+> **Note:** AC2 `/products` catalog listing đã được tối ưu thành Telegram Mini App trong story `2-25a`. Story 2.25 vẫn giữ nền tảng bot/linking/catalog; phần UI listing được kế thừa và thay thế bởi `2-25a`.
+
 ## Story
 
 **As a** Telegram user,

@@ -2,6 +2,7 @@
 // Upserts external products (source='external_telegram_store'), dedup by
 // (supplierSourceId, supplierProductId). NEVER touches local products (source='local').
 // Fail-soft: adapter errors → recordSyncFailure (degraded/unhealthy), never throw to crash a job.
+import { createHash } from "node:crypto";
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../db/driver.js";
 import { getAdapter as getSupplierAdapter } from "./suppliers/index.js";
@@ -18,6 +19,29 @@ export const EXTERNAL_SOURCE = "external_telegram_store";
 // Default staleness threshold — external product not synced within this window is "stale"
 // (catalog/checkout must not treat it as guaranteed in-stock, AC4/QĐ5).
 export const DEFAULT_STALE_THRESHOLD_SEC = 24 * 3600;
+
+/**
+ * Normalize product name for grouping: lowercase, trim, collapse whitespace,
+ * strip leading/trailing emoji and common punctuation. Used for productGroupId.
+ */
+function normalizeGroupName(name) {
+  if (!name) return "";
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}\s!.:,;\-?_"'()]+/gu, "")
+    .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\s!.:,;\-?_"'()]+$/gu, "");
+}
+
+/**
+ * Generate a 16-char md5 hash for product group id based on normalized name.
+ */
+export function createProductGroupId(name) {
+  const normalized = normalizeGroupName(name);
+  if (!normalized) return null;
+  return createHash("md5").update(normalized).digest("hex").slice(0, 16);
+}
 
 /**
  * Upsert one normalized external product into products (dedup by supplierSourceId+supplierProductId).
@@ -42,24 +66,29 @@ function upsertExternalProduct(db, { sourceId, syncVersion, normalized, now }) {
   const supplierPrice = Number.isFinite(rawPrice) && rawPrice >= 0 ? rawPrice : 0;
 
   const existing = db.get(
-    `SELECT id, supplierSourceId, isPublished FROM products WHERE source = ? AND supplierSourceId = ? AND supplierProductId = ?`,
+    `SELECT id, supplierSourceId, isPublished, name, productGroupId FROM products WHERE source = ? AND supplierSourceId = ? AND supplierProductId = ?`,
     [EXTERNAL_SOURCE, sourceId, normalized.supplierProductId]
   );
+
+  const groupId = createProductGroupId(normalized.name);
 
   let productId;
   if (existing) {
     const isPublished = existing.isPublished === 1 || existing.isPublished === true;
     if (isPublished) {
       // Published/approved product: do NOT overwrite custom name & description, only update supplierPrice/stock
+      // Backfill productGroupId if missing (migration left null or name was not normalized before).
+      const backfillGroupId = existing.productGroupId || groupId;
       db.run(
         `UPDATE products SET supplierPrice=?, stock=?,
-           syncVersion=?, lastSyncedAt=?, updatedAt=? WHERE id=?`,
+           syncVersion=?, lastSyncedAt=?, updatedAt=?, productGroupId=? WHERE id=?`,
         [
           supplierPrice,
           normalized.stock ?? null,
           syncVersion,
           now,
           now,
+          backfillGroupId,
           existing.id,
         ]
       );
@@ -67,7 +96,7 @@ function upsertExternalProduct(db, { sourceId, syncVersion, normalized, now }) {
       // Draft/unpublished product: update name/description from source
       db.run(
         `UPDATE products SET name=?, description=?, supplierPrice=?, stock=?,
-           syncVersion=?, lastSyncedAt=?, updatedAt=? WHERE id=?`,
+           syncVersion=?, lastSyncedAt=?, updatedAt=?, productGroupId=? WHERE id=?`,
         [
           normalized.name,
           normalized.description ?? null,
@@ -76,6 +105,7 @@ function upsertExternalProduct(db, { sourceId, syncVersion, normalized, now }) {
           syncVersion,
           now,
           now,
+          groupId,
           existing.id,
         ]
       );
@@ -97,8 +127,8 @@ function upsertExternalProduct(db, { sourceId, syncVersion, normalized, now }) {
   db.run(
     `INSERT INTO products(id, kind, name, description, priceCredits, deliveryMode,
        targetType, targetId, stock, isActive, isPublished, source, supplierSourceId,
-       supplierProductId, supplierPrice, syncVersion, lastSyncedAt, createdAt, updatedAt)
-     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       supplierProductId, productGroupId, supplierPrice, syncVersion, lastSyncedAt, createdAt, updatedAt)
+     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       productId,
       "service",
@@ -114,6 +144,7 @@ function upsertExternalProduct(db, { sourceId, syncVersion, normalized, now }) {
       EXTERNAL_SOURCE,
       sourceId,
       normalized.supplierProductId,
+      groupId,
       supplierPrice,              // supplierPrice stored separately
       syncVersion,
       now,

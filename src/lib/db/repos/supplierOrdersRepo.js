@@ -27,6 +27,8 @@ function rowToSupplierOrder(row) {
     retailPrice: row.retailPrice ?? null,
     expectedMargin: row.expectedMargin ?? null,
     supplierStatus: row.supplierStatus ?? null,
+    // Story 2-38.2: lock timestamp to prevent concurrent purchase attempts
+    purchaseLockExpiresAt: row.purchaseLockExpiresAt ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -48,21 +50,22 @@ export function insertSupplierOrderSync(adapter, data) {
       id, orderId, supplierSourceId, supplierProductId, paymentMode,
       supplierOrderId, supplierInvoiceId, qrPayload,
       supplierPrice, retailPrice, expectedMargin, supplierStatus,
-      createdAt, updatedAt
-    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      purchaseLockExpiresAt, createdAt, updatedAt
+    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       data.orderId,
       data.supplierSourceId,
       data.supplierProductId ?? null,
       data.paymentMode,
-      null, // supplierOrderId — filled later by admin/sync
-      null, // supplierInvoiceId
-      null, // qrPayload
+      data.supplierOrderId ?? null,
+      data.supplierInvoiceId ?? null,
+      data.qrPayload ?? null,
       data.supplierPrice ?? null,
       data.retailPrice ?? null,
       data.expectedMargin ?? null,
-      null, // supplierStatus
+      data.supplierStatus ?? null,
+      data.purchaseLockExpiresAt ?? null,
       now,
       now,
     ]
@@ -116,29 +119,44 @@ export async function getSupplierOrderByOrderId(orderId) {
 /**
  * Update supplier-side fields after placing upstream order or receiving status sync (2.33).
  * @param {string} id - supplierOrders.id
- * @param {object} fields - { supplierOrderId?, supplierInvoiceId?, qrPayload?, supplierStatus? }
+ * @param {object} fields - { supplierSourceId?, supplierProductId?, supplierPrice?, supplierOrderId?, supplierInvoiceId?, qrPayload?, supplierStatus?, purchaseLockExpiresAt? }
  * @returns {Promise<object|null>}
  */
-export async function updateSupplierOrderStatus(id, { supplierOrderId, supplierInvoiceId, qrPayload, supplierStatus } = {}) {
+export async function updateSupplierOrderStatus(id, {
+  supplierSourceId,
+  supplierProductId,
+  supplierPrice,
+  supplierOrderId,
+  supplierInvoiceId,
+  qrPayload,
+  supplierStatus,
+  purchaseLockExpiresAt,
+} = {}) {
   const adapter = await getAdapter();
   const now = new Date().toISOString();
-  adapter.run(
-    `UPDATE supplierOrders
-     SET supplierOrderId   = COALESCE(?, supplierOrderId),
-         supplierInvoiceId = COALESCE(?, supplierInvoiceId),
-         qrPayload         = COALESCE(?, qrPayload),
-         supplierStatus    = COALESCE(?, supplierStatus),
-         updatedAt         = ?
-     WHERE id = ?`,
-    [
-      supplierOrderId ?? null,
-      supplierInvoiceId ?? null,
-      qrPayload ?? null,
-      supplierStatus ?? null,
-      now,
-      id,
-    ]
-  );
+
+  // Build dynamic SET — only touch columns the caller explicitly passes.
+  // This allows clearing purchaseLockExpiresAt/supplierStatus to NULL (story 2-38.2).
+  const provided = [
+    ["supplierSourceId", supplierSourceId],
+    ["supplierProductId", supplierProductId],
+    ["supplierPrice", supplierPrice],
+    ["supplierOrderId", supplierOrderId],
+    ["supplierInvoiceId", supplierInvoiceId],
+    ["qrPayload", qrPayload],
+    ["supplierStatus", supplierStatus],
+    ["purchaseLockExpiresAt", purchaseLockExpiresAt],
+  ].filter(([, v]) => v !== undefined);
+
+  if (!provided.length) {
+    const row = adapter.get(`SELECT * FROM supplierOrders WHERE id = ?`, [id]);
+    return rowToSupplierOrder(row);
+  }
+
+  const setSql = provided.map(([col]) => `${col} = ?`).join(", ") + ", updatedAt = ?";
+  const params = [...provided.map(([, v]) => v ?? null), now, id];
+
+  adapter.run(`UPDATE supplierOrders SET ${setSql} WHERE id = ?`, params);
   const row = adapter.get(`SELECT * FROM supplierOrders WHERE id = ?`, [id]);
   return rowToSupplierOrder(row);
 }

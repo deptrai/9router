@@ -3,6 +3,10 @@
  * Style: chatCreditCheck.test.js / chatRpmCheck.test.js
  */
 import { describe, it, expect } from "vitest";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 describe("Model B admission — chat.js integration pattern", () => {
   it("plan within quota → billingSource=plan, no credit gate", () => {
@@ -186,8 +190,7 @@ describe("Model B admission — chat.js integration pattern", () => {
 
   it("chat.js source — checkPlanQuota imported and positioned AFTER checkKeyQuota, BEFORE handleChatCore", async () => {
     const fs = await import("node:fs");
-    const path = await import("node:path");
-    const chatPath = path.default.resolve("/Users/luisphan/Documents/9router/src/sse/handlers/chat.js");
+    const chatPath = path.resolve(repoRoot, "src/sse/handlers/chat.js");
     const content = fs.default.readFileSync(chatPath, "utf8");
     expect(content).toContain("checkPlanQuota");
     expect(content).toContain("@/lib/quota/planQuota.js");

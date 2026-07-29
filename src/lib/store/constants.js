@@ -1,12 +1,14 @@
 // Store-level enums shared across checkout, markup, and supplier modules.
 
-// E8: payment modes for external product checkout (Story 2.32)
+// E8: payment modes for external product checkout (Story 2.32 / 2-38.2)
 // proxy_checkout  — user pays 9router credits (= retailPrice); store places upstream order via admin/sync
+// auto_fulfill    — user pays credits; store automatically purchases from cheapest supplier and delivers
 // vendor_commission — supplier creates invoice/QR at retail/commission amount (stub MVP — needs supportsVendorOrder)
 // separate_fee    — user pays wholesale QR + separate margin fee (stub MVP — needs supplier QR capability)
 // disabled        — admin has disabled sales for this product/source
 export const PAYMENT_MODES = [
   "proxy_checkout",
+  "auto_fulfill",
   "vendor_commission",
   "separate_fee",
   "disabled",
@@ -33,5 +35,10 @@ export const SUPPLIER_ORDER_STATUS_MAP = {
 // All MVP adapters return false; stub allows polling driver to skip them without errors.
 export function supportsOrderStatus(supplierAdapter) {
   return typeof supplierAdapter?.getOrderStatus === "function";
+}
+
+// Story 2-38.2: capability detection for adapters that can auto-purchase products.
+export function supportsPurchaseProduct(supplierAdapter) {
+  return typeof supplierAdapter?.purchaseProduct === "function";
 }
 
