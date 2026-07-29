@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 export default function TelegramStorePage() {
   const [products, setProducts] = useState([]);
@@ -10,34 +10,55 @@ export default function TelegramStorePage() {
   const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
   const [buyingId, setBuyingId] = useState(null);
+  const initDataRef = useRef("");
 
   useEffect(() => {
-    if (typeof window === "undefined" || !window.Telegram?.WebApp) return;
+    if (typeof window === "undefined") return;
+    let cancelled = false;
 
-    const tg = window.Telegram.WebApp;
-    tg.ready();
-    tg.expand();
+    const attempt = async () => {
+      const tg = window.Telegram?.WebApp;
+      if (!tg) {
+        setError("Không tải được Telegram WebApp. Vui lòng mở từ ứng dụng Telegram.");
+        setLoading(false);
+        return;
+      }
 
-    const run = async () => {
+      tg.ready();
+      tg.expand();
+
+      // Lấy initData: Telegram.WebApp.initData hoặc dự phòng từ URL hash.
+      const rawHash = window.location.hash ? window.location.hash.replace(/^#/, "") : "";
+      const hashParams = new URLSearchParams(rawHash);
+      const initData =
+        tg.initData ||
+        hashParams.get("tgWebAppData") ||
+        "";
+      initDataRef.current = initData;
+
       try {
-        const res = await fetch("/api/telegram/validate-init-data", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ initData: tg.initData }),
-        });
-        const init = await res.json();
-        if (!res.ok || !init.ok) {
-          throw new Error(init.error || "Xác thực Telegram thất bại");
+        if (initData) {
+          const res = await fetch("/api/telegram/validate-init-data", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ initData }),
+          });
+          const init = await res.json();
+          if (res.ok && init.ok) {
+            setUser(init.user);
+          } else {
+            console.error("[telegram/store] validate error:", init.error);
+            // Vẫn cho xem catalog; lỗi initData không chặn product listing.
+          }
         }
-        setUser(init.user);
 
         const [productsRes, userInfoRes] = await Promise.all([
           fetch("/api/store/products"),
-          init.user?.id
+          user && initData
             ? fetch("/api/telegram/user-info", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ initData: tg.initData }),
+                body: JSON.stringify({ initData }),
               })
             : null,
         ]);
@@ -55,11 +76,14 @@ export default function TelegramStorePage() {
         console.error("[telegram/store] load error:", e?.message);
         setError(e?.message || "Không thể tải cửa hàng");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
-    run();
+    attempt();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const filtered = useMemo(() => {
@@ -79,10 +103,13 @@ export default function TelegramStorePage() {
 
   const handleBuy = (productId) => {
     if (typeof window === "undefined" || !window.Telegram?.WebApp) return;
+    const tg = window.Telegram.WebApp;
+    if (!initDataRef.current) {
+      tg.showAlert?.("Không nhận được dữ liệu Telegram. Vui lòng mở lại từ bot.");
+      return;
+    }
     setBuyingId(productId);
-    window.Telegram.WebApp.sendData(
-      JSON.stringify({ action: "buy", productId })
-    );
+    tg.sendData(JSON.stringify({ action: "buy", productId }));
   };
 
   const totalCredits = useMemo(() => {
@@ -119,9 +146,13 @@ export default function TelegramStorePage() {
           )}
         </div>
 
-        {user && (
+        {user ? (
           <div className="text-sm text-[#6B7280] mb-4">
             Xin chào, <b>{user.first_name || user.username || user.id}</b>
+          </div>
+        ) : (
+          <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded-xl mb-4">
+            ⚠️ Chế độ xem thử. Mở từ bot Telegram để mua hàng.
           </div>
         )}
 
@@ -140,7 +171,7 @@ export default function TelegramStorePage() {
         ) : (
           <div className="space-y-3">
             {filtered.map((p) => {
-              const buyable = isBuyable(p);
+              const buyable = isBuyable(p) && !!user && !!initDataRef.current;
               return (
                 <div
                   key={p.id}
