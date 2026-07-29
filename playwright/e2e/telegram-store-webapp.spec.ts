@@ -3,7 +3,8 @@ import crypto from 'node:crypto';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const USER = { id: 999999999, first_name: 'Test', username: 'testuser' };
-const STORE_URL = 'https://router.chainlens.net/telegram/store';
+const BASE_URL = process.env.STORE_URL || process.env.BASE_URL || 'http://localhost:20128';
+const STORE_URL = `${BASE_URL.replace(/\/$/, '')}/telegram/store`;
 
 function buildInitData(user: typeof USER) {
   const auth_date = Math.floor(Date.now() / 1000).toString();
