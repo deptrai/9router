@@ -10,35 +10,59 @@ export default function TelegramStorePage() {
   const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
   const [buyingId, setBuyingId] = useState(null);
+  const [webAppReady, setWebAppReady] = useState(false);
   const initDataRef = useRef("");
 
+  // Lấy initData từ URL/global trước khi render, không phụ thuộc SDK.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const rawHash = window.location.hash ? window.location.hash.replace(/^#/, "") : "";
+    const hashParams = new URLSearchParams(rawHash);
+    const rawSearch = window.location.search ? window.location.search.replace(/^\?/, "") : "";
+    const searchParams = new URLSearchParams(rawSearch);
+    const initData =
+      (typeof window !== "undefined" ? window.__telegramInitData : "") ||
+      hashParams.get("tgWebAppData") ||
+      searchParams.get("tgWebAppData") ||
+      "";
+    initDataRef.current = initData;
+  }, []);
+
+  // Load SDK Telegram WebApp để có ready(), expand(), sendData().
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const setupWebApp = () => {
+      const tg = window.Telegram?.WebApp;
+      if (tg) {
+        tg.ready();
+        tg.expand();
+        setWebAppReady(true);
+      }
+    };
+
+    if (window.Telegram?.WebApp) {
+      setupWebApp();
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = "https://telegram.org/js/telegram-web-app.js";
+    script.defer = true;
+    script.onload = setupWebApp;
+    script.onerror = () => {
+      console.error("[telegram/store] Không tải được Telegram WebApp SDK.");
+    };
+    document.head.appendChild(script);
+  }, []);
+
+  // Tải sản phẩm + validate initData; không phụ thuộc Telegram SDK.
   useEffect(() => {
     if (typeof window === "undefined") return;
     let cancelled = false;
 
     const attempt = async () => {
-      const tg = window.Telegram?.WebApp;
-      if (!tg) {
-        setError("Không tải được Telegram WebApp. Vui lòng mở từ ứng dụng Telegram.");
-        setLoading(false);
-        return;
-      }
-
-      tg.ready();
-      tg.expand();
-
-      // Lấy initData từ Telegram.WebApp, global fallback, hoặc URL hash/query.
-      const rawHash = window.location.hash ? window.location.hash.replace(/^#/, "") : "";
-      const hashParams = new URLSearchParams(rawHash);
-      const rawSearch = window.location.search ? window.location.search.replace(/^\?/, "") : "";
-      const searchParams = new URLSearchParams(rawSearch);
-      const initData =
-        tg.initData ||
-        (typeof window !== "undefined" ? window.__telegramInitData : "") ||
-        hashParams.get("tgWebAppData") ||
-        searchParams.get("tgWebAppData") ||
-        "";
-      initDataRef.current = initData;
+      const initData = initDataRef.current;
 
       try {
         let init = null;
@@ -84,23 +108,7 @@ export default function TelegramStorePage() {
       }
     };
 
-    const run = () => {
-      if (window.Telegram?.WebApp) {
-        attempt();
-        return;
-      }
-      const script = document.createElement("script");
-      script.src = "https://telegram.org/js/telegram-web-app.js";
-      script.defer = true;
-      script.onload = attempt;
-      script.onerror = () => {
-        setError("Không tải được Telegram WebApp SDK.");
-        setLoading(false);
-      };
-      document.head.appendChild(script);
-    };
-
-    run();
+    attempt();
     return () => {
       cancelled = true;
     };
@@ -122,8 +130,12 @@ export default function TelegramStorePage() {
   };
 
   const handleBuy = (productId) => {
-    if (typeof window === "undefined" || !window.Telegram?.WebApp) return;
-    const tg = window.Telegram.WebApp;
+    if (typeof window === "undefined") return;
+    const tg = window.Telegram?.WebApp;
+    if (!tg) {
+      console.error("[telegram/store] Telegram WebApp chưa sẵn sàng.");
+      return;
+    }
     if (!initDataRef.current) {
       tg.showAlert?.("Không nhận được dữ liệu Telegram. Vui lòng mở lại từ bot.");
       return;
@@ -142,6 +154,7 @@ export default function TelegramStorePage() {
     const hasInitData = !!initDataRef.current;
     if (!available) return { disabled: true, label: "Tạm hết hàng" };
     if (!hasInitData) return { disabled: true, label: "Mở từ bot để mua" };
+    if (!webAppReady) return { disabled: true, label: "Đang tải Telegram..." };
     return { disabled: buyingId === p.id, label: buyingId === p.id ? "Đang gửi..." : "Mua ngay" };
   };
 
