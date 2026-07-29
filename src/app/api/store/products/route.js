@@ -23,6 +23,7 @@ export async function GET() {
       priceCredits: p.priceCredits,
       deliveryMode: p.deliveryMode,
       stock: p.stock,
+      isActive: p.isActive,
       variantCount: p.variantCount,
       bestSupplierName: p.bestSupplierName ?? undefined,
     }));
