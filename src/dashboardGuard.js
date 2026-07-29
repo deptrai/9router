@@ -39,6 +39,10 @@ const PUBLIC_API_PATHS = [
   "/api/auth/social-providers",
   // Story 2.25: Telegram webhook tự verify bằng secret-token header (AC4)
   "/api/telegram/webhook",
+  // Story 2-25a: Mini App initData validation (self-validating via TELEGRAM_BOT_TOKEN)
+  "/api/telegram/validate-init-data",
+  // Story 2-25a: Mini App user info (requires valid initData in body)
+  "/api/telegram/user-info",
   // Story 2.25: Store read API — public catalog, không có dữ liệu nhạy cảm
   "/api/store/products",
   // Story 2.30: Supplier webhook — public, self-authenticates via timingSafeEqual secret (AC3)
