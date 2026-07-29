@@ -39,6 +39,7 @@ async function injectTelegramWebApp(
   await page.addInitScript(
     (data: { initData: string; initDataUnsafe: Record<string, any> }) => {
       (window as any).__lastSentData = undefined;
+      (window as any).__telegramInitData = data.initData;
       (window as any).Telegram = {
         WebApp: {
           initData: data.initData,
@@ -102,6 +103,29 @@ test.describe('Telegram Store WebApp', () => {
     await expect(page.getByText('Mở từ bot để mua').first()).toBeVisible();
     await expect(page.getByText('Tạm hết hàng')).toHaveCount(0);
     await expect(page.locator('button').first()).toBeVisible();
+    expect(errors).toHaveLength(0);
+  });
+
+  test('real tgWebAppData hash: buttons show Mua ngay and no hydration error', async ({ page }) => {
+    test.skip(!BOT_TOKEN, 'requires TELEGRAM_BOT_TOKEN env');
+    const errors: Error[] = [];
+    page.on('pageerror', (err) => errors.push(err));
+
+    const { initData } = buildInitData(USER);
+    const url = `${STORE_URL}#tgWebAppData=${encodeURIComponent(initData)}`;
+    await page.goto(url, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(3000);
+
+    await expect(page.getByText('Mua ngay').first()).toBeVisible();
+    await expect(page.getByText('Mở từ bot để mua')).toHaveCount(0);
+    await expect(page.getByText('Tạm hết hàng')).toHaveCount(0);
+
+    const state = await page.evaluate(() => ({
+      initDataLen: (window as any).__telegramInitData?.length || 0,
+      webAppInitDataLen: (window as any).Telegram?.WebApp?.initData?.length || 0,
+    }));
+    expect(state.initDataLen).toBeGreaterThan(0);
+    expect(state.webAppInitDataLen).toBeGreaterThan(0);
     expect(errors).toHaveLength(0);
   });
 });
