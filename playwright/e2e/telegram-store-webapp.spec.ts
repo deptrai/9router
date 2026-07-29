@@ -91,7 +91,7 @@ test.describe('Telegram Store WebApp', () => {
     });
   });
 
-  test('fallback: empty initData shows open-from-bot button and loads products', async ({ page }) => {
+  test('no initData but Telegram.WebApp present: shows Mua ngay (reply-keyboard mode)', async ({ page }) => {
     const errors: Error[] = [];
     page.on('pageerror', (err) => errors.push(err));
 
@@ -100,9 +100,20 @@ test.describe('Telegram Store WebApp', () => {
     await page.goto(STORE_URL);
     await page.waitForTimeout(3000);
 
-    await expect(page.getByText('Mở từ bot để mua').first()).toBeVisible();
+    await expect(page.getByText('Mua ngay').first()).toBeVisible();
+    await expect(page.getByText('Mở từ bot để mua')).toHaveCount(0);
     await expect(page.getByText('Tạm hết hàng')).toHaveCount(0);
-    await expect(page.locator('button').first()).toBeVisible();
+
+    // Even without initData, click Mua ngay should call sendData (reply-keyboard mini app behavior).
+    await page.getByRole('button', { name: 'Mua ngay' }).first().click();
+    await page.waitForFunction(() => !!(window as any).__lastSentData);
+
+    const sent = await page.evaluate(() => (window as any).__lastSentData);
+    console.log('SEND_DATA payload:', JSON.stringify(sent));
+    expect(sent).toMatchObject({
+      action: 'buy',
+      productId: expect.any(String),
+    });
     expect(errors).toHaveLength(0);
   });
 

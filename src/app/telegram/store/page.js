@@ -136,10 +136,6 @@ export default function TelegramStorePage() {
       console.error("[telegram/store] Telegram WebApp chưa sẵn sàng.");
       return;
     }
-    if (!initDataRef.current) {
-      tg.showAlert?.("Không nhận được dữ liệu Telegram. Vui lòng mở lại từ bot.");
-      return;
-    }
     setBuyingId(productId);
     tg.sendData(JSON.stringify({ action: "buy", productId }));
   };
@@ -151,9 +147,7 @@ export default function TelegramStorePage() {
 
   const getButtonState = (p) => {
     const available = isProductAvailable(p);
-    const hasInitData = !!initDataRef.current;
     if (!available) return { disabled: true, label: "Tạm hết hàng" };
-    if (!hasInitData) return { disabled: true, label: "Mở từ bot để mua" };
     if (!webAppReady) return { disabled: true, label: "Đang tải Telegram..." };
     return { disabled: buyingId === p.id, label: buyingId === p.id ? "Đang gửi..." : "Mua ngay" };
   };
@@ -191,9 +185,13 @@ export default function TelegramStorePage() {
           <div className="text-sm text-[#6B7280] mb-4">
             Xin chào, <b>{user.first_name || user.username || user.id}</b>
           </div>
+        ) : webAppReady ? (
+          <div className="text-sm text-green-700 bg-green-50 p-3 rounded-xl mb-4">
+            Sẵn sàng mua hàng. Bấm <b>Mua ngay</b> trên sản phẩm bạn chọn.
+          </div>
         ) : (
           <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded-xl mb-4">
-            ⚠️ Chế độ xem thử. Mở từ bot Telegram để mua hàng.
+            ⚠️ Mở từ bot Telegram để mua hàng.
           </div>
         )}
 
