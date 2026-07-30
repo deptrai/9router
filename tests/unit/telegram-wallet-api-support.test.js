@@ -85,7 +85,7 @@ describe("handleUpdate /wallet — AC1, AC2", () => {
     expect(text).toContain("admin_topup");
     expect(text).toContain("Chưa có gói");
     const buttons = opts?.reply_markup?.inline_keyboard?.flat() ?? [];
-    expect(buttons.some((b) => b.url?.includes("/dashboard/credits"))).toBe(true);
+    expect(buttons.some((b) => b.web_app?.url?.includes("/telegram/store/topup"))).toBe(true);
     expect(buttons.some((b) => b.callback_data === "cmd:menu")).toBe(true);
   });
 

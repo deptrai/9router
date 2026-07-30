@@ -28,6 +28,11 @@ function getStoreUrl() {
   return `${baseUrl}/telegram/store`;
 }
 
+function getTopupUrl() {
+  const baseUrl = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "https://router.chainlens.net";
+  return `${baseUrl}/telegram/store/topup`;
+}
+
 // Persistent reply keyboard — text buttons only; Mini App entry is now MenuButton / inline web_app.
 function buildPersistentMenu() {
   return {
@@ -313,14 +318,9 @@ async function handleBuyExecute(chatId, from, productId, callbackQueryId) {
     }
     if (e instanceof CheckoutError) {
       if (e.code === "INSUFFICIENT_CREDITS") {
-        // P9: only offer VND when it is actually configured (mirror handleTopup's guard).
-        const topupRow = [{ text: "💰 Nạp Crypto", callback_data: "topup:crypto" }];
-        if (isVndConfigured()) {
-          topupRow.unshift({ text: "🏦 Nạp VND", callback_data: "topup:vnd" });
-        }
-        await sendMessage(chatId, "💸 Số dư không đủ. Chọn phương thức nạp:", {
+        await sendMessage(chatId, "💸 Số dư không đủ. Mở Mini App để nạp:", {
           reply_markup: { inline_keyboard: [
-            topupRow,
+            [{ text: "💳 Nạp tiền", web_app: { url: getTopupUrl() } }],
             BACK_TO_MENU_ROW,
           ] },
         }).catch(() => {});
@@ -377,10 +377,9 @@ async function handleWallet(chatId, telegramId) {
       }
     }
 
-    const baseUrl = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "";
     const keyboard = {
       inline_keyboard: [
-        ...(baseUrl ? [[{ text: "💳 Nạp tiền", url: `${baseUrl}/dashboard/credits` }]] : []),
+        [{ text: "💳 Nạp tiền", web_app: { url: getTopupUrl() } }],
         BACK_TO_MENU_ROW,
       ],
     };
@@ -626,13 +625,11 @@ async function handleTopup(chatId, telegramId) {
     const user = await getUserByTelegramId(telegramId);
     if (!user) { await sendMessage(chatId, "Vui lòng /start trước."); return; }
 
-    const buttons = [];
-    if (isVndConfigured()) buttons.push([{ text: "🏦 Nạp VND (chuyển khoản)", callback_data: "topup:vnd" }]);
-    buttons.push([{ text: "💰 Nạp Crypto", callback_data: "topup:crypto" }]);
-    buttons.push(BACK_TO_MENU_ROW);
-
-    await sendMessage(chatId, "<b>💳 Nạp tiền</b>\n\nChọn phương thức:", {
-      reply_markup: { inline_keyboard: buttons },
+    await sendMessage(chatId, "<b>💳 Nạp tiền</b>\n\nMở Mini App bên dưới để nạp VND hoặc Crypto:", {
+      reply_markup: { inline_keyboard: [
+        [{ text: "💳 Nạp tiền", web_app: { url: getTopupUrl() } }],
+        BACK_TO_MENU_ROW,
+      ] },
     });
   } catch (e) {
     console.error("[telegram/router] /topup lỗi:", e?.message);
@@ -722,10 +719,9 @@ async function handleTopupVnd(chatId, telegramId, creditsAmount) {
 
 async function handleTopupCrypto(chatId, telegramId) {
   try {
-    const baseUrl = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "";
-    await sendMessage(chatId, "💰 Nạp Crypto — vui lòng truy cập dashboard để thanh toán:", {
+    await sendMessage(chatId, "💰 Nạp Crypto — mở Mini App bên dưới:", {
       reply_markup: { inline_keyboard: [
-        [{ text: "🌐 Mở Dashboard Nạp Tiền", url: `${baseUrl}/dashboard/credits` }],
+        [{ text: "💰 Nạp Crypto", web_app: { url: getTopupUrl() } }],
         BACK_TO_MENU_ROW,
       ] },
     });
