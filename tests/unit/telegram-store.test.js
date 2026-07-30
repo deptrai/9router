@@ -19,6 +19,8 @@ vi.mock("next/server", () => ({
 vi.mock("@/lib/telegram/botClient.js", () => ({
   sendMessage: vi.fn().mockResolvedValue({ ok: true }),
   answerCallbackQuery: vi.fn().mockResolvedValue({ ok: true }),
+  answerWebAppQuery: vi.fn().mockResolvedValue({ ok: true }),
+  setChatMenuButton: vi.fn().mockResolvedValue({ ok: true }),
   setWebhook: vi.fn().mockResolvedValue({ ok: true }),
   isBotConfigured: vi.fn().mockReturnValue(true),
 }));
@@ -229,33 +231,38 @@ describe("handleUpdate /products — Mini App button + AC3 error fallback", () =
     return { message: { text: "/products", from: { id: chatId }, chat: { id: chatId } } };
   }
 
-  it("gửi một tin nhắn với web_app button mở Mini App", async () => {
+  it("gửi một tin nhắn với inline web_app button mở Mini App", async () => {
     process.env.BASE_URL = "https://test.example.com";
     const { handleUpdate } = await import("@/lib/telegram/router.js");
-    const { sendMessage } = await import("@/lib/telegram/botClient.js");
+    const { sendMessage, setChatMenuButton } = await import("@/lib/telegram/botClient.js");
     vi.mocked(sendMessage).mockClear();
+    vi.mocked(setChatMenuButton).mockClear();
 
     await handleUpdate(productsUpdate());
 
+    expect(setChatMenuButton).toHaveBeenCalledWith(999, "🛍 Shop", "https://test.example.com/telegram/store");
     const calls = vi.mocked(sendMessage).mock.calls;
     expect(calls.length).toBe(1);
     const [chatId, text, opts] = calls[0];
     expect(chatId).toBe(999);
     expect(text).toMatch(/Mở cửa hàng/);
-    expect(opts?.reply_markup?.keyboard).toBeTruthy();
-    const buttons = opts.reply_markup.keyboard.flat();
+    expect(opts?.reply_markup?.inline_keyboard).toBeTruthy();
+    const buttons = opts.reply_markup.inline_keyboard.flat();
     const webAppBtn = buttons.find((b) => b.web_app);
     expect(webAppBtn).toBeTruthy();
     expect(webAppBtn.web_app.url).toBe("https://test.example.com/telegram/store");
   });
 
-  it("menu chính có nút Sản phẩm mở Mini App", async () => {
+  it("menu chính có nút Sản phẩm text + setChatMenuButton web_app", async () => {
     process.env.BASE_URL = "https://test.example.com";
     const { handleUpdate } = await import("@/lib/telegram/router.js");
-    const { sendMessage } = await import("@/lib/telegram/botClient.js");
+    const { sendMessage, setChatMenuButton } = await import("@/lib/telegram/botClient.js");
     vi.mocked(sendMessage).mockClear();
+    vi.mocked(setChatMenuButton).mockClear();
 
     await handleUpdate({ message: { text: "/start", from: { id: 333 }, chat: { id: 333 } } });
+
+    expect(setChatMenuButton).toHaveBeenCalledWith(333, "🛍 Shop", "https://test.example.com/telegram/store");
 
     const calls = vi.mocked(sendMessage).mock.calls;
     expect(calls.length).toBeGreaterThan(0);
@@ -264,8 +271,7 @@ describe("handleUpdate /products — Mini App button + AC3 error fallback", () =
     const allButtons = keyboard.flat();
     const productBtn = allButtons.find((b) => b.text === "🛍 Sản phẩm");
     expect(productBtn).toBeTruthy();
-    expect(productBtn.web_app).toBeTruthy();
-    expect(productBtn.web_app.url).toBe("https://test.example.com/telegram/store");
+    expect(productBtn.web_app).toBeUndefined();
   });
 
   it("web_app_data action=buy gọi handleBuyConfirm", async () => {

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import crypto from 'node:crypto';
+import { execSync } from 'node:child_process';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const USER = { id: 999999999, first_name: 'Test', username: 'testuser' };
@@ -66,6 +67,30 @@ async function injectTelegramWebApp(
 }
 
 test.describe('Telegram Store WebApp', () => {
+  test.beforeAll(() => {
+    const dataDir = process.env.DATA_DIR || '/app/data';
+    const dbPath = `${dataDir}/db/data.sqlite`;
+    try {
+      execSync(
+        `sqlite3 "${dbPath}" "PRAGMA busy_timeout = 10000; ` +
+          `INSERT OR IGNORE INTO users (id, email, passwordHash, displayName, isActive, isEmailVerified, creditsBalance, createdAt, updatedAt, telegramId) ` +
+          `VALUES (lower(hex(randomblob(16))), 'telegram_999999999@placeholder.local', '!', 'Test', 1, 0, 0, datetime('now'), datetime('now'), '999999999'); ` +
+          `INSERT OR IGNORE INTO creditTransactions (id, userId, type, bucket, amount, balanceAfter, note, createdAt, idempotencyKey) ` +
+          `SELECT lower(hex(randomblob(16))), u.id, 'seed', 'standard', 10000, ` +
+          `COALESCE((SELECT SUM(ct.amount) FROM creditTransactions ct WHERE ct.userId = u.id AND (ct.expiresAt IS NULL OR ct.expiresAt > datetime('now'))), 0) + 10000, ` +
+          `'Test seed', datetime('now'), 'seed:test:999999999:standard' ` +
+          `FROM users u WHERE u.telegramId = '999999999'; ` +
+          `UPDATE users SET creditsBalance = (SELECT COALESCE(SUM(ct.amount), 0) FROM creditTransactions ct WHERE ct.userId = users.id AND (ct.expiresAt IS NULL OR ct.expiresAt > datetime('now'))) ` +
+          `WHERE telegramId = '999999999'; ` +
+          `INSERT OR REPLACE INTO products (id, kind, name, description, priceCredits, deliveryMode, stock, isActive, isPublished, source, createdAt, updatedAt) ` +
+          `VALUES ('550e8400-e29b-41d4-a716-446655440000', 'service', 'E2E Telegram Store Product', 'Test product for Telegram Store WebApp', 10, 'instant', NULL, 1, 1, 'local', datetime('now'), datetime('now'));"`,
+        { stdio: 'ignore' }
+      );
+    } catch (e) {
+      console.log('[e2e] could not seed test data:', e);
+    }
+  });
+
   test('valid initData: can buy product', async ({ page }) => {
     test.skip(!BOT_TOKEN, 'requires TELEGRAM_BOT_TOKEN env');
     const errors: Error[] = [];
@@ -81,15 +106,17 @@ test.describe('Telegram Store WebApp', () => {
     await expect(page.getByText('Tạm hết hàng')).toHaveCount(0);
     expect(errors).toHaveLength(0);
 
+    // Click Mua ngay -> modal Xác nhận mua
     await page.getByRole('button', { name: 'Mua ngay' }).first().click();
-    await page.waitForFunction(() => !!(window as any).__lastSentData);
+    await expect(page.getByRole('button', { name: 'Xác nhận mua' }).first()).toBeVisible();
 
-    const sent = await page.evaluate(() => (window as any).__lastSentData);
-    console.log('SEND_DATA payload:', JSON.stringify(sent));
-    expect(sent).toMatchObject({
-      action: 'buy',
-      productId: expect.any(String),
-    });
+    // Confirm -> API miniapp-buy, wait for success
+    await page.getByRole('button', { name: 'Xác nhận mua' }).first().click();
+    await expect(page.getByText('Mã đơn:').first()).toBeVisible({ timeout: 10000 });
+
+    const result = await page.evaluate(() => (window as any).__lastSentData);
+    expect(result).toBeUndefined();
+    expect(errors).toHaveLength(0);
   });
 
   test('no initData but Telegram.WebApp present: shows Mua ngay (reply-keyboard mode)', async ({ page }) => {

@@ -85,6 +85,58 @@ export async function answerCallbackQuery(callbackQueryId, opts = {}) {
 }
 
 /**
+ * Thiết lập MenuButton (web_app) cho một chat.
+ * @param {string|number} chatId
+ * @param {string} text
+ * @param {string} url
+ */
+export async function setChatMenuButton(chatId, text, url) {
+  const token = getBotToken();
+  if (!token) {
+    console.warn("[telegram/botClient] TELEGRAM_BOT_TOKEN chưa được cấu hình");
+    return { ok: false };
+  }
+  try {
+    const res = await fetchWithTimeout(apiUrl("setChatMenuButton"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        menu_button: { type: "web_app", text, web_app: { url } },
+      }),
+    });
+    return await res.json().catch(() => ({ ok: false }));
+  } catch (e) {
+    console.error("[telegram/botClient] setChatMenuButton thất bại:", e?.message);
+    return { ok: false };
+  }
+}
+
+/**
+ * Trả kết quả của Web App interaction về chat, đóng Mini App.
+ * @param {string} webAppQueryId
+ * @param {object} result — InlineQueryResult object (e.g. InlineQueryResultArticle)
+ */
+export async function answerWebAppQuery(webAppQueryId, result) {
+  const token = getBotToken();
+  if (!token) {
+    console.warn("[telegram/botClient] TELEGRAM_BOT_TOKEN chưa được cấu hình");
+    return { ok: false };
+  }
+  try {
+    const res = await fetchWithTimeout(apiUrl("answerWebAppQuery"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ web_app_query_id: webAppQueryId, result }),
+    });
+    return await res.json().catch(() => ({ ok: false }));
+  } catch (e) {
+    console.error("[telegram/botClient] answerWebAppQuery thất bại:", e?.message);
+    return { ok: false };
+  }
+}
+
+/**
  * Đăng ký webhook URL với Telegram (chạy 1 lần khi deploy).
  * @param {string} url     — URL đầy đủ, ví dụ https://yourdomain.com/api/telegram/webhook
  * @param {string} secret  — TELEGRAM_WEBHOOK_SECRET

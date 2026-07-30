@@ -1,5 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 import path from 'path';
+import fs from 'fs';
+import os from 'os';
+import crypto from 'crypto';
 import { loadEnvConfig } from '@next/env';
 
 /**
@@ -14,6 +17,28 @@ import { loadEnvConfig } from '@next/env';
 // server. Without this, admin-token.ts falls back to ~/.9router/jwt-secret while
 // the server signs with <DATA_DIR>/jwt-secret → JWT signature mismatch → 401.
 loadEnvConfig(__dirname);
+
+// Ensure E2E has a writable DATA_DIR, an encryption key, and a Telegram bot token.
+// These env vars are also inherited by the webServer child process.
+function ensurePlaywrightDataDir() {
+  const candidate = process.env.DATA_DIR;
+  if (candidate) {
+    try {
+      fs.mkdirSync(candidate, { recursive: true });
+      return candidate;
+    } catch {
+      // .env may point at /var/lib/9router which is not writable on macOS; fall through.
+    }
+  }
+  return fs.mkdtempSync(path.join(os.tmpdir(), '9router-playwright-'));
+}
+process.env.DATA_DIR = ensurePlaywrightDataDir();
+if (!process.env.STORE_ENC_KEY) {
+  process.env.STORE_ENC_KEY = crypto.randomBytes(32).toString('hex');
+}
+if (!process.env.TELEGRAM_BOT_TOKEN) {
+  process.env.TELEGRAM_BOT_TOKEN = 'test-bot-token';
+}
 
 // loadEnvConfig above also pulls BASE_URL from .env — which points at the REMOTE
 // deployment (https://router.chainlens.net). The apiRequest fixture issues

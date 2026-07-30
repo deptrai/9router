@@ -43,6 +43,12 @@ const PUBLIC_API_PATHS = [
   "/api/telegram/validate-init-data",
   // Story 2-25a: Mini App user info (requires valid initData in body)
   "/api/telegram/user-info",
+  // Story 2-25a: Mini App in-app purchase (self-validating via TELEGRAM_BOT_TOKEN)
+  "/api/telegram/miniapp-buy",
+  // Story 2-25a: Mini App in-app top-up (self-validating via TELEGRAM_BOT_TOKEN)
+  "/api/telegram/miniapp-topup",
+  // Story 2-25a: Mini App payment status polling (self-validating via TELEGRAM_BOT_TOKEN)
+  "/api/telegram/payment-status",
   // Story 2.25: Store read API — public catalog, không có dữ liệu nhạy cảm
   "/api/store/products",
   // Story 2.30: Supplier webhook — public, self-authenticates via timingSafeEqual secret (AC3)

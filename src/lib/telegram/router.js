@@ -5,7 +5,7 @@
  * Error wrapper (AC3): mọi handler được bọc try/catch — không leak stack.
  */
 
-import { sendMessage, answerCallbackQuery } from "./botClient.js";
+import { sendMessage, answerCallbackQuery, setChatMenuButton } from "./botClient.js";
 
 function escapeHtml(str) {
   return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -28,11 +28,11 @@ function getStoreUrl() {
   return `${baseUrl}/telegram/store`;
 }
 
-// Persistent reply keyboard — luôn hiện ở bottom (như các bot shop khác)
+// Persistent reply keyboard — text buttons only; Mini App entry is now MenuButton / inline web_app.
 function buildPersistentMenu() {
   return {
     keyboard: [
-      [{ text: "🛍 Sản phẩm", web_app: { url: getStoreUrl() } }, { text: "💰 Ví" }],
+      [{ text: "🛍 Sản phẩm" }, { text: "💰 Ví" }],
       [{ text: "📦 Đơn hàng" }, { text: "🔑 API" }, { text: "🆘 Hỗ trợ" }],
       [{ text: "👥 Giới thiệu" }],
     ],
@@ -40,6 +40,8 @@ function buildPersistentMenu() {
     is_persistent: true,
   };
 }
+
+const MINIAPP_MENU_TEXT = process.env.TELEGRAM_MINIAPP_MENU_TEXT || "🛍 Shop";
 
 const PERSISTENT_MENU = buildPersistentMenu();
 
@@ -82,9 +84,15 @@ async function handleStart(update) {
     }
 
     const greeting = user.displayName ? `Xin chào <b>${escapeHtml(user.displayName)}</b>!` : "Xin chào!";
+
+    // Set Mini App menu button (Hướng B) — best one-tap entry point for in-app commerce.
+    await setChatMenuButton(chatId, MINIAPP_MENU_TEXT, getStoreUrl()).catch((e) => {
+      console.error("[telegram/router] setChatMenuButton lỗi:", e?.message);
+    });
+
     await sendMessage(
       chatId,
-      `${greeting} 👋\n\nChọn chức năng bên dưới:`,
+      `${greeting} 👋\n\nBấm nút <b>${MINIAPP_MENU_TEXT}</b> bên dưới để mở cửa hàng, hoặc chọn menu:`,
       { reply_markup: PERSISTENT_MENU }
     );
   } catch (e) {
@@ -97,10 +105,21 @@ async function handleStart(update) {
 
 async function handleProducts(chatId) {
   try {
+    // Set MenuButton for this chat and send an inline web_app button as fallback (Hướng B).
+    await setChatMenuButton(chatId, MINIAPP_MENU_TEXT, getStoreUrl()).catch((e) => {
+      console.error("[telegram/router] setChatMenuButton lỗi:", e?.message);
+    });
+
     await sendMessage(
       chatId,
-      "🛍 Mở cửa hàng bên dưới để xem danh sách sản phẩm:",
-      { reply_markup: PERSISTENT_MENU }
+      "🛍 Mở cửa hàng bên dưới:",
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🛒 Mở cửa hàng", web_app: { url: getStoreUrl() } }],
+          ],
+        },
+      }
     );
   } catch (e) {
     console.error("[telegram/router] /products lỗi:", e?.message);
@@ -831,7 +850,12 @@ export async function handleUpdate(update) {
         const raw = update.message.web_app_data.data || "";
         const data = raw ? JSON.parse(raw) : {};
         if (data.action === "buy" && data.productId) {
-          await handleBuyConfirm(chatId, data.productId);
+          const from = update.message.from;
+          if (data.confirmed === true) {
+            await handleBuyExecute(chatId, from, data.productId, `webapp-fallback:${Date.now()}`);
+          } else {
+            await handleBuyConfirm(chatId, data.productId);
+          }
           return;
         }
       } catch (e) {

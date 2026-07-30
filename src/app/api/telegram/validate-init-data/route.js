@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import crypto from "node:crypto";
+import { validateInitData } from "@/lib/auth/telegramWebApp.js";
 
 export const dynamic = "force-dynamic";
 
@@ -14,55 +14,12 @@ export async function POST(request) {
       return NextResponse.json({ error: "initData missing" }, { status: 400 });
     }
 
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
-    if (!botToken) {
-      return NextResponse.json({ error: "Bot token not configured" }, { status: 500 });
+    const result = validateInitData(initData);
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: 401 });
     }
 
-    // Parse initData as a query string. Telegram signs the decoded key=value pairs,
-    // so we must use URLSearchParams to decode values before computing the hash.
-    const params = new URLSearchParams(initData);
-    const hash = params.get("hash");
-    if (!hash) {
-      return NextResponse.json({ error: "hash missing" }, { status: 400 });
-    }
-
-    const authDate = Number(params.get("auth_date") || "0");
-    const now = Math.floor(Date.now() / 1000);
-    if (!authDate || now - authDate > 86400) {
-      return NextResponse.json({ error: "initData expired" }, { status: 401 });
-    }
-
-    params.delete("hash");
-    const pairs = [];
-    for (const [key, value] of params.entries()) {
-      pairs.push(`${key}=${value}`);
-    }
-    pairs.sort();
-    const dataCheckString = pairs.join("\n");
-
-    const secretKey = crypto
-      .createHmac("sha256", "WebAppData")
-      .update(botToken)
-      .digest();
-    const calculatedHash = crypto
-      .createHmac("sha256", secretKey)
-      .update(dataCheckString)
-      .digest("hex");
-
-    if (calculatedHash !== hash) {
-      return NextResponse.json({ error: "invalid hash" }, { status: 401 });
-    }
-
-    const userRaw = params.get("user");
-    let user = null;
-    if (userRaw) {
-      try {
-        user = JSON.parse(userRaw);
-      } catch {}
-    }
-
-    return NextResponse.json({ ok: true, user });
+    return NextResponse.json({ ok: true, user: result.user });
   } catch (e) {
     console.error("[api/telegram/validate-init-data] error:", e?.message);
     return NextResponse.json({ error: "validation failed" }, { status: 500 });

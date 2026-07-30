@@ -2,158 +2,360 @@
 baseline_commit: 803e5c8
 epic: I
 context:
-  - _bmad-output/planning-artifacts/epics.md
+  - _bmad-output/planning-artifacts/sprint-change-proposal-2026-07-30.md
+  - _bmad-output/planning-artifacts/architecture/architecture-9router-2026-07-30/ARCHITECTURE-SPINE.md
   - docs/stories/2-25-telegram-user-linking-product-catalog.md
   - docs/stories/2-26-telegram-checkout-orders.md
+  - docs/stories/2-39-vnd-bank-transfer-topup.md
+  - src/app/telegram/store/page.js
+  - src/lib/telegram/router.js
+  - src/lib/telegram/botClient.js
+  - src/lib/store/storeCheckout.js
+  - src/lib/store/externalCheckout.js
+  - src/lib/payment/vndBank.js
+  - src/app/api/payments/vnd/route.js
+  - src/app/api/store/checkout/route.js
 ---
 
-# Story 2-25a — Telegram Mini App Product Catalog
+# Story 2-25a — Telegram Mini App Product Catalog (Hướng B: In-App Commerce)
 
 Status: ready-for-dev
 
 ## Story
 
 **As a** Telegram user,
-**I want** mở Mini App từ bot để xem danh sách sản phẩm,
-**so that** tôi có thể duyệt catalog lớn mà không bị spam nhiều tin nhắn trong chat.
+**I want** mở Mini App, xem sản phẩm, mua và nạp tiền hoàn toàn bên trong Mini App,
+**so that** tôi không phải chuyển sang bot chat để xác nhận hay nạp tiền.
 
 ## Bối cảnh và quyết định architecture
 
-Story 2.25 đã dựng nền bot `/start` + `/products` + menu chính, trong đó `/products` gửi **mỗi product một tin nhắn riêng**. Khi catalog mở rộng (hàng chục/hàng trăm sản phẩm từ supplier Telegram), cách làm này:
+### Hiện trạng
 
-- Spam chat, khó cuộn tìm kiếm.
-- Dễ đụng Telegram rate-limit.
-- Không hỗ trợ filter/sort, UX kém.
+Story 2.25 đã dựng nền bot (`/start`, `/products`, menu chính) và Story 2-25a đã tạo trang Mini App `src/app/telegram/store/page.js` cơ bản. Tuy nhiên, bản implement đầu dùng **reply-keyboard `web_app` button** để mở Mini App. Theo Telegram spec, Mini App mở từ reply-keyboard **không nhận được `initData`**, do đó:
 
-Story 2-25a tối ưu UX bằng cách chuyển danh sách sản phẩm vào **Telegram Mini App** (Webview). Người dùng bấm “🛍 Sản phẩm” hoặc gõ `/products` thì bot gửi **một tin nhắn duy nhất** kèm nút mở Mini App. Mini App hiển thị catalog đầy đủ; khi chọn mua thì gửi `web_app_data` về bot, bot dùng lại flow xác nhận mua từ story 2.26 (`handleBuyConfirm` / `handleBuyExecute`).
+- Mini App không biết user là ai.
+- Không thể gọi API backend để mua/nạp.
+- Buộc phải dùng `Telegram.WebApp.sendData` gửi về bot, rồi bot gửi tin nhắn xác nhận thêm một lần nữa.
+- Flow trở thành: Mini App → bot xác nhận → bot execute (3 bước, chuyển surface).
+
+### Quyết định Hướng B
+
+Chuyển entry point sang **MenuButton hoặc `inline_keyboard web_app` button** để Mini App nhận `initData` + `query_id`. Từ đó:
+
+- Gọi `POST /api/telegram/miniapp-buy` để mua trực tiếp.
+- Gọi `POST /api/telegram/miniapp-topup` để tạo payment và nạp tiền.
+- Hiển thị balance, modal xác nhận, kết quả order trong app.
+
+Path cũ `sendData` + `handleBuyConfirm` chỉ giữ làm fallback.
 
 ### Hiện trạng code (verified)
 
-- **Bot infra đã có**: `src/lib/telegram/botClient.js` (pure fetch), `src/lib/telegram/router.js` (`handleUpdate` dispatch), `POST /api/telegram/webhook`.
-- **Product catalog API đã có**: `GET /api/store/products` trả active products.
-- **Checkout flow đã có**: `handleBuyConfirm` (callback `buy:<productId>`) và `handleBuyExecute` (`buyc:<productId>`) trong `router.js`.
-- **Telegram auth pattern đã có**: `src/lib/auth/telegramAuth.js` dùng HMAC-SHA256 cho login widget; Mini App cần cơ chế tương tự nhưng với `WebAppData` key.
-- **Next.js + Tailwind đã có**: phù hợp để xây dựng trang Mini App nhanh.
+- `src/lib/telegram/router.js`: `buildPersistentMenu` dùng reply-keyboard `web_app` button; `handleProducts` gửi `PERSISTENT_MENU`; `handleBuyConfirm`/`handleBuyExecute` dùng callback `buy:`/`buyc:`.
+- `src/lib/telegram/botClient.js`: có `sendMessage`, `answerCallbackQuery`, `setWebhook`. Thiếu `setChatMenuButton` và `answerWebAppQuery`.
+- `src/app/telegram/store/page.js`: đã load SDK, lấy `initData` từ URL hash/search, gọi `/api/telegram/validate-init-data` và `/api/telegram/user-info`, hiển thị balance. Nút "Mua ngay" hiện gọi `sendData`.
+- `src/app/api/telegram/validate-init-data/route.js` và `user-info/route.js`: duplicate code HMAC validate.
+- `src/lib/store/storeCheckout.js` và `src/lib/store/externalCheckout.js`: business logic checkout đã sẵn sàng, nhận `userId`, `productId`, `idempotencyKey`.
+- `src/lib/payment/vndBank.js`: `createVndPayment({ userId, credits })` đã có.
+- `src/app/api/payments/vnd/route.js` và `src/app/api/payments/create/route.js`: cần cookie dashboard session; Mini App dùng `initData` thay thế.
+- `src/app/api/store/checkout/route.js`: mẫu JSON response cho `storeCheckout`/`externalCheckout`.
 
-### Scope 2-25a (CHỈ story này)
+## Scope
 
-Làm:
-1. Trang Mini App `src/app/telegram/store/page.js` — client component, load SDK Telegram, xác thực `initData`, hiển thị product list.
-2. API `POST /api/telegram/validate-init-data` — validate `Telegram.WebApp.initData` theo Telegram spec, trả `user`.
-3. (Optional) API `POST /api/telegram/user-info` — trả user + số dư credits để hiển thị trong Mini App.
-4. Cập nhật `src/lib/telegram/router.js`:
-   - `PERSISTENT_MENU`: nút “🛍 Sản phẩm” mở Mini App (`web_app` button).
-   - `handleProducts`: gửi một tin nhắn duy nhất kèm nút mở Mini App.
-   - `handleUpdate`: xử lý `message.web_app_data` (`{ action: "buy", productId }`) → gọi `handleBuyConfirm`.
-5. Cập nhật `tests/unit/telegram-store.test.js`.
+### Trong scope
 
-KHÔNG làm (để story sau hoặc đã có):
-- Checkout lõi (2.26) — Mini App chỉ trigger lại flow cũ.
-- Wallet/orders/commands khác — menu vẫn giữ các nút text command.
+1. Chuyển entry point Mini App sang `MenuButton` / `inline_keyboard web_app`.
+2. Tách helper `validateInitData` dùng chung.
+3. Tạo `POST /api/telegram/miniapp-buy`.
+4. Tạo `POST /api/telegram/miniapp-topup`.
+5. Cập nhật `src/app/telegram/store/page.js`: modal mua, top-up CTA, gọi API.
+6. Tạo `src/app/telegram/store/topup/page.js`.
+7. Cập nhật `src/lib/telegram/router.js` và `botClient.js`.
+8. Cập nhật tests Playwright + unit.
+
+### Ngoài scope
+
+- Thay đổi logic `storeCheckout` / `externalCheckout` (chỉ gọi lại).
+- Thay đổi schema `products`, `orders`, `payments`.
+- Thay đổi `/v1/*` OpenAI-compatible surface.
+- Order history UI trong Mini App (dùng `/orders` bot command).
 
 ## Acceptance Criteria
 
-**AC1 — Mini App button**
-- WHEN user nhắn `/products` HOẶC bấm “🛍 Sản phẩm”
-- THEN bot gửi **một tin nhắn duy nhất** kèm `reply_markup` có nút `web_app` mở `https://<BASE_URL>/telegram/store`
+### AC1 — Entry point cung cấp initData
 
-**AC2 — Mini App product listing**
-- WHEN Mini App load
-- AND `Telegram.WebApp.initData` được gửi tới `POST /api/telegram/validate-init-data`
-- AND `hash` hợp lệ
-- THEN Mini App gọi `GET /api/store/products` và hiển thị danh sách sản phẩm active
-- AND mỗi card hiển thị: tên, mô tả ngắn, giá credits, tồn kho, nút “Mua ngay”
-- AND product hết hàng/inactive → nút “Mua ngay” bị vô hiệu hóa
+**Given** user gõ `/start` hoặc `/products` trong private chat
+**When** bot xử lý
+**Then**
+- `handleStart` gọi `setChatMenuButton` với text `🛍 Shop` và URL Mini App.
+- `handleProducts` gửi một tin nhắn kèm inline `web_app` button "Mở cửa hàng" làm fallback.
+- Reply keyboard `PERSISTENT_MENU` không còn `web_app` button; nút `🛍 Sản phẩm` map thành `/products`.
 
-**AC3 — Buy from Mini App**
-- WHEN user bấm “Mua ngay” trong Mini App
-- THEN Mini App gọi `Telegram.WebApp.sendData(JSON.stringify({ action: "buy", productId: p.id }))`
-- AND bot nhận `web_app_data` và gọi `handleBuyConfirm(productId)` để hiện xác nhận trong chat
+### AC2 — Mini App xác thực initData và hiển thị balance
 
-**AC4 — Fallback**
-- WHEN client Telegram không hỗ trợ Mini App
-- AND user gõ `/products` bằng text
-- THEN bot vẫn có thể trả về danh sách sản phẩm dạng text như cũ HOẶC hướng dẫn cập nhật Telegram
+**Given** user mở Mini App từ MenuButton hoặc inline `web_app`
+**When** `Telegram.WebApp.initData` có sẵn
+**Then**
+- `page.js` gửi `initData` tới `POST /api/telegram/user-info`.
+- API trả `user` + `balances`.
+- Header hiển thị tổng credits và nút `+ Nạp`.
+- Catalog hiển thị sản phẩm active.
 
-**AC5 — Security**
-- WHEN Mini App gọi API
-- THEN `initData` được xác thực HMAC-SHA256 bằng `TELEGRAM_BOT_TOKEN`
-- AND `auth_date` không quá cũ (ví dụ < 24h)
-- AND request không hợp lệ → 401, không leak thông tin
+### AC3 — Mua sản phẩm trong Mini App (one-tap)
 
-**AC6 — Tests**
-- WHEN dev hoàn tất: tests cover `handleProducts` gửi `web_app` button, `web_app_data` dispatch tới `handleBuyConfirm`, validate-init-data reject/accept.
+**Given** user đang xem catalog, sản phẩm active và còn hàng, số dư đủ
+**When** user bấm "Mua ngay" → "Xác nhận mua" trong modal
+**Then**
+- Client gọi `POST /api/telegram/miniapp-buy` với `initData`, `productId`, `quantity=1`, `requestId`.
+- Server validate `initData`, find/create user, gọi `storeCheckout`.
+- API trả JSON `{ success, order, ... }`.
+- Mini App hiển thị kết quả (mã đơn, trạng thái) và gọi `Telegram.WebApp.close()`.
 
-## Decision Points (cần chốt)
+### AC4 — Thiếu credits
 
-- **D1 — Cập nhật story 2.25 hay tạo story mới**: Đã chọn **tạo story 2-25a** để giữ 2.25 nguyên vẹn.
-- **D2 — Mini App checkout**: (A) Gửi `web_app_data` về bot rồi xác nhận trong chat — đơn giản, reuse 2.26. (B) Checkout hoàn toàn trong Mini App qua API — UX mượt hơn nhưng cần thêm API + xử lý idempotency. **Đề xuất (A)** cho story này.
-- **D3 — Product list fetch**: Gọi public `GET /api/store/products` sau khi validate `initData` — không cần auth cookie vì user đã xác thực qua Telegram.
+**Given** user bấm "Mua ngay" nhưng số dư không đủ
+**When** modal mua hiện
+**Then** modal hiển thị "Số dư không đủ" + nút "Nạp credits" chuyển đến màn hình top-up.
+
+### AC5 — Nạp tiền trong Mini App (VND)
+
+**Given** user ở màn hình top-up, chọn VND, nhập số credits
+**When** bấm "Tạo QR"
+**Then**
+- Client gọi `POST /api/telegram/miniapp-topup` với `initData`, `method: "vnd"`, `credits`.
+- Server validate `initData`, find/create user, gọi `createVndPayment({ userId, credits })`.
+- API trả `{ paymentId, qrUrl, bankInfo, memo, amountVnd, expiresAt }`.
+- Client hiển thị QR và bắt đầu poll trạng thái.
+- Khi payment `settled`, balance tự động cập nhật qua `POST /api/telegram/user-info`.
+
+### AC6 — Nạp tiền trong Mini App (Crypto)
+
+**Given** user chọn Crypto, chọn coin/network, nhập số USD
+**When** bấm "Tạo invoice"
+**Then**
+- Server tạo payment record và gọi crypto provider `createInvoice`.
+- API trả `{ paymentId, payAddress, paymentUrl, network, coin, amountExpected, expiresAt }`.
+- Client hiển thị địa chỉ / QR và poll.
+
+### AC7 — Fallback cũ
+
+**Given** user mở Mini App từ reply-keyboard `web_app` cũ (không có `initData`)
+**When** bấm "Mua ngay"
+**Then** vẫn gọi `sendData` và bot xử lý `web_app_data` như cũ.
+
+### AC8 — Security
+
+- `initData` HMAC validate với `TELEGRAM_BOT_TOKEN`.
+- `auth_date` không quá 24h.
+- `idempotencyKey` unique tránh double-purchase.
+- API `miniapp-buy` và `miniapp-topup` không leak thông tin user/sản phẩm nhạy cảm.
+
+### AC9 — Tests
+
+- Unit test `validateInitData` helper (accept/reject/expired).
+- Unit test `miniapp-buy` happy path + INSUFFICIENT_CREDITS + idempotency replay.
+- Unit test `miniapp-topup` VND creation.
+- Playwright: mở Mini App từ inline `web_app` button, mua, nạp VND.
+
+## Decision Points
+
+### D1 — Entry point
+
+- (A) `MenuButton` cho toàn bộ chat — 1 tap, nhưng user phải biết icon menu.
+- (B) `inline_keyboard web_app` button trong tin nhắn — 2 tap (bấm reply text → bấm inline), nhưng rõ ràng.
+
+**Đề xuất (A) kết hợp (B)**: set `MenuButton` làm mặc định, `handleProducts` vẫn gửi inline `web_app` button làm fallback.
+
+### D2 — Xác thực user
+
+- (A) Dùng `initData` raw query string, validate server-side.
+- (B) Tạo JWT từ `initData` rồi gửi cookie.
+
+**Đề xuất (A)** — `initData` đã là bằng chứng xác thực từ Telegram, không cần thêm layer cookie.
+
+### D3 — Idempotency
+
+- (A) Dùng `query_id` trong `initData` làm key.
+- (B) Dùng `query_id` + client `requestId`.
+
+**Đề xuất (B)** — `query_id` là per session; `requestId` đảm bảo user có thể mua nhiều sản phẩm khác nhau và tránh double-charge cùng sản phẩm.
+
+### D4 — Top-up scope
+
+- (A) Chỉ VND trong app; Crypto redirect dashboard.
+- (B) Cả VND và Crypto trong app.
+
+**Đề xuất (B)** — đáp ứng yêu cầu "nạp tiền trên mini app", nhưng crypto chỉ cần tạo invoice/address, không cần UI phức tạp.
 
 ## Tasks / Subtasks
 
-### Part A — API xác thực Mini App
-- [ ] **A1**: Tạo `src/app/api/telegram/validate-init-data/route.js` — validate `Telegram.WebApp.initData`, trả `user`.
-- [ ] **A2** (Optional): Tạo `src/app/api/telegram/user-info/route.js` — trả `user` + `balances` cho Mini App header.
+### Part A — Shared auth helper
 
-### Part B — Mini App UI
-- [ ] **B1**: Tạo `src/app/telegram/store/page.js` — client component, load SDK, gọi validate, gọi products, render list.
-- [ ] **B2**: Styling với Tailwind: header (credits), search/filter (optional), product cards, “Mua ngay” buttons.
-- [ ] **B3**: “Mua ngay” gọi `Telegram.WebApp.sendData({ action: "buy", productId })`.
+- [ ] **A1**: Tạo `src/lib/auth/telegramWebApp.js` export `validateInitData(initData)` trả `{ ok, user, queryId, authDate }` hoặc `{ error }`.
+- [ ] **A2**: Refactor `src/app/api/telegram/validate-init-data/route.js` dùng helper.
+- [ ] **A3**: Refactor `src/app/api/telegram/user-info/route.js` dùng helper.
 
-### Part C — Bot router update
-- [ ] **C1**: Cập nhật `PERSISTENT_MENU` trong `src/lib/telegram/router.js` — “🛍 Sản phẩm” là `web_app` button.
-- [ ] **C2**: Cập nhật `handleProducts` — gửi 1 tin nhắn với `web_app` button thay vì loop nhiều tin nhắn.
-- [ ] **C3**: Thêm xử lý `update.message.web_app_data` trong `handleUpdate`, gọi `handleBuyConfirm`.
+### Part B — Bot client + entry point
 
-### Part D — Tests
-- [ ] **D1**: Cập nhật `tests/unit/telegram-store.test.js` — test Mini App button + `web_app_data` dispatch.
+- [ ] **B1**: Thêm `setChatMenuButton(chatId, { text, url })` vào `src/lib/telegram/botClient.js`.
+- [ ] **B2**: Thêm `answerWebAppQuery(webAppQueryId, result)` vào `src/lib/telegram/botClient.js` (optional).
+- [ ] **B3**: Cập nhật `buildPersistentMenu` trong `src/lib/telegram/router.js`: bỏ `web_app` khỏi reply keyboard; `🛍 Sản phẩm` map thành `/products`.
+- [ ] **B4**: Cập nhật `handleStart`: sau khi tạo/link user, gọi `setChatMenuButton`.
+- [ ] **B5**: Cập nhật `handleProducts`: gửi tin nhắn kèm inline `web_app` button.
+- [ ] **B6**: Giữ `handleUpdate.web_app_data` làm fallback; nếu `data.confirmed === true` thì gọi `handleBuyExecute` trực tiếp.
+
+### Part C — Mini App API
+
+- [ ] **C1**: Tạo `src/app/api/telegram/miniapp-buy/route.js`:
+  - Validate `initData`.
+  - Find/create user theo pattern `/start`.
+  - `idempotencyKey = "tgmini:" + telegramId + ":" + productId + ":" + (queryId || "none") + ":" + requestId`.
+  - Chọn `storeCheckout` hoặc `externalCheckout` theo `product.source`.
+  - Trả JSON giống `POST /api/store/checkout`.
+- [ ] **C2**: Tạo `src/app/api/telegram/miniapp-topup/route.js`:
+  - Validate `initData`, get user.
+  - `method === "vnd"` → `createVndPayment({ userId, credits })`.
+  - `method === "crypto"` → tạo payment record + gọi provider `createInvoice`.
+  - Trả payment info.
+- [ ] **C3**: Tạo `src/app/api/payments/status/route.js` (nếu chưa có) để Mini App poll payment status.
+
+### Part D — Mini App UI
+
+- [ ] **D1**: Cập nhật `src/app/telegram/store/page.js`:
+  - Header hiển thị balance + nút `+ Nạp`.
+  - "Mua ngay" mở modal xác nhận.
+  - Modal hiển thị tên, giá, balance, nút "Xác nhận mua" / "Hủy" / "Nạp credits".
+  - Gọi `POST /api/telegram/miniapp-buy` và xử lý response.
+- [ ] **D2**: Tạo `src/app/telegram/store/topup/page.js`:
+  - Chọn method VND / Crypto.
+  - Input credits hoặc USD.
+  - Gọi `POST /api/telegram/miniapp-topup`.
+  - Hiển thị QR / address.
+  - Poll payment status và refresh balance.
+
+### Part E — Tests
+
+- [ ] **E1**: Unit test `src/lib/auth/telegramWebApp.js`.
+- [ ] **E2**: Unit test `src/app/api/telegram/miniapp-buy`.
+- [ ] **E3**: Unit test `src/app/api/telegram/miniapp-topup`.
+- [ ] **E4**: Cập nhật Playwright `playwright/e2e/telegram-store-webapp.spec.ts`.
 
 ## Dev Notes
 
-### Reuse patterns
+### `validateInitData` helper
 
-**`src/lib/telegram/botClient.js`**: `sendMessage` đã hỗ trợ `reply_markup`. Truyền vào:
+Signature:
+
+```js
+export function validateInitData(initData) {
+  // return { ok: true, user, queryId, authDate } or { ok: false, error }
+}
+```
+
+- Parse `initData` bằng `URLSearchParams`.
+- Lấy `hash`, `auth_date`, `user`, `query_id`.
+- Tạo `dataCheckString` từ các pair sorted (bỏ `hash`).
+- `HMAC_SHA256(HMAC_SHA256(botToken, "WebAppData"), dataCheckString) === hash`.
+- `auth_date` < 24h.
+
+### `miniapp-buy` response shape
+
+Giống `POST /api/store/checkout`:
+
+```json
+{
+  "success": true,
+  "order": { ... },
+  "alreadyProcessed": false,
+  "credentials": [],
+  "entitlementId": null,
+  "planActivation": null,
+  "message": "Mua thành công!"
+}
+```
+
+Lỗi:
+
+```json
+{ "error": "Số dư không đủ." }
+```
+
+### `miniapp-topup` VND response shape
+
+```json
+{
+  "success": true,
+  "paymentId": "...",
+  "qrUrl": "...",
+  "bankInfo": { ... },
+  "memo": "...",
+  "credits": 100,
+  "amountVnd": 100000,
+  "expiresAt": "..."
+}
+```
+
+### `miniapp-topup` Crypto response shape
+
+```json
+{
+  "success": true,
+  "paymentId": "...",
+  "payAddress": "...",
+  "paymentUrl": "...",
+  "network": "tron",
+  "coin": "USDT",
+  "amountExpected": 10,
+  "expiresAt": "..."
+}
+```
+
+### User auto-create
+
+```js
+const displayName = [user.first_name, user.last_name].filter(Boolean).join(" ").trim() || user.username || `tg_${telegramId}`;
+const placeholderEmail = `telegram_${telegramId}@placeholder.local`;
+const newUser = await createUser(placeholderEmail, null, displayName);
+await updateUser(newUser.id, { telegramId });
+```
+
+### `setChatMenuButton` payload
+
 ```js
 {
-  reply_markup: {
-    inline_keyboard: [[
-      { text: "🛒 Xem danh sách sản phẩm", web_app: { url: `${baseUrl}/telegram/store` } }
-    ]]
+  chat_id: chatId,
+  menu_button: {
+    type: "web_app",
+    text: "🛍 Shop",
+    web_app: { url: getStoreUrl() }
   }
 }
 ```
 
-**`src/lib/telegram/router.js`**: Handler `handleUpdate` cần thêm nhánh:
+### Fallback `web_app_data`
+
+Nếu `data.confirmed === true`:
+
 ```js
-if (update.message?.web_app_data) {
-  const data = JSON.parse(update.message.web_app_data.data);
-  if (data.action === "buy" && data.productId) {
-    await handleBuyConfirm(chatId, data.productId);
-  }
-  return;
-}
+await handleBuyExecute(chatId, from, productId, "webapp:" + Date.now());
 ```
 
-**`initData` validation** (Telegram spec):
-- Parse query string, lấy `hash`.
-- Sort remaining `key=value` pairs alphabetically, join bằng `\n`.
-- `HMAC_SHA256(HMAC_SHA256(bot_token, "WebAppData"), data_check_string)` so sánh với `hash`.
+Nếu `data.confirmed !== true`:
 
-### Setup vận hành
+```js
+await handleBuyConfirm(chatId, productId);
+```
 
-- `BASE_URL` / `NEXT_PUBLIC_BASE_URL` phải trỏ đúng domain (`https://router.chainlens.net`).
-- Mini App URL cần HTTPS (đã có qua domain chính).
-- `TELEGRAM_BOT_TOKEN` đã set.
+## Regression / scope guard
 
-### Regression / scope guard
-
-- Không thay đổi `products` table, `orders`, `credit ledger`, hay `storeCheckout`.
-- Nút mua `buy:<productId>` trong chat vẫn giữ để các kịch bản fallback hoạt động.
-- `handleWallet`, `handleOrders`, `handleApi`, `handleSupport` không đổi.
+- Không thay đổi `storeCheckout`/`externalCheckout` contracts.
+- `handleBuyConfirm`/`handleBuyExecute` giữ nguyên để `/products` text fallback vẫn hoạt động.
+- OpenAI-compatible `/v1/*` không bị ảnh hưởng.
+- Không thêm dependency mới ngoài Next.js + React + Telegram JS SDK đã có.
 
 ## References
 
-- [Story 2.25] `docs/stories/2-25-telegram-user-linking-product-catalog.md`
-- [Story 2.26] `docs/stories/2-26-telegram-checkout-orders.md`
-- [Proposal] `_bmad-output/planning-artifacts/sprint-change-proposal-telegram-mini-app-2026-07-29.md`
+- `docs/stories/2-25-telegram-user-linking-product-catalog.md`
+- `docs/stories/2-26-telegram-checkout-orders.md`
+- `docs/stories/2-39-vnd-bank-transfer-topup.md`
+- `_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-30.md`
+- `_bmad-output/planning-artifacts/architecture/architecture-9router-2026-07-30/ARCHITECTURE-SPINE.md`
