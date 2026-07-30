@@ -19,7 +19,7 @@ const cryptoConfig = {
   minAmountUsd: 5,
   maxAmountUsd: 1000,
   supportedCoins: ["USDT", "USDC"],
-  supportedNetworks: ["tron", "polygon", "ethereum", "solana"],
+  supportedNetworks: ["tron", "bsc", "binance", "polygon", "ethereum", "solana"],
 };
 
 const checkRateLimit = createRateLimiter("miniappTopup", { windowMs: 60 * 60 * 1000, max: 5 });

@@ -20,6 +20,77 @@ const STATUS_MAP = {
   invalid: "failed", refunded: "failed",
 };
 
+// 9router network name -> Bitcart wallet currency
+const NETWORK_CURRENCY = {
+  tron: "trx",
+  bsc: "bnb",
+  binance: "bnb",
+  ethereum: "eth",
+  polygon: "matic",
+  solana: "sol",
+};
+
+// Token contract per (coin, chain). Only stablecoins we actually support.
+const TOKEN_CONTRACTS = {
+  "usdt:trx": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+  "usdt:bnb": "0x55d398326f99059ff775485246999027b3197955",
+  "usdc:trx": "TEkxiTehnzwnq8R2fmj5tSNTx8bxiuYDA", // USDC on Tron (Tether-issued)
+  "usdc:bnb": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+};
+
+// In-memory wallet list cache. TTL = 60s. Safe because wallets change rarely.
+let walletCache = { data: null, fetchedAt: 0 };
+const WALLET_CACHE_TTL_MS = 60_000;
+
+function normalizeContract(c) {
+  return (c || "").toLowerCase().replace(/^0x/, "0x");
+}
+
+async function fetchWallets({ baseUrl, apiKey }, signal) {
+  const now = Date.now();
+  if (walletCache.data && now - walletCache.fetchedAt < WALLET_CACHE_TTL_MS) {
+    return walletCache.data;
+  }
+  const res = await fetch(`${baseUrl}/wallets`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+    signal,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Bitcart fetchWallets error ${res.status}: ${text}`);
+  }
+  const body = await res.json();
+  const wallets = Array.isArray(body) ? body : body?.result || [];
+  walletCache = { data: wallets, fetchedAt: now };
+  return wallets;
+}
+
+function selectWalletId(wallets, coin, network) {
+  const networkLower = (network || "").toLowerCase();
+  const desiredCurrency = NETWORK_CURRENCY[networkLower];
+  if (!desiredCurrency) {
+    throw new Error(`Bitcart does not support network: ${network}`);
+  }
+  const coinLower = (coin || "").toLowerCase();
+  const isNative = coinLower === desiredCurrency;
+  const desiredContract = isNative
+    ? ""
+    : (TOKEN_CONTRACTS[`${coinLower}:${desiredCurrency}`] || "").toLowerCase();
+  if (!isNative && !desiredContract) {
+    throw new Error(`Bitcart does not support ${coin} on ${network}`);
+  }
+
+  const w = wallets.find((wallet) => {
+    const wc = (wallet.currency || "").toLowerCase();
+    const wContract = normalizeContract(wallet.contract);
+    return wc === desiredCurrency && wContract === desiredContract;
+  });
+  if (!w) {
+    throw new Error(`Bitcart wallet not found for ${coin} on ${network}`);
+  }
+  return w.id;
+}
+
 export function getProviderName() { return "bitcart"; }
 
 export function verifyAuth(req, _rawBody) {
@@ -104,17 +175,34 @@ export async function createInvoice({ amount, coin, network, orderId, signal }) 
   const notifUrl = `${base}/api/webhooks/bitcart?token=${encodeURIComponent(secret)}`;
 
   const internal = new AbortController();
-  const t = setTimeout(() => internal.abort(new Error("bitcart createInvoice timeout")), 10_000);
+  const t = setTimeout(() => internal.abort(new Error("bitcart createInvoice timeout")), 15_000);
   let fetchSignal = internal.signal;
   if (signal) {
     fetchSignal = typeof AbortSignal.any === "function" ? AbortSignal.any([internal.signal, signal]) : signal;
   }
+
+  let walletId;
+  try {
+    const wallets = await fetchWallets({ baseUrl, apiKey }, fetchSignal);
+    walletId = selectWalletId(wallets, coin, network);
+  } catch (err) {
+    clearTimeout(t);
+    throw new Error(`Bitcart wallet selection failed: ${err.message}`);
+  }
+
   let res;
   try {
     res = await fetch(`${baseUrl}/invoices`, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ store_id: storeId, price: amount, currency: "USD", order_id: orderId, notification_url: notifUrl }),
+      body: JSON.stringify({
+        store_id: storeId,
+        price: amount,
+        currency: "USD",
+        order_id: orderId,
+        notification_url: notifUrl,
+        payment_methods: [walletId],
+      }),
       signal: fetchSignal,
     });
   } finally { clearTimeout(t); }

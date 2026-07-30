@@ -66,30 +66,73 @@ describe("createInvoice", () => {
     const { createInvoice } = await import("@/lib/payment/bitcart.js");
     await expect(createInvoice({ amount:10, coin:"USDT", network:"tron", orderId:"o" })).rejects.toThrow("not configured");
   });
-  it("posts correct body + embeds token in notification_url", async () => {
+  it("fetches wallets, selects matching wallet, posts payment_methods", async () => {
     process.env.BITCART_BASE_URL = "http://bc.local";
     process.env.BITCART_API_KEY = "api-key";
     process.env.BITCART_STORE_ID = "store-abc";
     process.env.BITCART_WEBHOOK_SECRET = "wh-secret";
     process.env.BASE_URL = "http://9r.local";
-    global.fetch.mockResolvedValueOnce({
-      ok:true, json:async () => ({ id:"inv-xyz", payments:[{ payment_address:"TAddr", payment_url:"http://pay.url", amount:10 }], expiration:"2026-06-08T00:00:00Z" }),
-    });
+    global.fetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ result: [
+          { id:"w-trx-native", currency:"trx", contract:"" },
+          { id:"w-trx-usdt", currency:"trx", contract:"TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" },
+        ]}),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id:"inv-xyz", payments:[{ payment_address:"TAddr", payment_url:"http://pay.url", amount:10 }], expiration:"2026-06-08T00:00:00Z" }),
+      });
     const { createInvoice } = await import("@/lib/payment/bitcart.js");
     const r = await createInvoice({ amount:10, coin:"USDT", network:"tron", orderId:"ord-1" });
-    const [url, opts] = global.fetch.mock.calls[0];
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    const [walletUrl, walletOpts] = global.fetch.mock.calls[0];
+    expect(walletUrl).toBe("http://bc.local/wallets");
+    expect(walletOpts.headers.Authorization).toBe("Bearer api-key");
+
+    const [url, opts] = global.fetch.mock.calls[1];
     expect(url).toBe("http://bc.local/invoices");
     const body = JSON.parse(opts.body);
     expect(body.store_id).toBe("store-abc");
     expect(body.notification_url).toContain("token=wh-secret");
+    expect(body.payment_methods).toEqual(["w-trx-usdt"]);
     expect(r.gatewayId).toBe("inv-xyz");
     expect(r.payAddress).toBe("TAddr");
+  });
+  it("selects BNB native wallet for coin=BNB network=bsc", async () => {
+    process.env.BITCART_BASE_URL = "http://bc.local";
+    process.env.BITCART_API_KEY = "api-key";
+    process.env.BITCART_STORE_ID = "store-abc";
+    process.env.BITCART_WEBHOOK_SECRET = "wh-secret";
+    process.env.BASE_URL = "http://9r.local";
+    global.fetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ result: [
+          { id:"w-bnb-native", currency:"bnb", contract:"" },
+          { id:"w-bnb-usdt", currency:"bnb", contract:"0x55d398326f99059ff775485246999027b3197955" },
+        ]}),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id:"inv-bnb", payments:[{ payment_address:"0xB", payment_url:"http://pay.url", amount:10 }], expiration:900 }),
+      });
+    const { createInvoice } = await import("@/lib/payment/bitcart.js");
+    const r = await createInvoice({ amount:10, coin:"BNB", network:"bsc", orderId:"ord-2" });
+    const body = JSON.parse(global.fetch.mock.calls[1][1].body);
+    expect(body.payment_methods).toEqual(["w-bnb-native"]);
+    expect(r.gatewayId).toBe("inv-bnb");
   });
   it("API error → throws", async () => {
     process.env.BITCART_BASE_URL = "http://bc.local";
     process.env.BITCART_API_KEY = "api-key";
     process.env.BITCART_STORE_ID = "store-abc";
     process.env.BITCART_WEBHOOK_SECRET = "wh-secret";
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ result: [{ id:"w-trx-usdt", currency:"trx", contract:"TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" }] }),
+    });
     global.fetch.mockResolvedValueOnce({ ok:false, status:503, text:async () => "err" });
     const { createInvoice } = await import("@/lib/payment/bitcart.js");
     await expect(createInvoice({ amount:10, coin:"USDT", network:"tron", orderId:"o" })).rejects.toThrow("503");

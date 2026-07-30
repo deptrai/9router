@@ -307,6 +307,8 @@ export default function TelegramStoreTopupPage() {
                       className="w-full mt-2 px-4 py-3 rounded-xl border border-[#E5E7EB] bg-white text-[#1a1a1a]"
                     >
                       <option value="tron">Tron</option>
+                      <option value="bsc">BSC</option>
+                      <option value="binance">BNB Smart Chain</option>
                       <option value="polygon">Polygon</option>
                       <option value="ethereum">Ethereum</option>
                       <option value="solana">Solana</option>

@@ -24,7 +24,7 @@ function getConfig() {
     bonusPercent: Number.isFinite(bonusPercent) ? bonusPercent : 15,
     minAmountUsd: 5, maxAmountUsd: 1000,
     supportedCoins: ["USDT", "USDC"],
-    supportedNetworks: ["tron", "polygon", "ethereum", "solana"],
+    supportedNetworks: ["tron", "bsc", "binance", "polygon", "ethereum", "solana"],
   };
   if (!raw) return defaults;
   try { return { ...defaults, ...JSON.parse(raw) }; } catch { return defaults; }
