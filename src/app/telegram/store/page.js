@@ -24,8 +24,9 @@ export default function TelegramStorePage() {
     const hashParams = new URLSearchParams(rawHash);
     const rawSearch = window.location.search ? window.location.search.replace(/^\?/, "") : "";
     const searchParams = new URLSearchParams(rawSearch);
+    const tgInitData = typeof window !== "undefined" ? window.Telegram?.WebApp?.initData || window.__telegramInitData : "";
     const initData =
-      (typeof window !== "undefined" ? window.__telegramInitData : "") ||
+      tgInitData ||
       hashParams.get("tgWebAppData") ||
       searchParams.get("tgWebAppData") ||
       "";
@@ -41,6 +42,10 @@ export default function TelegramStorePage() {
       if (tg) {
         tg.ready();
         tg.expand();
+        if (tg.initData && !initDataRef.current) {
+          initDataRef.current = tg.initData;
+          loadUserAndProducts();
+        }
         setWebAppReady(true);
       }
     };
