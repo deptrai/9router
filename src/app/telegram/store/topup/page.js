@@ -24,33 +24,17 @@ export default function TelegramStoreTopupPage() {
     const hashParams = new URLSearchParams(rawHash);
     const rawSearch = window.location.search ? window.location.search.replace(/^\?/, "") : "";
     const searchParams = new URLSearchParams(rawSearch);
+    const tgInitData = typeof window !== "undefined" ? window.Telegram?.WebApp?.initData || window.__telegramInitData : "";
     const initData =
-      (typeof window !== "undefined" ? window.__telegramInitData : "") ||
+      tgInitData ||
       hashParams.get("tgWebAppData") ||
       searchParams.get("tgWebAppData") ||
       "";
     initDataRef.current = initData;
 
-    const setupWebApp = () => {
-      const tg = window.Telegram?.WebApp;
-      if (tg) {
-        tg.ready();
-        tg.expand();
-      }
-    };
-
-    if (window.Telegram?.WebApp) {
-      setupWebApp();
-    } else {
-      const script = document.createElement("script");
-      script.src = "https://telegram.org/js/telegram-web-app.js";
-      script.defer = true;
-      script.onload = setupWebApp;
-      document.head.appendChild(script);
-    }
-
     const load = async () => {
-      if (!initData) {
+      const current = initDataRef.current;
+      if (!current) {
         setLoading(false);
         setError("Không tìm thấy initData. Mở lại từ Telegram.");
         return;
@@ -59,7 +43,7 @@ export default function TelegramStoreTopupPage() {
         const res = await fetch("/api/telegram/user-info", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ initData }),
+          body: JSON.stringify({ initData: current }),
         });
         const data = await res.json();
         if (data.ok) {
@@ -74,6 +58,28 @@ export default function TelegramStoreTopupPage() {
         setLoading(false);
       }
     };
+
+    const setupWebApp = () => {
+      const tg = window.Telegram?.WebApp;
+      if (tg) {
+        tg.ready();
+        tg.expand();
+        if (tg.initData && !initDataRef.current) {
+          initDataRef.current = tg.initData;
+          load();
+        }
+      }
+    };
+
+    if (window.Telegram?.WebApp) {
+      setupWebApp();
+    } else {
+      const script = document.createElement("script");
+      script.src = "https://telegram.org/js/telegram-web-app.js";
+      script.defer = true;
+      script.onload = setupWebApp;
+      document.head.appendChild(script);
+    }
 
     load();
   }, []);
