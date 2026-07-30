@@ -206,7 +206,12 @@ export default function TelegramStoreTopupPage() {
 
   const goBack = () => {
     if (typeof window === "undefined") return;
-    window.location.href = "/telegram/store";
+    const initData = initDataRef.current;
+    if (initData) {
+      window.location.href = `/telegram/store?tgWebAppData=${encodeURIComponent(initData)}`;
+    } else {
+      window.location.href = "/telegram/store";
+    }
   };
 
   const closeApp = () => {

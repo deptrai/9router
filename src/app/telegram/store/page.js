@@ -232,7 +232,12 @@ export default function TelegramStorePage() {
 
   const goToTopup = () => {
     if (typeof window === "undefined") return;
-    window.location.href = "/telegram/store/topup";
+    const initData = initDataRef.current;
+    if (initData) {
+      window.location.href = `/telegram/store/topup?tgWebAppData=${encodeURIComponent(initData)}`;
+    } else {
+      window.location.href = "/telegram/store/topup";
+    }
   };
 
   const closeModal = () => {
