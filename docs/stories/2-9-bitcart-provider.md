@@ -137,6 +137,84 @@ Status: done
 - **Cảnh báo fiat rate**: invoice `currency:"USD"` cần Bitcart gọi CoinGecko (có thể chậm/timeout nếu môi trường chặn out-bound). Crypto-denominated nhanh. → 9Router gửi `currency` USD nhưng cần Bitcart server có CoinGecko reachable; ghi rõ ops requirement.
 - **Vận hành Bitcart = 3 process**: API + worker + coin daemon. PaymentProcessor (detect payment → fire IPN) chạy trong **worker** (`api/ioc/worker.py`), KHÔNG phải API. → đây là deployment dependency, không thuộc code 9Router nhưng phải có để IPN bắn.
 
+### Bitcart local self-host setup — kinh nghiệm cấu hình (2026-07-30)
+
+> Ghi chép từ lần setup local trên máy dev để sau này làm lại/khởi tạo môi trường test nhanh.
+
+**1. Chuẩn bị repo & dependencies**
+- Bitcart source: `/Users/luisphan/Documents/GitHub/bitcart` (python 3.13, `uv` + `just`).
+- `uv sync` để cài dependencies.
+- `just db-migrate` chạy migration trên Postgres local (`DB_HOST=127.0.0.1`, `DB_PORT=5432`, `DB_DATABASE=bitcart`, `DB_USER=...`).
+- Redis local ở `127.0.0.1:6379`.
+
+**2. `conf/.env` cho local dev (mẫu tối thiểu)**
+```
+BITCART_CRYPTOS=btc,trx,bnb
+DB_HOST=127.0.0.1
+DB_PORT=5432
+DB_DATABASE=bitcart
+DB_USER=...
+REDIS_HOST=127.0.0.1
+
+TRX_HOST=localhost
+TRX_PORT=5009
+TRX_NETWORK=mainnet
+TRX_SERVER=https://tron-rpc.publicnode.com
+TRX_EXPERIMENTAL_NOSYNC=true
+TRX_NO_DOWNTIME_PROCESSING=true
+TRX_MAX_SYNC_BLOCKS=1
+
+BNB_HOST=127.0.0.1
+BNB_PORT=5006
+BNB_NETWORK=mainnet
+BNB_SERVER=https://bsc-mainnet.public.blastapi.io
+BNB_EXPERIMENTAL_NOSYNC=true
+BNB_NO_DOWNTIME_PROCESSING=true
+BNB_MAX_SYNC_BLOCKS=1
+```
+- `*_EXPERIMENTAL_NOSYNC=true` + `*_NO_DOWNTIME_PROCESSING=true` + `*_MAX_SYNC_BLOCKS=1` giúp daemon không treo khi test invoice trong môi trường public RPC chậm.
+- `BITCART_CRYPTOS` **phải liệt kê đủ coin** mà 9Router cần (ví dụ `trx,bnb`); thiếu coin khi tạo invoice sẽ bị 422 hoặc sinh payment method sai.
+
+**3. Khởi động đúng thứ tự**
+1. Coin daemon trước: `uv run just daemon trx` (port 5009), `uv run just daemon bnb` (port 5006).
+2. Worker: `uv run just worker` (xử lý IPN / PaymentProcessor).
+3. API: `uv run just dev-api` (port 8000).
+- Chỉ chạy API mà thiếu daemon sẽ tạo invoice bị treo vô hạn; chỉ chạy API mà thiếu worker thì webhook không bắn được.
+
+**4. Tạo store / wallet qua API (hoặc UI admin)**
+- Tạo token test token `full_control` qua `POST /token` hoặc lấy từ DB (`tokens` table).
+- Tạo `wallet` với `currency=trx` hoặc `currency=bnb`.
+- **USDT token** cần thêm trường `contract`:
+  - `TRX USDT`: `TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t`
+  - `BSC USDT`: `0x55d398326f99059ff775485246999027b3197955`
+- Tạo `store` gắn wallet(s); nên set `checkout_settings.rate_rules` cố định để tránh Bitcart gọi CoinGecko (ví dụ nội dung 3 dòng: `USDT_USD=1`, `TRX_USD=1`, `BNB_USD=1`).
+- `allow_anonymous_invoice_creation=true` cho phép 9Router tạo invoice mà không cần user Bitcart.
+
+**5. Giới hạn public RPC khi test USDT token**
+- **Native coin** (TRX/BNB) tạo invoice nhanh với public RPC.
+- **USDT token invoice** dễ bị treo vì daemon quét `eth_getLogs`/`getLogs` để tìm token transfers. Các public RPC free (publicnode, blastapi public, ankr public) thường chặn/rate-limit query logs.
+- Để test USDT đầu cuối cần **archive/paid RPC** hỗ trợ `eth_getLogs`:
+  - BSC: QuickNode, Alchemy, Chainstack, Ankr private endpoint, Blast API…
+  - TRX: TronGrid API key hoặc Tron full node riêng.
+
+**6. Cấu hình 9Router `.env` để trỏ về local Bitcart**
+```
+CRYPTO_PAYMENT_PROVIDER=bitcart
+BITCART_BASE_URL=http://127.0.0.1:8000
+BITCART_API_KEY=<full_control token từ Bitcart>
+BITCART_STORE_ID=<store id đã tạo>
+BITCART_WEBHOOK_SECRET=<secret tùy chọn, phải khớp với query token trong notification_url>
+BASE_URL=http://localhost:20128
+```
+- `BITCART_WEBHOOK_SECRET` là shared secret nhúng trong `notification_url` (`/api/webhooks/bitcart?token=...`), `verifyAuth` timing-safe so sánh với query param.
+- Để test webhook IPN local cần expose `BASE_URL` (ngrok/localtunnel) hoặc gọi `POST /api/webhooks/bitcart` thủ công với body `{"id":"...","status":"complete"}`.
+
+**7. Các lỗi thường gặp khi dev**
+- `DELETE /invoices/{id}` (cancelInvoice) cần quyền store owner/superuser token. 9Router gọi với `Authorization: Bearer <BITCART_API_KEY>`.
+- Tạo invoice treo 10s rồi timeout: thường do daemon chưa chạy, daemon đang sync, hoặc public RPC không hỗ trợ query token logs.
+- Bitcart API trả 401: token thiếu quyền `full_control` hoặc token đã bị xóa.
+- `Wallet ... is not connected to store`: wallet chưa được thêm vào store hoặc `BITCART_CRYPTOS` không chứa coin đó.
+
 ### Patterns reuse từ story 2.8 (KHÔNG viết lại)
 - **`settlePayment()` là tim của cả hệ thống** — extract từ `webhooks/crypto/route.js` lớp transaction (`db.transaction()` recheck-then-award). Cả 2 webhook gọi hàm này. KHÔNG copy-paste — 1 bug fix = fix 1 chỗ.
 - **Idempotency + state-machine**: `TERMINAL_STATUSES` guard, `settled` → 200 no-op, không downgrade terminal — giữ y nguyên cho cả 2 webhook.

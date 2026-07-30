@@ -33,15 +33,20 @@ export function parseIpn(rawBody) {
 // same request handler, passing data directly is strictly safer (R3-P1-4).
 export function resolveSettlement(_gatewayPaymentId, data) {
   if (!data) throw new Error(`[nowpayments-adapter] No IPN data provided for ${_gatewayPaymentId}`);
+  const actuallyPaid = Number(data.actually_paid);
+  if (!Number.isFinite(actuallyPaid) || actuallyPaid < 0) {
+    throw new Error(`[nowpayments-adapter] No actually_paid amount in IPN data for ${_gatewayPaymentId}`);
+  }
   return {
-    amountReceived: Number(data.actually_paid) || Number(data.pay_amount) || 0,
+    amountReceived: actuallyPaid,
     txHash: data.payin_hash || data.purchase_id || null,
     confirmations: Number(data.confirmations) || 0,
   };
 }
 
-export async function createInvoice({ amount, coin, network, orderId }) {
-  const invoice = await npCreateInvoice({ amount, coin, network, orderId });
+export async function createInvoice({ amount, coin, network, orderId, signal }) {
+  const invoice = await npCreateInvoice({ amount, coin, network, orderId, signal });
+  if (!invoice || !invoice.id) throw new Error("NOWPayments createInvoice returned no invoice id");
   return {
     gatewayId: String(invoice.id),
     paymentUrl: invoice.invoice_url || null,

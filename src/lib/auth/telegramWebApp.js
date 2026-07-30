@@ -24,7 +24,7 @@ export function validateInitData(initData) {
 
   const authDate = Number(params.get("auth_date") || "0");
   const now = Math.floor(Date.now() / 1000);
-  if (!authDate || now - authDate > 86400) {
+  if (!authDate || now - authDate >= 86400 || authDate > now + 60) {
     return { ok: false, error: "initData expired" };
   }
 
@@ -45,7 +45,12 @@ export function validateInitData(initData) {
     .update(dataCheckString)
     .digest("hex");
 
-  if (calculatedHash !== hash) {
+  if (hash.length !== 64 || calculatedHash.length !== 64 || !/^[0-9a-f]+$/i.test(hash)) {
+    return { ok: false, error: "invalid hash" };
+  }
+  const a = Buffer.from(calculatedHash, "hex");
+  const b = Buffer.from(hash, "hex");
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
     return { ok: false, error: "invalid hash" };
   }
 
@@ -58,8 +63,11 @@ export function validateInitData(initData) {
       return { ok: false, error: "user invalid" };
     }
   }
-  if (!user) {
+  if (!user || typeof user.id !== "number" || !Number.isSafeInteger(user.id) || user.id <= 0) {
     return { ok: false, error: "user missing" };
+  }
+  if (user.is_bot === true) {
+    return { ok: false, error: "bot not allowed" };
   }
 
   const queryId = params.get("query_id") || null;

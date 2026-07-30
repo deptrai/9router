@@ -96,6 +96,29 @@ describe("createInvoice", () => {
   });
 });
 
+describe("cancelInvoice", () => {
+  it("calls DELETE /invoices/{id} and returns true on success", async () => {
+    process.env.BITCART_BASE_URL = "http://bc.local";
+    process.env.BITCART_API_KEY = "api-key";
+    process.env.BITCART_STORE_ID = "store-abc";
+    global.fetch.mockResolvedValueOnce({ ok: true, text: async () => "ok" });
+    const { cancelInvoice } = await import("@/lib/payment/bitcart.js");
+    const r = await cancelInvoice("inv-xyz");
+    expect(r).toBe(true);
+    const [url, opts] = global.fetch.mock.calls[0];
+    expect(opts.method).toBe("DELETE");
+    expect(url).toBe("http://bc.local/invoices/inv-xyz");
+  });
+  it("throws on non-ok response", async () => {
+    process.env.BITCART_BASE_URL = "http://bc.local";
+    process.env.BITCART_API_KEY = "api-key";
+    process.env.BITCART_STORE_ID = "store-abc";
+    global.fetch.mockResolvedValueOnce({ ok: false, status: 404, text: async () => "not found" });
+    const { cancelInvoice } = await import("@/lib/payment/bitcart.js");
+    await expect(cancelInvoice("inv-missing")).rejects.toThrow("404");
+  });
+});
+
 describe("resolveSettlement", () => {
   it("parses payment[0] correctly", async () => {
     process.env.BITCART_BASE_URL = "http://bc.local";

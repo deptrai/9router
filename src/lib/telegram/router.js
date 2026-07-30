@@ -689,8 +689,9 @@ async function handleTopupVnd(chatId, telegramId, creditsAmount) {
       return;
     }
 
-    const { createVndPayment } = await import("../payment/vndBank.js");
-    const payment = await createVndPayment({ userId: user.id, credits });
+    const { createVndPayment, getPendingVndPayment } = await import("../payment/vndBank.js");
+    let payment = await getPendingVndPayment(user.id, credits);
+    if (!payment) payment = await createVndPayment({ userId: user.id, credits });
 
     const lines = [
       "<b>🏦 Nạp VND — Chuyển khoản ngân hàng</b>",
@@ -849,17 +850,14 @@ export async function handleUpdate(update) {
       try {
         const raw = update.message.web_app_data.data || "";
         const data = raw ? JSON.parse(raw) : {};
-        if (data.action === "buy" && data.productId) {
-          const from = update.message.from;
-          if (data.confirmed === true) {
-            await handleBuyExecute(chatId, from, data.productId, `webapp-fallback:${Date.now()}`);
-          } else {
-            await handleBuyConfirm(chatId, data.productId);
-          }
+        if (data.action === "buy" && typeof data.productId === "string" && data.productId.trim()) {
+          await handleBuyConfirm(chatId, data.productId.trim());
           return;
         }
+        await sendMessage(chatId, "Dữ liệu Mini App không được hỗ trợ.").catch(() => {});
       } catch (e) {
         console.error("[telegram/router] web_app_data lỗi:", e?.message);
+        await sendMessage(chatId, "Dữ liệu Mini App không hợp lệ.").catch(() => {});
       }
     }
     return;

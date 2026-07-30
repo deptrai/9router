@@ -42,6 +42,20 @@ export function parseIpn(rawBody) {
   };
 }
 
+export async function cancelInvoice(gatewayId) {
+  const { baseUrl, apiKey } = getConfig();
+  if (!gatewayId) throw new Error("Bitcart cancelInvoice requires gatewayId");
+  const res = await fetch(`${baseUrl}/invoices/${gatewayId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Bitcart cancelInvoice error ${res.status}: ${text}`);
+  }
+  return true;
+}
+
 export async function getInvoice(gatewayId) {
   const { baseUrl, apiKey } = getConfig();
   const ctrl = new AbortController();
@@ -59,8 +73,13 @@ export async function getInvoice(gatewayId) {
 
 export async function resolveSettlement(gatewayId) {
   const invoice = await getInvoice(gatewayId);
-  const p = (invoice.payments || [])[0] || {};
-  const amountReceived = Number(p.amount) || 0;
+  const payments = Array.isArray(invoice.payments) ? invoice.payments : [];
+  const amountReceived = payments.reduce((sum, p) => {
+    const n = Number(p?.amount);
+    return sum + (Number.isFinite(n) ? n : 0);
+  }, 0);
+  const txHash = payments.find((p) => p?.lookup_field || p?.tx_hash)?.lookup_field || payments.find((p) => p?.lookup_field || p?.tx_hash)?.tx_hash || null;
+  const confirmations = Math.max(0, ...payments.map((p) => Number(p?.confirmations) || 0));
   // Bitcart marked the invoice complete but the re-fetched invoice has no usable
   // payment amount (empty payments[] or a partial/buggy API response). Throwing here
   // makes the webhook return 500 so Bitcart retries, rather than settling for 0 credits.
@@ -68,12 +87,12 @@ export async function resolveSettlement(gatewayId) {
     throw new Error(`Bitcart invoice ${gatewayId} settled with no payment amount`);
   return {
     amountReceived,
-    txHash: p.lookup_field || p.tx_hash || null,
-    confirmations: Number(p.confirmations) || 0,
+    txHash,
+    confirmations,
   };
 }
 
-export async function createInvoice({ amount, coin, network, orderId }) {
+export async function createInvoice({ amount, coin, network, orderId, signal }) {
   const { baseUrl, apiKey, storeId } = getConfig();
   const secret = process.env.BITCART_WEBHOOK_SECRET;
   // Without the webhook secret the notification_url carries no token, so every IPN
@@ -84,15 +103,19 @@ export async function createInvoice({ amount, coin, network, orderId }) {
   const base = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:20128";
   const notifUrl = `${base}/api/webhooks/bitcart?token=${encodeURIComponent(secret)}`;
 
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 10_000);
+  const internal = new AbortController();
+  const t = setTimeout(() => internal.abort(new Error("bitcart createInvoice timeout")), 10_000);
+  let fetchSignal = internal.signal;
+  if (signal) {
+    fetchSignal = typeof AbortSignal.any === "function" ? AbortSignal.any([internal.signal, signal]) : signal;
+  }
   let res;
   try {
     res = await fetch(`${baseUrl}/invoices`, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({ store_id: storeId, price: amount, currency: "USD", order_id: orderId, notification_url: notifUrl }),
-      signal: ctrl.signal,
+      signal: fetchSignal,
     });
   } finally { clearTimeout(t); }
   if (!res.ok) { const text = await res.text().catch(() => ""); throw new Error(`Bitcart createInvoice error ${res.status}: ${text}`); }

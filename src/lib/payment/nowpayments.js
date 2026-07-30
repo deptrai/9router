@@ -36,7 +36,7 @@ export function getPayCurrencyCode(coin, network) {
  * @param {{ amount: number, coin: string, network: string, orderId: string, baseUrl?: string }} opts
  * @returns {Promise<object>} NOWPayments invoice response
  */
-export async function createInvoice({ amount, coin, network, orderId, baseUrl }) {
+export async function createInvoice({ amount, coin, network, orderId, baseUrl, signal }) {
   const apiKey = process.env.NOWPAYMENTS_API_KEY;
   if (!apiKey) throw new Error("NOWPAYMENTS_API_KEY is not configured");
 
@@ -49,6 +49,7 @@ export async function createInvoice({ amount, coin, network, orderId, baseUrl })
       "x-api-key": apiKey,
       "Content-Type": "application/json",
     },
+    signal,
     body: JSON.stringify({
       price_amount: amount,
       price_currency: "usd",

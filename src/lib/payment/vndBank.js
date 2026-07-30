@@ -23,7 +23,12 @@ export function generateMemo() {
 }
 
 export function creditsToVnd(credits) {
-  return Math.ceil(credits * VND_PER_CREDIT());
+  if (!Number.isFinite(credits) || !Number.isInteger(credits) || credits < 1) throw new Error("Invalid credits");
+  const rate = VND_PER_CREDIT();
+  if (!Number.isFinite(rate) || rate <= 0) throw new Error("Invalid VND rate");
+  const amount = credits * rate;
+  if (!Number.isFinite(amount)) throw new Error("Invalid credits");
+  return Math.ceil(amount);
 }
 
 export function vndToCredits(amountVnd) {
@@ -88,25 +93,79 @@ export function getPaymentTimeoutMs() {
 }
 
 /**
+ * Find a pending VND bank transfer payment for the same user+credits that is not expired.
+ * Used to avoid duplicate memos when the user taps a preset button multiple times.
+ */
+export async function getPendingVndPayment(userId, credits) {
+  const { listPayments } = await import("@/lib/db/repos/paymentsRepo.js");
+  const payments = await listPayments({ userId, status: "pending", limit: 100 });
+  const now = Date.now();
+  const found = payments.find((p) =>
+    p.method === "vnd_bank" &&
+    p.credits === credits &&
+    p.expiresAt &&
+    new Date(p.expiresAt).getTime() > now
+  );
+  if (!found) return null;
+  const amountVnd = creditsToVnd(found.credits);
+  const qrUrl = generateVietQRUrl({ amount: amountVnd, memo: found.memo });
+  const { vndPerCredit: _, ...bankInfo } = getBankInfo();
+  return {
+    id: found.id,
+    memo: found.memo,
+    amountVnd,
+    credits: found.credits,
+    expiresAt: found.expiresAt,
+    qrUrl,
+    bankInfo,
+  };
+}
+
+/**
  * Create a pending VND bank transfer payment record.
  * Shared by the web API route and the Telegram bot topup flow (DRY).
  * Returns { id, memo, amountVnd, expiresAt, qrUrl, bankInfo }.
  */
-export async function createVndPayment({ userId, credits }) {
+export async function createVndPayment({ userId, credits, id: requestedId }) {
   const { v4: uuidv4 } = await import("uuid");
   const { getAdapter } = await import("@/lib/db/driver.js");
 
   const amountVnd = creditsToVnd(credits);
   const memo = generateMemo();
-  const id = uuidv4();
+  const id = (typeof requestedId === "string" && requestedId.trim()) ? requestedId.trim() : uuidv4();
   const now = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + PAYMENT_TIMEOUT_MS()).toISOString();
+  const timeoutMs = PAYMENT_TIMEOUT_MS();
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error("Invalid VND payment timeout");
+  const expiresAt = new Date(Date.now() + timeoutMs).toISOString();
 
   const db = await getAdapter();
-  db.run(
-    `INSERT INTO payments (id, userId, network, coin, amountExpected, method, status, credits, amountVnd, memo, expiresAt, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, userId, "vnd", "VND", 0, "vnd_bank", "pending", credits, amountVnd, memo, expiresAt, now, now]
-  );
+  try {
+    db.run(
+      `INSERT INTO payments (id, userId, network, coin, amountExpected, method, status, credits, amountVnd, memo, expiresAt, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, userId, "vnd", "VND", 0, "vnd_bank", "pending", credits, amountVnd, memo, expiresAt, now, now]
+    );
+  } catch (e) {
+    const existing = db.get(`SELECT * FROM payments WHERE id = ?`, [id]);
+    if (existing) {
+      if (existing.userId !== userId) throw new Error("Payment id conflict");
+      if (existing.method !== "vnd_bank") throw new Error("Payment id conflict");
+      if (Number(existing.credits) !== Number(credits)) throw new Error("VND payment credit mismatch");
+      if (existing.status !== "pending") throw new Error("Payment already finalized");
+      const expMs = existing.expiresAt ? new Date(existing.expiresAt).getTime() : null;
+      if (expMs === null || !Number.isFinite(expMs) || Date.now() > expMs) throw new Error("Payment expired");
+      const { vndPerCredit: _, ...clientBankInfo } = getBankInfo();
+      return {
+        id: existing.id,
+        memo: existing.memo,
+        amountVnd: existing.amountVnd,
+        credits: existing.credits,
+        expiresAt: existing.expiresAt,
+        qrUrl: generateVietQRUrl({ amount: existing.amountVnd, memo: existing.memo }),
+        bankInfo: clientBankInfo,
+      };
+    }
+    throw e;
+  }
 
   const bankInfo = getBankInfo();
   const qrUrl = generateVietQRUrl({ amount: amountVnd, memo });

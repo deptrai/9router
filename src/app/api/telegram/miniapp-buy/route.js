@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
+import crypto from "node:crypto";
 import { validateInitData } from "@/lib/auth/telegramWebApp.js";
-import { getUserByTelegramId, createUser, updateUser } from "@/lib/db/repos/usersRepo.js";
+import { getOrCreateTelegramUser } from "@/lib/auth/telegramUser.js";
 import { getProductById } from "@/lib/db/repos/productsRepo.js";
-import { getDecryptedPayload } from "@/lib/db/repos/credentialsRepo.js";
 import { storeCheckout, CheckoutError } from "@/lib/store/storeCheckout.js";
 import { externalCheckout, ExternalCheckoutError } from "@/lib/store/externalCheckout.js";
 import { EXTERNAL_SOURCE } from "@/lib/store/catalogSync.js";
@@ -27,21 +27,6 @@ const EXTERNAL_CHECKOUT_ERROR_MESSAGES = {
   SUPPLIER_NOT_FOUND: "Không tìm thấy nguồn cung cấp — liên hệ admin.",
 };
 
-async function getOrCreateUser(telegramUser) {
-  const telegramId = String(telegramUser.id);
-  let user = await getUserByTelegramId(telegramId);
-  if (!user) {
-    const displayName =
-      [telegramUser.first_name, telegramUser.last_name].filter(Boolean).join(" ").trim() ||
-      telegramUser.username ||
-      `tg_${telegramId}`;
-    const placeholderEmail = `telegram_${telegramId}@placeholder.local`;
-    user = await createUser(placeholderEmail, null, displayName);
-    await updateUser(user.id, { telegramId });
-  }
-  return user;
-}
-
 export async function POST(request) {
   try {
     let body;
@@ -49,9 +34,17 @@ export async function POST(request) {
       return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
-    const { initData, productId, quantity = 1, requestId } = body || {};
+    const { initData, productId: rawProductId, quantity = 1, requestId } = body || {};
+    const productId = typeof rawProductId === "string" ? rawProductId.trim() : "";
     if (!initData || typeof initData !== "string" || !productId) {
       return NextResponse.json({ error: "initData and productId are required" }, { status: 400 });
+    }
+    if ((typeof quantity !== "number" && typeof quantity !== "string") || quantity == null || quantity === "") {
+      return NextResponse.json({ error: "quantity must be a number" }, { status: 400 });
+    }
+    const quantityNum = Number(quantity);
+    if (!Number.isInteger(quantityNum) || quantityNum < 1 || quantityNum > 100) {
+      return NextResponse.json({ error: "quantity must be an integer between 1 and 100" }, { status: 400 });
     }
 
     const result = validateInitData(initData);
@@ -61,22 +54,22 @@ export async function POST(request) {
 
     const telegramUser = result.user;
     const telegramId = String(telegramUser.id);
-    const user = await getOrCreateUser(telegramUser);
+    const user = await getOrCreateTelegramUser(telegramUser);
 
     const product = await getProductById(productId);
     if (!product) {
       return NextResponse.json({ error: "Sản phẩm không tồn tại." }, { status: 404 });
     }
 
-    const effectiveRequestId = requestId || `auto:${Date.now()}`;
-    const idempotencyKey = `tgmini:${telegramId}:${productId}:${result.queryId || "none"}:${effectiveRequestId}`;
+    const effectiveRequestId = typeof requestId === "string" && requestId.trim() ? requestId.trim() : crypto.randomUUID();
+    const idempotencyKey = `tgmini:${telegramId}:${productId}:${quantityNum}:${result.queryId || "none"}:${effectiveRequestId}`;
     const isExternal = product.source === EXTERNAL_SOURCE;
 
     if (isExternal) {
       const { order, alreadyProcessed, paymentMode } = await externalCheckout(
         user.id,
         productId,
-        { quantity, idempotencyKey }
+        { quantity: quantityNum, idempotencyKey }
       );
       const message = paymentMode === "auto_fulfill"
         ? "Đã thanh toán, đang tìm supplier tự động..."
@@ -85,23 +78,13 @@ export async function POST(request) {
     }
 
     const { order, alreadyProcessed, deliveredCredentialIds, entitlementId, planActivation, planActivationError } =
-      await storeCheckout(user.id, productId, { quantity, idempotencyKey });
-
-    let credentials = [];
-    if (deliveredCredentialIds?.length) {
-      for (const credId of deliveredCredentialIds) {
-        try {
-          const payload = await getDecryptedPayload(credId);
-          credentials.push(payload);
-        } catch {}
-      }
-    }
+      await storeCheckout(user.id, productId, { quantity: quantityNum, idempotencyKey });
 
     return NextResponse.json({
       success: true,
       order,
       alreadyProcessed,
-      credentials,
+      credentialCount: deliveredCredentialIds?.length || 0,
       entitlementId,
       planActivation,
       planActivationError: planActivationError || null,

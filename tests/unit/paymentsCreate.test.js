@@ -4,12 +4,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("@/lib/auth/dashboardSession", () => ({ getDashboardAuthSession: vi.fn() }));
 vi.mock("@/lib/auth/requireEmailVerified", () => ({ requireEmailVerified: vi.fn() }));
 vi.mock("@/lib/payment/providers/index", () => ({ getActiveProvider: vi.fn() }));
-vi.mock("@/lib/db/repos/paymentsRepo", () => ({ createPayment: vi.fn(), updatePayment: vi.fn() }));
+vi.mock("@/lib/db/repos/paymentsRepo", () => ({ createPayment: vi.fn(), updatePayment: vi.fn(), getPaymentById: vi.fn() }));
 vi.mock("@/lib/db/helpers/kvStore", () => ({ makeKv: () => ({ get: () => null, set: () => {} }) }));
 vi.mock("@/lib/auth/loginLimiter", () => ({ getClientIp: () => "127.0.0.1" }));
 
 let POST;
-let getDashboardAuthSession, requireEmailVerified, getActiveProvider, createPayment, updatePayment;
+let getDashboardAuthSession, requireEmailVerified, getActiveProvider, createPayment, updatePayment, getPaymentById;
 
 const mockProvider = { getProviderName: vi.fn(() => "nowpayments"), createInvoice: vi.fn() };
 
@@ -22,6 +22,8 @@ beforeEach(async () => {
   getActiveProvider.mockReturnValue(mockProvider);
   createPayment = (await import("@/lib/db/repos/paymentsRepo")).createPayment;
   updatePayment = (await import("@/lib/db/repos/paymentsRepo")).updatePayment;
+  getPaymentById = (await import("@/lib/db/repos/paymentsRepo")).getPaymentById;
+  getPaymentById.mockResolvedValue(null);
   POST = (await import("@/app/api/payments/create/route.js")).POST;
   mockProvider.getProviderName.mockReturnValue("nowpayments");
   mockProvider.createInvoice.mockReset();

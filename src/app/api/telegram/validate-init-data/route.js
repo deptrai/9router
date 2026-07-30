@@ -9,7 +9,13 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(request) {
   try {
-    const { initData } = await request.json();
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    }
+    const { initData } = body || {};
     if (!initData || typeof initData !== "string") {
       return NextResponse.json({ error: "initData missing" }, { status: 400 });
     }

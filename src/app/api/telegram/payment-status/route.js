@@ -8,7 +8,8 @@ export const dynamic = "force-dynamic";
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
-    const initData = searchParams.get("initData");
+    const authHeader = request.headers.get("authorization") || "";
+    const initData = authHeader.replace(/^Bearer\s+/i, "").trim();
     const paymentId = searchParams.get("id");
 
     if (!initData || !paymentId) {
@@ -40,7 +41,9 @@ export async function GET(request) {
         id: payment.id,
         status: payment.status,
         amountReceived: payment.amountReceived,
+        credits: payment.credits,
         creditsAwarded: payment.creditsAwarded,
+        expiresAt: payment.expiresAt,
         settledAt: payment.settledAt,
         errorMessage: payment.errorMessage,
       },

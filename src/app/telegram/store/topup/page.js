@@ -17,6 +17,14 @@ export default function TelegramStoreTopupPage() {
   const [pollStatus, setPollStatus] = useState(null);
   const [pollInterval, setPollInterval] = useState(null);
   const initDataRef = useRef("");
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -33,6 +41,7 @@ export default function TelegramStoreTopupPage() {
     initDataRef.current = initData;
 
     const load = async () => {
+      if (!mountedRef.current) return;
       const current = initDataRef.current;
       if (!current) {
         setLoading(false);
@@ -45,7 +54,9 @@ export default function TelegramStoreTopupPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ initData: current }),
         });
+        if (!mountedRef.current) return;
         const data = await res.json();
+        if (!mountedRef.current) return;
         if (data.ok) {
           setUser(data.user);
           setBalances(data.balances);
@@ -53,8 +64,10 @@ export default function TelegramStoreTopupPage() {
           setError(data.error || "Không thể xác thực.");
         }
       } catch (e) {
+        if (!mountedRef.current) return;
         setError("Không thể tải thông tin user.");
       } finally {
+        if (!mountedRef.current) return;
         setLoading(false);
       }
     };
@@ -92,35 +105,50 @@ export default function TelegramStoreTopupPage() {
 
   const totalCredits = () => {
     if (!balances) return 0;
-    return Object.values(balances).reduce((s, v) => s + (v || 0), 0);
+    return Object.values(balances).reduce((s, v) => s + (Number(v) || 0), 0);
   };
 
   const startPolling = (paymentId) => {
     if (pollInterval) clearInterval(pollInterval);
     const initData = initDataRef.current;
     const id = setInterval(async () => {
+      if (!mountedRef.current) {
+        clearInterval(id);
+        return;
+      }
       try {
-        const res = await fetch(`/api/telegram/payment-status?initData=${encodeURIComponent(initData)}&id=${encodeURIComponent(paymentId)}`);
+        const res = await fetch(`/api/telegram/payment-status?id=${encodeURIComponent(paymentId)}`, {
+          headers: { Authorization: `Bearer ${initData}` },
+        });
         const data = await res.json();
-        if (data.ok) {
-          setPollStatus(data.payment);
-          if (data.payment.status === "settled" || data.payment.status === "confirmed") {
-            clearInterval(id);
-            setPollInterval(null);
-            // Refresh balance
-            const userRes = await fetch("/api/telegram/user-info", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ initData }),
-            });
-            const userData = await userRes.json();
-            if (userData.ok) setBalances(userData.balances);
-          } else if (["failed", "cancelled"].includes(data.payment.status)) {
-            clearInterval(id);
-            setPollInterval(null);
-          }
+        const expMs = data.payment?.expiresAt ? new Date(data.payment.expiresAt).getTime() : null;
+        const expired = expMs === null ? false : !Number.isFinite(expMs) || Date.now() > expMs - 5 * 60 * 1000;
+        if (!res.ok || !data.ok || expired) {
+          clearInterval(id);
+          if (mountedRef.current) setPollInterval(null);
+          return;
+        }
+        if (!mountedRef.current) return;
+        setPollStatus(data.payment);
+        if (data.payment.status === "settled" || data.payment.status === "confirmed") {
+          clearInterval(id);
+          if (mountedRef.current) setPollInterval(null);
+          // Refresh balance
+          const userRes = await fetch("/api/telegram/user-info", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ initData }),
+          });
+          if (!mountedRef.current) return;
+          const userData = await userRes.json();
+          if (userData.ok && mountedRef.current) setBalances(userData.balances);
+        } else if (["failed", "cancelled"].includes(data.payment.status)) {
+          clearInterval(id);
+          if (mountedRef.current) setPollInterval(null);
         }
       } catch (e) {
+        clearInterval(id);
+        if (mountedRef.current) setPollInterval(null);
         console.error("[telegram/topup] poll error:", e?.message);
       }
     }, 5000);
@@ -140,7 +168,8 @@ export default function TelegramStoreTopupPage() {
     setPollStatus(null);
 
     try {
-      const body = { initData, method };
+      const requestId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+      const body = { initData, method, requestId };
       if (method === "vnd") {
         body.credits = Number(credits);
       } else {
@@ -154,7 +183,9 @@ export default function TelegramStoreTopupPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+      if (!mountedRef.current) return;
       const data = await res.json();
+      if (!mountedRef.current) return;
 
       if (!res.ok) {
         setError(data.error || "Tạo lệnh nạp thất bại.");
@@ -165,8 +196,10 @@ export default function TelegramStoreTopupPage() {
       startPolling(data.paymentId);
     } catch (e) {
       console.error("[telegram/topup] submit error:", e?.message);
+      if (!mountedRef.current) return;
       setError("Tạo lệnh nạp thất bại.");
     } finally {
+      if (!mountedRef.current) return;
       setSubmitting(false);
     }
   };
@@ -343,7 +376,7 @@ export default function TelegramStoreTopupPage() {
               <div className="text-sm p-3 rounded-xl bg-[#F3F4F6]">
                 Trạng thái: <b>{pollStatus.status}</b>
                 {pollStatus.status === "settled" && (
-                  <span> — đã cộng <b>{pollStatus.creditsAwarded || payment.credits || payment.amountExpected}</b> credits</span>
+                  <span> — đã cộng <b>{pollStatus.creditsAwarded ?? payment.credits ?? 0}</b> credits</span>
                 )}
               </div>
             )}

@@ -11,8 +11,10 @@ function rowToPayment(row) {
     txHash: row.txHash || null,
     network: row.network,
     coin: row.coin,
+    method: row.method ?? null,
     amountExpected: row.amountExpected,
     amountReceived: row.amountReceived ?? null,
+    credits: row.credits ?? null,
     creditsAwarded: row.creditsAwarded ?? null,
     bonusPercent: row.bonusPercent ?? 0,
     status: row.status,
@@ -40,8 +42,10 @@ export async function createPayment(data) {
     txHash: data.txHash || null,
     network: data.network,
     coin: data.coin,
+    method: data.method ?? null,
     amountExpected: data.amountExpected,
     amountReceived: data.amountReceived ?? null,
+    credits: data.credits ?? null,
     creditsAwarded: data.creditsAwarded ?? null,
     bonusPercent: data.bonusPercent ?? 0,
     status: data.status || "pending",
@@ -56,9 +60,9 @@ export async function createPayment(data) {
     updatedAt: now,
   };
   db.run(
-    `INSERT INTO payments(id, userId, gatewayPaymentId, gatewayInvoiceId, txHash, network, coin, amountExpected, amountReceived, creditsAwarded, bonusPercent, status, payAddress, paymentUrl, confirmations, expiresAt, settledAt, errorMessage, provider, createdAt, updatedAt)
-     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [payment.id, payment.userId, payment.gatewayPaymentId, payment.gatewayInvoiceId, payment.txHash, payment.network, payment.coin, payment.amountExpected, payment.amountReceived, payment.creditsAwarded, payment.bonusPercent, payment.status, payment.payAddress, payment.paymentUrl, payment.confirmations, payment.expiresAt, payment.settledAt, payment.errorMessage, payment.provider, payment.createdAt, payment.updatedAt]
+    `INSERT INTO payments(id, userId, gatewayPaymentId, gatewayInvoiceId, txHash, network, coin, method, amountExpected, amountReceived, credits, creditsAwarded, bonusPercent, status, payAddress, paymentUrl, confirmations, expiresAt, settledAt, errorMessage, provider, createdAt, updatedAt)
+     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [payment.id, payment.userId, payment.gatewayPaymentId, payment.gatewayInvoiceId, payment.txHash, payment.network, payment.coin, payment.method, payment.amountExpected, payment.amountReceived, payment.credits, payment.creditsAwarded, payment.bonusPercent, payment.status, payment.payAddress, payment.paymentUrl, payment.confirmations, payment.expiresAt, payment.settledAt, payment.errorMessage, payment.provider, payment.createdAt, payment.updatedAt]
   );
   return payment;
 }
@@ -91,8 +95,8 @@ export async function updatePayment(id, data = {}) {
     if (!row) return;
     const merged = { ...rowToPayment(row), ...clean, updatedAt: now };
     db.run(
-      `UPDATE payments SET gatewayPaymentId=?, gatewayInvoiceId=?, txHash=?, network=?, coin=?, amountExpected=?, amountReceived=?, creditsAwarded=?, bonusPercent=?, status=?, payAddress=?, paymentUrl=?, confirmations=?, expiresAt=?, settledAt=?, errorMessage=?, provider=?, updatedAt=? WHERE id=?`,
-      [merged.gatewayPaymentId, merged.gatewayInvoiceId, merged.txHash, merged.network, merged.coin, merged.amountExpected, merged.amountReceived, merged.creditsAwarded, merged.bonusPercent, merged.status, merged.payAddress, merged.paymentUrl, merged.confirmations, merged.expiresAt, merged.settledAt, merged.errorMessage, merged.provider, merged.updatedAt, id]
+      `UPDATE payments SET gatewayPaymentId=?, gatewayInvoiceId=?, txHash=?, network=?, coin=?, method=?, amountExpected=?, amountReceived=?, credits=?, creditsAwarded=?, bonusPercent=?, status=?, payAddress=?, paymentUrl=?, confirmations=?, expiresAt=?, settledAt=?, errorMessage=?, provider=?, updatedAt=? WHERE id=?`,
+      [merged.gatewayPaymentId, merged.gatewayInvoiceId, merged.txHash, merged.network, merged.coin, merged.method, merged.amountExpected, merged.amountReceived, merged.credits, merged.creditsAwarded, merged.bonusPercent, merged.status, merged.payAddress, merged.paymentUrl, merged.confirmations, merged.expiresAt, merged.settledAt, merged.errorMessage, merged.provider, merged.updatedAt, id]
     );
     result = merged;
   });

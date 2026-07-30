@@ -16,6 +16,14 @@ export default function TelegramStorePage() {
   const [purchaseError, setPurchaseError] = useState(null);
   const [webAppReady, setWebAppReady] = useState(false);
   const initDataRef = useRef("");
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Lấy initData từ URL/global trước khi render, không phụ thuộc SDK.
   useEffect(() => {
@@ -46,7 +54,7 @@ export default function TelegramStorePage() {
           initDataRef.current = tg.initData;
           loadUserAndProducts();
         }
-        setWebAppReady(true);
+        if (mountedRef.current) setWebAppReady(true);
       }
     };
 
@@ -66,6 +74,7 @@ export default function TelegramStorePage() {
   }, []);
 
   const loadUserAndProducts = async () => {
+    if (!mountedRef.current) return;
     const initData = initDataRef.current;
     try {
       let validated = null;
@@ -75,7 +84,9 @@ export default function TelegramStorePage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ initData }),
         });
+        if (!mountedRef.current) return;
         validated = await res.json();
+        if (!mountedRef.current) return;
         if (res.ok && validated.ok) {
           setUser(validated.user);
         } else {
@@ -94,11 +105,14 @@ export default function TelegramStorePage() {
           : null,
       ]);
 
+      if (!mountedRef.current) return;
       const productsData = await productsRes.json();
+      if (!mountedRef.current) return;
       setProducts(productsData.products || []);
 
       if (userInfoRes) {
         const userInfo = await userInfoRes.json();
+        if (!mountedRef.current) return;
         if (userInfo.ok) {
           setBalances(userInfo.balances);
           setQueryId(userInfo.queryId || null);
@@ -106,22 +120,17 @@ export default function TelegramStorePage() {
       }
     } catch (e) {
       console.error("[telegram/store] load error:", e?.message);
+      if (!mountedRef.current) return;
       setError(e?.message || "Không thể tải cửa hàng");
     } finally {
+      if (!mountedRef.current) return;
       setLoading(false);
     }
   };
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    let cancelled = false;
-    const run = async () => {
-      await loadUserAndProducts();
-    };
-    run();
-    return () => {
-      cancelled = true;
-    };
+    loadUserAndProducts();
   }, []);
 
   const filtered = useMemo(() => {
@@ -139,7 +148,7 @@ export default function TelegramStorePage() {
 
   const totalCredits = useMemo(() => {
     if (!balances) return 0;
-    return Object.values(balances).reduce((s, v) => s + (v || 0), 0);
+    return Object.values(balances).reduce((s, v) => s + (Number(v) || 0), 0);
   }, [balances]);
 
   const handleBuyClick = (product) => {
@@ -152,6 +161,7 @@ export default function TelegramStorePage() {
   };
 
   const handleConfirmPurchase = async (product) => {
+    if (!mountedRef.current) return;
     const initData = initDataRef.current;
     if (!initData) {
       const tg = window.Telegram?.WebApp;
@@ -162,13 +172,13 @@ export default function TelegramStorePage() {
               ? crypto.randomUUID()
               : `${Date.now()}-${Math.random()}`;
           tg.sendData(JSON.stringify({ action: "buy", productId: product.id, quantity: 1, requestId }));
-          setPurchaseResult({ message: "Đã gửi xác nhận qua bot Telegram." });
+          if (mountedRef.current) setPurchaseResult({ message: "Đã gửi xác nhận qua bot Telegram." });
           return;
         } catch (e) {
           console.error("[telegram/store] sendData fallback error:", e?.message);
         }
       }
-      setPurchaseError("Không có initData. Vui lòng mở lại từ Telegram.");
+      if (mountedRef.current) setPurchaseError("Không có initData. Vui lòng mở lại từ Telegram.");
       return;
     }
 
@@ -183,7 +193,9 @@ export default function TelegramStorePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ initData, productId: product.id, quantity: 1, requestId }),
       });
+      if (!mountedRef.current) return;
       const data = await res.json();
+      if (!mountedRef.current) return;
 
       if (!res.ok) {
         setPurchaseError(data.error || "Mua hàng thất bại.");
@@ -198,8 +210,9 @@ export default function TelegramStorePage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ initData }),
         });
+        if (!mountedRef.current) return;
         const userInfo = await userInfoRes.json();
-        if (userInfo.ok) setBalances(userInfo.balances);
+        if (userInfo.ok && mountedRef.current) setBalances(userInfo.balances);
 
         // Optional: close after a short delay so user sees the success message.
         setTimeout(() => {
@@ -211,9 +224,9 @@ export default function TelegramStorePage() {
       }
     } catch (e) {
       console.error("[telegram/store] buy error:", e?.message);
-      setPurchaseError("Mua hàng thất bại.");
+      if (mountedRef.current) setPurchaseError("Mua hàng thất bại.");
     } finally {
-      setBuyingId(null);
+      if (mountedRef.current) setBuyingId(null);
     }
   };
 
