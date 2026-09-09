@@ -18,4 +18,7 @@ async function bootstrap() {
   console.log(`[API] 9Router E-Commerce API is running on http://localhost:${port}`);
 }
 
-bootstrap();
+bootstrap().catch((err) => {
+  console.error('[API Bootstrap Error]', err);
+  process.exit(1);
+});

@@ -7,31 +7,29 @@ export interface UserDto {
   firstName?: string | null;
   lastName?: string | null;
   role: UserRole;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface WalletDto {
   id: string;
   userId: string;
-  balance: number;
+  balance: string; // ISO / decimal string to prevent float precision loss
+  heldBalance: string;
   currency: string;
-  createdAt: Date;
-  updatedAt: Date;
+  updatedAt: string;
 }
 
 export interface ProductDto {
   id: string;
-  name: string;
+  title: string;
   slug: string;
   description?: string | null;
-  retailPrice: number;
-  costPrice: number;
-  sourcingMode: ProductSourcingMode;
+  category?: string | null;
+  price: string;
   isActive: boolean;
-  stockCount?: number;
-  createdAt: Date;
-  updatedAt: Date;
+  sourcingMode: ProductSourcingMode;
+  createdAt: string;
 }
 
 export interface OrderDto {
@@ -39,12 +37,11 @@ export interface OrderDto {
   userId: string;
   productId: string;
   status: OrderStatus;
-  totalAmount: number;
-  sourcingMode: ProductSourcingMode;
-  credentialPayload?: string | null;
+  price: string;
+  deliveredCredential?: string | null;
   idempotencyKey?: string | null;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: string;
+  fulfilledAt?: string | null;
 }
 
 export interface CreateOrderDto {

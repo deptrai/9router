@@ -1,4 +1,4 @@
-import { db } from './index';
+import { db, closeDb } from './index';
 import { users, wallets } from './schema';
 import { eq } from 'drizzle-orm';
 
@@ -20,7 +20,7 @@ async function seed() {
         username: 'testuser',
         firstName: 'Test',
         lastName: 'User',
-        role: 'customer',
+        role: 'CUSTOMER',
       })
       .returning();
     userId = newUser.id;
@@ -33,7 +33,8 @@ async function seed() {
       .insert(wallets)
       .values({
         userId,
-        balance: 100000, // 100,000 VND
+        balance: '100000.00',
+        heldBalance: '0.00',
         currency: 'VND',
       })
       .returning();
@@ -43,10 +44,12 @@ async function seed() {
   }
 
   console.log('Seed completed successfully!');
+  await closeDb();
   process.exit(0);
 }
 
-seed().catch((err) => {
+seed().catch(async (err) => {
   console.error('Seed error:', err);
+  await closeDb();
   process.exit(1);
 });

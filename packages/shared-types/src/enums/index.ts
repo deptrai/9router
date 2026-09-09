@@ -1,44 +1,41 @@
 export enum UserRole {
-  CUSTOMER = 'customer',
-  ADMIN = 'admin',
-  STAFF = 'staff',
+  CUSTOMER = 'CUSTOMER',
+  ADMIN = 'ADMIN',
+  STAFF = 'STAFF',
 }
 
 export enum OrderStatus {
-  PENDING = 'pending',
-  PROCESSING = 'processing',
-  COMPLETED = 'completed',
-  FAILED = 'failed',
-  CANCELLED = 'cancelled',
-  REFUNDED = 'refunded',
+  PENDING = 'PENDING',
+  PAID = 'PAID',
+  SOURCING = 'SOURCING',
+  FULFILLED = 'FULFILLED',
+  REFUNDED = 'REFUNDED',
+  FAILED = 'FAILED',
 }
 
 export enum PaymentStatus {
-  PENDING = 'pending',
-  CONFIRMED = 'confirmed',
-  FAILED = 'failed',
-  EXPIRED = 'expired',
-  REFUNDED = 'refunded',
+  PENDING = 'PENDING',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED',
+  EXPIRED = 'EXPIRED',
+  REFUNDED = 'REFUNDED',
 }
 
 export enum ProductSourcingMode {
-  INTERNAL_INVENTORY = 'internal_inventory',
-  EXTERNAL_SCRAPER = 'external_scraper',
-  HYBRID = 'hybrid',
+  IN_HOUSE = 'IN_HOUSE',
+  EXTERNAL = 'EXTERNAL',
+  HYBRID = 'HYBRID',
 }
 
 export enum InventoryStatus {
-  AVAILABLE = 'available',
-  RESERVED = 'reserved',
-  DELIVERED = 'delivered',
-  COMPROMISED = 'compromised',
-  REVOKED = 'revoked',
+  AVAILABLE = 'AVAILABLE',
+  RESERVED = 'RESERVED',
+  SOLD = 'SOLD',
+  DEFECTIVE = 'DEFECTIVE',
 }
 
 export enum LedgerType {
-  TOPUP = 'topup',
-  PURCHASE = 'purchase',
-  REFUND = 'refund',
-  ADJUSTMENT = 'adjustment',
-  BONUS = 'bonus',
+  TOPUP = 'TOPUP',
+  PURCHASE = 'PURCHASE',
+  REFUND = 'REFUND',
 }

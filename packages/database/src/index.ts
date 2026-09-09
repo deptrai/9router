@@ -6,7 +6,15 @@ const connectionString =
   process.env.DATABASE_URL ||
   'postgresql://postgres:postgres@localhost:5433/9router_ecommerce';
 
-const pool = new pg.Pool({ connectionString });
+export const pool = new pg.Pool({ connectionString });
+
+pool.on('error', (err) => {
+  console.error('[PostgreSQL Pool Error]', err);
+});
+
+export const closeDb = async () => {
+  await pool.end();
+};
 
 export const db = drizzle(pool, { schema });
 export * from './schema';

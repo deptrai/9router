@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, bigint, timestamp, check } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, bigint, timestamp, check, numeric } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 export const users = pgTable('users', {
@@ -7,7 +7,7 @@ export const users = pgTable('users', {
   username: varchar('username', { length: 255 }),
   firstName: varchar('first_name', { length: 255 }),
   lastName: varchar('last_name', { length: 255 }),
-  role: varchar('role', { length: 50 }).notNull().default('customer'),
+  role: varchar('role', { length: 50 }).notNull().default('CUSTOMER'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -18,13 +18,33 @@ export const wallets = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('user_id')
       .notNull()
+      .unique()
       .references(() => users.id, { onDelete: 'cascade' }),
-    balance: bigint('balance', { mode: 'number' }).notNull().default(0),
+    balance: numeric('balance', { precision: 15, scale: 2 }).notNull().default('0.00'),
+    heldBalance: numeric('held_balance', { precision: 15, scale: 2 }).notNull().default('0.00'),
     currency: varchar('currency', { length: 10 }).notNull().default('VND'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     check('balance_non_negative', sql`${table.balance} >= 0`),
+    check('held_balance_non_negative', sql`${table.heldBalance} >= 0`),
   ]
+);
+
+export const ledgerTransactions = pgTable(
+  'ledger_transactions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    walletId: uuid('wallet_id')
+      .notNull()
+      .references(() => wallets.id, { onDelete: 'cascade' }),
+    type: varchar('type', { length: 50 }).notNull(),
+    amount: numeric('amount', { precision: 15, scale: 2 }).notNull(),
+    balanceBefore: numeric('balance_before', { precision: 15, scale: 2 }).notNull(),
+    balanceAfter: numeric('balance_after', { precision: 15, scale: 2 }).notNull(),
+    referenceId: varchar('reference_id', { length: 255 }),
+    idempotencyKey: varchar('idempotency_key', { length: 255 }).unique(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  }
 );

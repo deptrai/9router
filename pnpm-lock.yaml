@@ -97,6 +97,9 @@ importers:
       '@types/node':
         specifier: ^22.13.1
         version: 22.20.1
+      tsx:
+        specifier: ^4.23.13
+        version: 4.23.13
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
@@ -293,6 +296,9 @@ importers:
 
   packages/shared-types:
     devDependencies:
+      tsx:
+        specifier: ^4.23.13
+        version: 4.23.13
       typescript:
         specifier: ^5.7.3
         version: 5.9.3

@@ -10,7 +10,7 @@
     "start": "next start",
     "dev:bun": "bun --bun next dev --webpack --port 20128",
     "build:bun": "bun --bun next build --webpack",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "seed": "node scripts/seed.js",
     "seed:reset": "node scripts/seed.js --reset",
