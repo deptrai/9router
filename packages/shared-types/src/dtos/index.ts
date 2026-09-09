@@ -48,3 +48,20 @@ export interface CreateOrderDto {
   productId: string;
   idempotencyKey: string;
 }
+
+export interface TelegramUserDto {
+  id: number;
+  username?: string | null;
+  firstName: string;
+  lastName?: string | null;
+  languageCode?: string | null;
+  isPremium?: boolean;
+}
+
+export interface TelegramInitDataResult {
+  ok: boolean;
+  user?: TelegramUserDto;
+  queryId?: string | null;
+  authDate?: number;
+  error?: string;
+}

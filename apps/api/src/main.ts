@@ -7,6 +7,7 @@ import { UserRole } from '@repo/shared-types';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.enableCors();
+  app.setGlobalPrefix('api');
 
   const port = process.env.PORT || 3001;
   // Verify database and shared-types imports at runtime
@@ -15,7 +16,7 @@ async function bootstrap() {
   }
 
   await app.listen(port);
-  console.log(`[API] 9Router E-Commerce API is running on http://localhost:${port}`);
+  console.log(`[API] 9Router E-Commerce API is running on http://localhost:${port}/api`);
 }
 
 bootstrap().catch((err) => {
