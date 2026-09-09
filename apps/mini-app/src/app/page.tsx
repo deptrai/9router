@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { apiGet, getTelegramInitData } from '../lib/api-client';
+import { apiClient, getTelegramInitData } from '../lib/api-client';
 import type { TelegramUserDto } from '@repo/shared-types';
 
 export default function HomePage() {
@@ -13,12 +13,14 @@ export default function HomePage() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
+    window.Telegram?.WebApp?.ready();
+
     const init = getTelegramInitData();
     setInitData(init);
 
     if (init) {
       setLoading(true);
-      apiGet<{ ok: boolean; user: TelegramUserDto }>('/api/auth/me')
+      apiClient.get<{ ok: boolean; user: TelegramUserDto }>('/api/auth/me')
         .then((res) => {
           setUser(res.user);
           setAuthError(null);

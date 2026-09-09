@@ -2,6 +2,7 @@ import {
   CanActivate,
   ExecutionContext,
   Injectable,
+  InternalServerErrorException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { validateTelegramInitData } from '../../modules/auth/utils/telegram-webapp.util';
@@ -31,7 +32,15 @@ export class TelegramAuthGuard implements CanActivate {
     }
 
     const rawInitData = match[1].trim();
-    const botToken = process.env.TELEGRAM_BOT_TOKEN || '';
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+
+    if (!botToken) {
+      throw new InternalServerErrorException({
+        statusCode: 500,
+        message: 'TELEGRAM_BOT_TOKEN is not configured',
+        error: 'CONFIG_TELEGRAM_BOT_TOKEN_MISSING',
+      });
+    }
 
     const validationResult = validateTelegramInitData(rawInitData, botToken);
     if (!validationResult.ok || !validationResult.user) {

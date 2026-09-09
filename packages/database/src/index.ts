@@ -1,4 +1,5 @@
 import { drizzle } from 'drizzle-orm/node-postgres';
+import { eq } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from './schema';
 
@@ -18,4 +19,4 @@ export const closeDb = async () => {
 
 export const db = drizzle(pool, { schema });
 export * from './schema';
-export { schema };
+export { schema, eq };

@@ -1,13 +1,14 @@
 'use client';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/+$/, '');
 
 /**
  * Attempts to retrieve Telegram WebApp initData from multiple sources.
  * Priority:
  * 1. window.Telegram.WebApp.initData (real Telegram WebView)
- * 2. URL hash parameter #tgWebAppData=<...> or query string ?tgWebAppData=<...>
- * 3. process.env.NEXT_PUBLIC_DEV_TG_INIT_DATA (local development fallback)
+ * 2. window.__telegramInitData (legacy loader / custom dev shim)
+ * 3. URL hash parameter #/route?tgWebAppData=<...> or query string ?tgWebAppData=<...>
+ * 4. process.env.NEXT_PUBLIC_DEV_TG_INIT_DATA (local development fallback)
  */
 export function getTelegramInitData(): string | null {
   if (typeof window === 'undefined') {
@@ -28,7 +29,8 @@ export function getTelegramInitData(): string | null {
 
   // Source 3: URL hash or search parameters
   const rawHash = window.location.hash ? window.location.hash.replace(/^#/, '') : '';
-  const hashParams = new URLSearchParams(rawHash);
+  const hashQuery = rawHash.includes('?') ? rawHash.slice(rawHash.indexOf('?') + 1) : rawHash;
+  const hashParams = new URLSearchParams(hashQuery);
   const rawSearch = window.location.search ? window.location.search.replace(/^\?/, '') : '';
   const searchParams = new URLSearchParams(rawSearch);
 
@@ -39,7 +41,7 @@ export function getTelegramInitData(): string | null {
   }
 
   // Source 4: NEXT_PUBLIC_DEV_TG_INIT_DATA for localhost dev
-  if (process.env.NEXT_PUBLIC_DEV_TG_INIT_DATA) {
+  if (process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_DEV_TG_INIT_DATA) {
     return process.env.NEXT_PUBLIC_DEV_TG_INIT_DATA;
   }
 
@@ -57,7 +59,9 @@ export async function apiFetch(
   const initData = getTelegramInitData();
 
   const headers = new Headers(options.headers || {});
-  headers.set('Content-Type', 'application/json');
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
 
   if (initData) {
     headers.set('Authorization', `tma ${initData}`);
@@ -82,3 +86,11 @@ export async function apiGet<T = any>(path: string): Promise<T> {
   }
   return res.json() as Promise<T>;
 }
+
+/**
+ * Canonical client helper used by pages and components.
+ */
+export const apiClient = {
+  get: apiGet,
+  fetch: apiFetch,
+};

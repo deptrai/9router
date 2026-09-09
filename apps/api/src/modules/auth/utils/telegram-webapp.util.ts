@@ -23,22 +23,29 @@ export function validateTelegramInitData(
     return { ok: false, error: 'hash missing' };
   }
 
-  const authDate = Number(params.get('auth_date') || '0');
+  const authDateRaw = params.get('auth_date');
+  const authDate = authDateRaw ? Number(authDateRaw) : NaN;
   const now = Math.floor(Date.now() / 1000);
 
-  // Reject if auth_date is older than 24 hours (86,400s) or more than 60s in the future (clock drift)
-  if (!authDate || now - authDate >= 86400 || authDate > now + 60) {
+  // Reject if auth_date is missing, not an integer, older than 24 hours (86,400s)
+  // or more than 60s in the future (clock drift)
+  if (
+    !Number.isInteger(authDate) ||
+    authDate <= 0 ||
+    now - authDate >= 86400 ||
+    authDate > now + 60
+  ) {
     return { ok: false, error: 'initData expired' };
   }
 
   // Build dataCheckString by sorting all pairs alphabetically by key, excluding hash
   params.delete('hash');
-  const pairs: string[] = [];
+  const pairs: [string, string][] = [];
   for (const [key, value] of params.entries()) {
-    pairs.push(`${key}=${value}`);
+    pairs.push([key, value]);
   }
-  pairs.sort();
-  const dataCheckString = pairs.join('\n');
+  pairs.sort((a, b) => a[0].localeCompare(b[0]));
+  const dataCheckString = pairs.map(([key, value]) => `${key}=${value}`).join('\n');
 
   // Telegram WebApp HMAC-SHA256 signature algorithm
   const secretKey = crypto
@@ -66,7 +73,7 @@ export function validateTelegramInitData(
   }
 
   const userRaw = params.get('user');
-  let userObj: any = null;
+  let userObj: unknown = null;
   if (userRaw) {
     try {
       userObj = JSON.parse(userRaw);
@@ -77,90 +84,44 @@ export function validateTelegramInitData(
 
   if (
     !userObj ||
-    typeof userObj.id !== 'number' ||
-    !Number.isSafeInteger(userObj.id) ||
-    userObj.id <= 0
+    typeof userObj !== 'object' ||
+    !('id' in userObj) ||
+    typeof (userObj as { id: unknown }).id !== 'number' ||
+    !Number.isSafeInteger((userObj as { id: number }).id) ||
+    (userObj as { id: number }).id <= 0
   ) {
     return { ok: false, error: 'user missing' };
   }
 
-  if (userObj.is_bot === true) {
+  const typedUser = userObj as {
+    id: number;
+    is_bot?: unknown;
+    username?: unknown;
+    first_name?: unknown;
+    last_name?: unknown;
+    language_code?: unknown;
+    is_premium?: unknown;
+  };
+
+  const isBot =
+    typedUser.is_bot === true ||
+    typedUser.is_bot === 'true' ||
+    typedUser.is_bot === 1 ||
+    typedUser.is_bot === '1';
+  if (isBot) {
     return { ok: false, error: 'bot not allowed' };
   }
 
   const user: TelegramUserDto = {
-    id: userObj.id,
-    username: userObj.username || null,
-    firstName: userObj.first_name || '',
-    lastName: userObj.last_name || null,
-    languageCode: userObj.language_code || null,
-    isPremium: userObj.is_premium === true,
+    id: typedUser.id,
+    username: typeof typedUser.username === 'string' ? typedUser.username : null,
+    firstName: typeof typedUser.first_name === 'string' ? typedUser.first_name : '',
+    lastName: typeof typedUser.last_name === 'string' ? typedUser.last_name : null,
+    languageCode: typeof typedUser.language_code === 'string' ? typedUser.language_code : null,
+    isPremium: typedUser.is_premium === true,
   };
 
   const queryId = params.get('query_id') || null;
 
   return { ok: true, user, queryId, authDate };
-}
-
-/**
- * Test fixture generator: creates a signed Telegram initData query string for testing.
- */
-export function createMockTelegramInitData(
-  user: {
-    id: number;
-    first_name: string;
-    last_name?: string;
-    username?: string;
-    language_code?: string;
-    is_bot?: boolean;
-    is_premium?: boolean;
-  },
-  botToken: string,
-  options?: {
-    authDate?: number;
-    queryId?: string;
-    tampered?: boolean;
-    extraParams?: Record<string, string>;
-  }
-): string {
-  const authDate = options?.authDate ?? Math.floor(Date.now() / 1000);
-  const params = new URLSearchParams();
-
-  params.set('auth_date', String(authDate));
-  if (options?.queryId) {
-    params.set('query_id', options.queryId);
-  }
-  if (options?.extraParams) {
-    for (const [k, v] of Object.entries(options.extraParams)) {
-      params.set(k, v);
-    }
-  }
-  params.set('user', JSON.stringify(user));
-
-  const pairs: string[] = [];
-  for (const [key, value] of params.entries()) {
-    pairs.push(`${key}=${value}`);
-  }
-  pairs.sort();
-  const dataCheckString = pairs.join('\n');
-
-  const secretKey = crypto
-    .createHmac('sha256', 'WebAppData')
-    .update(botToken)
-    .digest();
-
-  let hash = crypto
-    .createHmac('sha256', secretKey)
-    .update(dataCheckString)
-    .digest('hex');
-
-  if (options?.tampered) {
-    // Invert the last character of the hash to tamper
-    const lastChar = hash[hash.length - 1];
-    const tamperedChar = lastChar === 'a' ? 'b' : 'a';
-    hash = hash.slice(0, -1) + tamperedChar;
-  }
-
-  params.set('hash', hash);
-  return params.toString();
 }

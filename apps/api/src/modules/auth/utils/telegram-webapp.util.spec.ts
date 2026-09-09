@@ -1,9 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import {
-  validateTelegramInitData,
-  createMockTelegramInitData,
-} from './telegram-webapp.util';
+import { validateTelegramInitData } from './telegram-webapp.util';
+import { createMockTelegramInitData } from './__fixtures__/telegram-init-data';
 
 const TEST_BOT_TOKEN = '123456789:ABCdefGHIjklMNOpqrSTUvwxYZ_1234567';
 
@@ -83,6 +81,33 @@ test('validateTelegramInitData rejects future auth_date (> 60s in future)', () =
   assert.strictEqual(result.error, 'initData expired');
 });
 
+test('validateTelegramInitData rejects missing or non-integer auth_date', () => {
+  const withZero = createMockTelegramInitData(validUser, TEST_BOT_TOKEN, {
+    authDate: 0,
+  });
+  assert.strictEqual(validateTelegramInitData(withZero, TEST_BOT_TOKEN).error, 'initData expired');
+
+  const withFloat = createMockTelegramInitData(validUser, TEST_BOT_TOKEN, {
+    // @ts-expect-error intentional invalid type for test
+    authDate: 1.5,
+  });
+  assert.strictEqual(validateTelegramInitData(withFloat, TEST_BOT_TOKEN).error, 'initData expired');
+
+  const withoutAuthDate = createMockTelegramInitData(validUser, TEST_BOT_TOKEN, {
+    authDate: null,
+  });
+  assert.strictEqual(validateTelegramInitData(withoutAuthDate, TEST_BOT_TOKEN).error, 'initData expired');
+});
+
+test('validateTelegramInitData rejects malformed hash', () => {
+  const initData = createMockTelegramInitData(validUser, TEST_BOT_TOKEN);
+  const tooShort = initData.replace(/hash=[0-9a-f]{64}/i, 'hash=' + 'a'.repeat(63));
+  assert.strictEqual(validateTelegramInitData(tooShort, TEST_BOT_TOKEN).error, 'invalid hash');
+
+  const nonHex = initData.replace(/hash=[0-9a-f]{64}/i, 'hash=' + 'g'.repeat(64));
+  assert.strictEqual(validateTelegramInitData(nonHex, TEST_BOT_TOKEN).error, 'invalid hash');
+});
+
 test('validateTelegramInitData rejects bot users', () => {
   const botUser = { ...validUser, is_bot: true };
   const botInitData = createMockTelegramInitData(botUser, TEST_BOT_TOKEN);
@@ -90,6 +115,41 @@ test('validateTelegramInitData rejects bot users', () => {
 
   assert.strictEqual(result.ok, false);
   assert.strictEqual(result.error, 'bot not allowed');
+});
+
+test('validateTelegramInitData rejects is_bot as string or number', () => {
+  const stringBot = { ...validUser, is_bot: 'true' };
+  assert.strictEqual(
+    validateTelegramInitData(createMockTelegramInitData(stringBot, TEST_BOT_TOKEN), TEST_BOT_TOKEN).error,
+    'bot not allowed'
+  );
+
+  const numberBot = { ...validUser, is_bot: 1 };
+  assert.strictEqual(
+    validateTelegramInitData(createMockTelegramInitData(numberBot, TEST_BOT_TOKEN), TEST_BOT_TOKEN).error,
+    'bot not allowed'
+  );
+});
+
+test('validateTelegramInitData rejects invalid user payloads', () => {
+  const noUser = createMockTelegramInitData(
+    // @ts-expect-error intentional missing id
+    { first_name: 'John' },
+    TEST_BOT_TOKEN
+  );
+  assert.strictEqual(validateTelegramInitData(noUser, TEST_BOT_TOKEN).error, 'user missing');
+
+  const negativeId = { ...validUser, id: -1 };
+  assert.strictEqual(
+    validateTelegramInitData(createMockTelegramInitData(negativeId, TEST_BOT_TOKEN), TEST_BOT_TOKEN).error,
+    'user missing'
+  );
+
+  const hugeId = { ...validUser, id: Number.MAX_SAFE_INTEGER + 1 };
+  assert.strictEqual(
+    validateTelegramInitData(createMockTelegramInitData(hugeId, TEST_BOT_TOKEN), TEST_BOT_TOKEN).error,
+    'user missing'
+  );
 });
 
 test('validateTelegramInitData rejects missing botToken or missing initData', () => {
