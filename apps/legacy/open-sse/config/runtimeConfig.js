@@ -1,0 +1,100 @@
+// HTTP status codes
+export const HTTP_STATUS = {
+  BAD_REQUEST: 400,
+  UNAUTHORIZED: 401,
+  PAYMENT_REQUIRED: 402,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  NOT_ACCEPTABLE: 406,
+  REQUEST_TIMEOUT: 408,
+  RATE_LIMITED: 429,
+  SERVER_ERROR: 500,
+  BAD_GATEWAY: 502,
+  SERVICE_UNAVAILABLE: 503,
+  GATEWAY_TIMEOUT: 504
+};
+
+// Re-export error config (backward compat)
+export { ERROR_TYPES, DEFAULT_ERROR_MESSAGES, BACKOFF_CONFIG, COOLDOWN_MS } from "./errorConfig.js";
+
+// Cache TTLs (seconds)
+export const CACHE_TTL = {
+  userInfo: 300,    // 5 minutes
+  modelAlias: 3600  // 1 hour
+};
+
+// Memory management config
+export const MEMORY_CONFIG = {
+  sessionTtlMs: 2 * 60 * 60 * 1000,
+  sessionCleanupIntervalMs: 30 * 60 * 1000,
+  dnsCacheTtlMs: 5 * 60 * 1000,
+  proxyDispatchersMaxSize: 20,
+};
+
+// Stream stall timeout: abort if no chunk received between two chunks within
+// this duration. Tuned against production logs that showed Kiro thinking-mode
+// streams (claude-opus-4.8-thinking) silently pausing for 40–100s mid-stream
+// during reasoning bursts. AWS NAT/NLB hard-kills idle TCP connections at
+// 350s with an RST, so we sit comfortably below that.
+export const STREAM_STALL_TIMEOUT_MS = 300 * 1000;
+
+// Time-to-first-byte timeout: how long to wait for the FIRST upstream chunk.
+// Large requests (many MCP tool definitions, long contexts) make slow upstreams
+// like Kiro take much longer to emit the first token. A short stall timeout
+// here caused premature aborts that closed the stream without terminal SSE
+// events, surfacing to clients as "empty or malformed response (HTTP 200)".
+export const STREAM_TTFT_TIMEOUT_MS = 150 * 1000;
+
+// Fetch connect timeout: abort if upstream doesn't return response headers within this duration
+export const FETCH_CONNECT_TIMEOUT_MS = 30 * 1000;
+
+// Default token limits
+export const DEFAULT_MAX_TOKENS = 64000;
+export const DEFAULT_MIN_TOKENS = 32000;
+
+// Retry config for 429 responses (legacy - kept for backward compatibility)
+export const RETRY_CONFIG = {
+  maxAttempts: 2,
+  delayMs: 2000
+};
+
+// Default retry config by status code: { attempts, delayMs }
+// Backward compat: if value is a number, treated as attempts with RETRY_CONFIG.delayMs
+export const DEFAULT_RETRY_CONFIG = {
+  429: { attempts: 0, delayMs: 0 },
+  502: { attempts: 2, delayMs: 1000 },
+  503: { attempts: 2, delayMs: 1000 },
+  504: { attempts: 2, delayMs: 1000 }
+};
+
+// Normalize a retry entry to { attempts, delayMs }
+export function resolveRetryEntry(entry) {
+  if (entry == null) return { attempts: 0, delayMs: RETRY_CONFIG.delayMs };
+  if (typeof entry === "number") return { attempts: entry, delayMs: RETRY_CONFIG.delayMs };
+  return {
+    attempts: entry.attempts || 0,
+    delayMs: entry.delayMs != null ? entry.delayMs : RETRY_CONFIG.delayMs
+  };
+}
+
+// In-flight semaphore: max concurrent requests per connection (per-process).
+// 0 or negative → unlimited (semaphore disabled); invalid/NaN → default 1.
+const _rawMaxInFlight = Number.parseInt(process.env?.MAX_IN_FLIGHT_PER_CONNECTION ?? "1", 10);
+export const MAX_IN_FLIGHT_PER_CONNECTION =
+  Number.isNaN(_rawMaxInFlight) ? 1 : (_rawMaxInFlight <= 0 ? Infinity : _rawMaxInFlight);
+
+// Safety-net TTL: auto-release lease if caller forgets (must exceed STREAM_STALL_TIMEOUT_MS=300s)
+export const LEASE_MAX_MS =
+  Number.parseInt(process.env?.LEASE_MAX_MS ?? String(10 * 60 * 1000), 10) || (10 * 60 * 1000);
+
+// Wait-queue backpressure: max ms a request waits for a free in-flight slot before
+// degrading to least-loaded dispatch (hành vi cũ). 0/negative → disable queue (degrade ngay).
+// Must be << STREAM_TTFT_TIMEOUT_MS (150s) so queue-wait itself doesn't cause client timeout.
+const _rawQueueWaitMax = Number.parseInt(process.env?.QUEUE_WAIT_MAX_MS ?? "3000", 10);
+export const QUEUE_WAIT_MAX_MS =
+  Number.isNaN(_rawQueueWaitMax) ? 3000 : (_rawQueueWaitMax <= 0 ? 0 : _rawQueueWaitMax);
+
+// Requests containing these texts will bypass provider
+export const SKIP_PATTERNS = [
+  "Please write a 5-10 word title for the following conversation:"
+];
