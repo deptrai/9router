@@ -12,8 +12,9 @@ Theo kiến trúc mục tiêu (ARCHITECTURE-SPINE.md) và PRD 9Router E-Commerce
 - Thư viện kiểu và hợp đồng dùng chung (`packages/shared-types`)
 
 ## Quyết định
-1. **Di chuyển toàn bộ mã nguồn cũ vào `apps/legacy`:**
+1. **Di chuyển toàn bộ mã nguồn và tài liệu cũ vào `apps/legacy`:**
    - Toàn bộ `src/`, `open-sse/`, `scripts/` và các cấu hình liên quan của prototype cũ được bảo tồn nguyên vẹn trong `apps/legacy`.
+   - Tài liệu cũ của prototype (`ARCHITECTURE.md`, `epics-saas.md`, `SAAS_ARCHITECTURE.md`, `SAAS_ROADMAP.md`, `stories/`) được chuyển vào `apps/legacy/docs` để tách biệt với tài liệu monorepo mới.
    - Đổi tên package legacy thành `@repo/legacy` trong `apps/legacy/package.json`.
    - Giữ nguyên lịch sử code và business logic tham chiếu cho các story tiếp theo (1.2 -> 5.x).
 
