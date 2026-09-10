@@ -9,7 +9,7 @@ test('InsufficientFundsException has status 400 and errorCode INSUFFICIENT_FUNDS
   const response = err.getResponse() as any;
   assert.strictEqual(response.errorCode, 'INSUFFICIENT_FUNDS');
   assert.strictEqual(response.statusCode, HttpStatus.BAD_REQUEST);
-  assert.strictEqual(response.message, 'Insufficient funds');
+  assert.strictEqual(response.message, 'Insufficient wallet balance');
 });
 
 test('InsufficientFundsException accepts custom message', () => {

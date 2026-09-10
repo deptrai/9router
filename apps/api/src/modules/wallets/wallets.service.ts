@@ -43,10 +43,9 @@ export class WalletsService {
     type: LedgerType,
     idempotencyKey: string,
     referenceId?: string | null,
-    metadata?: unknown | null,
     tx: DbOrTx = db,
   ): Promise<LedgerTransactionDto> {
-    return this.ledgerService.credit(walletId, amount, type, idempotencyKey, referenceId, metadata, tx);
+    return this.ledgerService.credit(walletId, amount, type, idempotencyKey, referenceId, tx);
   }
 
   async debit(
@@ -55,9 +54,8 @@ export class WalletsService {
     type: LedgerType,
     idempotencyKey: string,
     referenceId?: string | null,
-    metadata?: unknown | null,
     tx: DbOrTx = db,
   ): Promise<LedgerTransactionDto> {
-    return this.ledgerService.debit(walletId, amount, type, idempotencyKey, referenceId, metadata, tx);
+    return this.ledgerService.debit(walletId, amount, type, idempotencyKey, referenceId, tx);
   }
 }

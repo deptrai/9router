@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { db, eq, sql, ledgerTransactions, wallets, type DbOrTx } from '@repo/database';
 import { LedgerType } from '@repo/shared-types';
 import type { LedgerTransactionDto } from '@repo/shared-types';
@@ -15,6 +15,22 @@ export interface LedgerRecord extends Record<string, unknown> {
   idempotencyKey: string | null;
   metadata: unknown | null;
   createdAt: Date;
+}
+
+function parseSignedDecimal(value: string): bigint {
+  const m = value.trim().match(/^(-?)(\d+)(?:\.(\d{1,2}))?$/);
+  if (!m) throw new Error(`Invalid decimal format: ${value}`);
+  const [, sign, intPart, decPart = ''] = m;
+  const dec = decPart.padEnd(2, '0');
+  const units = BigInt(intPart + dec) * (sign === '-' ? -1n : 1n);
+  return units;
+}
+
+function formatSignedDecimal(units: bigint): string {
+  const sign = units < 0n ? '-' : '';
+  const abs = sign ? (-units).toString() : units.toString();
+  const padded = abs.padStart(3, '0');
+  return `${sign}${padded.slice(0, -2)}.${padded.slice(-2)}`;
 }
 
 @Injectable()
@@ -34,24 +50,31 @@ export class LedgerService {
     };
   }
 
+  private validateAmount(amount: string): void {
+    if (!/^\d+(\.\d{1,2})?$/.test(amount)) {
+      throw new InternalServerErrorException({
+        errorCode: 'INVALID_LEDGER_AMOUNT',
+        message: 'Amount must be a positive numeric string with up to 2 decimal places',
+      });
+    }
+  }
+
   private numericAdd(a: string, b: string): string {
-    const [aInt, aDec = '0'] = a.split('.');
-    const [bInt, bDec = '0'] = b.split('.');
-    const scale = Math.max(aDec.length, bDec.length);
-    const toBigInt = (int: string, dec: string) => BigInt(int + dec.padEnd(scale, '0'));
-    const sum = toBigInt(aInt, aDec) + toBigInt(bInt, bDec);
-    const sign = sum < 0n ? '-' : '';
-    const abs = sign ? (-sum).toString() : sum.toString();
-    if (scale === 0) return sign + abs;
-    const padded = abs.padStart(scale + 1, '0');
-    return sign + padded.slice(0, -scale) + '.' + padded.slice(-scale);
+    return formatSignedDecimal(parseSignedDecimal(a) + parseSignedDecimal(b));
   }
 
   private numericCompare(a: string, b: string): number {
-    const sum = this.numericAdd(a, '-' + b);
-    if (sum.startsWith('-')) return -1;
-    if (sum === '0' || sum === '0.00' || sum === '0.0' || sum === '0.') return 0;
-    return 1;
+    const diff = parseSignedDecimal(a) - parseSignedDecimal(b);
+    if (diff < 0n) return -1;
+    if (diff > 0n) return 1;
+    return 0;
+  }
+
+  private async ensureTransaction<T>(fn: (tx: DbOrTx) => Promise<T>, runner: DbOrTx): Promise<T> {
+    if (runner === db) {
+      return (db as any).transaction(fn);
+    }
+    return fn(runner);
   }
 
   async getByIdempotencyKey(
@@ -72,10 +95,12 @@ export class LedgerService {
     type: LedgerType,
     idempotencyKey: string,
     referenceId?: string | null,
-    metadata?: unknown | null,
     tx: DbOrTx = db,
   ): Promise<LedgerTransactionDto> {
-    return this.recordTransaction(walletId, amount, type, idempotencyKey, referenceId ?? null, metadata ?? null, tx, true);
+    return this.ensureTransaction(
+      (runner) => this.recordTransaction(walletId, amount, type, idempotencyKey, referenceId ?? null, runner, true),
+      tx,
+    );
   }
 
   async debit(
@@ -84,10 +109,12 @@ export class LedgerService {
     type: LedgerType,
     idempotencyKey: string,
     referenceId?: string | null,
-    metadata?: unknown | null,
     tx: DbOrTx = db,
   ): Promise<LedgerTransactionDto> {
-    return this.recordTransaction(walletId, amount, type, idempotencyKey, referenceId ?? null, metadata ?? null, tx, false);
+    return this.ensureTransaction(
+      (runner) => this.recordTransaction(walletId, amount, type, idempotencyKey, referenceId ?? null, runner, false),
+      tx,
+    );
   }
 
   private async recordTransaction(
@@ -96,16 +123,11 @@ export class LedgerService {
     type: LedgerType,
     idempotencyKey: string,
     referenceId: string | null,
-    metadata: unknown | null,
-    tx: DbOrTx,
+    runner: DbOrTx,
     isCredit: boolean,
   ): Promise<LedgerTransactionDto> {
-    const existing = await this.getByIdempotencyKey(idempotencyKey, tx);
-    if (existing) {
-      return existing;
-    }
+    this.validateAmount(amount);
 
-    const runner = tx;
     const [wallet] = await runner
       .select()
       .from(wallets)
@@ -113,57 +135,75 @@ export class LedgerService {
       .for('update');
 
     if (!wallet) {
-      throw new InternalServerErrorException({
+      throw new NotFoundException({
         errorCode: 'WALLET_NOT_FOUND',
         message: 'Wallet not found',
       });
     }
 
-    const balanceBefore = String(wallet.balance);
-    const signedAmount = isCredit ? amount : '-' + amount;
+    const existing = await runner
+      .select()
+      .from(ledgerTransactions)
+      .where(eq(ledgerTransactions.idempotencyKey, idempotencyKey))
+      .limit(1);
+
+    if (existing.length > 0) {
+      return this.toDto(existing[0] as LedgerRecord);
+    }
+
+    const balanceBefore = this.numericAdd(String(wallet.balance), '0');
+    const signedAmount = isCredit ? this.numericAdd(amount, '0') : '-' + this.numericAdd(amount, '0');
     const balanceAfter = this.numericAdd(balanceBefore, signedAmount);
 
     if (this.numericCompare(balanceAfter, '0') < 0) {
       throw new InsufficientFundsException();
     }
 
-    const [updatedWallet] = await runner
-      .update(wallets)
-      .set({
-        balance: balanceAfter,
-        updatedAt: sql`now()`,
-      })
-      .where(eq(wallets.id, walletId))
-      .returning();
+    try {
+      await runner
+        .update(wallets)
+        .set({
+          balance: balanceAfter,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(wallets.id, walletId));
 
-    if (!updatedWallet) {
-      throw new InternalServerErrorException({
-        errorCode: 'WALLET_UPDATE_FAILED',
-        message: 'Failed to update wallet balance',
-      });
+      const [ledgerRecord] = await runner
+        .insert(ledgerTransactions)
+        .values({
+          walletId,
+          type,
+          amount: signedAmount,
+          balanceBefore,
+          balanceAfter,
+          referenceId,
+          idempotencyKey,
+        })
+        .returning();
+
+      if (!ledgerRecord) {
+        throw new InternalServerErrorException({
+          errorCode: 'LEDGER_INSERT_FAILED',
+          message: 'Failed to insert ledger transaction',
+        });
+      }
+
+      return this.toDto(ledgerRecord as LedgerRecord);
+    } catch (e: any) {
+      if (e?.code === '23514' || (e?.message && e.message.includes('balance_non_negative'))) {
+        throw new InsufficientFundsException();
+      }
+      if (e?.code === '23505') {
+        const retried = await runner
+          .select()
+          .from(ledgerTransactions)
+          .where(eq(ledgerTransactions.idempotencyKey, idempotencyKey))
+          .limit(1);
+        if (retried.length > 0) {
+          return this.toDto(retried[0] as LedgerRecord);
+        }
+      }
+      throw e;
     }
-
-    const [ledgerRecord] = await runner
-      .insert(ledgerTransactions)
-      .values({
-        walletId,
-        type,
-        amount: isCredit ? amount : '-' + amount,
-        balanceBefore,
-        balanceAfter,
-        referenceId,
-        idempotencyKey,
-        metadata,
-      })
-      .returning();
-
-    if (!ledgerRecord) {
-      throw new InternalServerErrorException({
-        errorCode: 'LEDGER_INSERT_FAILED',
-        message: 'Failed to insert ledger transaction',
-      });
-    }
-
-    return this.toDto(ledgerRecord as LedgerRecord);
   }
 }

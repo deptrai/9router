@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import { LedgerService } from './ledger.service';
 import { InsufficientFundsException } from '../../common/exceptions/insufficient-funds.exception';
-import { InternalServerErrorException } from '@nestjs/common';
+import { NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import type { DbOrTx } from '@repo/database';
 import { ledgerTransactions, wallets } from '@repo/database';
 import { LedgerType } from '@repo/shared-types';
@@ -26,20 +26,21 @@ const ledgerRecord = {
   balanceAfter: '200.00',
   referenceId: 'ref-1',
   idempotencyKey: 'idem-1',
-  metadata: { source: 'bank' },
+  metadata: null,
   createdAt: new Date('2026-09-10T10:00:00.000Z'),
 };
 
 const debitLedgerRecord = {
-  ...ledgerRecord,
   id: 'ledger-uuid-2',
+  walletId: 'wallet-uuid-123',
   type: LedgerType.STORE_PURCHASE,
   amount: '-50.00',
   balanceBefore: '100.00',
   balanceAfter: '50.00',
   referenceId: 'ref-2',
   idempotencyKey: 'idem-2',
-  metadata: { productId: 'prod-1' },
+  metadata: null,
+  createdAt: new Date('2026-09-10T10:00:00.000Z'),
 };
 
 interface TxOverrides {
@@ -49,6 +50,12 @@ interface TxOverrides {
   idempotencyRows?: any[];
   capturedInsertValues?: { value: any };
   capturedUpdateSet?: { value: any };
+  updateThrows?: any;
+  insertThrows?: any;
+}
+
+function tableName(table: any): string | undefined {
+  return table?.[Symbol.for('drizzle:Name')] ?? table?.name;
 }
 
 function createFullTx(overrides: TxOverrides = {}): DbOrTx {
@@ -59,16 +66,36 @@ function createFullTx(overrides: TxOverrides = {}): DbOrTx {
     idempotencyRows = [],
     capturedInsertValues,
     capturedUpdateSet,
+    updateThrows,
+    insertThrows,
   } = overrides;
+
+  let ledgerCheckCount = 0;
 
   return {
     select: () => ({
       from: (table: any) => ({
         where: () => {
-          const rows = table === ledgerTransactions ? idempotencyRows : walletRows;
+          const name = tableName(table);
+          const fromWallets = name === 'wallets';
+          const fromLedger = name === 'ledger_transactions';
+          if (fromLedger) {
+            ledgerCheckCount++;
+            // First idempotency check: use provided idempotencyRows; if empty, first call no record; second call (23505 retry) returns ledgerRecord
+            if (idempotencyRows.length === 0 && ledgerCheckCount === 2) {
+              return {
+                limit: (_n: number) => Promise.resolve([ledgerRecord]),
+                for: (_mode: string) => Promise.resolve([ledgerRecord]),
+              };
+            }
+            return {
+              limit: (_n: number) => Promise.resolve(idempotencyRows),
+              for: (_mode: string) => Promise.resolve(idempotencyRows),
+            };
+          }
           return {
-            limit: (_n: number) => Promise.resolve(rows),
-            for: (_mode: string) => Promise.resolve(rows),
+            limit: (_n: number) => Promise.resolve(walletRows),
+            for: (_mode: string) => Promise.resolve(walletRows),
           };
         },
       }),
@@ -77,9 +104,10 @@ function createFullTx(overrides: TxOverrides = {}): DbOrTx {
       set: (s: any) => {
         if (capturedUpdateSet) capturedUpdateSet.value = s;
         return {
-          where: () => ({
-            returning: () => Promise.resolve(updateRows),
-          }),
+          where: () => {
+            if (updateThrows) throw updateThrows;
+            return Promise.resolve(updateRows);
+          },
         };
       },
     }),
@@ -87,7 +115,10 @@ function createFullTx(overrides: TxOverrides = {}): DbOrTx {
       values: (v: any) => {
         if (capturedInsertValues) capturedInsertValues.value = v;
         return {
-          returning: () => Promise.resolve(insertRows),
+          returning: () => {
+            if (insertThrows) throw insertThrows;
+            return Promise.resolve(insertRows);
+          },
         };
       },
     }),
@@ -105,7 +136,6 @@ test('LedgerService.credit increases wallet balance and returns ledger record', 
     LedgerType.TOPUP_VIETQR,
     'idem-1',
     'ref-1',
-    { source: 'bank' },
     tx,
   );
 
@@ -116,7 +146,6 @@ test('LedgerService.credit increases wallet balance and returns ledger record', 
   assert.strictEqual(result.balanceAfter, '200.00');
   assert.strictEqual(result.referenceId, 'ref-1');
   assert.strictEqual(result.idempotencyKey, 'idem-1');
-  assert.deepStrictEqual(result.metadata, { source: 'bank' });
 
   assert.strictEqual(capturedUpdateSet.value.balance, '200.00');
   assert.strictEqual(capturedInsertValues.value.walletId, 'wallet-uuid-123');
@@ -128,7 +157,12 @@ test('LedgerService.credit increases wallet balance and returns ledger record', 
 test('LedgerService.debit decreases wallet balance and returns ledger record', async () => {
   const capturedInsertValues: { value: any } = { value: null };
   const capturedUpdateSet: { value: any } = { value: null };
-  const tx = createFullTx({ insertRows: [debitLedgerRecord], capturedInsertValues, capturedUpdateSet });
+  const tx = createFullTx({
+    updateRows: [{ ...walletRecord, balance: '50.00' }],
+    insertRows: [debitLedgerRecord],
+    capturedInsertValues,
+    capturedUpdateSet,
+  });
   const service = new LedgerService();
   const result = await service.debit(
     'wallet-uuid-123',
@@ -136,7 +170,6 @@ test('LedgerService.debit decreases wallet balance and returns ledger record', a
     LedgerType.STORE_PURCHASE,
     'idem-2',
     'ref-2',
-    { productId: 'prod-1' },
     tx,
   );
 
@@ -147,7 +180,6 @@ test('LedgerService.debit decreases wallet balance and returns ledger record', a
   assert.strictEqual(result.balanceAfter, '50.00');
   assert.strictEqual(result.referenceId, 'ref-2');
   assert.strictEqual(result.idempotencyKey, 'idem-2');
-  assert.deepStrictEqual(result.metadata, { productId: 'prod-1' });
 
   assert.strictEqual(capturedUpdateSet.value.balance, '50.00');
   assert.strictEqual(capturedInsertValues.value.amount, '-50.00');
@@ -157,18 +189,35 @@ test('LedgerService.debit throws InsufficientFundsException when balance goes ne
   const tx = createFullTx();
   const service = new LedgerService();
   await assert.rejects(
-    () => service.debit('wallet-uuid-123', '100.01', LedgerType.STORE_PURCHASE, 'idem-3', 'ref-3', null, tx),
+    () => service.debit('wallet-uuid-123', '100.01', LedgerType.STORE_PURCHASE, 'idem-3', 'ref-3', tx),
     (err: any) => err instanceof InsufficientFundsException,
   );
 });
 
-test('LedgerService.credit returns existing record for duplicate idempotency key', async () => {
+test('LedgerService.debit allows exact spend down to zero balance', async () => {
+  const capturedUpdateSet: { value: any } = { value: null };
+  const zeroWallet = { ...walletRecord, balance: '50.00' };
+  const tx = createFullTx({
+    walletRows: [zeroWallet],
+    updateRows: [{ ...zeroWallet, balance: '0.00' }],
+    insertRows: [{ ...debitLedgerRecord, balanceBefore: '50.00', balanceAfter: '0.00' }],
+    capturedUpdateSet,
+  });
+  const service = new LedgerService();
+  const result = await service.debit('wallet-uuid-123', '50.00', LedgerType.STORE_PURCHASE, 'idem-4', null, tx);
+  assert.strictEqual(result.balanceAfter, '0.00');
+  assert.strictEqual(capturedUpdateSet.value.balance, '0.00');
+});
+
+test('LedgerService.credit returns existing record for duplicate idempotency key without updating wallet', async () => {
   const existing = {
     ...ledgerRecord,
     amount: '100.00',
     createdAt: ledgerRecord.createdAt,
   };
-  const tx = createFullTx({ idempotencyRows: [existing] });
+  const capturedUpdateSet: { value: any } = { value: null };
+  const capturedInsertValues: { value: any } = { value: null };
+  const tx = createFullTx({ idempotencyRows: [existing], capturedUpdateSet, capturedInsertValues });
   const service = new LedgerService();
   const result = await service.credit(
     'wallet-uuid-123',
@@ -176,21 +225,53 @@ test('LedgerService.credit returns existing record for duplicate idempotency key
     LedgerType.TOPUP_VIETQR,
     'idem-1',
     null,
-    null,
     tx,
   );
   assert.strictEqual(result.idempotencyKey, 'idem-1');
   assert.strictEqual(result.amount, '100.00');
   assert.strictEqual(result.balanceAfter, '200.00');
+  assert.strictEqual(capturedUpdateSet.value, null);
+  assert.strictEqual(capturedInsertValues.value, null);
 });
 
-test('LedgerService.debit allows exact spend down to zero balance', async () => {
-  const zeroWallet = { ...walletRecord, balance: '50.00' };
-  const tx = createFullTx({
-    walletRows: [zeroWallet],
-    insertRows: [{ ...debitLedgerRecord, balanceBefore: '50.00', balanceAfter: '0.00' }],
-  });
+test('LedgerService.debit throws NotFoundException for missing wallet', async () => {
+  const tx = createFullTx({ walletRows: [] });
   const service = new LedgerService();
-  const result = await service.debit('wallet-uuid-123', '50.00', LedgerType.STORE_PURCHASE, 'idem-4', null, null, tx);
-  assert.strictEqual(result.balanceAfter, '0.00');
+  await assert.rejects(
+    () => service.debit('missing-wallet', '10.00', LedgerType.STORE_PURCHASE, 'idem-5', null, tx),
+    (err: any) => err instanceof NotFoundException && (err.getResponse() as any).errorCode === 'WALLET_NOT_FOUND',
+  );
+});
+
+test('LedgerService.credit rejects invalid amount strings', async () => {
+  const tx = createFullTx();
+  const service = new LedgerService();
+  await assert.rejects(
+    () => service.credit('wallet-uuid-123', '-50.00', LedgerType.TOPUP_VIETQR, 'idem-6', null, tx),
+    (err: any) => err instanceof InternalServerErrorException && (err.getResponse() as any).errorCode === 'INVALID_LEDGER_AMOUNT',
+  );
+  await assert.rejects(
+    () => service.credit('wallet-uuid-123', 'not-a-number', LedgerType.TOPUP_VIETQR, 'idem-7', null, tx),
+    (err: any) => err instanceof InternalServerErrorException && (err.getResponse() as any).errorCode === 'INVALID_LEDGER_AMOUNT',
+  );
+});
+
+test('LedgerService translates PostgreSQL check constraint violation to InsufficientFundsException', async () => {
+  const err: any = new Error('balance_non_negative check constraint violated');
+  err.code = '23514';
+  const tx = createFullTx({ updateThrows: err });
+  const service = new LedgerService();
+  await assert.rejects(
+    () => service.debit('wallet-uuid-123', '100.00', LedgerType.STORE_PURCHASE, 'idem-8', null, tx),
+    (e: any) => e instanceof InsufficientFundsException,
+  );
+});
+
+test('LedgerService handles unique idempotency key race by returning existing record', async () => {
+  const err: any = new Error('duplicate key value violates unique constraint "ledger_transactions_idempotency_key_unique"');
+  err.code = '23505';
+  const tx = createFullTx({ insertThrows: err });
+  const service = new LedgerService();
+  const result = await service.credit('wallet-uuid-123', '100.00', LedgerType.TOPUP_VIETQR, 'idem-1', 'ref-1', tx);
+  assert.strictEqual(result.idempotencyKey, 'idem-1');
 });

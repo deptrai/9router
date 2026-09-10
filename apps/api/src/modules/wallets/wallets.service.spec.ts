@@ -51,7 +51,7 @@ function createLedgerServiceMock() {
       balanceAfter: args[1],
       referenceId: args[4] ?? null,
       idempotencyKey: args[3],
-      metadata: args[5] ?? null,
+      metadata: null,
       createdAt: new Date().toISOString(),
     }),
     debit: async (...args: any[]) => ({
@@ -63,7 +63,7 @@ function createLedgerServiceMock() {
       balanceAfter: '0.00',
       referenceId: args[4] ?? null,
       idempotencyKey: args[3],
-      metadata: args[5] ?? null,
+      metadata: null,
       createdAt: new Date().toISOString(),
     }),
     getByIdempotencyKey: async () => null,
@@ -112,9 +112,10 @@ test('WalletsService.getOrCreateByUserId creates wallet with VND and zero balanc
   assert.strictEqual(values.currency, 'VND');
 });
 
-test('WalletsService.credit delegates to LedgerService.credit with correct parameters', async () => {
+test('WalletsService.credit delegates to LedgerService.credit with correct parameters including tx', async () => {
   const ledgerMock = createLedgerServiceMock();
   let creditArgs: any[] | null = null;
+  const mockTx = { id: 'mock-tx' } as any;
   ledgerMock.credit = async (...args: any[]) => {
     creditArgs = args;
     return ledgerRecord;
@@ -127,7 +128,7 @@ test('WalletsService.credit delegates to LedgerService.credit with correct param
     LedgerType.TOPUP_VIETQR,
     'idem-1',
     'ref-1',
-    { source: 'bank' },
+    mockTx,
   );
 
   assert.deepStrictEqual(result, ledgerRecord);
@@ -136,12 +137,13 @@ test('WalletsService.credit delegates to LedgerService.credit with correct param
   assert.strictEqual(creditArgs?.[2], LedgerType.TOPUP_VIETQR);
   assert.strictEqual(creditArgs?.[3], 'idem-1');
   assert.strictEqual(creditArgs?.[4], 'ref-1');
-  assert.deepStrictEqual(creditArgs?.[5], { source: 'bank' });
+  assert.strictEqual(creditArgs?.[5], mockTx);
 });
 
-test('WalletsService.debit delegates to LedgerService.debit with correct parameters', async () => {
+test('WalletsService.debit delegates to LedgerService.debit with correct parameters including tx', async () => {
   const ledgerMock = createLedgerServiceMock();
   let debitArgs: any[] | null = null;
+  const mockTx = { id: 'mock-tx' } as any;
   ledgerMock.debit = async (...args: any[]) => {
     debitArgs = args;
     return ledgerRecord;
@@ -154,7 +156,7 @@ test('WalletsService.debit delegates to LedgerService.debit with correct paramet
     LedgerType.STORE_PURCHASE,
     'idem-2',
     'ref-2',
-    { productId: 'prod-1' },
+    mockTx,
   );
 
   assert.deepStrictEqual(result, ledgerRecord);
@@ -163,5 +165,5 @@ test('WalletsService.debit delegates to LedgerService.debit with correct paramet
   assert.strictEqual(debitArgs?.[2], LedgerType.STORE_PURCHASE);
   assert.strictEqual(debitArgs?.[3], 'idem-2');
   assert.strictEqual(debitArgs?.[4], 'ref-2');
-  assert.deepStrictEqual(debitArgs?.[5], { productId: 'prod-1' });
+  assert.strictEqual(debitArgs?.[5], mockTx);
 });

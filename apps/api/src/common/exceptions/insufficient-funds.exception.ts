@@ -1,7 +1,7 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
 
 export class InsufficientFundsException extends HttpException {
-  constructor(message = 'Insufficient funds') {
+  constructor(message = 'Insufficient wallet balance') {
     super(
       {
         statusCode: HttpStatus.BAD_REQUEST,

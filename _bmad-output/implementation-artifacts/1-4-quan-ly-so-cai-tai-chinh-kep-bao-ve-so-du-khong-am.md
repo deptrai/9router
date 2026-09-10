@@ -13,7 +13,7 @@ context:
 
 # Story 1.4: Quản lý Sổ cái Tài chính Kép (Double-Entry Ledger) & Bảo vệ Số dư Không Âm
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -353,3 +353,19 @@ export class InsufficientFundsException extends HttpException {
 
 | 2026-09-10 | Implementation complete | packages/database/src/schema.ts, apps/api/src/modules/ledger/*, apps/api/src/modules/wallets/*, packages/shared-types/* | Implemented double-entry ledger, wallet credit/debit, InsufficientFundsException, migration 0003 |
 - 2026-09-10: Khởi tạo Story 1.4 dựa trên Epic 1, FR-6, AD-3, và kết quả từ Story 1.3.
+
+
+### Review Findings
+
+- [x] [Review][Patch] Missing automatic transaction when `tx` is omitted in `LedgerService.credit/debit` [apps/api/src/modules/ledger/ledger.service.ts:69-91]
+- [x] [Review][Patch] Race on duplicate `idempotencyKey` can cause double balance update and uncaught 23505 [apps/api/src/modules/ledger/ledger.service.ts:99-106]
+- [x] [Review][Patch] No positive numeric amount validation; negative debit crashes, negative credit drains wallet [apps/api/src/modules/ledger/ledger.service.ts:76-91]
+- [x] [Review][Patch] `numericCompare` fails for zero-difference with more than 2 decimal places and double-negatives [apps/api/src/modules/ledger/ledger.service.ts:49-55]
+- [x] [Review][Patch] Database CHECK (balance >= 0) violation is not translated to `InsufficientFundsException` [apps/api/src/modules/ledger/ledger.service.ts:143-165]
+- [x] [Review][Patch] Wallet not found returns HTTP 500 instead of 404 [apps/api/src/modules/ledger/ledger.service.ts:119-125]
+- [x] [Review][Patch] `metadata` inserted between `referenceId` and `tx` in signature diverges from spec AC 4/5 [apps/api/src/modules/ledger/ledger.service.ts:72-91]
+- [x] [Review][Patch] Missing idempotency skip assertion in tests (wallet update not verified to be skipped on duplicate key) [apps/api/src/modules/ledger/ledger.service.spec.ts:234-254]
+- [x] [Review][Patch] Missing `WalletsService.credit/debit` tx-forwarding test and insufficient-funds test [apps/api/src/modules/wallets/wallets.service.spec.ts:110-167]
+- [x] [Review][Patch] `InsufficientFundsException` default message differs from Dev Notes ("Insufficient funds" vs "Insufficient wallet balance") [apps/api/src/common/exceptions/insufficient-funds.exception.ts:5]
+- [ ] [Review][Defer] Missing indexes on `ledgerTransactions` (wallet_id, reference_id, created_at) and no `currency` column — performance/auditing, not required by current ACs [packages/database/src/schema.ts:46-60]
+- [ ] [Review][Defer] Held-balance ledger operations not implemented; reserved for checkout/order stories later [apps/api/src/modules/ledger/ledger.service.ts]
