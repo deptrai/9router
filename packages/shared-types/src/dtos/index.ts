@@ -6,6 +6,8 @@ export interface UserDto {
   username?: string | null;
   firstName?: string | null;
   lastName?: string | null;
+  languageCode?: string | null;
+  isPremium?: boolean;
   role: UserRole;
   createdAt: string;
   updatedAt: string;

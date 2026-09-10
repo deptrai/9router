@@ -16,6 +16,7 @@ test('Shared types exports Telegram auth interfaces', () => {
     firstName: 'Alice',
     username: 'alice_tg',
     isPremium: true,
+    languageCode: 'vi',
   };
   const mockResult: TelegramInitDataResult = {
     ok: true,
@@ -24,4 +25,5 @@ test('Shared types exports Telegram auth interfaces', () => {
   };
   assert.strictEqual(mockResult.ok, true);
   assert.strictEqual(mockResult.user?.id, 123456789);
+  assert.strictEqual(mockResult.user?.languageCode, 'vi');
 });

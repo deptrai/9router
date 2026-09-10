@@ -18,5 +18,8 @@ export const closeDb = async () => {
 };
 
 export const db = drizzle(pool, { schema });
+export type DbClient = typeof db;
+export type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type DbOrTx = DbClient | DbTransaction;
 export * from './schema';
 export { schema, eq };

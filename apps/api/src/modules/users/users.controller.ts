@@ -1,20 +1,20 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
 import { TelegramAuthGuard } from '../../common/guards/telegram-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { AuthService } from './auth.service';
+import { UserWalletService } from './user-wallet.service';
 import type { TelegramUserDto } from '@repo/shared-types';
 
-@Controller('auth')
-export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+@Controller('users')
+export class UsersController {
+  constructor(private readonly userWalletService: UserWalletService) {}
 
   @Get('me')
   @UseGuards(TelegramAuthGuard)
-  async getMe(@CurrentUser() telegramUser: TelegramUserDto) {
-    const { user, wallet } = await this.authService.upsertUserAndWallet(telegramUser);
+  async getMe(@CurrentUser() user: TelegramUserDto) {
+    const { user: userDto, wallet } = await this.userWalletService.upsertUserAndWallet(user);
     return {
       ok: true,
-      user,
+      user: userDto,
       wallet,
     };
   }
