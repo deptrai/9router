@@ -59,7 +59,7 @@ development_status:
   2-1-tao-yeu-cau-nap-tien-sinh-ma-vietqr-dong-trong-mini-app: done
   2-2-khop-lenh-webhook-vietqr-cong-tien-vi-tuc-thoi: done
   2-3-tao-hoa-don-nap-tien-tu-dong-qua-bitcart-crypto: done
-  2-4-khoa-phan-tan-redlock-chong-nap-lap-gian-lan-giao-dich: backlog
+  2-4-khoa-phan-tan-redlock-chong-nap-lap-gian-lan-giao-dich: ready-for-dev
   epic-2-retrospective: optional
 
   epic-3: backlog
