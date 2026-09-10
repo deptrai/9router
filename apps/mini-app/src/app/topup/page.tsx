@@ -11,6 +11,14 @@ const PRESET_AMOUNTS = [
   { label: '500.000đ', value: 500000 },
 ];
 
+// Supported coin/network pairs must match BitcartService.validateCoinNetwork.
+const CRYPTO_OPTIONS: Record<string, string[]> = {
+  USDT: ['TRON', 'BSC'],
+  USDC: ['TRON', 'BSC'],
+  ETH: ['ETHEREUM'],
+};
+const CRYPTO_COINS = Object.keys(CRYPTO_OPTIONS);
+
 const MIN_TOPUP_AMOUNT = 10000;
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLLS = 100; // ~5 minutes
@@ -28,8 +36,11 @@ function formatCountdown(ms: number): string {
 }
 
 export default function TopupPage() {
+  const [activeTab, setActiveTab] = useState<'vietqr' | 'crypto'>('vietqr');
   const [selectedAmount, setSelectedAmount] = useState<number | null>(null);
   const [customAmount, setCustomAmount] = useState<string>('');
+  const [selectedCoin, setSelectedCoin] = useState<string>('USDT');
+  const [selectedNetwork, setSelectedNetwork] = useState<string>('TRON');
   const [payment, setPayment] = useState<PaymentTransactionDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +63,7 @@ export default function TopupPage() {
     return () => clearInterval(interval);
   }, [payment?.expiresAt]);
 
-  // Poll wallet balance while QR is active and not yet credited
+  // Poll wallet balance while payment is active and not yet credited
   useEffect(() => {
     if (!payment || creditedAmount !== null) return;
     let cancelled = false;
@@ -99,7 +110,7 @@ export default function TopupPage() {
     const tick = () => {
       if (cancelled) return;
 
-      // Stop polling once the QR has expired.
+      // Stop polling once the payment has expired.
       if (payment.expiresAt && new Date(payment.expiresAt).getTime() <= Date.now()) {
         if (interval) clearInterval(interval);
         setTimedOut(true);
@@ -131,6 +142,15 @@ export default function TopupPage() {
     return Number.isFinite(parsed) ? parsed : 0;
   }, [selectedAmount, customAmount]);
 
+  const cryptoError = useMemo(() => {
+    if (activeTab !== 'crypto') return null;
+    const supported = CRYPTO_OPTIONS[selectedCoin];
+    if (!supported || !supported.includes(selectedNetwork)) {
+      return `${selectedCoin} không hỗ trợ trên ${selectedNetwork}. Vui lòng chọn pair khác.`;
+    }
+    return null;
+  }, [activeTab, selectedCoin, selectedNetwork]);
+
   const validateAmount = (amount: number): string | null => {
     if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount < MIN_TOPUP_AMOUNT) {
       return `Số tiền tối thiểu là ${formatVnd(MIN_TOPUP_AMOUNT)}`;
@@ -138,13 +158,17 @@ export default function TopupPage() {
     return null;
   };
 
-  const handleCreateQr = async () => {
-    setError(null);
+  const resetPaymentState = () => {
     setPayment(null);
     setCreditedAmount(null);
     setTimedOut(false);
     balanceRef.current = null;
     pollCountRef.current = 0;
+  };
+
+  const handleCreateVietQR = async () => {
+    resetPaymentState();
+    setError(null);
 
     const validationError = validateAmount(finalAmount);
     if (validationError) {
@@ -172,6 +196,36 @@ export default function TopupPage() {
     }
   };
 
+  const handleCreateCrypto = async () => {
+    resetPaymentState();
+    setError(null);
+
+    const validationError = validateAmount(finalAmount) || cryptoError;
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    const initData = getTelegramInitData();
+    if (!initData) {
+      setError('Vui lòng mở trong Telegram để xác thực.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await apiClient.post<{ ok: boolean; payment: PaymentTransactionDto }>(
+        '/api/payments/topup/bitcart',
+        { amount: finalAmount, coin: selectedCoin, network: selectedNetwork }
+      );
+      setPayment(res.payment);
+    } catch (err: any) {
+      setError(err?.message || 'Không thể tạo hóa đơn crypto. Vui lòng thử lại.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCheckAgain = () => {
     if (!payment) return;
     setTimedOut(false);
@@ -190,11 +244,46 @@ export default function TopupPage() {
     }
   };
 
+  const handleOpenBitcart = (url: string) => {
+    if (window.Telegram?.WebApp?.openLink) {
+      window.Telegram.WebApp.openLink(url);
+    } else if (window.Telegram?.WebApp?.openTelegramLink) {
+      window.Telegram.WebApp.openTelegramLink(url);
+    } else {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  };
+
   const countdown = payment?.expiresAt ? Math.max(0, new Date(payment.expiresAt).getTime() - now) : 0;
+
+  const metadata = payment?.metadata as any;
 
   return (
     <main className="p-4 flex flex-col items-center min-h-screen text-center">
-      <h1 className="text-xl font-bold mb-4">Nạp tiền qua VietQR</h1>
+      <h1 className="text-xl font-bold mb-4">Nạp tiền</h1>
+
+      <div className="w-full max-w-sm flex rounded-lg bg-neutral-800 p-1 mb-4">
+        <button
+          onClick={() => { setActiveTab('vietqr'); resetPaymentState(); setError(null); }}
+          className={`flex-1 py-2 text-sm font-medium rounded-md transition ${
+            activeTab === 'vietqr'
+              ? 'bg-emerald-600 text-white'
+              : 'text-neutral-300 hover:bg-neutral-700'
+          }`}
+        >
+          VietQR
+        </button>
+        <button
+          onClick={() => { setActiveTab('crypto'); resetPaymentState(); setError(null); }}
+          className={`flex-1 py-2 text-sm font-medium rounded-md transition ${
+            activeTab === 'crypto'
+              ? 'bg-emerald-600 text-white'
+              : 'text-neutral-300 hover:bg-neutral-700'
+          }`}
+        >
+          Crypto
+        </button>
+      </div>
 
       <div className="w-full max-w-sm rounded-xl bg-neutral-900 border border-neutral-800 p-4">
         <p className="text-sm text-neutral-400 mb-3">Chọn mệnh giá</p>
@@ -232,15 +321,58 @@ export default function TopupPage() {
           className="w-full rounded-lg border border-neutral-700 bg-neutral-950 text-neutral-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
         />
 
+        {activeTab === 'crypto' && (
+          <>
+            <p className="text-sm text-neutral-400 mt-3 mb-2">Chọn coin</p>
+            <div className="grid grid-cols-3 gap-2 mb-2">
+              {CRYPTO_COINS.map((coin) => (
+                <button
+                key={coin}
+                type="button"
+                onClick={() => {
+                  setSelectedCoin(coin);
+                  setSelectedNetwork(CRYPTO_OPTIONS[coin][0]);
+                }}
+                className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                  selectedCoin === coin
+                    ? 'bg-emerald-600 border-emerald-500 text-white'
+                    : 'bg-neutral-800 border-neutral-700 text-neutral-200 hover:bg-neutral-750'
+                }`}
+              >
+                {coin}
+              </button>
+              ))}
+            </div>
+
+            <p className="text-sm text-neutral-400 mb-2">Chọn network</p>
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              {CRYPTO_OPTIONS[selectedCoin].map((network) => (
+                <button
+                  key={network}
+                  type="button"
+                  onClick={() => setSelectedNetwork(network)}
+                  className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                    selectedNetwork === network
+                      ? 'bg-emerald-600 border-emerald-500 text-white'
+                      : 'bg-neutral-800 border-neutral-700 text-neutral-200 hover:bg-neutral-750'
+                  }`}
+                >
+                  {network}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
         <button
-          onClick={handleCreateQr}
+          onClick={activeTab === 'vietqr' ? handleCreateVietQR : handleCreateCrypto}
           disabled={loading}
           className="w-full mt-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-semibold py-2 text-sm transition"
         >
-          {loading ? 'Đang tạo mã QR...' : 'Tạo mã QR'}
+          {loading ? 'Đang tạo...' : activeTab === 'vietqr' ? 'Tạo mã QR' : 'Tạo hóa đơn Crypto'}
         </button>
 
-        {error && <p className="text-red-400 text-sm mt-3">{error}</p>}
+        {(error || cryptoError) && <p className="text-red-400 text-sm mt-3">{error || cryptoError}</p>}
 
         {creditedAmount !== null && (
           <div className="w-full max-w-sm rounded-xl bg-emerald-900 border border-emerald-600 p-3 mt-4 text-center">
@@ -263,49 +395,106 @@ export default function TopupPage() {
 
       {payment && creditedAmount === null && (
         <div className="w-full max-w-sm rounded-xl bg-neutral-900 border border-neutral-800 p-4 mt-4 text-left">
-          <p className="text-sm text-neutral-400 mb-2">Quét mã QR để chuyển khoản</p>
+          {activeTab === 'vietqr' ? (
+            <>
+              <p className="text-sm text-neutral-400 mb-2">Quét mã QR để chuyển khoản</p>
 
-          {payment.qrImageUrl && (
-            <div className="flex justify-center mb-3">
-              <img
-                src={payment.qrImageUrl}
-                alt="VietQR"
-                className="rounded-lg max-w-full h-auto"
-                style={{ maxHeight: 260 }}
-              />
-            </div>
+              {payment.qrImageUrl && (
+                <div className="flex justify-center mb-3">
+                  <img
+                    src={payment.qrImageUrl}
+                    alt="VietQR"
+                    className="rounded-lg max-w-full h-auto"
+                    style={{ maxHeight: 260 }}
+                  />
+                </div>
+              )}
+
+              <div className="space-y-2 text-sm">
+                <CopyableRow
+                  label="Ngân hàng"
+                  value={payment.bankName || ''}
+                  onCopy={() => handleCopy(payment.bankName || '', 'bankName')}
+                  copied={copied === 'bankName'}
+                />
+                <CopyableRow
+                  label="Số tài khoản"
+                  value={payment.bankAccount || ''}
+                  onCopy={() => handleCopy(payment.bankAccount || '', 'bankAccount')}
+                  copied={copied === 'bankAccount'}
+                />
+                <CopyableRow
+                  label="Nội dung CK"
+                  value={payment.transferContent}
+                  onCopy={() => handleCopy(payment.transferContent, 'transferContent')}
+                  copied={copied === 'transferContent'}
+                />
+                <CopyableRow
+                  label="Số tiền"
+                  value={formatVnd(Number(payment.amount))}
+                  onCopy={() => handleCopy(payment.amount, 'amount')}
+                  copied={copied === 'amount'}
+                />
+              </div>
+
+              <p className="text-xs text-amber-400 mt-3">
+                Mã QR hết hạn sau: <span className="font-mono font-semibold">{formatCountdown(countdown)}</span>
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-neutral-400 mb-2">Chuyển crypto để nạp tiền</p>
+
+              <div className="space-y-2 text-sm">
+                <CopyableRow
+                  label="Coin"
+                  value={metadata?.cryptoCurrency || selectedCoin}
+                  onCopy={() => handleCopy(metadata?.cryptoCurrency || selectedCoin, 'coin')}
+                  copied={copied === 'coin'}
+                />
+                <CopyableRow
+                  label="Network"
+                  value={metadata?.network || selectedNetwork}
+                  onCopy={() => handleCopy(metadata?.network || selectedNetwork, 'network')}
+                  copied={copied === 'network'}
+                />
+                <CopyableRow
+                  label="Số crypto"
+                  value={metadata?.cryptoAmount ?? ''}
+                  onCopy={() => handleCopy(String(metadata?.cryptoAmount ?? ''), 'cryptoAmount')}
+                  copied={copied === 'cryptoAmount'}
+                />
+                <CopyableRow
+                  label="Địa chỉ ví"
+                  value={metadata?.payAddress || ''}
+                  onCopy={() => handleCopy(metadata?.payAddress || '', 'payAddress')}
+                  copied={copied === 'payAddress'}
+                />
+                <CopyableRow
+                  label="Số tiền"
+                  value={formatVnd(Number(payment.amount))}
+                  onCopy={() => handleCopy(payment.amount, 'amount')}
+                  copied={copied === 'amount'}
+                />
+              </div>
+
+              {metadata?.paymentUrl && (
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenBitcart(metadata.paymentUrl)}
+                    className="text-xs text-blue-400 underline break-all"
+                  >
+                    Mở trang thanh toán Bitcart
+                  </button>
+                </div>
+              )}
+
+              <p className="text-xs text-amber-400 mt-3">
+                Hóa đơn hết hạn sau: <span className="font-mono font-semibold">{formatCountdown(countdown)}</span>
+              </p>
+            </>
           )}
-
-          <div className="space-y-2 text-sm">
-            <CopyableRow
-              label="Ngân hàng"
-              value={payment.bankName || ''}
-              onCopy={() => handleCopy(payment.bankName || '', 'bankName')}
-              copied={copied === 'bankName'}
-            />
-            <CopyableRow
-              label="Số tài khoản"
-              value={payment.bankAccount || ''}
-              onCopy={() => handleCopy(payment.bankAccount || '', 'bankAccount')}
-              copied={copied === 'bankAccount'}
-            />
-            <CopyableRow
-              label="Nội dung CK"
-              value={payment.transferContent}
-              onCopy={() => handleCopy(payment.transferContent, 'transferContent')}
-              copied={copied === 'transferContent'}
-            />
-            <CopyableRow
-              label="Số tiền"
-              value={formatVnd(Number(payment.amount))}
-              onCopy={() => handleCopy(payment.amount, 'amount')}
-              copied={copied === 'amount'}
-            />
-          </div>
-
-          <p className="text-xs text-amber-400 mt-3">
-            Mã QR hết hạn sau: <span className="font-mono font-semibold">{formatCountdown(countdown)}</span>
-          </p>
         </div>
       )}
     </main>

@@ -124,3 +124,36 @@ export interface VietQRWebhookResponseDto {
   currentStatus?: string;
   alreadyProcessed?: boolean;
 }
+
+export interface CreateBitcartPaymentDto {
+  amount: number;
+  coin: string;
+  network: string;
+}
+
+export interface BitcartWebhookPaymentDto {
+  amount: number;
+  confirmations?: number;
+  lookup_field?: string;
+  tx_hash?: string;
+  payment_url?: string;
+  payment_address?: string;
+}
+
+export interface BitcartWebhookDto {
+  id: string;
+  status: string;
+  payments?: BitcartWebhookPaymentDto[];
+}
+
+export interface BitcartWebhookResponseDto {
+  ok: boolean;
+  matched: boolean;
+  credited?: boolean;
+  paymentId?: string;
+  walletId?: string;
+  balanceAfter?: string;
+  reason?: string;
+  currentStatus?: string;
+  alreadyProcessed?: boolean;
+}

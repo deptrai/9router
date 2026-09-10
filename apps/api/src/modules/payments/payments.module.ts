@@ -3,12 +3,13 @@ import { UsersModule } from '../users/users.module';
 import { WalletsModule } from '../wallets/wallets.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { VietQRService } from './vietqr.service';
+import { BitcartService } from './bitcart.service';
 import { PaymentsService } from './payments.service';
 import { PaymentsController } from './payments.controller';
 
 @Module({
   imports: [UsersModule, WalletsModule, LedgerModule],
-  providers: [VietQRService, PaymentsService],
+  providers: [VietQRService, BitcartService, PaymentsService],
   controllers: [PaymentsController],
 })
 export class PaymentsModule {}

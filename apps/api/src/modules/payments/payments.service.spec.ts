@@ -56,10 +56,43 @@ const mockWallets = {
 
 const mockLedger = {} as any;
 
+const mockBitcart = {
+  isConfigured: () => true,
+  getConfig: () => ({ baseUrl: 'https://bitcart.test', apiKey: 'key', storeId: 'store' }),
+  validateCoinNetwork: () => {},
+  createInvoice: async () => ({
+    gatewayId: 'bitcart-invoice-1',
+    paymentUrl: 'https://bitcart.test/invoice/1',
+    payAddress: 'TXYZabc',
+    amountExpected: 8,
+    cryptoAmount: '8.00',
+    cryptoCurrency: 'USDT',
+    expiresAt: '2026-09-10T22:00:00Z',
+  }),
+  parseStatus: (status: string) => {
+    const map: Record<string, string> = {
+      pending: 'pending',
+      paid: 'confirming',
+      confirmed: 'confirming',
+      complete: 'settled',
+      expired: 'expired',
+      invalid: 'failed',
+      refunded: 'failed',
+    };
+    return map[status.toLowerCase()] || null;
+  },
+} as any;
+
+const unconfiguredBitcart = {
+  ...mockBitcart,
+  getConfig: () => { throw new Error('Bitcart not configured'); },
+  isConfigured: () => false,
+} as any;
+
 const telegramUser = { id: 123456, first_name: 'Alice', username: 'alice_test', language_code: 'vi', is_premium: false };
 
 test('PaymentsService.createVietQrPayment creates payment transaction', async () => {
-  const service = new PaymentsService(mockVietQR, mockUserWallet, mockWallets, mockLedger);
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
   const result = await service.createVietQrPayment(telegramUser, 200000, mockDb);
 
   assert.strictEqual(result.transferContent, '9R_TOPUP_7F3A');
@@ -70,7 +103,7 @@ test('PaymentsService.createVietQrPayment creates payment transaction', async ()
 });
 
 test('PaymentsService.createVietQrPayment throws when amount below minimum', async () => {
-  const service = new PaymentsService(mockVietQR, mockUserWallet, mockWallets, mockLedger);
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
   await assert.rejects(
     () => service.createVietQrPayment(telegramUser, 5000, mockDb),
     (err: any) => err?.status === 400 && err?.response?.errorCode === 'INVALID_TOPUP_AMOUNT',
@@ -79,7 +112,7 @@ test('PaymentsService.createVietQrPayment throws when amount below minimum', asy
 
 test('PaymentsService.createVietQrPayment throws when VietQR not configured', async () => {
   const unconfiguredVietQR = { ...mockVietQR, isConfigured: () => false } as any;
-  const service = new PaymentsService(unconfiguredVietQR, mockUserWallet, mockWallets, mockLedger);
+  const service = new PaymentsService(unconfiguredVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
   await assert.rejects(
     () => service.createVietQrPayment(telegramUser, 200000, mockDb),
     (err: any) => err?.status === 503 && err?.response?.errorCode === 'VIETQR_NOT_CONFIGURED',
@@ -103,7 +136,7 @@ test('PaymentsService.createVietQrPayment throws when transfer content conflicts
     }),
   } as any;
 
-  const service = new PaymentsService(mockVietQR, mockUserWallet, mockWallets, mockLedger);
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
   await assert.rejects(
     () => service.createVietQrPayment(telegramUser, 200000, dbWithAlwaysExisting),
     (err: any) => err?.status === 500 && err?.response?.errorCode === 'PAYMENT_TRANSFER_CONTENT_CONFLICT',
@@ -140,7 +173,7 @@ test('PaymentsService.createVietQrPayment returns existing pending payment for s
     }),
   } as any;
 
-  const service = new PaymentsService(mockVietQR, mockUserWallet, mockWallets, mockLedger);
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
   const result = await service.createVietQrPayment(telegramUser, 200000, dbWithExisting);
 
   assert.strictEqual(result.transferContent, '9R_TOPUP_EXIST');
@@ -217,7 +250,7 @@ test('PaymentsService.processVietQRWebhook credits wallet and completes payment'
     },
   } as any;
 
-  const service = new PaymentsService(mockVietQR, mockUserWallet, wallets, mockLedger);
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, wallets, mockLedger);
   const result = await service.processVietQRWebhook(webhookDto, mockTx);
 
   assert.strictEqual(result.ok, true);
@@ -249,7 +282,7 @@ test('PaymentsService.processVietQRWebhook returns alreadyProcessed for duplicat
     }),
   } as any;
 
-  const service = new PaymentsService(mockVietQR, mockUserWallet, mockWallets, mockLedger);
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
   const result = await service.processVietQRWebhook(webhookDto, mockTx);
 
   assert.strictEqual(result.ok, true);
@@ -257,7 +290,7 @@ test('PaymentsService.processVietQRWebhook returns alreadyProcessed for duplicat
 });
 
 test('PaymentsService.processVietQRWebhook returns NO_MATCHING_PAYMENT when not found', async () => {
-  const service = new PaymentsService(mockVietQR, mockUserWallet, mockWallets, mockLedger);
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
   const result = await service.processVietQRWebhook(webhookDto, mockDb);
 
   assert.strictEqual(result.ok, true);
@@ -282,7 +315,7 @@ test('PaymentsService.processVietQRWebhook returns AMOUNT_MISMATCH when amount d
     }),
   } as any;
 
-  const service = new PaymentsService(mockVietQR, mockUserWallet, mockWallets, mockLedger);
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
   const result = await service.processVietQRWebhook(webhookDto, mockTx);
 
   assert.strictEqual(result.ok, true);
@@ -308,7 +341,7 @@ test('PaymentsService.processVietQRWebhook returns ALREADY_PROCESSED for non-PEN
     }),
   } as any;
 
-  const service = new PaymentsService(mockVietQR, mockUserWallet, mockWallets, mockLedger);
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
   const result = await service.processVietQRWebhook(webhookDto, mockTx);
 
   assert.strictEqual(result.ok, true);
@@ -338,7 +371,7 @@ test('PaymentsService.processVietQRWebhook throws AMBIGUOUS_MATCH for multiple p
     }),
   } as any;
 
-  const service = new PaymentsService(mockVietQR, mockUserWallet, mockWallets, mockLedger);
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
   await assert.rejects(
     () => service.processVietQRWebhook(webhookDto, mockTx),
     (err: any) => err?.status === 500 && err?.response?.errorCode === 'PAYMENT_AMBIGUOUS_MATCH',
@@ -346,14 +379,14 @@ test('PaymentsService.processVietQRWebhook throws AMBIGUOUS_MATCH for multiple p
 });
 
 test('PaymentsService.processVietQRWebhook rejects missing transactionId', async () => {
-  const service = new PaymentsService(mockVietQR, mockUserWallet, mockWallets, mockLedger);
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
   const result = await service.processVietQRWebhook({ amount: 200000, content: '9R_TOPUP_7F3A' } as any, mockDb);
   assert.strictEqual(result.ok, false);
   assert.strictEqual(result.reason, 'WEBHOOK_INVALID_PAYLOAD');
 });
 
 test('PaymentsService.processVietQRWebhook rejects invalid amount', async () => {
-  const service = new PaymentsService(mockVietQR, mockUserWallet, mockWallets, mockLedger);
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
   const result = await service.processVietQRWebhook({ ...webhookDto, amount: 5000 }, mockDb);
   assert.strictEqual(result.ok, false);
   assert.strictEqual(result.reason, 'WEBHOOK_INVALID_AMOUNT');
@@ -387,7 +420,7 @@ test('PaymentsService.processVietQRWebhook returns PAYMENT_EXPIRED when payment 
     }),
   } as any;
 
-  const service = new PaymentsService(mockVietQR, mockUserWallet, mockWallets, mockLedger);
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
   const result = await service.processVietQRWebhook(webhookDto, mockTx);
 
   assert.strictEqual(result.ok, true);
@@ -416,7 +449,7 @@ test('PaymentsService.processVietQRWebhook returns alreadyProcessed when update 
     }),
   } as any;
 
-  const service = new PaymentsService(mockVietQR, mockUserWallet, mockWallets, mockLedger);
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
   const result = await service.processVietQRWebhook(webhookDto, mockTx);
 
   assert.strictEqual(result.ok, true);
@@ -447,7 +480,7 @@ test('PaymentsService.processVietQRWebhook returns alreadyProcessed on 23505 err
     credit: async () => ({ balanceAfter: '200000.00' }),
   } as any;
 
-  const service = new PaymentsService(mockVietQR, mockUserWallet, wallets, mockLedger);
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, wallets, mockLedger);
   const result = await service.processVietQRWebhook(webhookDto, mockTx);
 
   assert.strictEqual(result.ok, true);
@@ -478,7 +511,7 @@ test('PaymentsService.processVietQRWebhook throws WEBHOOK_PROCESSING_FAILED on u
     credit: async () => ({ balanceAfter: '200000.00' }),
   } as any;
 
-  const service = new PaymentsService(mockVietQR, mockUserWallet, wallets, mockLedger);
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, wallets, mockLedger);
   await assert.rejects(
     () => service.processVietQRWebhook(webhookDto, mockTx),
     (err: any) => err?.status === 500 && err?.response?.errorCode === 'WEBHOOK_PROCESSING_FAILED',
@@ -486,22 +519,364 @@ test('PaymentsService.processVietQRWebhook throws WEBHOOK_PROCESSING_FAILED on u
 });
 
 test('PaymentsService.processVietQRWebhook rejects non-string transactionId', async () => {
-  const service = new PaymentsService(mockVietQR, mockUserWallet, mockWallets, mockLedger);
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
   const result = await service.processVietQRWebhook({ ...webhookDto, transactionId: 12345 } as any, mockDb);
   assert.strictEqual(result.ok, false);
   assert.strictEqual(result.reason, 'WEBHOOK_INVALID_PAYLOAD');
 });
 
 test('PaymentsService.processVietQRWebhook rejects non-string content', async () => {
-  const service = new PaymentsService(mockVietQR, mockUserWallet, mockWallets, mockLedger);
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
   const result = await service.processVietQRWebhook({ ...webhookDto, content: 12345 } as any, mockDb);
   assert.strictEqual(result.ok, false);
   assert.strictEqual(result.reason, 'WEBHOOK_INVALID_PAYLOAD');
 });
 
 test('PaymentsService.processVietQRWebhook rejects malformed timestamp', async () => {
-  const service = new PaymentsService(mockVietQR, mockUserWallet, mockWallets, mockLedger);
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
   const result = await service.processVietQRWebhook({ ...webhookDto, timestamp: 'not-a-date' } as any, mockDb);
   assert.strictEqual(result.ok, false);
   assert.strictEqual(result.reason, 'WEBHOOK_INVALID_PAYLOAD');
+});
+
+const bitcartWebhookDto = {
+  id: 'bitcart-invoice-1',
+  status: 'complete',
+  payments: [{ amount: 8.00, confirmations: 3, lookup_field: 'txhash123' }],
+};
+
+test('PaymentsService.createBitcartPayment creates payment transaction', async () => {
+  const bitcartDb = {
+    ...mockDb,
+    insert: () => ({
+      values: () => ({
+        returning: async () => [{
+          id: 'payment-uuid-1',
+          walletId: 'wallet-uuid-1',
+          gateway: 'BITCART',
+          externalTransactionId: 'bitcart-invoice-1',
+          amount: '200000.00',
+          status: 'PENDING',
+          transferContent: '9R_CRYPTO_7F3A',
+          expiresAt: new Date('2026-09-10T22:00:00Z'),
+          metadata: {
+            bitcartInvoiceId: 'bitcart-invoice-1',
+            payAddress: 'TXYZabc',
+            cryptoAmount: '8.00',
+            cryptoCurrency: 'USDT',
+            network: 'TRON',
+            coin: 'USDT',
+            paymentUrl: 'https://bitcart.test/invoice/1',
+            bitcartExpiresAt: '2026-09-10T22:00:00Z',
+          },
+          createdAt: new Date('2026-09-10T21:00:00Z'),
+          updatedAt: new Date('2026-09-10T21:00:00Z'),
+        }],
+      }),
+    }),
+  } as any;
+
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
+  const result = await service.createBitcartPayment(telegramUser, 200000, 'USDT', 'TRON', bitcartDb);
+
+  assert.strictEqual(result.status, PaymentStatus.PENDING);
+  assert.strictEqual(result.gateway, 'BITCART');
+  assert.strictEqual(result.amount, '200000.00');
+  assert.strictEqual(result.externalTransactionId, 'bitcart-invoice-1');
+  assert.ok(result.transferContent.startsWith('9R_CRYPTO_'));
+  assert.ok(result.metadata?.bitcartInvoiceId);
+  assert.strictEqual(result.metadata?.payAddress, 'TXYZabc');
+  assert.strictEqual(result.metadata?.cryptoAmount, '8.00');
+  assert.strictEqual(result.metadata?.cryptoCurrency, 'USDT');
+});
+
+test('PaymentsService.createBitcartPayment returns existing pending payment for same wallet+amount+coin+network', async () => {
+  const existingPendingPayment = {
+    id: 'existing-bitcart-uuid-1',
+    walletId: 'wallet-uuid-1',
+    gateway: 'BITCART',
+    amount: '200000.00',
+    status: 'PENDING',
+    transferContent: '9R_CRYPTO_OLD1',
+    externalTransactionId: 'bitcart-invoice-existing',
+    bankName: null,
+    bankBin: null,
+    bankAccount: null,
+    qrPayload: null,
+    expiresAt: new Date(Date.now() + 600000),
+    metadata: {
+      bitcartInvoiceId: 'bitcart-invoice-existing',
+      payAddress: 'TXYZold',
+      cryptoAmount: '8.00',
+      cryptoCurrency: 'USDT',
+      network: 'TRON',
+      coin: 'USDT',
+      paymentUrl: 'https://bitcart.test/invoice/existing',
+      bitcartExpiresAt: '2026-09-10T22:00:00Z',
+    },
+    createdAt: new Date('2026-09-10T21:00:00Z'),
+    updatedAt: new Date('2026-09-10T21:00:00Z'),
+  };
+
+  const dbWithExisting = {
+    ...mockDb,
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [existingPendingPayment],
+        }),
+      }),
+    }),
+  } as any;
+
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
+  const result = await service.createBitcartPayment(telegramUser, 200000, 'USDT', 'TRON', dbWithExisting);
+
+  assert.strictEqual(result.id, 'existing-bitcart-uuid-1');
+  assert.strictEqual(result.transferContent, '9R_CRYPTO_OLD1');
+  assert.strictEqual(result.externalTransactionId, 'bitcart-invoice-existing');
+  assert.strictEqual(result.metadata?.payAddress, 'TXYZold');
+  assert.strictEqual(result.metadata?.coin, 'USDT');
+  assert.strictEqual(result.metadata?.network, 'TRON');
+});
+
+test('PaymentsService.createBitcartPayment throws when amount below minimum', async () => {
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
+  await assert.rejects(
+    () => service.createBitcartPayment(telegramUser, 5000, 'USDT', 'TRON', mockDb),
+    (err: any) => err?.status === 400 && err?.response?.errorCode === 'INVALID_TOPUP_AMOUNT',
+  );
+});
+
+test('PaymentsService.createBitcartPayment throws when Bitcart not configured', async () => {
+  const service = new PaymentsService(mockVietQR, unconfiguredBitcart, mockUserWallet, mockWallets, mockLedger);
+  await assert.rejects(
+    () => service.createBitcartPayment(telegramUser, 200000, 'USDT', 'TRON', mockDb),
+    (err: any) => err?.status === 503 && err?.response?.errorCode === 'BITCART_NOT_CONFIGURED',
+  );
+});
+
+test('PaymentsService.createBitcartPayment throws for unsupported coin/network', async () => {
+  const badBitcart = {
+    ...mockBitcart,
+    validateCoinNetwork: (coin: string, network: string) => {
+      if (network === 'UNKNOWN') throw new Error(`Bitcart does not support network: ${network}`);
+      if (coin === 'DOGE') throw new Error(`Bitcart does not support ${coin} on ${network}`);
+    },
+  } as any;
+  const service = new PaymentsService(mockVietQR, badBitcart, mockUserWallet, mockWallets, mockLedger);
+  await assert.rejects(
+    () => service.createBitcartPayment(telegramUser, 200000, 'DOGE', 'TRON', mockDb),
+    (err: any) => err?.status === 400 && err?.response?.errorCode === 'UNSUPPORTED_COIN_NETWORK',
+  );
+});
+
+test('PaymentsService.processBitcartWebhook credits wallet and completes payment', async () => {
+  let updateSet: any = null;
+
+  const mockTx = {
+    ...mockDb,
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [{
+            id: 'payment-uuid-1',
+            walletId: 'wallet-uuid-1',
+            amount: '200000.00',
+            status: 'PENDING',
+            externalTransactionId: 'bitcart-invoice-1',
+            metadata: null,
+          }],
+        }),
+      }),
+    }),
+    update: () => ({
+      set: (s: any) => {
+        updateSet = s;
+        return { where: () => ({ returning: async () => [{}] }) };
+      },
+    }),
+  } as any;
+
+  const wallets = {
+    credit: async (walletId: string, amount: string, type: string, idempotencyKey: string, referenceId: string) => {
+      assert.strictEqual(walletId, 'wallet-uuid-1');
+      assert.strictEqual(amount, '200000.00');
+      assert.strictEqual(type, 'TOPUP_CRYPTO');
+      assert.strictEqual(idempotencyKey, 'payment:bitcart:bitcart-invoice-1');
+      assert.strictEqual(referenceId, 'payment-uuid-1');
+      return { balanceAfter: '200000.00' };
+    },
+  } as any;
+
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, wallets, mockLedger);
+  const result = await service.processBitcartWebhook(bitcartWebhookDto, mockTx);
+
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.matched, true);
+  assert.strictEqual(result.credited, true);
+  assert.strictEqual(result.paymentId, 'payment-uuid-1');
+  assert.strictEqual(result.walletId, 'wallet-uuid-1');
+  assert.strictEqual(result.balanceAfter, '200000.00');
+  assert.strictEqual(updateSet.status, 'COMPLETED');
+});
+
+test('PaymentsService.processBitcartWebhook returns alreadyProcessed for duplicate invoiceId', async () => {
+  let selectCallCount = 0;
+  const mockTx = {
+    ...mockDb,
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => {
+            selectCallCount++;
+            if (selectCallCount === 1) return []; // no pending payment
+            return [{
+              id: 'payment-uuid-2',
+              walletId: 'wallet-uuid-1',
+              amount: '200000.00',
+              status: 'COMPLETED',
+              externalTransactionId: 'bitcart-invoice-1',
+            }];
+          },
+        }),
+      }),
+    }),
+  } as any;
+
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
+  const result = await service.processBitcartWebhook(bitcartWebhookDto, mockTx);
+
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.alreadyProcessed, true);
+});
+
+test('PaymentsService.processBitcartWebhook returns NO_MATCHING_PAYMENT when not found', async () => {
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
+  const result = await service.processBitcartWebhook(bitcartWebhookDto, mockDb);
+
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.matched, false);
+  assert.strictEqual(result.reason, 'NO_MATCHING_PAYMENT');
+});
+
+test('PaymentsService.processBitcartWebhook returns STATUS_NOT_SETTLED for pending status', async () => {
+  const mockTx = {
+    ...mockDb,
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [{
+            id: 'payment-uuid-1',
+            walletId: 'wallet-uuid-1',
+            amount: '200000.00',
+            status: 'PENDING',
+            externalTransactionId: 'bitcart-invoice-1',
+            metadata: null,
+            expiresAt: new Date(Date.now() + 600000),
+          }],
+        }),
+      }),
+    }),
+  } as any;
+
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
+  const result = await service.processBitcartWebhook({ ...bitcartWebhookDto, status: 'pending' }, mockTx);
+
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.matched, true);
+  assert.strictEqual(result.credited, false);
+  assert.strictEqual(result.reason, 'STATUS_NOT_SETTLED');
+  assert.strictEqual(result.currentStatus, 'pending');
+});
+
+test('PaymentsService.processBitcartWebhook credits wallet even when payment is past expiry', async () => {
+  const mockTx = {
+    ...mockDb,
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [{
+            id: 'payment-uuid-1',
+            walletId: 'wallet-uuid-1',
+            amount: '200000.00',
+            status: 'PENDING',
+            externalTransactionId: 'bitcart-invoice-1',
+            metadata: { cryptoAmount: '8.00' },
+            expiresAt: new Date(Date.now() - 60_000),
+          }],
+        }),
+      }),
+    }),
+    update: () => ({
+      set: () => ({ where: () => ({ returning: async () => [{}] }) }),
+    }),
+  } as any;
+
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
+  const result = await service.processBitcartWebhook(bitcartWebhookDto, mockTx);
+
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.matched, true);
+  assert.strictEqual(result.credited, true);
+  assert.strictEqual(result.balanceAfter, '200000.00');
+});
+
+test('PaymentsService.processBitcartWebhook returns INVALID_SETTLEMENT_AMOUNT for empty payments on settled invoice', async () => {
+  const mockTx = {
+    ...mockDb,
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [{
+            id: 'payment-uuid-1',
+            walletId: 'wallet-uuid-1',
+            amount: '200000.00',
+            status: 'PENDING',
+            externalTransactionId: 'bitcart-invoice-1',
+            metadata: { cryptoAmount: '8.00' },
+            expiresAt: new Date(Date.now() + 600000),
+          }],
+        }),
+      }),
+    }),
+  } as any;
+
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
+  const result = await service.processBitcartWebhook({ ...bitcartWebhookDto, payments: [] }, mockTx);
+
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.matched, true);
+  assert.strictEqual(result.credited, false);
+  assert.strictEqual(result.reason, 'INVALID_SETTLEMENT_AMOUNT');
+});
+
+test('PaymentsService.processBitcartWebhook returns STATUS_NOT_SETTLED for pending status even if payments empty', async () => {
+  const mockTx = {
+    ...mockDb,
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [{
+            id: 'payment-uuid-1',
+            walletId: 'wallet-uuid-1',
+            amount: '200000.00',
+            status: 'PENDING',
+            externalTransactionId: 'bitcart-invoice-1',
+            metadata: null,
+            expiresAt: new Date(Date.now() + 600000),
+          }],
+        }),
+      }),
+    }),
+  } as any;
+
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
+  const result = await service.processBitcartWebhook({ id: 'bitcart-invoice-1', status: 'pending', payments: [] }, mockTx);
+
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.matched, true);
+  assert.strictEqual(result.credited, false);
+  assert.strictEqual(result.reason, 'STATUS_NOT_SETTLED');
+  assert.strictEqual(result.currentStatus, 'pending');
 });
