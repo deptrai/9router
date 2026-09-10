@@ -13,7 +13,7 @@ context:
 
 # Story 2.1: Tạo Yêu cầu Nạp tiền & Sinh mã VietQR Động trong Mini App
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
