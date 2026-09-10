@@ -30,19 +30,19 @@ So that financial transactions are completely auditable and user balances can ne
 1. **Schema `ledger_transactions` & `wallets` CHECK constraint**
    - **Given** `packages/database/src/schema.ts` đã có bảng `wallets`,
    - **When** thiết kế schema tài chính kép,
-   - **Then** bảng `ledger_transactions` có các cột: `id`, `wallet_id` (FK → wallets), `type` (varchar 50), `amount` (NUMERIC 15,2), `balance_before` (NUMERIC 15,2), `balance_after` (NUMERIC 15,2), `reference_id` (varchar 255, nullable), `idempotency_key` (varchar 255, nullable, UNIQUE), `created_at` (timestamptz, default now).
+   - **Then** bảng `ledger_transactions` có các cột: `id`, `wallet_id` (FK → wallets), `type` (varchar 30), `amount` (NUMERIC 15,2), `balance_before` (NUMERIC 15,2), `balance_after` (NUMERIC 15,2), `reference_id` (varchar 100, nullable), `idempotency_key` (varchar 100, nullable, UNIQUE), `metadata` (jsonb, nullable), `created_at` (timestamptz, default now).
    - **And** bảng `wallets` có `CHECK (balance >= 0)` và `CHECK (held_balance >= 0)` ở mức PostgreSQL.
 
-2. **Credit vào ví tạo Ledger record (TOPUP / PURCHASE_REFUND / BONUS)**
+2. **Credit vào ví tạo Ledger record (TOPUP_VIETQR / TOPUP_CRYPTO / PURCHASE_REFUND / ADMIN_ADJUST)**
    - **Given** một `Wallet` có `balance` = `100000.00`,
-   - **When** hệ thống thực hiện credit `+50000.00` với `type = 'TOPUP'`,
+   - **When** hệ thống thực hiện credit `+50000.00` với `type = 'TOPUP_VIETQR'`,
    - **Then** trong cùng một transaction:
      - `wallets.balance` tăng lên `150000.00`;
-     - `ledger_transactions` được insert với `amount = 50000.00`, `balance_before = 100000.00`, `balance_after = 150000.00`, `type = 'TOPUP'`, và `idempotency_key` duy nhất.
+     - `ledger_transactions` được insert với `amount = 50000.00`, `balance_before = 100000.00`, `balance_after = 150000.00`, `type = 'TOPUP_VIETQR'`, và `idempotency_key` duy nhất.
 
 3. **Debit từ ví tạo Ledger record và bảo vệ số dư không âm**
    - **Given** một `Wallet` có `balance` = `100000.00`,
-   - **When** hệ thống thực hiện debit `120000.00` với `type = 'PURCHASE'`,
+   - **When** hệ thống thực hiện debit `120000.00` với `type = 'STORE_PURCHASE'`,
    - **Then** PostgreSQL transaction rollback vì `CHECK (balance >= 0)` bị vi phạm;
    - **And** `ledger_transactions` không được insert;
    - **And** API trả về lỗi `INSUFFICIENT_FUNDS` với error shape chuẩn `{ statusCode, errorCode, message, timestamp, path }` [Source: ARCHITECTURE-SPINE.md section 4].
@@ -71,8 +71,8 @@ So that financial transactions are completely auditable and user balances can ne
 7. **Type-safe Ledger types & DTOs**
    - **Given** `packages/shared-types` chứa DTOs và Enums,
    - **When** thiếu kiểu Ledger,
-   - **Then** tạo `LedgerType` enum với các giá trị: `TOPUP`, `PURCHASE`, `REFUND`, `BONUS`;
-   - **And** tạo `LedgerTransactionDto` với đầy đủ trường: `id`, `walletId`, `type`, `amount` (string), `balanceBefore` (string), `balanceAfter` (string), `referenceId?`, `idempotencyKey?`, `createdAt`.
+   - **Then** tạo `LedgerType` enum với các giá trị: `TOPUP_VIETQR`, `TOPUP_CRYPTO`, `STORE_PURCHASE`, `PURCHASE_REFUND`, `ADMIN_ADJUST`;
+   - **And** tạo `LedgerTransactionDto` với đầy đủ trường: `id`, `walletId`, `type`, `amount` (string), `balanceBefore` (string), `balanceAfter` (string), `referenceId?`, `idempotencyKey?`, `metadata?`, `createdAt`.
 
 8. **Automated Test Coverage**
    - **Given** bộ test của `apps/api` và `packages/database`,
@@ -161,12 +161,13 @@ export const ledgerTransactions = pgTable(
     walletId: uuid('wallet_id')
       .notNull()
       .references(() => wallets.id, { onDelete: 'cascade' }),
-    type: varchar('type', { length: 50 }).notNull(),
+    type: varchar('type', { length: 30 }).notNull(),
     amount: numeric('amount', { precision: 15, scale: 2 }).notNull(),
     balanceBefore: numeric('balance_before', { precision: 15, scale: 2 }).notNull(),
     balanceAfter: numeric('balance_after', { precision: 15, scale: 2 }).notNull(),
-    referenceId: varchar('reference_id', { length: 255 }),
-    idempotencyKey: varchar('idempotency_key', { length: 255 }).unique(),
+    referenceId: varchar('reference_id', { length: 100 }),
+    idempotencyKey: varchar('idempotency_key', { length: 100 }).unique(),
+    metadata: jsonb('metadata'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   }
 );
@@ -184,6 +185,7 @@ export const wallets = pgTable(
 );
 ```
 
+> **Lưu ý quan trọng:** AD-3 cấm tuyệt đối `UPDATE wallets SET balance = balance - X` [Source: ARCHITECTURE-SPINE.md, AD-3]. Luôn đọc balance hiện tại bằng `SELECT ... FOR UPDATE`, tính balance_after, insert ledger, rồi mới `UPDATE` wallet.
 > **Lưu ý:** Schema hiện tại đã có check constraints như trên; dev cần verify chúng vẫn tồn tại và đúng định nghĩa sau khi thêm `ledger_transactions`.
 
 #### 2. LedgerService API
@@ -221,8 +223,8 @@ export class LedgerService {
    const [wallet] = await tx.select().from(wallets).where(eq(wallets.id, walletId)).for('update');
    ```
 4. Tính `balanceAfter`:
-   - `credit`: `wallet.balance + amount`.
-   - `debit`: `wallet.balance - amount`.
+   - `credit`: `wallet.balance + amount` (amount dương).
+   - `debit`: `wallet.balance - amount` (amount dương; nếu dùng mô hình dấu âm như addendum, amount có thể âm và `balance_after = balance_before + amount`).
 5. Cập nhật `wallets.balance` và `wallets.updatedAt = now()`.
 6. Insert `ledger_transactions` với `balance_before`/`balance_after`/`idempotency_key`.
 7. Trả về bản ghi ledger.
