@@ -28,11 +28,13 @@ So that I can immediately purchase products without waiting.
 ## Acceptance Criteria
 
 1. **Webhook endpoint xác thực chữ ký**
-   - **Given** cổng thanh toán gửi webhook đến `POST /api/payments/vietqr/webhook` với signature HMAC-SHA256 trong header `X-VietQR-Signature`,
+   - **Given** cổng thanh toán gửi webhook đến `POST /api/payments/vietqr/webhook` với header `X-VietQR-Signature: <hmac-sha256-hex>`,
    - **When** handler nhận request,
-   - **Then** verify signature bằng `VIETQR_WEBHOOK_SECRET` env; nếu invalid hoặc thiếu trả 401 `{ errorCode: 'WEBHOOK_INVALID_SIGNATURE' }`.
-   - **And** payload được parse strict JSON; nếu malformed trả 400 `{ errorCode: 'WEBHOOK_INVALID_PAYLOAD' }`.
-   - **And** signature được verify TRƯỚC KHI đọc/parse body (raw body required).
+   - **Then** đọc **raw body** (trước khi NestJS parse JSON) và verify HMAC-SHA256 với `VIETQR_WEBHOOK_SECRET` env.
+   - **And** nếu thiếu header, signature sai, hoặc `rawBody` không lấy được → trả 401 `{ errorCode: 'WEBHOOK_INVALID_SIGNATURE' }`.
+   - **And** `signature` KHÔNG nằm trong body payload, chỉ trong header.
+   - **And** sau khi verify, parse JSON nghiêm ngặt; nếu malformed trả 400 `{ errorCode: 'WEBHOOK_INVALID_PAYLOAD' }`.
+   - **And** cấu hình NestJS: `NestFactory.create(AppModule, { rawBody: true })`.
 
 2. **Khớp lệnh theo transfer_content**
    - **Given** webhook payload hợp lệ chứa `{ amount: 200000, content: "9R_TOPUP_7F3A", transactionId: "VQR-ABC123" }`,
@@ -47,6 +49,7 @@ So that I can immediately purchase products without waiting.
      - Update `payment_transactions.status = 'COMPLETED'`, `external_transaction_id = <webhook txid>`.
      - Update `wallets.balance = balance + amount`, `updated_at = now()`.
      - Insert `ledger_transactions` với `type = 'TOPUP_VIETQR'`, `amount`, `balance_before`, `balance_after`, `reference_id = payment.id`, `idempotency_key = 'payment:vietqr:' + transactionId`.
+     - Trả response 200 `{ ok: true, matched: true, credited: true, paymentId: <uuid>, walletId: <uuid>, balanceAfter: "200000.00" }`.
    - **And** nếu `external_transaction_id` đã tồn tại (duplicate webhook), trả 200 `{ ok: true, alreadyProcessed: true }` mà không cộng tiền lần 2.
 
 4. **Idempotency bảo vệ**
@@ -58,8 +61,9 @@ So that I can immediately purchase products without waiting.
 
 5. **Validation và error handling**
    - **Given** webhook payload có thể thiếu field,
-   - **When** `amount` không khớp với `payment_transactions.amount` (tolerance ±0đ),
+   - **When** `amount` không khớp **chính xác** với `payment_transactions.amount` (cả 2 đều là số nguyên VND),
    - **Then** trả 200 `{ ok: true, matched: true, credited: false, reason: 'AMOUNT_MISMATCH' }` và log warning.
+   - **And** `amount` trong payload phải là số nguyên ≥ 10.000; nếu không phải số nguyên trả 400 `WEBHOOK_INVALID_AMOUNT`.
    - **And** nếu `payment_transactions.status` không phải `PENDING` (đã COMPLETED/FAILED/EXPIRED), trả 200 `{ ok: true, matched: true, credited: false, reason: 'ALREADY_PROCESSED', currentStatus: <status> }`.
    - **And** mọi lỗi DB/transaction trả 500 `{ errorCode: 'WEBHOOK_PROCESSING_FAILED' }` để gateway retry.
 
@@ -84,7 +88,14 @@ So that I can immediately purchase products without waiting.
      - Ledger transaction có đúng `idempotency_key` và `type='TOPUP_VIETQR'`.
    - **And** test dùng mock db object, không cần database thật.
 
-8. **Performance và reliability**
+9. **Mini App cập nhật số dư sau khi nạp**
+   - **Given** user đã chuyển khoản và đang ở màn hình chờ xác nhận trong Mini App,
+   - **When** webhook cộng tiền thành công,
+   - **Then** Mini App poll `GET /api/wallets/me` mỗi 3 giây trong tối đa 5 phút để lấy `balance` mới nhất.
+   - **And** khi `balance` tăng đúng bằng `amount`, màn hình hiển thị tick xanh "Đã nhận {amount}đ" kèm rung Haptic `success`.
+   - **And** nếu sau 5 phút vẫn chưa thấy cộng tiền, hiển thị nút "Kiểm tra lại".
+
+10. **Performance và reliability**
    - **Given** webhook endpoint cần phản hồi nhanh,
    - **When** xử lý webhook thành công,
    - **Then** tổng thời gian xử lý < 500ms (không tính network).
@@ -93,10 +104,10 @@ So that I can immediately purchase products without waiting.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Tạo webhook DTO và signature verification guard** (AC: 1, 5)
-  - [ ] Thêm `VietQRWebhookDto` vào `packages/shared-types` với fields: `amount`, `content`, `transactionId`, `timestamp`, `signature`.
-  - [ ] Tạo `VietQRWebhookGuard` hoặc middleware verify HMAC-SHA256 signature trước khi parse body.
-  - [ ] Đọc raw body cho signature verification (cấu hình `rawBody: true` trong NestJS main.ts nếu cần).
+- [ ] **Task 1: Tạo webhook DTO và signature verification guard** (AC: 1, 5, 9)
+  - [ ] Thêm `VietQRWebhookDto` vào `packages/shared-types` với body fields: `amount` (integer), `content` (string, required), `transactionId` (string, required), `bankCode` (string), `accountNo` (string), `timestamp` (string ISO).
+  - [ ] Tạo `VietQRWebhookGuard` verify HMAC-SHA256 từ header `X-VietQR-Signature` với raw body.
+  - [ ] Cấu hình NestJS: `NestFactory.create(AppModule, { rawBody: true })`.
   - [ ] Test: signature đúng/sai, thiếu header, malformed JSON.
 
 - [ ] **Task 2: Implement webhook handler logic** (AC: 2, 3, 5)
@@ -120,8 +131,9 @@ So that I can immediately purchase products without waiting.
   - [ ] Đảm bảo không log sensitive fields.
   - [ ] Test: verify log output format.
 
-- [ ] **Task 5: Integration test và verification** (AC: 7)
+- [ ] **Task 5: Integration test và verification** (AC: 7, 9)
   - [ ] Test end-to-end flow: tạo payment → giả lập webhook → verify wallet credited.
+  - [ ] Test `GET /api/wallets/me` trả `balance` mới sau khi webhook thành công.
   - [ ] Test performance: webhook xử lý < 500ms.
   - [ ] Chạy full `pnpm turbo run test` + lint + build.
 
@@ -132,6 +144,7 @@ So that I can immediately purchase products without waiting.
 - **AD-6 (Idempotency Webhook Guard):** Mọi webhook phải verify signature trước, `external_transaction_id` unique, `idempotency_key` format `payment:{gateway}:{txid}`.
 - **AD-3 (Ledger):** Mọi biến động ví phải có `ledger_transactions` entry với `type='TOPUP_VIETQR'`.
 - **NFR-3:** Webhook xử lý đến khi ví update < 5 giây (target < 500ms cho handler).
+- **Mini App polling:** Dùng `GET /api/wallets/me` để poll số dư mỗi 3s sau khi user chuyển khoản. Endpoint cần trả `{ balance: string, heldBalance: string, currency: string }`.
 
 ### Database Schema
 
@@ -158,9 +171,10 @@ Body:
 }
 
 Response 200:
-{ "ok": true, "matched": true, "credited": true, "paymentId": "<uuid>" }
+{ "ok": true, "matched": true, "credited": true, "paymentId": "<uuid>", "walletId": "<uuid>", "balanceAfter": "200000.00" }
 { "ok": true, "matched": false, "reason": "NO_MATCHING_PAYMENT" }
 { "ok": true, "matched": true, "credited": false, "reason": "AMOUNT_MISMATCH" }
+{ "ok": true, "matched": true, "credited": false, "reason": "ALREADY_PROCESSED", "currentStatus": "COMPLETED" }
 { "ok": true, "alreadyProcessed": true }
 ```
 
