@@ -1,12 +1,29 @@
 import { Injectable, BadRequestException, ServiceUnavailableException, InternalServerErrorException } from '@nestjs/common';
+import * as crypto from 'node:crypto';
 import { db, eq, paymentTransactions, sql, type DbOrTx } from '@repo/database';
-import { PaymentStatus, PaymentGateway, type PaymentTransactionDto, type TelegramUserDto } from '@repo/shared-types';
+import { PaymentStatus, PaymentGateway, LedgerType, type PaymentTransactionDto, type TelegramUserDto, type VietQRWebhookDto, type VietQRWebhookResponseDto } from '@repo/shared-types';
 import { VietQRService } from './vietqr.service';
 import { UserWalletService } from '../users/user-wallet.service';
+import { WalletsService } from '../wallets/wallets.service';
+import { LedgerService } from '../ledger/ledger.service';
 
 const MIN_TOPUP_AMOUNT = 10000;
 const DEFAULT_TIMEOUT_MIN = 30;
 const MAX_TRANSFER_CONTENT_RETRIES = 3;
+
+
+
+export interface ProcessVietQRWebhookResult {
+  ok: boolean;
+  matched: boolean;
+  credited?: boolean;
+  paymentId?: string;
+  walletId?: string;
+  balanceAfter?: string;
+  reason?: string;
+  currentStatus?: string;
+  alreadyProcessed?: boolean;
+}
 
 export type PaymentRecord = typeof paymentTransactions.$inferSelect;
 
@@ -15,6 +32,8 @@ export class PaymentsService {
   constructor(
     private readonly vietQRService: VietQRService,
     private readonly userWalletService: UserWalletService,
+    private readonly walletsService: WalletsService,
+    private readonly ledgerService: LedgerService,
   ) {}
 
   async createVietQrPayment(
@@ -120,6 +139,161 @@ export class PaymentsService {
 
   private toNumeric(amount: number): string {
     return Math.floor(amount).toFixed(2);
+  }
+
+  async processVietQRWebhook(
+    dto: VietQRWebhookDto,
+    outerTx?: DbOrTx,
+  ): Promise<ProcessVietQRWebhookResult> {
+    if (!dto || typeof dto !== 'object') {
+      return { ok: false, matched: false, reason: 'WEBHOOK_INVALID_PAYLOAD' };
+    }
+
+    const transactionId = dto.transactionId?.trim();
+    if (!transactionId) {
+      return { ok: false, matched: false, reason: 'WEBHOOK_INVALID_PAYLOAD' };
+    }
+
+    if (!Number.isFinite(dto.amount) || !Number.isInteger(dto.amount) || dto.amount < 10000) {
+      return { ok: false, matched: false, reason: 'WEBHOOK_INVALID_AMOUNT' };
+    }
+
+    const runner = outerTx ?? db;
+
+    const startMs = Date.now();
+
+    // Idempotency: check if this external transaction was already processed
+    const [alreadyProcessed] = await runner
+      .select()
+      .from(paymentTransactions)
+      .where(eq(paymentTransactions.externalTransactionId, transactionId))
+      .limit(1);
+
+    if (alreadyProcessed) {
+      return { ok: true, matched: true, alreadyProcessed: true };
+    }
+
+    const content = dto.content?.trim();
+    if (!content) {
+      return { ok: false, matched: false, reason: 'WEBHOOK_INVALID_PAYLOAD' };
+    }
+
+    const matching = await runner
+      .select()
+      .from(paymentTransactions)
+      .where(sql`${paymentTransactions.transferContent} = ${content} AND ${paymentTransactions.status} = ${PaymentStatus.PENDING}`)
+      .limit(2);
+
+
+    if (matching.length === 0) {
+      return { ok: true, matched: false, reason: 'NO_MATCHING_PAYMENT' };
+    }
+
+    if (matching.length > 1) {
+      throw new InternalServerErrorException({
+        errorCode: 'PAYMENT_AMBIGUOUS_MATCH',
+        message: 'Multiple pending payments matched the same transfer content',
+      });
+    }
+
+    const payment = matching[0] as PaymentRecord;
+    const paymentAmount = Number(payment.amount);
+    if (paymentAmount !== dto.amount) {
+      return {
+        ok: true,
+        matched: true,
+        credited: false,
+        paymentId: payment.id,
+        reason: 'AMOUNT_MISMATCH',
+      };
+    }
+
+    if (payment.status !== PaymentStatus.PENDING) {
+      return {
+        ok: true,
+        matched: true,
+        credited: false,
+        paymentId: payment.id,
+        reason: 'ALREADY_PROCESSED',
+        currentStatus: payment.status,
+      };
+    }
+
+    const idempotencyKey = `payment:vietqr:${transactionId}`;
+
+    try {
+      const ledger = await this.walletsService.credit(
+        payment.walletId,
+        payment.amount,
+        LedgerType.TOPUP_VIETQR,
+        idempotencyKey,
+        payment.id,
+        runner,
+      );
+
+      const metadata = typeof payment.metadata === 'object' && payment.metadata !== null
+        ? { ...payment.metadata }
+        : {};
+
+      await runner
+        .update(paymentTransactions)
+        .set({
+          status: PaymentStatus.COMPLETED,
+          externalTransactionId: transactionId,
+          metadata: {
+            ...metadata,
+            webhookReceivedAt: new Date().toISOString(),
+            webhookPayloadHash: this.computePayloadHash(dto),
+          },
+        })
+        .where(eq(paymentTransactions.id, payment.id));
+
+      const processingTimeMs = Date.now() - startMs;
+      console.log(JSON.stringify({
+        event: 'vietqr_webhook',
+        transactionId,
+        matched: true,
+        credited: true,
+        amount: dto.amount,
+        walletId: payment.walletId,
+        processingTimeMs,
+      }));
+
+      return {
+        ok: true,
+        matched: true,
+        credited: true,
+        paymentId: payment.id,
+        walletId: payment.walletId,
+        balanceAfter: ledger.balanceAfter,
+      };
+    } catch (e: any) {
+      const processingTimeMs = Date.now() - startMs;
+      console.error(JSON.stringify({
+        event: 'vietqr_webhook',
+        transactionId,
+        matched: true,
+        credited: false,
+        amount: dto.amount,
+        walletId: payment.walletId,
+        processingTimeMs,
+        error: e?.message,
+      }));
+
+      if (e?.code === '23505' || e?.message?.includes('unique constraint') || e?.message?.includes('idempotency')) {
+        return { ok: true, matched: true, alreadyProcessed: true };
+      }
+
+      throw new InternalServerErrorException({
+        errorCode: 'WEBHOOK_PROCESSING_FAILED',
+        message: 'Failed to process VietQR webhook',
+      });
+    }
+  }
+
+  private computePayloadHash(dto: VietQRWebhookDto): string {
+    const raw = JSON.stringify(dto);
+    return crypto.createHmac('sha256', process.env.VIETQR_WEBHOOK_SECRET ?? '').update(raw).digest('hex');
   }
 
   private toDto(record: PaymentRecord, bankBin: string, accountNo: string): PaymentTransactionDto {

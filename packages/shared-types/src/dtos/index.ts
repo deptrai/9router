@@ -103,3 +103,24 @@ export interface PaymentTransactionDto {
 export interface CreateVietQrPaymentDto {
   amount: number;
 }
+
+export interface VietQRWebhookDto {
+  transactionId: string;
+  amount: number;
+  content: string;
+  bankCode?: string;
+  accountNo?: string;
+  timestamp?: string;
+}
+
+export interface VietQRWebhookResponseDto {
+  ok: boolean;
+  matched: boolean;
+  credited?: boolean;
+  paymentId?: string;
+  walletId?: string;
+  balanceAfter?: string;
+  reason?: string;
+  currentStatus?: string;
+  alreadyProcessed?: boolean;
+}

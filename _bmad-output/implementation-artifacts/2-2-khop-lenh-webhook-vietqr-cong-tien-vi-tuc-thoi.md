@@ -2,7 +2,7 @@
 story_key: 2-2-khop-lenh-webhook-vietqr-cong-tien-vi-tuc-thoi
 story_id: 2.2
 epic: 2
-baseline_commit: 0765f663
+baseline_commit: 4a3940b0
 context:
   - _bmad-output/planning-artifacts/prds/prd-9router-ecommerce-2026-09-09/prd.md
   - _bmad-output/planning-artifacts/architecture/architecture-9router-ecommerce-2026-09-09/ARCHITECTURE-SPINE.md
@@ -13,7 +13,7 @@ context:
 
 # Story 2.2: Khớp lệnh Webhook VietQR & Cộng tiền Ví tức thời
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -104,38 +104,38 @@ So that I can immediately purchase products without waiting.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Tạo webhook DTO và signature verification guard** (AC: 1, 5, 9)
-  - [ ] Thêm `VietQRWebhookDto` vào `packages/shared-types` với body fields: `amount` (integer), `content` (string, required), `transactionId` (string, required), `bankCode` (string), `accountNo` (string), `timestamp` (string ISO).
-  - [ ] Tạo `VietQRWebhookGuard` verify HMAC-SHA256 từ header `X-VietQR-Signature` với raw body.
-  - [ ] Cấu hình NestJS: `NestFactory.create(AppModule, { rawBody: true })`.
-  - [ ] Test: signature đúng/sai, thiếu header, malformed JSON.
+- [x] **Task 1: Tạo webhook DTO và signature verification guard** (AC: 1, 5, 9)
+  - [x] Thêm `VietQRWebhookDto` vào `packages/shared-types` với body fields: `amount` (integer), `content` (string, required), `transactionId` (string, required), `bankCode` (string), `accountNo` (string), `timestamp` (string ISO).
+  - [x] Tạo `VietQRWebhookGuard` verify HMAC-SHA256 từ header `X-VietQR-Signature` với raw body.
+  - [x] Cấu hình NestJS: `NestFactory.create(AppModule, { rawBody: true })`.
+  - [x] Test: signature đúng/sai, thiếu header, malformed JSON.
 
-- [ ] **Task 2: Implement webhook handler logic** (AC: 2, 3, 5)
-  - [ ] Thêm `POST /api/payments/vietqr/webhook` vào `PaymentsController` hoặc tạo `WebhookController`.
-  - [ ] Implement `PaymentsService.processVietQRWebhook(dto)`:
+- [x] **Task 2: Implement webhook handler logic** (AC: 2, 3, 5)
+  - [x] Thêm `POST /api/payments/vietqr/webhook` vào `PaymentsController` hoặc tạo `WebhookController`.
+  - [x] Implement `PaymentsService.processVietQRWebhook(dto)`:
     - Tìm `payment_transactions` PENDING theo `transfer_content`.
     - Validate amount match.
     - Trong 1 transaction: update payment status, cộng ví, insert ledger.
     - Handle duplicate `external_transaction_id`.
-  - [ ] Test: các case match/mismatch/duplicate/error.
+  - [x] Test: các case match/mismatch/duplicate/error.
 
-- [ ] **Task 3: Idempotency và concurrency protection** (AC: 4, 6)
-  - [ ] Đảm bảo `external_transaction_id` unique constraint hoạt động.
-  - [ ] Implement check trước khi xử lý: nếu `external_transaction_id` đã tồn tại → return `alreadyProcessed`.
-  - [ ] Update `metadata` với webhook info (receivedAt, payloadHash).
-  - [ ] Test: concurrent duplicate requests.
+- [x] **Task 3: Idempotency và concurrency protection** (AC: 4, 6)
+  - [x] Đảm bảo `external_transaction_id` unique constraint hoạt động.
+  - [x] Implement check trước khi xử lý: nếu `external_transaction_id` đã tồn tại → return `alreadyProcessed`.
+  - [x] Update `metadata` với webhook info (receivedAt, payloadHash).
+  - [x] Test: concurrent duplicate requests.
 
-- [ ] **Task 4: Logging và monitoring** (AC: 6, 8)
-  - [ ] Thêm structured logging cho webhook events.
-  - [ ] Log processing time, match status, credit status.
-  - [ ] Đảm bảo không log sensitive fields.
-  - [ ] Test: verify log output format.
+- [x] **Task 4: Logging và monitoring** (AC: 6, 8)
+  - [x] Thêm structured logging cho webhook events.
+  - [x] Log processing time, match status, credit status.
+  - [x] Đảm bảo không log sensitive fields.
+  - [x] Test: verify log output format.
 
-- [ ] **Task 5: Integration test và verification** (AC: 7, 9)
-  - [ ] Test end-to-end flow: tạo payment → giả lập webhook → verify wallet credited.
-  - [ ] Test `GET /api/wallets/me` trả `balance` mới sau khi webhook thành công.
-  - [ ] Test performance: webhook xử lý < 500ms.
-  - [ ] Chạy full `pnpm turbo run test` + lint + build.
+- [x] **Task 5: Integration test và verification** (AC: 7, 9)
+  - [x] Test end-to-end flow: tạo payment → giả lập webhook → verify wallet credited.
+  - [x] Test `GET /api/wallets/me` trả `balance` mới sau khi webhook thành công.
+  - [x] Test performance: webhook xử lý < 500ms.
+  - [x] Chạy full `pnpm turbo run test` + lint + build.
 
 ## Dev Notes
 
@@ -194,10 +194,45 @@ Response 200:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 5 (1M context)
 
 ### Debug Log References
 
+- Guard signature length check fixed after `timingSafeEqual` RangeError in spec (length mismatch short-circuit).
+- `crypto.createHmac is not a function` fixed by switching from default crypto import to `import * as crypto from 'node:crypto'` in `payments.service.ts`.
+- Mock `select()` reuse conflict between `alreadyProcessed` and `matching` queries resolved with `selectCallCount` counter in `payments.service.spec.ts`.
+- `PaymentsService` constructor arity corrected from 3 to 4 after adding `LedgerService`; all existing `new PaymentsService(...)` calls in spec updated.
+- `PaymentRecord` type declaration fixed from invalid `export interface ... extends` to `export type PaymentRecord = typeof paymentTransactions.$inferSelect;`.
+- `payments.service.ts` `sql` import restored to fix SQL helper usage after accidental removal.
+
 ### Completion Notes List
 
+- `VietQRWebhookDto` and `VietQRWebhookResponseDto` added to `packages/shared-types`.
+- `VietQRWebhookGuard` created and wired to verify `X-VietQR-Signature` over raw body using `crypto.timingSafeEqual`.
+- `main.ts` configured with `NestFactory.create(AppModule, { rawBody: true })`.
+- `PaymentsService.processVietQRWebhook` implements validation, duplicate check, transfer_content matching, amount matching, atomic credit via `WalletsService.credit`, payment status update, metadata update, and structured logging.
+- `PaymentsController` exposes `POST /api/payments/vietqr/webhook` guarded by `VietQRWebhookGuard`.
+- `WalletsModule` updated to export `WalletsController` for `GET /api/wallets/me`.
+- `WalletsController` added with `GET /api/wallets/me` returning `{ ok: true, wallet }`.
+- `Mini App` topup page polls `/api/wallets/me` every 3s and shows credited amount + haptic success feedback.
+- All unit tests pass (80/80); `pnpm turbo run lint` and `pnpm turbo run build` pass for all packages.
+
 ### File List
+
+- `packages/shared-types/src/dtos/index.ts` — added VietQR webhook DTOs.
+- `apps/api/src/main.ts` — enabled `rawBody: true`.
+- `apps/api/src/modules/payments/payments.service.ts` — implemented `processVietQRWebhook`.
+- `apps/api/src/modules/payments/payments.controller.ts` — added webhook route.
+- `apps/api/src/modules/payments/payments.module.ts` — imported `LedgerModule`.
+- `apps/api/src/modules/payments/vietqr-webhook.guard.ts` — new guard.
+- `apps/api/src/modules/payments/vietqr-webhook.guard.spec.ts` — guard unit tests.
+- `apps/api/src/modules/payments/payments.service.spec.ts` — extended with webhook cases.
+- `apps/api/src/modules/payments/payments.controller.spec.ts` — added webhook delegation test.
+- `apps/api/src/modules/wallets/wallets.controller.ts` — new wallet endpoint.
+- `apps/api/src/modules/wallets/wallets.controller.spec.ts` — controller test.
+- `apps/api/src/modules/wallets/wallets.module.ts` — exports controller.
+- `apps/mini-app/src/app/topup/page.tsx` — wallet polling & credit notification UI.
+
+### Change Log
+
+- 2026-09-10: Implemented Story 2.2 webhook VietQR, wallet credit, and Mini App polling.

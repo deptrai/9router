@@ -33,6 +33,9 @@ export default function TopupPage() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [now, setNow] = useState<number>(Date.now());
+  const [balance, setBalance] = useState<number | null>(null);
+  const [creditedAmount, setCreditedAmount] = useState<number | null>(null);
+  const [pollCount, setPollCount] = useState(0);
 
   useEffect(() => {
     window.Telegram?.WebApp?.ready();
@@ -43,6 +46,45 @@ export default function TopupPage() {
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
   }, [payment?.expiresAt]);
+
+  // Poll wallet balance while QR is active
+  useEffect(() => {
+    if (!payment) return;
+    let cancelled = false;
+    const pollInterval = 3000;
+    const maxPolls = 100; // ~5 minutes
+
+    const checkBalance = async () => {
+      try {
+        const res = await apiClient.get<{ ok: boolean; wallet: { balance: string } }>(
+          '/api/wallets/me'
+        );
+        if (cancelled) return;
+        const newBalance = Number(res.wallet.balance);
+        if (balance === null || newBalance > balance) {
+          setBalance(newBalance);
+          if (balance !== null && newBalance - balance === Number(payment.amount)) {
+            setCreditedAmount(Number(payment.amount));
+            window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
+          }
+        }
+        setPollCount((c) => c + 1);
+      } catch {
+        if (!cancelled) setPollCount((c) => c + 1);
+      }
+    };
+
+    checkBalance();
+    const interval = setInterval(() => {
+      if (pollCount < maxPolls) checkBalance();
+      else clearInterval(interval);
+    }, pollInterval);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [payment]);
 
   const finalAmount = useMemo(() => {
     if (selectedAmount !== null) return selectedAmount;
@@ -148,9 +190,15 @@ export default function TopupPage() {
         </button>
 
         {error && <p className="text-red-400 text-sm mt-3">{error}</p>}
+
+        {creditedAmount !== null && (
+          <div className="w-full max-w-sm rounded-xl bg-emerald-900 border border-emerald-600 p-3 mt-4 text-center">
+            <p className="text-emerald-200 font-semibold">Đã nhận {formatVnd(creditedAmount)}</p>
+          </div>
+        )}
       </div>
 
-      {payment && (
+      {payment && creditedAmount === null && (
         <div className="w-full max-w-sm rounded-xl bg-neutral-900 border border-neutral-800 p-4 mt-4 text-left">
           <p className="text-sm text-neutral-400 mb-2">Quét mã QR để chuyển khoản</p>
 
