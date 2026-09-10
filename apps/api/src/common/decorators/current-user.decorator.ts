@@ -12,7 +12,7 @@ export const CurrentUser = createParamDecorator(
       throw new UnauthorizedException({
         statusCode: 401,
         message: 'User not authenticated',
-        error: 'AUTH_UNAUTHORIZED',
+        errorCode: 'AUTH_UNAUTHORIZED',
       });
     }
     return request.user;

@@ -152,6 +152,15 @@ test('validateTelegramInitData rejects invalid user payloads', () => {
   );
 });
 
+test('validateTelegramInitData rejects oversized initData to mitigate DoS', () => {
+  const hugeValue = 'a'.repeat(8192);
+  const oversizedInitData = `user=${hugeValue}&hash=${'a'.repeat(64)}`;
+  const result = validateTelegramInitData(oversizedInitData, TEST_BOT_TOKEN);
+
+  assert.strictEqual(result.ok, false);
+  assert.strictEqual(result.error, 'initData too large');
+});
+
 test('validateTelegramInitData rejects missing botToken or missing initData', () => {
   const res1 = validateTelegramInitData('', TEST_BOT_TOKEN);
   assert.strictEqual(res1.ok, false);

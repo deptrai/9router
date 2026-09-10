@@ -5,6 +5,9 @@ import { TelegramInitDataResult, TelegramUserDto } from '@repo/shared-types';
  * Validates Telegram Web App initData cryptographically according to the official Bot API specs.
  * https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
  */
+
+const MAX_INIT_DATA_BYTES = 4096;
+
 export function validateTelegramInitData(
   initData: string,
   botToken: string
@@ -13,8 +16,12 @@ export function validateTelegramInitData(
     return { ok: false, error: 'Bot token not configured' };
   }
 
-  if (!initData || typeof initData !== 'string') {
+  if (typeof initData !== 'string' || !initData) {
     return { ok: false, error: 'initData missing' };
+  }
+
+  if (Buffer.byteLength(initData, 'utf8') > MAX_INIT_DATA_BYTES) {
+    return { ok: false, error: 'initData too large' };
   }
 
   const params = new URLSearchParams(initData);
@@ -73,52 +80,44 @@ export function validateTelegramInitData(
   }
 
   const userRaw = params.get('user');
-  let userObj: unknown = null;
+  let userObj: Record<string, unknown> | null = null;
   if (userRaw) {
     try {
-      userObj = JSON.parse(userRaw);
+      const parsed: unknown = JSON.parse(userRaw);
+      if (parsed && typeof parsed === 'object') {
+        userObj = parsed as Record<string, unknown>;
+      }
     } catch {
       return { ok: false, error: 'user invalid' };
     }
   }
 
-  if (
-    !userObj ||
-    typeof userObj !== 'object' ||
-    !('id' in userObj) ||
-    typeof (userObj as { id: unknown }).id !== 'number' ||
-    !Number.isSafeInteger((userObj as { id: number }).id) ||
-    (userObj as { id: number }).id <= 0
-  ) {
+  if (!userObj) {
     return { ok: false, error: 'user missing' };
   }
 
-  const typedUser = userObj as {
-    id: number;
-    is_bot?: unknown;
-    username?: unknown;
-    first_name?: unknown;
-    last_name?: unknown;
-    language_code?: unknown;
-    is_premium?: unknown;
-  };
+  const id = userObj.id;
+  if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) {
+    return { ok: false, error: 'user missing' };
+  }
 
+  const isBotValue = userObj.is_bot;
   const isBot =
-    typedUser.is_bot === true ||
-    typedUser.is_bot === 'true' ||
-    typedUser.is_bot === 1 ||
-    typedUser.is_bot === '1';
+    isBotValue === true ||
+    isBotValue === 'true' ||
+    isBotValue === 1 ||
+    isBotValue === '1';
   if (isBot) {
     return { ok: false, error: 'bot not allowed' };
   }
 
   const user: TelegramUserDto = {
-    id: typedUser.id,
-    username: typeof typedUser.username === 'string' ? typedUser.username : null,
-    firstName: typeof typedUser.first_name === 'string' ? typedUser.first_name : '',
-    lastName: typeof typedUser.last_name === 'string' ? typedUser.last_name : null,
-    languageCode: typeof typedUser.language_code === 'string' ? typedUser.language_code : null,
-    isPremium: typedUser.is_premium === true,
+    id,
+    username: typeof userObj.username === 'string' ? userObj.username : null,
+    firstName: typeof userObj.first_name === 'string' ? userObj.first_name : '',
+    lastName: typeof userObj.last_name === 'string' ? userObj.last_name : null,
+    languageCode: typeof userObj.language_code === 'string' ? userObj.language_code : null,
+    isPremium: userObj.is_premium === true,
   };
 
   const queryId = params.get('query_id') || null;

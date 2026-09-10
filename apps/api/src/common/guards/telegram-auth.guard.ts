@@ -18,7 +18,7 @@ export class TelegramAuthGuard implements CanActivate {
       throw new UnauthorizedException({
         statusCode: 401,
         message: 'Missing or malformed Authorization header',
-        error: 'AUTH_UNAUTHORIZED',
+        errorCode: 'AUTH_UNAUTHORIZED',
       });
     }
 
@@ -27,7 +27,7 @@ export class TelegramAuthGuard implements CanActivate {
       throw new UnauthorizedException({
         statusCode: 401,
         message: 'Missing or malformed Authorization header',
-        error: 'AUTH_UNAUTHORIZED',
+        errorCode: 'AUTH_UNAUTHORIZED',
       });
     }
 
@@ -38,7 +38,7 @@ export class TelegramAuthGuard implements CanActivate {
       throw new InternalServerErrorException({
         statusCode: 500,
         message: 'TELEGRAM_BOT_TOKEN is not configured',
-        error: 'CONFIG_TELEGRAM_BOT_TOKEN_MISSING',
+        errorCode: 'CONFIG_TELEGRAM_BOT_TOKEN_MISSING',
       });
     }
 
@@ -47,7 +47,7 @@ export class TelegramAuthGuard implements CanActivate {
       throw new UnauthorizedException({
         statusCode: 401,
         message: 'Invalid Telegram WebApp initData signature',
-        error: 'AUTH_INVALID_INIT_DATA',
+        errorCode: 'AUTH_INVALID_INIT_DATA',
       });
     }
 
