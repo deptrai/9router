@@ -55,8 +55,8 @@ development_status:
   1-4-quan-ly-so-cai-tai-chinh-kep-bao-ve-so-du-khong-am: done
   epic-1-retrospective: done
 
-  epic-2: backlog
-  2-1-tao-yeu-cau-nap-tien-sinh-ma-vietqr-dong-trong-mini-app: backlog
+  epic-2: in-progress
+  2-1-tao-yeu-cau-nap-tien-sinh-ma-vietqr-dong-trong-mini-app: ready-for-dev
   2-2-khop-lenh-webhook-vietqr-cong-tien-vi-tuc-thoi: backlog
   2-3-tao-hoa-don-nap-tien-tu-dong-qua-bitcart-crypto: backlog
   2-4-khoa-phan-tan-redlock-chong-nap-lap-gian-lan-giao-dich: backlog
