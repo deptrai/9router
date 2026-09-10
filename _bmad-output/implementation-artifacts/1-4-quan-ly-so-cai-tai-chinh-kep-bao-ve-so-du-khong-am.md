@@ -86,35 +86,35 @@ So that financial transactions are completely auditable and user balances can ne
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Cập nhật schema tài chính (AC: 1)
+- [x] Task 1: Cập nhật schema tài chính (AC: 1)
   - [ ] 1.1 `packages/database/src/schema.ts`: thêm check constraints `balance >= 0` và `held_balance >= 0` cho `wallets`.
   - [ ] 1.2 `packages/database/src/schema.ts`: bảng `ledger_transactions` đầy đủ các cột theo AC 1.
   - [ ] 1.3 `pnpm --filter=@repo/database db:generate` → migration SQL mới.
   - [ ] 1.4 `packages/database/src/schema.spec.ts`: assert `ledger_transactions` tồn tại và `wallets` có check constraints.
   - [ ] 1.5 `pnpm --filter=@repo/database build`.
 
-- [ ] Task 2: Shared types (AC: 7)
+- [x] Task 2: Shared types (AC: 7)
   - [ ] 2.1 `packages/shared-types/src/enums/index.ts`: thêm `LedgerType` enum.
   - [ ] 2.2 `packages/shared-types/src/dtos/index.ts`: thêm `LedgerTransactionDto`.
   - [ ] 2.3 `packages/shared-types/src/index.spec.ts` (nếu có): assert export.
   - [ ] 2.4 `pnpm --filter=@repo/shared-types build`.
 
-- [ ] Task 3: LedgerModule + LedgerService (AC: 4)
+- [x] Task 3: LedgerModule + LedgerService (AC: 4)
   - [ ] 3.1 `apps/api/src/modules/ledger/ledger.service.ts`: implement `credit`, `debit`, `getByIdempotencyKey`.
   - [ ] 3.2 `apps/api/src/modules/ledger/ledger.module.ts`: export `LedgerService`.
   - [ ] 3.3 `apps/api/src/modules/ledger/ledger.service.spec.ts`: unit test credit/debit/idempotency.
 
-- [ ] Task 4: WalletsService tích hợp Ledger (AC: 5)
+- [x] Task 4: WalletsService tích hợp Ledger (AC: 5)
   - [ ] 4.1 `apps/api/src/modules/wallets/wallets.service.ts`: thêm `credit` và `debit`.
   - [ ] 4.2 `apps/api/src/modules/wallets/wallets.module.ts`: import `LedgerModule`.
   - [ ] 4.3 `apps/api/src/modules/wallets/wallets.service.spec.ts`: test credit, debit, insufficient funds, idempotency.
 
-- [ ] Task 5: Error handling & INSUFFICIENT_FUNDS (AC: 3)
+- [x] Task 5: Error handling & INSUFFICIENT_FUNDS (AC: 3)
   - [ ] 5.1 Tạo exception `InsufficientFundsException` hoặc dùng `HttpException` với `errorCode: 'INSUFFICIENT_FUNDS'`, status 400.
   - [ ] 5.2 `AllExceptionsFilter` (nếu cần) vẫn trả chuẩn shape.
   - [ ] 5.3 Test `debit` thất bại: assert exception/response chuẩn.
 
-- [ ] Task 6: Lint, build, verify (AC: 8)
+- [x] Task 6: Lint, build, verify (AC: 8)
   - [ ] 6.1 `pnpm turbo run test` pass.
   - [ ] 6.2 `pnpm turbo run lint` pass.
   - [ ] 6.3 `pnpm turbo run build` pass.
@@ -321,15 +321,15 @@ export class InsufficientFundsException extends HttpException {
 ### Debug Log References
 
 ### Completion Notes List
-- [ ] Schema `ledger_transactions` + `wallets` check constraints đã định nghĩa.
-- [ ] `LedgerType` enum và `LedgerTransactionDto` đã thêm vào shared-types.
-- [ ] `LedgerModule` + `LedgerService.credit/debit` hoạt động.
-- [ ] `WalletsService` tích hợp `LedgerService`.
-- [ ] `InsufficientFundsException` trả chuẩn error shape.
-- [ ] Idempotency được test.
-- [ ] Tests pass: `pnpm turbo run test`.
-- [ ] Lint pass: `pnpm turbo run lint`.
-- [ ] Build pass: `pnpm turbo run build`.
+- [x] Schema `ledger_transactions` + `wallets` check constraints đã định nghĩa.
+- [x] `LedgerType` enum và `LedgerTransactionDto` đã thêm vào shared-types.
+- [x] `LedgerModule` + `LedgerService.credit/debit` hoạt động.
+- [x] `WalletsService` tích hợp `LedgerService`.
+- [x] `InsufficientFundsException` trả chuẩn error shape.
+- [x] Idempotency được test.
+- [x] Tests pass: `pnpm turbo run test`.
+- [x] Lint pass: `pnpm turbo run lint`.
+- [x] Build pass: `pnpm turbo run build`.
 
 ### File List
 - `_bmad-output/implementation-artifacts/1-4-quan-ly-so-cai-tai-chinh-kep-bao-ve-so-du-khong-am.md`
@@ -350,4 +350,6 @@ export class InsufficientFundsException extends HttpException {
 - `apps/api/src/modules/wallets/wallets.service.spec.ts`
 
 ## Change Log
+
+| 2026-09-10 | Implementation complete | packages/database/src/schema.ts, apps/api/src/modules/ledger/*, apps/api/src/modules/wallets/*, packages/shared-types/* | Implemented double-entry ledger, wallet credit/debit, InsufficientFundsException, migration 0003 |
 - 2026-09-10: Khởi tạo Story 1.4 dựa trên Epic 1, FR-6, AD-3, và kết quả từ Story 1.3.

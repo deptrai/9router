@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, bigint, timestamp, check, numeric, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, bigint, timestamp, check, numeric, boolean, jsonb } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 export const users = pgTable('users', {
@@ -41,12 +41,13 @@ export const ledgerTransactions = pgTable(
     walletId: uuid('wallet_id')
       .notNull()
       .references(() => wallets.id, { onDelete: 'cascade' }),
-    type: varchar('type', { length: 50 }).notNull(),
+    type: varchar('type', { length: 30 }).notNull(),
     amount: numeric('amount', { precision: 15, scale: 2 }).notNull(),
     balanceBefore: numeric('balance_before', { precision: 15, scale: 2 }).notNull(),
     balanceAfter: numeric('balance_after', { precision: 15, scale: 2 }).notNull(),
-    referenceId: varchar('reference_id', { length: 255 }),
-    idempotencyKey: varchar('idempotency_key', { length: 255 }).unique(),
+    referenceId: varchar('reference_id', { length: 100 }),
+    idempotencyKey: varchar('idempotency_key', { length: 100 }).unique(),
+    metadata: jsonb('metadata'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   }
 );

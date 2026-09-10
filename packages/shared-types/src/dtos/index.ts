@@ -1,4 +1,4 @@
-import { UserRole, OrderStatus, PaymentStatus, ProductSourcingMode } from '../enums';
+import { UserRole, OrderStatus, PaymentStatus, ProductSourcingMode, LedgerType } from '../enums';
 
 export interface UserDto {
   id: string;
@@ -66,4 +66,17 @@ export interface TelegramInitDataResult {
   queryId?: string | null;
   authDate?: number;
   error?: string;
+}
+
+export interface LedgerTransactionDto {
+  id: string;
+  walletId: string;
+  type: LedgerType;
+  amount: string;
+  balanceBefore: string;
+  balanceAfter: string;
+  referenceId?: string | null;
+  idempotencyKey?: string | null;
+  metadata?: unknown | null;
+  createdAt: string;
 }
