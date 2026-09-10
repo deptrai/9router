@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { UsersService } from './users.service';
+import { InternalServerErrorException } from '@nestjs/common';
 import type { TelegramUserDto } from '@repo/shared-types';
 import type { DbOrTx } from '@repo/database';
 
@@ -13,153 +14,110 @@ const dto: TelegramUserDto = {
   isPremium: true,
 };
 
-function makeUserRecord(overrides: Record<string, unknown> = {}) {
+const dtoNoOptional: TelegramUserDto = {
+  id: 987654322,
+  firstName: 'Jane',
+};
+
+const userRecord = {
+  id: 'uuid-123',
+  telegramId: 987654321,
+  username: 'johndoe',
+  firstName: 'John',
+  lastName: 'Doe',
+  languageCode: 'vi',
+  isPremium: true,
+  role: 'CUSTOMER',
+  createdAt: new Date('2026-09-10T10:00:00.000Z'),
+  updatedAt: new Date('2026-09-10T10:00:00.000Z'),
+};
+
+function createMockTx(overrides: {
+  returning?: any[];
+  conflictReturning?: any[];
+} = {}): DbOrTx {
+  const returning = overrides.returning ?? [userRecord];
   return {
-    id: 'uuid-123',
-    telegramId: 987654321,
-    username: 'johndoe',
-    firstName: 'John',
-    lastName: 'Doe',
-    languageCode: 'vi',
-    isPremium: true,
-    role: 'CUSTOMER',
-    createdAt: new Date('2026-09-10T10:00:00.000Z'),
-    updatedAt: new Date('2026-09-10T10:00:00.000Z'),
-    ...overrides,
-  };
+    insert: () => ({
+      values: () => ({
+        onConflictDoUpdate: () => ({
+          returning: () => returning,
+        }),
+      }),
+    }),
+  } as any;
 }
 
-function createMockTx(opts: {
-  existing?: any[];
-  inserted?: any[];
-}): DbOrTx {
-  let existing = opts.existing ?? [];
-  let updated = false;
+test('UsersService.upsertByTelegram returns user from atomic upsert', async () => {
+  const tx = createMockTx({ returning: [userRecord] });
+  const service = new UsersService();
+  const result = await service.upsertByTelegram(dto, tx);
+  assert.deepStrictEqual(result, userRecord);
+});
+
+test('UsersService.upsertByTelegram truncates long language_code to 35 chars', async () => {
+  const longCode = 'sr-Latn-RS-x-private-extension-extra-long';
   const tx = {
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: (n: number) => existing.slice(0, n),
-        }),
-      }),
-    }),
     insert: () => ({
-      values: () => ({
-        onConflictDoNothing: () => ({
-          returning: () => opts.inserted ?? [],
+      values: (v: any) => ({
+        onConflictDoUpdate: () => ({
+          returning: () => [{ ...userRecord, languageCode: v.languageCode }],
         }),
-      }),
-    }),
-    update: () => ({
-      set: () => ({
-        where: () => {
-          updated = true;
-          return Promise.resolve();
-        },
-      }),
-    }),
-    _wasUpdated: () => updated,
-    _setExisting: (next: any[]) => {
-      existing = next;
-    },
-  } as any;
-  return tx;
-}
-
-test('UsersService.upsertByTelegram creates new user when not found', async () => {
-  const tx = createMockTx({ existing: [], inserted: [makeUserRecord()] });
-  const service = new UsersService();
-  const userId = await service.upsertByTelegram(dto, tx);
-  assert.strictEqual(userId, 'uuid-123');
-});
-
-test('UsersService.upsertByTelegram updates profile when fields differ', async () => {
-  const existingRecord = makeUserRecord({
-    firstName: 'OldName',
-    username: 'old_username',
-    languageCode: 'en',
-    isPremium: false,
-  });
-  const tx = createMockTx({ existing: [existingRecord] });
-  const service = new UsersService();
-  const userId = await service.upsertByTelegram(dto, tx);
-  assert.strictEqual(userId, 'uuid-123');
-  assert.strictEqual((tx as any)._wasUpdated(), true, 'should call update when fields differ');
-});
-
-test('UsersService.upsertByTelegram skips update when profile unchanged', async () => {
-  const existingRecord = makeUserRecord();
-  const tx = createMockTx({ existing: [existingRecord] });
-  const service = new UsersService();
-  const userId = await service.upsertByTelegram(dto, tx);
-  assert.strictEqual(userId, 'uuid-123');
-  assert.strictEqual((tx as any)._wasUpdated(), false, 'should NOT call update when nothing changed');
-});
-
-test('UsersService.upsertByTelegram handles race condition via fallback SELECT', async () => {
-  // Simulate: insert returns empty (race: another tx inserted), fallback SELECT returns the record
-  const fallbackRecord = makeUserRecord();
-  let selectCallCount = 0;
-  const tx = {
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: (n: number) => {
-            selectCallCount++;
-            // First call: empty (initial check). Second call: empty (insert returned nothing).
-            // Third call (fallback): returns record
-            if (selectCallCount === 1) return [];
-            if (selectCallCount === 2) return [fallbackRecord];
-            return [fallbackRecord];
-          },
-        }),
-      }),
-    }),
-    insert: () => ({
-      values: () => ({
-        onConflictDoNothing: () => ({
-          returning: () => [],
-        }),
-      }),
-    }),
-    update: () => ({
-      set: () => ({
-        where: () => Promise.resolve(),
       }),
     }),
   } as any;
 
   const service = new UsersService();
-  const userId = await service.upsertByTelegram(dto, tx);
-  assert.strictEqual(userId, 'uuid-123', 'should return fallback record id');
+  const result = await service.upsertByTelegram({ ...dto, languageCode: longCode }, tx);
+  assert.strictEqual(result.languageCode!.length, 35);
+  assert.ok(longCode.startsWith(result.languageCode as string));
 });
 
-test('UsersService.upsertByTelegram throws when fallback SELECT returns nothing', async () => {
-  const tx = {
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: () => [],
-        }),
-      }),
-    }),
-    insert: () => ({
-      values: () => ({
-        onConflictDoNothing: () => ({
-          returning: () => [],
-        }),
-      }),
-    }),
-    update: () => ({
-      set: () => ({
-        where: () => Promise.resolve(),
-      }),
-    }),
-  } as any;
-
+test('UsersService.upsertByTelegram throws InternalServerErrorException when upsert fails', async () => {
+  const tx = createMockTx({ returning: [] });
   const service = new UsersService();
   await assert.rejects(
     () => service.upsertByTelegram(dto, tx),
-    /Failed to upsert user for telegramId/,
+    (err: any) =>
+      err instanceof InternalServerErrorException &&
+      err.getResponse &&
+      (err.getResponse() as any).errorCode === 'USER_UPSERT_FAILED',
   );
+});
+
+test('UsersService.upsertByTelegram handles null/undefined optional fields without update', async () => {
+  let insertCalled = false;
+  let values: any = null;
+  const tx = {
+    insert: () => ({
+      values: (v: any) => {
+        insertCalled = true;
+        values = v;
+        return {
+          onConflictDoUpdate: () => ({
+            returning: () => [{
+              id: 'uuid-456',
+              telegramId: dtoNoOptional.id,
+              username: null,
+              firstName: 'Jane',
+              lastName: null,
+              languageCode: null,
+              isPremium: false,
+              role: 'CUSTOMER',
+              createdAt: new Date('2026-09-10T10:00:00.000Z'),
+              updatedAt: new Date('2026-09-10T10:00:00.000Z'),
+            }],
+          }),
+        };
+      },
+    }),
+  } as any;
+
+  const service = new UsersService();
+  const result = await service.upsertByTelegram(dtoNoOptional, tx);
+  assert.ok(insertCalled);
+  assert.strictEqual(values.username, null);
+  assert.strictEqual(values.lastName, null);
+  assert.strictEqual(values.languageCode, null);
+  assert.strictEqual(result.firstName, 'Jane');
 });

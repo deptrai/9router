@@ -66,7 +66,7 @@ test('UsersController.getMe returns wallet with string balance (not number)', as
   assert.strictEqual(typeof result.wallet.heldBalance, 'string');
 });
 
-test('UsersController.getMe is idempotent — same input returns same DTOs', async () => {
+test('UsersController.getMe passes TelegramUserDto through to service and returns same DTOs', async () => {
   const mockService = createMockUserWalletService();
   const controller = new UsersController(mockService);
   const first = await controller.getMe(telegramUser);

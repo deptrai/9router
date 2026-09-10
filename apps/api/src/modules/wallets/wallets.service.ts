@@ -1,20 +1,12 @@
-import { Injectable } from '@nestjs/common';
-import { db, eq, wallets, type DbOrTx } from '@repo/database';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { db, eq, wallets, sql, type DbOrTx } from '@repo/database';
+
+type WalletRecord = typeof wallets.$inferSelect;
 
 @Injectable()
 export class WalletsService {
-  async getOrCreateByUserId(userId: string, tx: DbOrTx = db): Promise<string> {
-    const existing = await tx
-      .select()
-      .from(wallets)
-      .where(eq(wallets.userId, userId))
-      .limit(1);
-
-    if (existing.length > 0) {
-      return existing[0].id;
-    }
-
-    const [created] = await tx
+  async getOrCreateByUserId(userId: string, tx: DbOrTx = db): Promise<WalletRecord> {
+    const [wallet] = await tx
       .insert(wallets)
       .values({
         userId,
@@ -22,24 +14,21 @@ export class WalletsService {
         heldBalance: '0.00',
         currency: 'VND',
       })
-      .onConflictDoNothing({ target: wallets.userId })
+      .onConflictDoUpdate({
+        target: wallets.userId,
+        set: {
+          updatedAt: sql`now()`,
+        },
+      })
       .returning();
 
-    if (created) {
-      return created.id;
+    if (!wallet) {
+      throw new InternalServerErrorException({
+        errorCode: 'WALLET_GET_OR_CREATE_FAILED',
+        message: 'Failed to get or create wallet',
+      });
     }
 
-    // Race condition: another transaction inserted the wallet
-    const fallback = await tx
-      .select()
-      .from(wallets)
-      .where(eq(wallets.userId, userId))
-      .limit(1);
-
-    if (fallback.length === 0) {
-      throw new Error(`Failed to get or create wallet for userId ${userId}`);
-    }
-
-    return fallback[0].id;
+    return wallet;
   }
 }

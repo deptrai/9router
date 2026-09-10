@@ -13,7 +13,7 @@ context:
 
 # Story 1.3: Tự động khởi tạo Hồ sơ User & Ví tiền Ban đầu
 
-Status: in-progress
+Status: done
 
 > Story này hiện thực hóa **FR-2** và kiến trúc **AD-2 / AD-3**: sau khi Telegram `initData` được xác thực, hệ thống phải tự động khởi tạo hoặc đồng bộ `User` + `Wallet` trong **một transaction duy nhất**, đảm bảo người dùng mở Mini App lần đầu có ngay tài khoản và ví `0đ` mà không cần đăng ký.
 

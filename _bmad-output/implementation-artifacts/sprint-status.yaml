@@ -51,7 +51,7 @@ development_status:
   epic-1: in-progress
   1-1-khoi-tao-turborepo-monorepo-khung-ung-dung-nen-tang: done
   1-2-xac-thuc-stateless-telegram-webapp-qua-hmac-sha256: done
-  1-3-tu-dong-khoi-tao-ho-so-user-vi-tien-ban-dau: in-progress
+  1-3-tu-dong-khoi-tao-ho-so-user-vi-tien-ban-dau: done
   1-4-quan-ly-so-cai-tai-chinh-kep-bao-ve-so-du-khong-am: backlog
   epic-1-retrospective: optional
 
