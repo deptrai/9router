@@ -57,7 +57,9 @@ export class PaymentsService {
       return this.toDto(existing as PaymentRecord, bankBin, accountNo);
     }
 
-    const timeoutMin = Number(process.env.VND_PAYMENT_TIMEOUT_MIN ?? DEFAULT_TIMEOUT_MIN);
+    const timeoutMin = Number.isFinite(Number(process.env.VND_PAYMENT_TIMEOUT_MIN))
+      ? Number(process.env.VND_PAYMENT_TIMEOUT_MIN)
+      : DEFAULT_TIMEOUT_MIN;
     const expiresAt = new Date(Date.now() + timeoutMin * 60 * 1000);
     const transferContent = await this.generateUniqueTransferContent(runner);
 

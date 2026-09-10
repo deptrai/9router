@@ -7,9 +7,9 @@ const bankBin = '970436';
 const accountNo = '1234567890';
 const transferContent = '9R_TOPUP_7F3A';
 
-test('VietQRService.generateTransferContent returns 9R_TOPUP_<code>', () => {
+test('VietQRService.generateTransferContent returns 9R_TOPUP_<6-hex-code>', () => {
   const code = vietQR.generateTransferContent();
-  assert.match(code, /^9R_TOPUP_[0-9A-F]{4}$/);
+  assert.match(code, /^9R_TOPUP_[0-9A-F]{6}$/);
 });
 
 test('VietQRService.generateVietQRPayload builds EMVCo QR string with valid CRC', () => {

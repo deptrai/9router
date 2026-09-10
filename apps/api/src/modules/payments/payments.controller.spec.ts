@@ -48,6 +48,22 @@ test('PaymentsController.createVietQrPayment returns payment', async () => {
   assert.ok(result.payment.qrImageUrl?.includes('img.vietqr.io'));
 });
 
+test('PaymentsController.createVietQrPayment validates body.amount is integer >= 10000', async () => {
+  const controller = new PaymentsController(mockService);
+  await assert.rejects(
+    () => controller.createVietQrPayment(telegramUser as any, { amount: 5000 } as any),
+    (err: any) => err?.status === 400 && err?.response?.errorCode === 'INVALID_TOPUP_AMOUNT',
+  );
+});
+
+test('PaymentsController.createVietQrPayment rejects missing amount', async () => {
+  const controller = new PaymentsController(mockService);
+  await assert.rejects(
+    () => controller.createVietQrPayment(telegramUser as any, {} as any),
+    (err: any) => err?.status === 400,
+  );
+});
+
 test('PaymentsController.createVietQrPayment delegates amount to service', async () => {
   let capturedAmount: number | null = null;
   const service = {

@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Post, UseGuards, BadRequestException } from '@nestjs/common';
 import { TelegramAuthGuard } from '../../common/guards/telegram-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PaymentsService } from './payments.service';
@@ -15,6 +15,13 @@ export class PaymentsController {
     @CurrentUser() user: TelegramUserDto,
     @Body() body: CreateVietQrPaymentDto,
   ) {
+    if (!body || typeof body !== 'object' || !Number.isFinite(body.amount) || !Number.isInteger(body.amount) || body.amount < 10000) {
+      throw new BadRequestException({
+        errorCode: 'INVALID_TOPUP_AMOUNT',
+        message: 'Top-up amount must be an integer greater than or equal to 10000 VND',
+      });
+    }
+
     const payment = await this.paymentsService.createVietQrPayment(user, body.amount);
     return { ok: true, payment };
   }

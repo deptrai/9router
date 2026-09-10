@@ -19,7 +19,7 @@ export class VietQRService {
   private readonly transferPrefix = '9R_TOPUP_';
 
   generateTransferContent(): string {
-    const suffix = crypto.randomBytes(3).toString('hex').toUpperCase().slice(0, 4);
+    const suffix = crypto.randomBytes(3).toString('hex').toUpperCase();
     return `${this.transferPrefix}${suffix}`;
   }
 

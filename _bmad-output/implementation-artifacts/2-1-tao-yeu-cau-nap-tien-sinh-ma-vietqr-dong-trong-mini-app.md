@@ -424,8 +424,39 @@ Claude Opus 5 (1M context)
 - `apps/mini-app/src/app/topup/page.tsx`
 - `apps/mini-app/src/lib/api-client.ts`
 
+## Review Findings
+
+### Review Summary
+- **Baseline:** 9853ef68
+- **HEAD:** 837e7c8e
+- **Review mode:** full
+- **Layers:** blind-hunter, edge-case-hunter, verification-gap, acceptance-auditor
+- **Date:** 2026-09-10
+
+### Decision-needed
+_None._
+
+### Patch findings (to fix before merge)
+- [x] [Review][Patch] `VND_PAYMENT_TIMEOUT_MIN` NaN handling — fixed with Number.isFinite check — `Number(env)` can produce NaN and `new Date(NaN)` gives Invalid Date. Suggested: `Number.isFinite(timeoutMin) ? timeoutMin : DEFAULT_TIMEOUT_MIN` (`apps/api/src/modules/payments/payments.service.ts:60`).
+- [x] [Review][Patch] `CreateVietQrPaymentDto` body validation — added manual validation in controller + tests — controller passes raw body; DTO has no class-validator decorators. Suggested: add `class-validator` decorators in shared-types or use a NestJS DTO class. Alternatively, ensure controller tests cover missing/invalid body.
+- [x] [Review][Patch] `generateUniqueTransferContent` retry exhaustion not tested — added service spec test — add test for 3-collision path throwing `PAYMENT_TRANSFER_CONTENT_CONFLICT`.
+- [x] [Review][Patch] `transferContent` entropy and collision risk — changed to 6 hex chars + updated spec — `crypto.randomBytes(3).toString('hex').slice(0,4)` yields only 65536 possible 4-hex values. Suggested: use `randomBytes(4).toString('hex').toUpperCase()` (8 chars) to match story spec "4-6 ký tự" or keep 4 but add `crypto.getRandomValues` fallback.
+
+### Defer findings (pre-existing or enhancement)
+- [x] [Review][Defer] Missing DB indexes on `payment_transactions` — pre-existing, can be added in Story 2.2 if needed.
+- [x] [Review][Defer] Mini App lacks Telegram native haptic and MainButton — UX polish, not AC-blocking.
+- [x] [Review][Defer] `paymentTransactions.metadata` has no runtime schema validation — jsonb fields are intentionally flexible.
+- [x] [Review][Defer] `TopupPage` doesn't handle non-PENDING status — Story 2.2 webhook will update status; not this story's scope.
+- [x] [Review][Defer] Missing API rate limiting on top-up — global rate limiter not in this story.
+- [x] [Review][Defer] Mini App `/topup` is standalone, not part of a tab navigation — navigation structure not in this story.
+
+### Dismissed (noise or handled)
+- `.env` bank config leak — `.env` is gitignored and was not committed; OK.
+- Manual migration via `psql` — migration file and journal are committed; `drizzle-kit migrate` should be run in target env.
+- `expiresAt` countdown re-renders every second — React handles it, performance OK for this screen.
+
 ## Change Log
 - 2026-09-10: Tạo story 2.1 dựa trên Epic 2, FR-7, AD-6, và kết quả Story 1.4.
 - 2026-09-10: Hoàn thiện implementation schema, VietQR service, PaymentsService, PaymentsController, Mini App top-up UI; pass test/lint/build; verify E2E.
+- 2026-09-10: Code review; fixed 4 patch findings (timeout NaN, body validation, retry test, transfer content entropy); re-pass test/lint/build.
 
-## Review Findings

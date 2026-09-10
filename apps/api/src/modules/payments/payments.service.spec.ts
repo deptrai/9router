@@ -80,6 +80,30 @@ test('PaymentsService.createVietQrPayment throws when VietQR not configured', as
   );
 });
 
+test('PaymentsService.createVietQrPayment throws when transfer content conflicts after max retries', async () => {
+  let selectCallCount = 0;
+  const dbWithAlwaysExisting = {
+    ...mockDb,
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => {
+            selectCallCount++;
+            // First call is the existing-payment lookup; subsequent calls are transfer-content uniqueness checks.
+            return selectCallCount > 1 ? [{ id: 'colliding' }] : [];
+          },
+        }),
+      }),
+    }),
+  } as any;
+
+  const service = new PaymentsService(mockVietQR, mockUserWallet);
+  await assert.rejects(
+    () => service.createVietQrPayment(telegramUser, 200000, dbWithAlwaysExisting),
+    (err: any) => err?.status === 500 && err?.response?.errorCode === 'PAYMENT_TRANSFER_CONTENT_CONFLICT',
+  );
+});
+
 test('PaymentsService.createVietQrPayment returns existing pending payment for same wallet+amount', async () => {
   const existingRecord = {
     id: 'payment-uuid-existing',
