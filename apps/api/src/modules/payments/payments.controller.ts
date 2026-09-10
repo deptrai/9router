@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards, BadRequestException } from '@nestjs/common';
+import { Body, Controller, Post, UseGuards, BadRequestException, HttpCode } from '@nestjs/common';
 import { VietQRWebhookGuard } from './vietqr-webhook.guard';
 import { TelegramAuthGuard } from '../../common/guards/telegram-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -28,6 +28,7 @@ export class PaymentsController {
   }
 
   @Post('vietqr/webhook')
+  @HttpCode(200)
   @UseGuards(VietQRWebhookGuard)
   async processVietQRWebhook(@Body() body: any) {
     const result = await this.paymentsService.processVietQRWebhook(body);
