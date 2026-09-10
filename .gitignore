@@ -12,6 +12,7 @@ node_modules/
 !.yarn/versions
 _bmad/
 _bmad-output/
+!_bmad-output/implementation-artifacts/sprint-status.yaml
 # testing
 /coverage
 /.agents
