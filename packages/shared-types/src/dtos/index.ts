@@ -1,4 +1,4 @@
-import { UserRole, OrderStatus, PaymentStatus, ProductSourcingMode, LedgerType } from '../enums';
+import { UserRole, OrderStatus, PaymentStatus, ProductSourcingMode, LedgerType, PaymentGateway } from '../enums';
 
 export interface UserDto {
   id: string;
@@ -79,4 +79,27 @@ export interface LedgerTransactionDto {
   idempotencyKey?: string | null;
   metadata?: unknown | null;
   createdAt: string;
+}
+
+export interface PaymentTransactionDto {
+  id: string;
+  walletId: string;
+  gateway: PaymentGateway;
+  externalTransactionId?: string | null;
+  amount: string;
+  status: PaymentStatus;
+  transferContent: string;
+  bankName?: string | null;
+  bankBin?: string | null;
+  bankAccount?: string | null;
+  qrPayload?: string | null;
+  qrImageUrl?: string | null;
+  expiresAt?: string | null;
+  metadata?: unknown | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateVietQrPaymentDto {
+  amount: number;
 }

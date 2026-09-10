@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, bigint, timestamp, check, numeric, boolean, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, bigint, timestamp, check, numeric, boolean, jsonb, text } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 export const users = pgTable('users', {
@@ -49,5 +49,28 @@ export const ledgerTransactions = pgTable(
     idempotencyKey: varchar('idempotency_key', { length: 100 }).unique(),
     metadata: jsonb('metadata'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  }
+);
+
+export const paymentTransactions = pgTable(
+  'payment_transactions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    walletId: uuid('wallet_id')
+      .notNull()
+      .references(() => wallets.id, { onDelete: 'cascade' }),
+    gateway: varchar('gateway', { length: 20 }).notNull().default('VIETQR'),
+    externalTransactionId: varchar('external_transaction_id', { length: 255 }).unique(),
+    amount: numeric('amount', { precision: 15, scale: 2 }).notNull(),
+    status: varchar('status', { length: 20 }).notNull().default('PENDING'),
+    transferContent: varchar('transfer_content', { length: 255 }).notNull().unique(),
+    bankName: varchar('bank_name', { length: 100 }),
+    bankBin: varchar('bank_bin', { length: 20 }),
+    bankAccount: varchar('bank_account', { length: 50 }),
+    qrPayload: text('qr_payload'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   }
 );

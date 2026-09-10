@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { users, wallets, ledgerTransactions } from './schema';
+import { users, wallets, ledgerTransactions, paymentTransactions } from './schema';
 
 test('Database schema exports required tables with constraints', () => {
   assert.ok(users, 'users table must be exported');
   assert.ok(wallets, 'wallets table must be exported');
   assert.ok(ledgerTransactions, 'ledgerTransactions table must be exported');
+  assert.ok(paymentTransactions, 'paymentTransactions table must be exported');
   assert.ok('languageCode' in users, 'users table must have languageCode column');
   assert.ok('isPremium' in users, 'users table must have isPremium column');
 });
@@ -30,4 +31,22 @@ test('ledgerTransactions table has required columns', () => {
   assert.ok('idempotencyKey' in ledgerTransactions, 'must have idempotencyKey');
   assert.ok('metadata' in ledgerTransactions, 'must have metadata');
   assert.ok('createdAt' in ledgerTransactions, 'must have createdAt');
+});
+
+test('paymentTransactions table has required columns', () => {
+  assert.ok('id' in paymentTransactions, 'must have id');
+  assert.ok('walletId' in paymentTransactions, 'must have walletId');
+  assert.ok('gateway' in paymentTransactions, 'must have gateway');
+  assert.ok('externalTransactionId' in paymentTransactions, 'must have externalTransactionId');
+  assert.ok('amount' in paymentTransactions, 'must have amount');
+  assert.ok('status' in paymentTransactions, 'must have status');
+  assert.ok('transferContent' in paymentTransactions, 'must have transferContent');
+  assert.ok('bankName' in paymentTransactions, 'must have bankName');
+  assert.ok('bankBin' in paymentTransactions, 'must have bankBin');
+  assert.ok('bankAccount' in paymentTransactions, 'must have bankAccount');
+  assert.ok('qrPayload' in paymentTransactions, 'must have qrPayload');
+  assert.ok('expiresAt' in paymentTransactions, 'must have expiresAt');
+  assert.ok('metadata' in paymentTransactions, 'must have metadata');
+  assert.ok('createdAt' in paymentTransactions, 'must have createdAt');
+  assert.ok('updatedAt' in paymentTransactions, 'must have updatedAt');
 });

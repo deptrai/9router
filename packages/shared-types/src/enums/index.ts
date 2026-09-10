@@ -41,3 +41,8 @@ export enum LedgerType {
   PURCHASE_REFUND = 'PURCHASE_REFUND',
   ADMIN_ADJUST = 'ADMIN_ADJUST',
 }
+
+export enum PaymentGateway {
+  VIETQR = 'VIETQR',
+  BITCART = 'BITCART',
+}
