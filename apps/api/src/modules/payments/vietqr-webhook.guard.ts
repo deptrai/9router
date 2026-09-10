@@ -1,6 +1,6 @@
 import { Injectable, CanActivate, ExecutionContext, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import * as crypto from 'node:crypto';
-import type { Request, Response } from 'express';
+import type { Request } from 'express';
 
 export interface VietQRWebhookRequest extends Request {
   rawBody?: Buffer;
@@ -10,13 +10,19 @@ export interface VietQRWebhookRequest extends Request {
 export class VietQRWebhookGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<VietQRWebhookRequest>();
-    const response = context.switchToHttp().getResponse<Response>();
 
-    const signature = request.headers['x-vietqr-signature'] as string | undefined;
+    const signature = request.headers['x-vietqr-signature'];
     if (!signature || typeof signature !== 'string') {
       throw new UnauthorizedException({
         errorCode: 'WEBHOOK_INVALID_SIGNATURE',
         message: 'Missing X-VietQR-Signature header',
+      });
+    }
+
+    if (!/^[0-9a-fA-F]{64}$/.test(signature)) {
+      throw new UnauthorizedException({
+        errorCode: 'WEBHOOK_INVALID_SIGNATURE',
+        message: 'Invalid signature format',
       });
     }
 
@@ -36,10 +42,10 @@ export class VietQRWebhookGuard implements CanActivate {
       });
     }
 
-    const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+    const expected = crypto.createHmac('sha256', secret).update(rawBody).digest();
     const signatureBuffer = Buffer.from(signature, 'hex');
-    const expectedBuffer = Buffer.from(expected, 'hex');
-    if (signatureBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
+
+    if (signatureBuffer.length !== expected.length || !crypto.timingSafeEqual(signatureBuffer, expected)) {
       throw new UnauthorizedException({
         errorCode: 'WEBHOOK_INVALID_SIGNATURE',
         message: 'Invalid webhook signature',

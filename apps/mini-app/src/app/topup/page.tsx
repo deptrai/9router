@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { apiClient, getTelegramInitData } from '../../lib/api-client';
 import type { PaymentTransactionDto } from '@repo/shared-types';
 
@@ -12,6 +12,8 @@ const PRESET_AMOUNTS = [
 ];
 
 const MIN_TOPUP_AMOUNT = 10000;
+const POLL_INTERVAL_MS = 3000;
+const MAX_POLLS = 100; // ~5 minutes
 
 function formatVnd(value: number): string {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
@@ -35,7 +37,10 @@ export default function TopupPage() {
   const [now, setNow] = useState<number>(Date.now());
   const [balance, setBalance] = useState<number | null>(null);
   const [creditedAmount, setCreditedAmount] = useState<number | null>(null);
-  const [pollCount, setPollCount] = useState(0);
+  const [timedOut, setTimedOut] = useState(false);
+
+  const balanceRef = useRef<number | null>(null);
+  const pollCountRef = useRef(0);
 
   useEffect(() => {
     window.Telegram?.WebApp?.ready();
@@ -47,12 +52,11 @@ export default function TopupPage() {
     return () => clearInterval(interval);
   }, [payment?.expiresAt]);
 
-  // Poll wallet balance while QR is active
+  // Poll wallet balance while QR is active and not yet credited
   useEffect(() => {
-    if (!payment) return;
+    if (!payment || creditedAmount !== null) return;
     let cancelled = false;
-    const pollInterval = 3000;
-    const maxPolls = 100; // ~5 minutes
+    let interval: ReturnType<typeof setInterval> | null = null;
 
     const checkBalance = async () => {
       try {
@@ -60,31 +64,66 @@ export default function TopupPage() {
           '/api/wallets/me'
         );
         if (cancelled) return;
+
+        const previousBalance = balanceRef.current;
         const newBalance = Number(res.wallet.balance);
-        if (balance === null || newBalance > balance) {
+
+        // If this is the first successful poll, only set the baseline.
+        if (previousBalance === null) {
+          balanceRef.current = newBalance;
           setBalance(newBalance);
-          if (balance !== null && newBalance - balance === Number(payment.amount)) {
+          return;
+        }
+
+        if (newBalance > previousBalance) {
+          balanceRef.current = newBalance;
+          setBalance(newBalance);
+
+          if (newBalance - previousBalance === Number(payment.amount)) {
             setCreditedAmount(Number(payment.amount));
             window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
+            if (interval) {
+              clearInterval(interval);
+              interval = null;
+            }
+            return;
           }
         }
-        setPollCount((c) => c + 1);
       } catch {
-        if (!cancelled) setPollCount((c) => c + 1);
+        // Polling errors are ignored; we'll retry on the next tick.
+      } finally {
+        pollCountRef.current += 1;
       }
     };
 
+    const tick = () => {
+      if (cancelled) return;
+
+      // Stop polling once the QR has expired.
+      if (payment.expiresAt && new Date(payment.expiresAt).getTime() <= Date.now()) {
+        if (interval) clearInterval(interval);
+        setTimedOut(true);
+        return;
+      }
+
+      if (pollCountRef.current >= MAX_POLLS) {
+        if (interval) clearInterval(interval);
+        setTimedOut(true);
+        return;
+      }
+
+      checkBalance();
+    };
+
+    // First check immediately, then every POLL_INTERVAL_MS.
     checkBalance();
-    const interval = setInterval(() => {
-      if (pollCount < maxPolls) checkBalance();
-      else clearInterval(interval);
-    }, pollInterval);
+    interval = setInterval(tick, POLL_INTERVAL_MS);
 
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      if (interval) clearInterval(interval);
     };
-  }, [payment]);
+  }, [payment, creditedAmount]);
 
   const finalAmount = useMemo(() => {
     if (selectedAmount !== null) return selectedAmount;
@@ -102,6 +141,10 @@ export default function TopupPage() {
   const handleCreateQr = async () => {
     setError(null);
     setPayment(null);
+    setCreditedAmount(null);
+    setTimedOut(false);
+    balanceRef.current = null;
+    pollCountRef.current = 0;
 
     const validationError = validateAmount(finalAmount);
     if (validationError) {
@@ -127,6 +170,14 @@ export default function TopupPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCheckAgain = () => {
+    if (!payment) return;
+    setTimedOut(false);
+    setCreditedAmount(null);
+    balanceRef.current = balance;
+    pollCountRef.current = 0;
   };
 
   const handleCopy = async (text: string, label: string) => {
@@ -194,6 +245,18 @@ export default function TopupPage() {
         {creditedAmount !== null && (
           <div className="w-full max-w-sm rounded-xl bg-emerald-900 border border-emerald-600 p-3 mt-4 text-center">
             <p className="text-emerald-200 font-semibold">Đã nhận {formatVnd(creditedAmount)}</p>
+          </div>
+        )}
+
+        {timedOut && creditedAmount === null && (
+          <div className="w-full max-w-sm rounded-xl bg-amber-900 border border-amber-600 p-3 mt-4 text-center">
+            <p className="text-amber-200 text-sm mb-2">Chưa nhận được tiền. Bạn có muốn kiểm tra lại?</p>
+            <button
+              onClick={handleCheckAgain}
+              className="rounded-lg bg-amber-700 hover:bg-amber-600 text-white text-sm font-medium px-3 py-1 transition"
+            >
+              Kiểm tra lại
+            </button>
           </div>
         )}
       </div>

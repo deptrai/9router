@@ -61,3 +61,17 @@ test('VietQRWebhookGuard accepts valid signature and parses body', () => {
   assert.strictEqual(result, true);
   assert.deepStrictEqual(ctx.switchToHttp().getRequest().body, JSON.parse(payload));
 });
+
+test('VietQRWebhookGuard rejects non-hex signature', () => {
+  const guard = new VietQRWebhookGuard();
+  process.env.VIETQR_WEBHOOK_SECRET = secret;
+  const ctx = createContext(Buffer.from(payload), 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz');
+  assert.throws(() => guard.canActivate(ctx), (err: any) => err instanceof UnauthorizedException && err.getResponse().errorCode === 'WEBHOOK_INVALID_SIGNATURE');
+});
+
+test('VietQRWebhookGuard rejects signature of wrong length', () => {
+  const guard = new VietQRWebhookGuard();
+  process.env.VIETQR_WEBHOOK_SECRET = secret;
+  const ctx = createContext(Buffer.from(payload), 'aabbccdd');
+  assert.throws(() => guard.canActivate(ctx), (err: any) => err instanceof UnauthorizedException && err.getResponse().errorCode === 'WEBHOOK_INVALID_SIGNATURE');
+});

@@ -145,22 +145,34 @@ export class PaymentsService {
     dto: VietQRWebhookDto,
     outerTx?: DbOrTx,
   ): Promise<ProcessVietQRWebhookResult> {
+    if (!outerTx) {
+      return db.transaction((tx) => this.processVietQRWebhook(dto, tx));
+    }
+
+    const runner = outerTx;
+    const startMs = Date.now();
+
     if (!dto || typeof dto !== 'object') {
       return { ok: false, matched: false, reason: 'WEBHOOK_INVALID_PAYLOAD' };
     }
 
-    const transactionId = dto.transactionId?.trim();
+    const transactionId = typeof dto.transactionId === 'string' ? dto.transactionId.trim() : '';
     if (!transactionId) {
+      return { ok: false, matched: false, reason: 'WEBHOOK_INVALID_PAYLOAD' };
+    }
+
+    const content = typeof dto.content === 'string' ? dto.content.trim() : '';
+    if (!content) {
+      return { ok: false, matched: false, reason: 'WEBHOOK_INVALID_PAYLOAD' };
+    }
+
+    if (dto.timestamp !== undefined && (typeof dto.timestamp !== 'string' || Number.isNaN(Date.parse(dto.timestamp)))) {
       return { ok: false, matched: false, reason: 'WEBHOOK_INVALID_PAYLOAD' };
     }
 
     if (!Number.isFinite(dto.amount) || !Number.isInteger(dto.amount) || dto.amount < 10000) {
       return { ok: false, matched: false, reason: 'WEBHOOK_INVALID_AMOUNT' };
     }
-
-    const runner = outerTx ?? db;
-
-    const startMs = Date.now();
 
     // Idempotency: check if this external transaction was already processed
     const [alreadyProcessed] = await runner
@@ -173,17 +185,11 @@ export class PaymentsService {
       return { ok: true, matched: true, alreadyProcessed: true };
     }
 
-    const content = dto.content?.trim();
-    if (!content) {
-      return { ok: false, matched: false, reason: 'WEBHOOK_INVALID_PAYLOAD' };
-    }
-
     const matching = await runner
       .select()
       .from(paymentTransactions)
       .where(sql`${paymentTransactions.transferContent} = ${content} AND ${paymentTransactions.status} = ${PaymentStatus.PENDING}`)
       .limit(2);
-
 
     if (matching.length === 0) {
       return { ok: true, matched: false, reason: 'NO_MATCHING_PAYMENT' };
@@ -219,6 +225,16 @@ export class PaymentsService {
       };
     }
 
+    if (payment.expiresAt && payment.expiresAt.getTime() <= Date.now()) {
+      return {
+        ok: true,
+        matched: true,
+        credited: false,
+        paymentId: payment.id,
+        reason: 'PAYMENT_EXPIRED',
+      };
+    }
+
     const idempotencyKey = `payment:vietqr:${transactionId}`;
 
     try {
@@ -235,7 +251,7 @@ export class PaymentsService {
         ? { ...payment.metadata }
         : {};
 
-      await runner
+      const updated = await runner
         .update(paymentTransactions)
         .set({
           status: PaymentStatus.COMPLETED,
@@ -246,7 +262,12 @@ export class PaymentsService {
             webhookPayloadHash: this.computePayloadHash(dto),
           },
         })
-        .where(eq(paymentTransactions.id, payment.id));
+        .where(sql`${paymentTransactions.id} = ${payment.id} AND ${paymentTransactions.status} = ${PaymentStatus.PENDING}`)
+        .returning();
+
+      if (updated.length === 0) {
+        return { ok: true, matched: true, alreadyProcessed: true };
+      }
 
       const processingTimeMs = Date.now() - startMs;
       console.log(JSON.stringify({

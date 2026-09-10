@@ -201,7 +201,7 @@ test('PaymentsService.processVietQRWebhook credits wallet and completes payment'
     update: () => ({
       set: (s: any) => {
         updateSet = s;
-        return { where: () => Promise.resolve([]) };
+        return { where: () => ({ returning: async () => [{}] }) };
       },
     }),
   } as any;
@@ -357,4 +357,151 @@ test('PaymentsService.processVietQRWebhook rejects invalid amount', async () => 
   const result = await service.processVietQRWebhook({ ...webhookDto, amount: 5000 }, mockDb);
   assert.strictEqual(result.ok, false);
   assert.strictEqual(result.reason, 'WEBHOOK_INVALID_AMOUNT');
+});
+
+test('PaymentsService.processVietQRWebhook returns PAYMENT_EXPIRED when payment is past expiry', async () => {
+  let selectCallCount = 0;
+  const mockTx = {
+    ...mockDb,
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => {
+            selectCallCount++;
+            if (selectCallCount === 1) return [];
+            return [{
+              id: 'payment-uuid-1',
+              walletId: 'wallet-uuid-1',
+              amount: '200000.00',
+              status: 'PENDING',
+              transferContent: '9R_TOPUP_7F3A',
+              metadata: null,
+              expiresAt: new Date(Date.now() - 60_000),
+            }];
+          },
+        }),
+      }),
+    }),
+    update: () => ({
+      set: () => ({ where: () => ({ returning: async () => [{}] }) }),
+    }),
+  } as any;
+
+  const service = new PaymentsService(mockVietQR, mockUserWallet, mockWallets, mockLedger);
+  const result = await service.processVietQRWebhook(webhookDto, mockTx);
+
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.matched, true);
+  assert.strictEqual(result.credited, false);
+  assert.strictEqual(result.reason, 'PAYMENT_EXPIRED');
+});
+
+test('PaymentsService.processVietQRWebhook returns alreadyProcessed when update finds no PENDING row', async () => {
+  let selectCallCount = 0;
+  const mockTx = {
+    ...mockDb,
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => {
+            selectCallCount++;
+            if (selectCallCount === 1) return [];
+            return [{ id: 'payment-uuid-1', walletId: 'wallet-uuid-1', amount: '200000.00', status: 'PENDING', transferContent: '9R_TOPUP_7F3A', metadata: null }];
+          },
+        }),
+      }),
+    }),
+    update: () => ({
+      set: () => ({ where: () => ({ returning: async () => [] }) }),
+    }),
+  } as any;
+
+  const service = new PaymentsService(mockVietQR, mockUserWallet, mockWallets, mockLedger);
+  const result = await service.processVietQRWebhook(webhookDto, mockTx);
+
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.alreadyProcessed, true);
+});
+
+test('PaymentsService.processVietQRWebhook returns alreadyProcessed on 23505 error', async () => {
+  let selectCallCount = 0;
+  const mockTx = {
+    ...mockDb,
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => {
+            selectCallCount++;
+            if (selectCallCount === 1) return [];
+            return [{ id: 'payment-uuid-1', walletId: 'wallet-uuid-1', amount: '200000.00', status: 'PENDING', transferContent: '9R_TOPUP_7F3A', metadata: null }];
+          },
+        }),
+      }),
+    }),
+    update: () => ({
+      set: () => ({ where: () => ({ returning: async () => { const e: any = new Error('duplicate key'); e.code = '23505'; throw e; } }) }),
+    }),
+  } as any;
+
+  const wallets = {
+    credit: async () => ({ balanceAfter: '200000.00' }),
+  } as any;
+
+  const service = new PaymentsService(mockVietQR, mockUserWallet, wallets, mockLedger);
+  const result = await service.processVietQRWebhook(webhookDto, mockTx);
+
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.alreadyProcessed, true);
+});
+
+test('PaymentsService.processVietQRWebhook throws WEBHOOK_PROCESSING_FAILED on unexpected error', async () => {
+  let selectCallCount = 0;
+  const mockTx = {
+    ...mockDb,
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => {
+            selectCallCount++;
+            if (selectCallCount === 1) return [];
+            return [{ id: 'payment-uuid-1', walletId: 'wallet-uuid-1', amount: '200000.00', status: 'PENDING', transferContent: '9R_TOPUP_7F3A', metadata: null }];
+          },
+        }),
+      }),
+    }),
+    update: () => ({
+      set: () => ({ where: () => ({ returning: async () => { throw new Error('db offline'); } }) }),
+    }),
+  } as any;
+
+  const wallets = {
+    credit: async () => ({ balanceAfter: '200000.00' }),
+  } as any;
+
+  const service = new PaymentsService(mockVietQR, mockUserWallet, wallets, mockLedger);
+  await assert.rejects(
+    () => service.processVietQRWebhook(webhookDto, mockTx),
+    (err: any) => err?.status === 500 && err?.response?.errorCode === 'WEBHOOK_PROCESSING_FAILED',
+  );
+});
+
+test('PaymentsService.processVietQRWebhook rejects non-string transactionId', async () => {
+  const service = new PaymentsService(mockVietQR, mockUserWallet, mockWallets, mockLedger);
+  const result = await service.processVietQRWebhook({ ...webhookDto, transactionId: 12345 } as any, mockDb);
+  assert.strictEqual(result.ok, false);
+  assert.strictEqual(result.reason, 'WEBHOOK_INVALID_PAYLOAD');
+});
+
+test('PaymentsService.processVietQRWebhook rejects non-string content', async () => {
+  const service = new PaymentsService(mockVietQR, mockUserWallet, mockWallets, mockLedger);
+  const result = await service.processVietQRWebhook({ ...webhookDto, content: 12345 } as any, mockDb);
+  assert.strictEqual(result.ok, false);
+  assert.strictEqual(result.reason, 'WEBHOOK_INVALID_PAYLOAD');
+});
+
+test('PaymentsService.processVietQRWebhook rejects malformed timestamp', async () => {
+  const service = new PaymentsService(mockVietQR, mockUserWallet, mockWallets, mockLedger);
+  const result = await service.processVietQRWebhook({ ...webhookDto, timestamp: 'not-a-date' } as any, mockDb);
+  assert.strictEqual(result.ok, false);
+  assert.strictEqual(result.reason, 'WEBHOOK_INVALID_PAYLOAD');
 });
