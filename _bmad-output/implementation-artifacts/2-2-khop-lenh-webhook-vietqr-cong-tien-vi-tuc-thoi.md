@@ -136,6 +136,60 @@ So that I can immediately purchase products without waiting.
   - [x] Test `GET /api/wallets/me` trả `balance` mới sau khi webhook thành công.
   - [x] Test performance: webhook xử lý < 500ms.
   - [x] Chạy full `pnpm turbo run test` + lint + build.
+## Senior Developer Review (AI)
+
+**Review Outcome:** Changes Requested
+**Review Date:** 2026-09-10
+**Reviewed By:** Claude Opus 5 (1M context) — subagents Edge Case Hunter + Verification Gap Reviewer
+**Total Action Items:** 13
+**Severity Breakdown:**
+- High: 5
+- Medium: 6
+- Low: 2
+
+### Summary
+
+Review ghi nhận 13 findings. Các lỗi nghiêm trọng tập trung ở:
+1. `apps/mini-app/src/app/topup/page.tsx` closure stale khiến polling không bao giờ phát hiện cộng tiền và không tự dừng sau maxPolls (vi phạm AC-9).
+2. `PaymentsService.processVietQRWebhook` không gói trong transaction khi controller gọi không có `outerTx`, dẫn đến rủi ro ledger đã commit nhưng payment vẫn PENDING.
+3. Thiếu kiểm tra `payment.expiresAt` khi xử lý webhook, có thể cộng tiền cho payment đã hết hạn.
+4. Các xác thực `transactionId`/`content` dùng `?.trim()` trên non-string có thể throw TypeError.
+5. `VietQRWebhookGuard` chưa validate signature là hex 64 chars trước khi so sánh.
+
+Các verification gap: Mini App không có test; pipeline rawBody của NestJS chưa được test qua HTTP thực; catch block lỗi DB/ledger chưa được test.
+
+### Action Items
+
+- [ ] **[AI-Review] [High]** Sửa stale closure trong `apps/mini-app/src/app/topup/page.tsx` — dùng `useRef` cho `balance` và `pollCount`, dừng interval khi `payment.expiresAt` hết hạn, xử lý immediate credit khi `balance === null`.
+- [ ] **[AI-Review] [High]** Bọc `processVietQRWebhook` trong `db.transaction()` khi `outerTx` không được truyền, đảm bảo wallet credit + payment update + ledger insert atomic.
+- [ ] **[AI-Review] [High]** Thêm kiểm tra `payment.expiresAt` trong `processVietQRWebhook`; nếu đã hết hạn, return `{ ok: true, matched: true, credited: false, reason: 'PAYMENT_EXPIRED' }`.
+- [ ] **[AI-Review] [High]** Bảo vệ `dto.transactionId` và `dto.content` khỏi non-string primitive trước khi gọi `.trim()`.
+- [ ] **[AI-Review] [High]** Thêm `for update` / conditional update `status = PENDING` khi cập nhật payment status để tránh double-credit dưới concurrent webhook.
+- [ ] **[AI-Review] [Medium]** Validate `X-VietQR-Signature` header là chuỗi hex 64 ký tự trước khi so sánh bằng `timingSafeEqual`.
+- [ ] **[AI-Review] [Medium]** Bổ sung test `payments.service.spec.ts` cho catch block: `walletsService.credit` throw 23505 → `alreadyProcessed: true`, và throw lỗi khác → `InternalServerErrorException(WEBHOOK_PROCESSING_FAILED)`.
+- [ ] **[AI-Review] [Medium]** Bổ sung test `payments.service.spec.ts` cho trường hợp `processVietQRWebhook` không truyền `outerTx` (hoặc mock `db.transaction`) để verify tính atomic.
+- [ ] **[AI-Review] [Medium]** Bổ sung test `payments.service.spec.ts` cho payment expired và `PAYMENT_EXPIRED` response.
+- [ ] **[AI-Review] [Medium]** Thêm HTTP integration test cho `POST /api/payments/vietqr/webhook` qua NestJS app (`app.getHttpServer()` + supertest) để verify `rawBody` pipeline và guard.
+- [ ] **[AI-Review] [Medium]** Thêm test cho `VietQRWebhookGuard` với signature không phải hex / uneven length.
+- [ ] **[AI-Review] [Low]** Thêm kiểm tra `dto.timestamp` là string ISO hợp lệ (optional nhưng nên reject malformed nếu gửi).
+- [ ] **[AI-Review] [Low]** Thêm `@Throttle` hoặc rate-limit cho webhook endpoint theo ghi chú Security Notes.
+
+## Tasks / Subtasks — Review Follow-ups (AI)
+
+- [ ] [High] Fix Mini App polling stale closure and expiry stop.
+- [ ] [High] Wrap webhook processing in top-level transaction when outerTx omitted.
+- [ ] [High] Reject expired payments in webhook processing.
+- [ ] [High] Harden transactionId and content type guards.
+- [ ] [High] Add concurrent-credit guard on payment status update.
+- [ ] [Medium] Add signature hex-format validation.
+- [ ] [Medium] Test catch-block idempotency and error recovery.
+- [ ] [Medium] Test atomic transaction path without outerTx.
+- [ ] [Medium] Test expired payment response.
+- [ ] [Medium] Add HTTP integration test for rawBody pipeline.
+- [ ] [Medium] Test guard with malformed signature.
+- [ ] [Low] Validate timestamp ISO format.
+- [ ] [Low] Add rate limit to webhook endpoint.
+
 
 ## Dev Notes
 
