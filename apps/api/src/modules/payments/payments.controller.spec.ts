@@ -61,6 +61,14 @@ test('PaymentsController.createVietQrPayment validates body.amount is integer >=
   );
 });
 
+test('PaymentsController.createVietQrPayment rejects amount exceeding MAX_TOPUP_VND', async () => {
+  const controller = new PaymentsController(mockService);
+  await assert.rejects(
+    () => controller.createVietQrPayment(telegramUser as any, { amount: 100_000_000 } as any),
+    (err: any) => err?.status === 400 && err?.response?.errorCode === 'INVALID_TOPUP_AMOUNT',
+  );
+});
+
 test('PaymentsController.createVietQrPayment rejects missing amount', async () => {
   const controller = new PaymentsController(mockService);
   await assert.rejects(
@@ -115,6 +123,14 @@ test('PaymentsController.createBitcartPayment validates amount is integer >= 100
   await assert.rejects(
     () => controller.createBitcartPayment(telegramUser as any, { amount: 5000, coin: 'USDT', network: 'TRON' } as any),
     (err: any) => err?.status === 400,
+  );
+});
+
+test('PaymentsController.createBitcartPayment rejects amount exceeding MAX_TOPUP_VND', async () => {
+  const controller = new PaymentsController(mockService);
+  await assert.rejects(
+    () => controller.createBitcartPayment(telegramUser as any, { amount: 100_000_000, coin: 'USDT', network: 'TRON' } as any),
+    (err: any) => err?.status === 400 && err?.response?.errorCode === 'INVALID_TOPUP_AMOUNT',
   );
 });
 

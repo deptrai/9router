@@ -110,6 +110,14 @@ test('PaymentsService.createVietQrPayment throws when amount below minimum', asy
   );
 });
 
+test('PaymentsService.createVietQrPayment throws when amount exceeds maximum', async () => {
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
+  await assert.rejects(
+    () => service.createVietQrPayment(telegramUser, 100_000_000, mockDb),
+    (err: any) => err?.status === 400 && err?.response?.errorCode === 'INVALID_TOPUP_AMOUNT',
+  );
+});
+
 test('PaymentsService.createVietQrPayment throws when VietQR not configured', async () => {
   const unconfiguredVietQR = { ...mockVietQR, isConfigured: () => false } as any;
   const service = new PaymentsService(unconfiguredVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
@@ -646,6 +654,40 @@ test('PaymentsService.createBitcartPayment throws when amount below minimum', as
     () => service.createBitcartPayment(telegramUser, 5000, 'USDT', 'TRON', mockDb),
     (err: any) => err?.status === 400 && err?.response?.errorCode === 'INVALID_TOPUP_AMOUNT',
   );
+});
+
+test('PaymentsService.createBitcartPayment throws when amount exceeds maximum', async () => {
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
+  await assert.rejects(
+    () => service.createBitcartPayment(telegramUser, 100_000_000, 'USDT', 'TRON', mockDb),
+    (err: any) => err?.status === 400 && err?.response?.errorCode === 'INVALID_TOPUP_AMOUNT',
+  );
+});
+
+test('PaymentsService.convertVndToUsd rounds up (ceil) to avoid underpayment', () => {
+  const service = new PaymentsService(mockVietQR, mockBitcart, mockUserWallet, mockWallets, mockLedger);
+  const deleteRate = process.env.VND_USD_RATE;
+
+  try {
+    // Default rate: 25,000 VND / USD
+    delete process.env.VND_USD_RATE;
+    assert.strictEqual((service as any).convertVndToUsd(100000), 4.00);
+
+    // IEEE 754 precision edge case: 110,000 / 25,000 = 4.4 exact.
+    // Without epsilon subtraction, (110000 / 25000) * 100 = 440.00000000000006 -> ceil was 441 ($4.41).
+    // With epsilon subtraction, it correctly remains 4.40.
+    assert.strictEqual((service as any).convertVndToUsd(110000), 4.40);
+
+    // Custom rate: 24,500 VND / USD -> 200,000 / 24,500 = 8.1632... -> Math.ceil = 8.17
+    process.env.VND_USD_RATE = '24500';
+    assert.strictEqual((service as any).convertVndToUsd(200000), 8.17);
+  } finally {
+    if (deleteRate !== undefined) {
+      process.env.VND_USD_RATE = deleteRate;
+    } else {
+      delete process.env.VND_USD_RATE;
+    }
+  }
 });
 
 test('PaymentsService.createBitcartPayment throws when Bitcart not configured', async () => {

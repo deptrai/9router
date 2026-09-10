@@ -17,12 +17,6 @@ export interface BitcartCreateInvoiceResult {
   expiresAt: string | null;
 }
 
-export interface BitcartSettlement {
-  amountReceived: number;
-  txHash: string | null;
-  confirmations: number;
-}
-
 const STATUS_MAP: Record<string, string> = {
   pending: 'pending',
   paid: 'confirming',
@@ -58,7 +52,11 @@ const FETCH_WALLETS_TIMEOUT_MS = 10_000;
 let walletCache: { data: any[]; fetchedAt: number } | null = null;
 
 function normalizeContract(contract: string): string {
-  return (contract || '').toLowerCase().replace(/^0x/, '0x');
+  const raw = typeof contract === 'string' ? contract.trim().toLowerCase() : '';
+  if (/^[0-9a-f]{40}$/.test(raw)) {
+    return `0x${raw}`;
+  }
+  return raw;
 }
 
 @Injectable()
@@ -263,29 +261,6 @@ export class BitcartService {
       throw new Error(`Bitcart API error ${res.status}: ${text}`);
     }
     return res.json();
-  }
-
-  async resolveSettlement(gatewayId: string): Promise<BitcartSettlement> {
-    const invoice = await this.getInvoice(gatewayId);
-    const payments = Array.isArray(invoice.payments) ? invoice.payments : [];
-    const amountReceived = payments.reduce((sum: number, p: any) => {
-      const n = Number(p?.amount);
-      return sum + (Number.isFinite(n) ? n : 0);
-    }, 0);
-    const txHash =
-      payments.find((p: any) => p?.lookup_field || p?.tx_hash)?.lookup_field ||
-      payments.find((p: any) => p?.lookup_field || p?.tx_hash)?.tx_hash ||
-      null;
-    const confirmations = Math.max(
-      0,
-      ...payments.map((p: any) => Number(p?.confirmations) || 0),
-    );
-    if (amountReceived <= 0) {
-      throw new Error(
-        `Bitcart invoice ${gatewayId} settled with no payment amount`,
-      );
-    }
-    return { amountReceived, txHash, confirmations };
   }
 
   verifyAuth(token: string): boolean {

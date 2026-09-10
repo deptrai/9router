@@ -9,8 +9,14 @@ import { WalletsService } from '../wallets/wallets.service';
 import { LedgerService } from '../ledger/ledger.service';
 
 const MIN_TOPUP_AMOUNT = 10000;
+const DEFAULT_MAX_TOPUP_VND = 50_000_000;
 const DEFAULT_TIMEOUT_MIN = 30;
 const MAX_TRANSFER_CONTENT_RETRIES = 3;
+
+function getMaxTopupVnd(): number {
+  const raw = Number(process.env.MAX_TOPUP_VND);
+  return Number.isFinite(raw) && raw >= MIN_TOPUP_AMOUNT ? Math.floor(raw) : DEFAULT_MAX_TOPUP_VND;
+}
 
 
 
@@ -55,12 +61,7 @@ export class PaymentsService {
     amount: number,
     outerTx?: DbOrTx,
   ): Promise<PaymentTransactionDto> {
-    if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount < MIN_TOPUP_AMOUNT) {
-      throw new BadRequestException({
-        errorCode: 'INVALID_TOPUP_AMOUNT',
-        message: `Top-up amount must be an integer greater than or equal to ${MIN_TOPUP_AMOUNT} VND`,
-      });
-    }
+    this.validateTopupAmount(amount);
 
     const bankBin = process.env.VND_BANK_BIN?.trim() ?? '';
     const accountNo = process.env.VND_BANK_ACCOUNT?.trim() ?? '';
@@ -185,10 +186,26 @@ export class PaymentsService {
   private convertVndToUsd(vndAmount: number): number {
     const rate = Number(process.env.VND_USD_RATE);
     if (Number.isFinite(rate) && rate > 0) {
-      return Math.floor((vndAmount / rate) * 100) / 100;
+      return Math.ceil((vndAmount / rate) * 100 - 1e-9) / 100;
     }
     // Default fallback rate 1 USD = 25,000 VND
-    return Math.floor((vndAmount / 25000) * 100) / 100;
+    return Math.ceil((vndAmount / 25000) * 100 - 1e-9) / 100;
+  }
+
+  private validateTopupAmount(amount: number): void {
+    if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount < MIN_TOPUP_AMOUNT) {
+      throw new BadRequestException({
+        errorCode: 'INVALID_TOPUP_AMOUNT',
+        message: `Top-up amount must be an integer greater than or equal to ${MIN_TOPUP_AMOUNT} VND`,
+      });
+    }
+    const max = getMaxTopupVnd();
+    if (amount > max) {
+      throw new BadRequestException({
+        errorCode: 'INVALID_TOPUP_AMOUNT',
+        message: `Top-up amount must not exceed ${max} VND`,
+      });
+    }
   }
 
   async createBitcartPayment(
@@ -198,12 +215,7 @@ export class PaymentsService {
     network: string,
     outerTx?: DbOrTx,
   ): Promise<PaymentTransactionDto> {
-    if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount < MIN_TOPUP_AMOUNT) {
-      throw new BadRequestException({
-        errorCode: 'INVALID_TOPUP_AMOUNT',
-        message: `Top-up amount must be an integer greater than or equal to ${MIN_TOPUP_AMOUNT} VND`,
-      });
-    }
+    this.validateTopupAmount(amount);
 
     let config;
     try {

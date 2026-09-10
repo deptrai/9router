@@ -16,3 +16,7 @@
 - `resolveSettlement` là dead code — `apps/api/src/modules/payments/bitcart.service.ts:244-263`. Không được gọi, không gây lỗi.
 - `normalizeContract` không tự thêm prefix `0x` cho EVM address — `apps/api/src/modules/payments/bitcart.service.ts:37`. Phụ thuộc định dạng contract từ Bitcart wallet.
 - Thiếu QR code cho `payAddress` crypto — `apps/mini-app/src/app/topup/page.tsx:420-445`. UX improvement ngoài acceptance criteria.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-deferred-2-3.md`
+  summary: Replace third-party api.qrserver.com with client-side canvas/SVG QR generator for crypto payAddress
+  evidence: Privacy and SPOF risks with external QR image server; use local SVG/canvas QR generator instead

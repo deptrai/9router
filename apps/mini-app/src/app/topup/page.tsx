@@ -21,7 +21,12 @@ const CRYPTO_COINS = Object.keys(CRYPTO_OPTIONS);
 
 const MIN_TOPUP_AMOUNT = 10000;
 const POLL_INTERVAL_MS = 3000;
-const MAX_POLLS = 100; // ~5 minutes
+const MAX_POLLS = 200; // ~10 minutes
+
+const MAX_TOPUP_VND = (() => {
+  const raw = Number(process.env.NEXT_PUBLIC_MAX_TOPUP_VND);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 50_000_000;
+})();
 
 function formatVnd(value: number): string {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
@@ -154,6 +159,9 @@ export default function TopupPage() {
   const validateAmount = (amount: number): string | null => {
     if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount < MIN_TOPUP_AMOUNT) {
       return `Số tiền tối thiểu là ${formatVnd(MIN_TOPUP_AMOUNT)}`;
+    }
+    if (amount > MAX_TOPUP_VND) {
+      return `Số tiền tối đa là ${formatVnd(MAX_TOPUP_VND)}`;
     }
     return null;
   };
@@ -444,6 +452,17 @@ export default function TopupPage() {
           ) : (
             <>
               <p className="text-sm text-neutral-400 mb-2">Chuyển crypto để nạp tiền</p>
+
+              {metadata?.payAddress && (
+                <div className="flex justify-center mb-3">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(metadata.payAddress)}`}
+                    alt="Crypto address QR"
+                    className="rounded-lg max-w-full h-auto"
+                    style={{ maxHeight: 260 }}
+                  />
+                </div>
+              )}
 
               <div className="space-y-2 text-sm">
                 <CopyableRow

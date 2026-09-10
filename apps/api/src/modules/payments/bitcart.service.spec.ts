@@ -71,3 +71,42 @@ test('BitcartService.verifyAuth compares token with secret', () => {
   assert.strictEqual(service.verifyAuth(''), false);
   restoreEnv();
 });
+
+test('BitcartService.selectWalletId normalizes 40-hex contract missing 0x prefix and trims whitespace', () => {
+  const service = new BitcartService();
+  const wallets = [
+    {
+      id: 'wallet-bsc-usdt',
+      currency: 'bnb',
+      // Contract without 0x prefix and with surrounding spaces
+      contract: '  55d398326f99059ff775485246999027b3197955  ',
+    },
+  ];
+  const walletId = service.selectWalletId(wallets, 'USDT', 'BSC');
+  assert.strictEqual(walletId, 'wallet-bsc-usdt');
+});
+
+test('BitcartService.createInvoice throws when BASE_URL missing', async () => {
+  withEnv({
+    BITCART_BASE_URL: 'https://bitcart.test',
+    BITCART_API_KEY: 'key',
+    BITCART_STORE_ID: 'store',
+    BITCART_WEBHOOK_SECRET: 'secret',
+    BASE_URL: '',
+    NEXT_PUBLIC_BASE_URL: '',
+  });
+  try {
+    const service = new BitcartService();
+    await assert.rejects(
+      () => service.createInvoice({
+        amount: 10,
+        coin: 'USDT',
+        network: 'TRON',
+        orderId: 'ORDER123',
+      }),
+      /BASE_URL or NEXT_PUBLIC_BASE_URL is required/,
+    );
+  } finally {
+    restoreEnv();
+  }
+});
