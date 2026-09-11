@@ -14,7 +14,7 @@ context:
 
 # Story 2.4: Khóa phân tán Redlock Chống Nạp lặp & Gian lận Giao dịch
 
-Status: ready-for-dev
+Status: done
 
 > Story này hiện thực hóa **FR-9** và kiến trúc **AD-4 / AD-6**: triển khai lớp khóa phân tán Redis Redlock bao bọc webhook VietQR/Bitcart và thao tác cộng tiền ví, đảm bảo không bao giờ xảy ra double-crediting khi gateway retry hoặc nhiều request đồng thời đến với cùng `external_transaction_id`.
 
@@ -97,38 +97,38 @@ So that retried webhook deliveries or race conditions never credit a user multip
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Cài đặt dependency và cấu hình Redis** (AC: 1, 8)
-  - [ ] Thêm `redlock` (v5.0.0-beta.2 hoặc v4.0.0 tùy build) vào `apps/api/package.json`.
-  - [ ] Đảm bảo `ioredis` đã có trong `dependencies` (đã có `^5.6.0`).
-  - [ ] Thêm `REDIS_URL` vào `apps/api/.env.example` nếu chưa có (đã có `redis://localhost:6381`).
+- [x] **Task 1: Cài đặt dependency và cấu hình Redis** (AC: 1, 8)
+  - [x] Thêm `redlock` (v5.0.0-beta.2 hoặc v4.0.0 tùy build) vào `apps/api/package.json`.
+  - [x] Đảm bảo `ioredis` đã có trong `dependencies` (đã có `^5.6.0`).
+  - [x] Thêm `REDIS_URL` vào `apps/api/.env.example` nếu chưa có (đã có `redis://localhost:6381`).
 
-- [ ] **Task 2: Tạo RedisService và RedisModule** (AC: 1, 8)
-  - [ ] Tạo `apps/api/src/common/redis/redis.service.ts` hoặc `apps/api/src/modules/redis/redis.service.ts`.
-  - [ ] Tạo `RedisModule` với provider `RedisService` có thể import vào `PaymentsModule`.
-  - [ ] Implement `withLock(resource, ttl, fn)` hoặc `acquireLock/releaseLock` với `redlock`.
-  - [ ] Xử lý lỗi kết nối Redis graceful (log, không crash).
+- [x] **Task 2: Tạo RedisService và RedisModule** (AC: 1, 8)
+  - [x] Tạo `apps/api/src/common/redis/redis.service.ts` hoặc `apps/api/src/modules/redis/redis.service.ts`.
+  - [x] Tạo `RedisModule` với provider `RedisService` có thể import vào `PaymentsModule`.
+  - [x] Implement `withLock(resource, ttl, fn)` hoặc `acquireLock/releaseLock` với `redlock`.
+  - [x] Xử lý lỗi kết nối Redis graceful (log, không crash).
 
-- [ ] **Task 3: Tích hợp Redlock vào `PaymentsService.processVietQRWebhook`** (AC: 2, 4, 6)
-  - [ ] Inject `RedisService` vào `PaymentsService`.
-  - [ ] Bọc transaction logic bằng `lock:payment:{transactionId}`.
-  - [ ] Nếu acquire fail → trả `{ ok: true, alreadyProcessed: true }`.
-  - [ ] Nếu Redis error → log warning và chạy fallback DB không có lock.
+- [x] **Task 3: Tích hợp Redlock vào `PaymentsService.processVietQRWebhook`** (AC: 2, 4, 6)
+  - [x] Inject `RedisService` vào `PaymentsService`.
+  - [x] Bọc transaction logic bằng `lock:payment:{transactionId}`.
+  - [x] Nếu acquire fail → trả `{ ok: true, alreadyProcessed: true }`.
+  - [x] Nếu Redis error → log warning và chạy fallback DB không có lock.
 
-- [ ] **Task 4: Tích hợp Redlock vào `PaymentsService.processBitcartWebhook`** (AC: 3, 4, 6)
-  - [ ] Bọc transaction logic bằng `lock:payment:{invoiceId}`.
-  - [ ] Nếu acquire fail → trả `{ ok: true, alreadyProcessed: true }`.
-  - [ ] Giữ nguyên terminal status update, amount validation, credit logic.
+- [x] **Task 4: Tích hợp Redlock vào `PaymentsService.processBitcartWebhook`** (AC: 3, 4, 6)
+  - [x] Bọc transaction logic bằng `lock:payment:{invoiceId}`.
+  - [x] Nếu acquire fail → trả `{ ok: true, alreadyProcessed: true }`.
+  - [x] Giữ nguyên terminal status update, amount validation, credit logic.
 
-- [ ] **Task 5: Bảo toàn idempotency DB** (AC: 4, 6)
-  - [ ] Không bỏ unique constraint / conditional update hiện có.
-  - [ ] Đảm bảo `ledger_transactions.idempotency_key` vẫn unique.
-  - [ ] Kiểm tra `status = 'PENDING'` khi update `payment_transactions`.
+- [x] **Task 5: Bảo toàn idempotency DB** (AC: 4, 6)
+  - [x] Không bỏ unique constraint / conditional update hiện có.
+  - [x] Đảm bảo `ledger_transactions.idempotency_key` vẫn unique.
+  - [x] Kiểm tra `status = 'PENDING'` khi update `payment_transactions`.
 
-- [ ] **Task 6: Viết unit test và integration verification** (AC: 9)
-  - [ ] Thêm `redis.service.spec.ts`.
-  - [ ] Mở rộng `payments.service.spec.ts` cho concurrent VietQR/Bitcart webhook.
-  - [ ] Test fail-open khi Redis unavailable.
-  - [ ] Test `pnpm turbo run lint build test` pass toàn repo.
+- [x] **Task 6: Viết unit test và integration verification** (AC: 9)
+  - [x] Thêm `redis.service.spec.ts`.
+  - [x] Mở rộng `payments.service.spec.ts` cho concurrent VietQR/Bitcart webhook.
+  - [x] Test fail-open khi Redis unavailable.
+  - [x] Test `pnpm turbo run lint build test` pass toàn repo.
 
 ## Dev Notes
 
@@ -310,20 +310,22 @@ Claude Opus 5 (1M context)
 ### Change Log
 
 - 2026-09-10: Tạo story file 2.4 — Redlock chống nạp lặp & gian lận giao dịch.
+- 2026-09-11: Code review adversarial (4 layers) — 16 patch + 1 decision resolved: routineExecuted flag phân biệt business error vs Redis error, namespaced lock keys (`lock:payment:vietqr:`/`lock:payment:bitcart:`), bỏ `outerTx` khỏi public webhook, bounded retryStrategy, OnModuleDestroy, signal abort check sau routine, validation trước lock, health check Redis, thêm 10 test mới (141/141 pass).
+- 2026-09-11: Hoàn thành Story 2.4 — Cài redlock, triển khai RedisService & RedisModule, bọc lock-before-transaction cho webhook VietQR/Bitcart, xử lý fail-open to DB và lock busy, cập nhật 131 test pass 100%.
 
 
 ## Validation & Readiness
 
 ### Pre-Implementation Checklist
 
-- [ ] `pnpm install` đã chạy thành công sau khi thêm `redlock`.
-- [ ] `apps/api/src/common/redis/redis.service.ts` compile với `tsc --noEmit`.
-- [ ] `RedisService` mock trong test không cần Redis thật.
-- [ ] `PaymentsService` constructor trong mọi test file đã thêm `RedisService`.
-- [ ] `processVietQRWebhook` + `processBitcartWebhook` wrap `db.transaction` **bên trong** `withLock` routine.
-- [ ] Lock key đúng format `lock:payment:{externalTransactionId}` (không dùng `payment.id`).
-- [ ] `alreadyProcessed: true` trả về khi lock bận; `WEBHOOK_PROCESSING_FAILED` chỉ khi business logic lỗi không liên quan Redis.
-- [ ] `pnpm turbo run lint build test` pass toàn repo.
+- [x] `pnpm install` đã chạy thành công sau khi thêm `redlock`.
+- [x] `apps/api/src/common/redis/redis.service.ts` compile với `tsc --noEmit`.
+- [x] `RedisService` mock trong test không cần Redis thật.
+- [x] `PaymentsService` constructor trong mọi test file đã thêm `RedisService`.
+- [x] `processVietQRWebhook` + `processBitcartWebhook` wrap `db.transaction` **bên trong** `withLock` routine.
+- [x] Lock key đúng format `lock:payment:{externalTransactionId}` (không dùng `payment.id`).
+- [x] `alreadyProcessed: true` trả về khi lock bận; `WEBHOOK_PROCESSING_FAILED` chỉ khi business logic lỗi không liên quan Redis.
+- [x] `pnpm turbo run lint build test` pass toàn repo.
 
 ### Common Pitfalls
 
@@ -346,3 +348,28 @@ Claude Opus 5 (1M context)
 | AC 7 | Redlock settings `driftFactor: 0.01`, TTL 5000ms, target < 2000ms | benchmark/hand test |
 | AC 8 | `withLock` hỗ trợ array resources | `redis.service.spec.ts` multi-resource lock |
 | AC 9 | Test list ở trên | `pnpm turbo run test` |
+
+
+### Review Findings
+
+- [x] [Review][Decision→Patch] `outerTx` removed from public webhook methods — `outerTx` param dropped; tests now call `processVietQRWebhookCore`/`processBitcartWebhookCore` directly, so the public entry point always goes through `withLock`.
+- [x] [Review][Patch] Business errors inside locked routine misclassified as `redis_unavailable` and retried un-locked [`apps/api/src/modules/payments/payments.service.ts:347-359`, `638-650`]
+- [x] [Review][Patch] `isResourceLocked` returns `true` for `ExecutionError` with empty `attempts` array [`apps/api/src/modules/payments/payments.service.ts:580-603`]
+- [x] [Review][Patch] Lock keys not namespaced by gateway (`lock:payment:{id}` shared) [`apps/api/src/modules/payments/payments.service.ts:348`, `632`]
+- [x] [Review][Patch] `retryStrategy: () => null` permanently kills Redis reconnect on transient drops [`apps/api/src/common/redis/redis.service.ts:26`]
+- [x] [Review][Patch] `RedisService` missing `OnModuleDestroy`/`OnApplicationShutdown` cleanup [`apps/api/src/common/redis/redis.service.ts`]
+- [x] [Review][Patch] `retryCount: 3` retry budget (~300-600ms) too small vs 5000ms TTL [`apps/api/src/common/redis/redis.service.ts:36-38`]
+- [x] [Review][Patch] `isHealthy()` uses `lazyConnect` ping that fails before connect [`apps/api/src/common/redis/redis.service.ts:60-67`]
+- [x] [Review][Patch] Missing happy-path test under Redlock without `outerTx` [`apps/api/src/modules/payments/payments.service.spec.ts`]
+- [x] [Review][Patch] Fail-open tests only assert `NO_MATCHING_PAYMENT`, do not verify wallet crediting [`apps/api/src/modules/payments/payments.service.spec.ts:998-1027`]
+- [x] [Review][Patch] Missing test for lock release on exception in critical section [`apps/api/src/common/redis/redis.service.spec.ts`]
+- [x] [Review][Patch] `RedisUnavailableError` dead code; not thrown by `withLock` on connection failure [`apps/api/src/common/redis/redis.service.ts:5-10`]
+- [x] [Review][Patch] `RedisModule` redundant import in `PaymentsModule` while `@Global()` [`apps/api/src/modules/payments/payments.module.ts`]
+- [x] [Review][Patch] `isHealthy` not wired into `AppController` health check [`apps/api/src/app.controller.ts`]
+- [x] [Review][Patch] Lock acquired before validating `orderCode`/amount/content format [`apps/api/src/modules/payments/payments.service.ts:632-650`]
+- [x] [Review][Patch] `redis.service.spec.ts` instantiates real `ioredis` client [`apps/api/src/common/redis/redis.service.spec.ts`]
+- [x] [Review][Defer→Patch] `isResourceLocked` quorum — now returns `true` only when EVERY vote-against is a `ResourceLockedError`; mixed lock+network votes → fail-open (verified by quorum-mix test)
+- [x] [Review][Defer→Patch] `withLock` now passes the Redlock `signal` into the routine and down to `*Core`, which checks `signal.aborted` before crediting the wallet [`redis.service.ts`, `payments.service.ts`]
+- [x] [Review][Defer→Resolved] `redlock` pinned exact `5.0.0-beta.2` (no `^`); redlock ships own `dist/index.d.ts` types — `@types/redlock` not needed
+- [x] [Review][Defer→Patch] Added structured logs `payment_lock_acquired` (lockWaitMs) and `payment_lock_contention` in both webhook wrappers
+- [x] [Review][Defer→Resolved] Redlock on single-node = quorum of 1, atomicity identical to `SET NX PX`; kept Redlock for consistent `using()` API + auto-extension

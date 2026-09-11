@@ -20,3 +20,10 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-fix-deferred-2-3.md`
   summary: Replace third-party api.qrserver.com with client-side canvas/SVG QR generator for crypto payAddress
   evidence: Privacy and SPOF risks with external QR image server; use local SVG/canvas QR generator instead
+
+## Deferred from: code review of story-2.4 (2026-09-11) — ALL RESOLVED 2026-09-11
+- RESOLVED: `isResourceLocked` quorum — now requires every vote-against be `ResourceLockedError`; mixed votes → fail-open (quorum-mix test added)
+- RESOLVED: `withLock` propagates Redlock `signal` into routine → `*Core` checks `signal.aborted` before wallet credit
+- RESOLVED: `redlock` pinned exact `5.0.0-beta.2`; ships own types (no `@types/redlock` needed)
+- RESOLVED: added `payment_lock_acquired` (lockWaitMs) + `payment_lock_contention` structured logs
+- RESOLVED: Redlock on single-node kept — quorum of 1 = same atomicity as `SET NX PX`, consistent `using()` + auto-extension

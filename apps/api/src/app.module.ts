@@ -9,6 +9,7 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
+import { RedisModule } from './common/redis/redis.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { SuppliersModule } from './modules/suppliers/suppliers.module';
     OrdersModule,
     PaymentsModule,
     SuppliersModule,
+    RedisModule,
   ],
   controllers: [AppController],
   providers: [],

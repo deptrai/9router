@@ -1,4 +1,6 @@
-import { Injectable, BadRequestException, ServiceUnavailableException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, BadRequestException, ServiceUnavailableException, InternalServerErrorException, Logger } from '@nestjs/common';
+import { RedisService, RedisUnavailableError } from '../../common/redis/redis.service';
+import { ExecutionError, ResourceLockedError } from 'redlock';
 import * as crypto from 'node:crypto';
 import { db, eq, paymentTransactions, sql, type DbOrTx } from '@repo/database';
 import { PaymentStatus, PaymentGateway, LedgerType, type PaymentTransactionDto, type TelegramUserDto, type VietQRWebhookDto, type VietQRWebhookResponseDto, type BitcartWebhookDto, type BitcartWebhookResponseDto } from '@repo/shared-types';
@@ -46,14 +48,19 @@ export interface ProcessBitcartWebhookResult {
 
 export type PaymentRecord = typeof paymentTransactions.$inferSelect;
 
+const PAYMENT_LOCK_TTL_MS = 5000;
+
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
+
   constructor(
     private readonly vietQRService: VietQRService,
     private readonly bitcartService: BitcartService,
     private readonly userWalletService: UserWalletService,
     private readonly walletsService: WalletsService,
     private readonly ledgerService: LedgerService,
+    private readonly redisService: RedisService,
   ) {}
 
   async createVietQrPayment(
@@ -328,13 +335,67 @@ export class PaymentsService {
 
   async processBitcartWebhook(
     dto: BitcartWebhookDto,
-    outerTx?: DbOrTx,
   ): Promise<ProcessBitcartWebhookResult> {
-    if (!outerTx) {
-      return db.transaction((tx) => this.processBitcartWebhook(dto, tx));
+    if (!dto || typeof dto !== "object") {
+      return { ok: false, matched: false, reason: "WEBHOOK_INVALID_PAYLOAD" };
     }
 
-    const runner = outerTx;
+    const invoiceId = typeof dto.id === "string" ? dto.id.trim() : "";
+    if (!invoiceId) {
+      return { ok: false, matched: false, reason: "WEBHOOK_INVALID_PAYLOAD" };
+    }
+
+    const rawStatus = typeof dto.status === "string" ? dto.status.toLowerCase() : "";
+    if (!this.bitcartService.parseStatus(rawStatus)) {
+      return { ok: false, matched: false, reason: "WEBHOOK_INVALID_PAYLOAD" };
+    }
+
+    const lockKey = `lock:payment:bitcart:${invoiceId}`;
+    let routineExecuted = false;
+    const lockWaitStart = Date.now();
+    try {
+      return await this.redisService.withLock(
+        lockKey,
+        PAYMENT_LOCK_TTL_MS,
+        (signal) => {
+          routineExecuted = true;
+          this.logger.log({
+            event: "payment_lock_acquired",
+            externalTransactionId: invoiceId,
+            gateway: "bitcart",
+            lockWaitMs: Date.now() - lockWaitStart,
+          });
+          return db.transaction((tx) => this.processBitcartWebhookCore(dto, tx, signal));
+        },
+      );
+    } catch (err: unknown) {
+      if (routineExecuted) {
+        throw err;
+      }
+      if (await this.isResourceLocked(err)) {
+        this.logger.warn({
+          event: "payment_lock_contention",
+          externalTransactionId: invoiceId,
+          gateway: "bitcart",
+        });
+        return { ok: true, matched: true, alreadyProcessed: true };
+      }
+
+      this.logger.warn({
+        event: "redis_unavailable",
+        externalTransactionId: invoiceId,
+        message: (err as any)?.message,
+      });
+
+      return db.transaction((tx) => this.processBitcartWebhookCore(dto, tx));
+    }
+  }
+
+  async processBitcartWebhookCore(
+    dto: BitcartWebhookDto,
+    runner: DbOrTx,
+    signal?: { aborted: boolean; error?: Error },
+  ): Promise<ProcessBitcartWebhookResult> {
     const startMs = Date.now();
 
     if (!dto || typeof dto !== 'object') {
@@ -435,6 +496,10 @@ export class PaymentsService {
     // Expiry only blocks creation of new invoices, not crediting of a legitimately settled one.
     const idempotencyKey = `payment:bitcart:${invoiceId}`;
 
+    if (signal?.aborted) {
+      throw signal.error ?? new RedisUnavailableError('Lock lost before Bitcart credit');
+    }
+
     try {
       const ledger = await this.walletsService.credit(
         payment.walletId,
@@ -514,6 +579,45 @@ export class PaymentsService {
     }
   }
 
+  private async isResourceLocked(err: unknown): Promise<boolean> {
+    if (!err) return false;
+    if (err instanceof ResourceLockedError || (err as any)?.name === "ResourceLockedError") {
+      return true;
+    }
+    if (err instanceof ExecutionError || (err as any)?.name === "ExecutionError") {
+      const attempts = (err as ExecutionError).attempts;
+      if (Array.isArray(attempts) && attempts.length > 0) {
+        let sawLockVote = false;
+        for (const attemptPromise of attempts) {
+          try {
+            const stats = await Promise.resolve(attemptPromise);
+            if (stats?.votesAgainst instanceof Map && stats.votesAgainst.size > 0) {
+              // Treat as a genuine lock conflict only when EVERY vote-against in the
+              // attempt is a ResourceLockedError. A mix of lock votes and network
+              // errors means Redis/quorum trouble, not a concurrent lock holder.
+              for (const clientErr of stats.votesAgainst.values()) {
+                const isLock =
+                  clientErr instanceof ResourceLockedError ||
+                  clientErr?.name === "ResourceLockedError" ||
+                  clientErr?.message?.includes("requested resources");
+                if (!isLock) {
+                  return false; // network/client failure → fail-open, not "already processed"
+                }
+                sawLockVote = true;
+              }
+            }
+          } catch {
+            // ignore
+          }
+        }
+        return sawLockVote;
+      }
+      return false;
+    }
+    const msg = (err as any)?.message ?? "";
+    return msg.includes("The operation was applied to: 0 of the 1 requested resources");
+  }
+
   private computeBitcartPayloadHash(dto: BitcartWebhookDto): string {
     const raw = JSON.stringify(dto);
     return crypto.createHmac('sha256', process.env.BITCART_WEBHOOK_SECRET ?? '').update(raw).digest('hex');
@@ -551,13 +655,75 @@ export class PaymentsService {
 
   async processVietQRWebhook(
     dto: VietQRWebhookDto,
-    outerTx?: DbOrTx,
   ): Promise<ProcessVietQRWebhookResult> {
-    if (!outerTx) {
-      return db.transaction((tx) => this.processVietQRWebhook(dto, tx));
+    if (!dto || typeof dto !== "object") {
+      return { ok: false, matched: false, reason: "WEBHOOK_INVALID_PAYLOAD" };
     }
 
-    const runner = outerTx;
+    const transactionId = typeof dto.transactionId === "string" ? dto.transactionId.trim() : "";
+    if (!transactionId) {
+      return { ok: false, matched: false, reason: "WEBHOOK_INVALID_PAYLOAD" };
+    }
+
+    const content = typeof dto.content === "string" ? dto.content.trim() : "";
+    if (!content) {
+      return { ok: false, matched: false, reason: "WEBHOOK_INVALID_PAYLOAD" };
+    }
+
+    if (dto.timestamp !== undefined && (typeof dto.timestamp !== "string" || Number.isNaN(Date.parse(dto.timestamp)))) {
+      return { ok: false, matched: false, reason: "WEBHOOK_INVALID_PAYLOAD" };
+    }
+
+    if (!Number.isFinite(dto.amount) || !Number.isInteger(dto.amount) || dto.amount < 10000) {
+      return { ok: false, matched: false, reason: "WEBHOOK_INVALID_AMOUNT" };
+    }
+
+    const lockKey = `lock:payment:vietqr:${transactionId}`;
+    let routineExecuted = false;
+    const lockWaitStart = Date.now();
+    try {
+      return await this.redisService.withLock(
+        lockKey,
+        PAYMENT_LOCK_TTL_MS,
+        (signal) => {
+          routineExecuted = true;
+          this.logger.log({
+            event: "payment_lock_acquired",
+            externalTransactionId: transactionId,
+            gateway: "vietqr",
+            lockWaitMs: Date.now() - lockWaitStart,
+          });
+          return db.transaction((tx) => this.processVietQRWebhookCore(dto, tx, signal));
+        },
+      );
+    } catch (err: unknown) {
+      if (routineExecuted) {
+        throw err;
+      }
+      if (await this.isResourceLocked(err)) {
+        this.logger.warn({
+          event: "payment_lock_contention",
+          externalTransactionId: transactionId,
+          gateway: "vietqr",
+        });
+        return { ok: true, matched: true, alreadyProcessed: true };
+      }
+
+      this.logger.warn({
+        event: "redis_unavailable",
+        externalTransactionId: transactionId,
+        message: (err as any)?.message,
+      });
+
+      return db.transaction((tx) => this.processVietQRWebhookCore(dto, tx));
+    }
+  }
+
+  async processVietQRWebhookCore(
+    dto: VietQRWebhookDto,
+    runner: DbOrTx,
+    signal?: { aborted: boolean; error?: Error },
+  ): Promise<ProcessVietQRWebhookResult> {
     const startMs = Date.now();
 
     if (!dto || typeof dto !== 'object') {
@@ -644,6 +810,10 @@ export class PaymentsService {
     }
 
     const idempotencyKey = `payment:vietqr:${transactionId}`;
+
+    if (signal?.aborted) {
+      throw signal.error ?? new RedisUnavailableError('Lock lost before VietQR credit');
+    }
 
     try {
       const ledger = await this.walletsService.credit(
