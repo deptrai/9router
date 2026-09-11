@@ -82,7 +82,10 @@ export async function apiGet<T = any>(path: string): Promise<T> {
   const res = await apiFetch(path, { method: 'GET' });
   if (!res.ok) {
     const error = await res.json().catch(() => ({}));
-    throw new Error(error?.message || `Request failed with status ${res.status}`);
+    const err = new Error(error?.message || `Request failed with status ${res.status}`);
+    (err as any).status = res.status;
+    (err as any).body = error;
+    throw err;
   }
   return res.json() as Promise<T>;
 }
@@ -97,7 +100,10 @@ export async function apiPost<T = any>(path: string, body: unknown): Promise<T> 
   });
   if (!res.ok) {
     const error = await res.json().catch(() => ({}));
-    throw new Error(error?.message || `Request failed with status ${res.status}`);
+    const err = new Error(error?.message || `Request failed with status ${res.status}`);
+    (err as any).status = res.status;
+    (err as any).body = error;
+    throw err;
   }
   return res.json() as Promise<T>;
 }

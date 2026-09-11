@@ -8,6 +8,9 @@ import type { TelegramUserDto } from '@repo/shared-types';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  /**
+   * @deprecated Use `/api/users/me` instead. Kept for backward compatibility with existing Telegram Mini App sessions.
+   */
   @Get('me')
   @UseGuards(TelegramAuthGuard)
   async getMe(@CurrentUser() telegramUser: TelegramUserDto) {

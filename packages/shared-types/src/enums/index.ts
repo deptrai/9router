@@ -40,9 +40,30 @@ export enum LedgerType {
   STORE_PURCHASE = 'STORE_PURCHASE',
   PURCHASE_REFUND = 'PURCHASE_REFUND',
   ADMIN_ADJUST = 'ADMIN_ADJUST',
+  HOLD = 'HOLD',
+  RELEASE_HOLD = 'RELEASE_HOLD',
+  CAPTURE_HOLD = 'CAPTURE_HOLD',
 }
 
 export enum PaymentGateway {
   VIETQR = 'VIETQR',
   BITCART = 'BITCART',
+}
+
+export enum ProductStockStatus {
+  IN_STOCK = 'IN_STOCK',
+  OUT_OF_STOCK = 'OUT_OF_STOCK',
+}
+
+export enum AdminAlertType {
+  PRICE_THRESHOLD_EXCEEDED = 'PRICE_THRESHOLD_EXCEEDED',
+  PRICE_SYNC_FAILED = 'PRICE_SYNC_FAILED',
+}
+
+export enum PriceSyncAction {
+  UPDATED = 'UPDATED',
+  UNCHANGED = 'UNCHANGED',
+  DEACTIVATED = 'DEACTIVATED',
+  FAILED = 'FAILED',
+  SKIPPED = 'SKIPPED',
 }

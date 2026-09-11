@@ -1,6 +1,6 @@
 import { Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { db, eq, sql, ledgerTransactions, wallets, type DbOrTx } from '@repo/database';
-import { LedgerType } from '@repo/shared-types';
+import { LedgerType, parseSignedDecimal, formatSignedDecimal } from '@repo/shared-types';
 import type { LedgerTransactionDto } from '@repo/shared-types';
 import { InsufficientFundsException } from '../../common/exceptions/insufficient-funds.exception';
 
@@ -15,22 +15,6 @@ export interface LedgerRecord extends Record<string, unknown> {
   idempotencyKey: string | null;
   metadata: unknown | null;
   createdAt: Date;
-}
-
-function parseSignedDecimal(value: string): bigint {
-  const m = value.trim().match(/^(-?)(\d+)(?:\.(\d{1,2}))?$/);
-  if (!m) throw new Error(`Invalid decimal format: ${value}`);
-  const [, sign, intPart, decPart = ''] = m;
-  const dec = decPart.padEnd(2, '0');
-  const units = BigInt(intPart + dec) * (sign === '-' ? -1n : 1n);
-  return units;
-}
-
-function formatSignedDecimal(units: bigint): string {
-  const sign = units < 0n ? '-' : '';
-  const abs = sign ? (-units).toString() : units.toString();
-  const padded = abs.padStart(3, '0');
-  return `${sign}${padded.slice(0, -2)}.${padded.slice(-2)}`;
 }
 
 @Injectable()
@@ -115,6 +99,214 @@ export class LedgerService {
       (runner) => this.recordTransaction(walletId, amount, type, idempotencyKey, referenceId ?? null, runner, false),
       tx,
     );
+  }
+
+  async hold(
+    walletId: string,
+    amount: string,
+    idempotencyKey: string,
+    referenceId?: string | null,
+    tx: DbOrTx = db,
+  ): Promise<LedgerTransactionDto> {
+    return this.ensureTransaction(async (runner) => {
+      this.validateAmount(amount);
+
+      const [wallet] = await runner
+        .select()
+        .from(wallets)
+        .where(eq(wallets.id, walletId))
+        .for('update');
+
+      if (!wallet) {
+        throw new NotFoundException({
+          errorCode: 'WALLET_NOT_FOUND',
+          message: 'Wallet not found',
+        });
+      }
+
+      const existing = await runner
+        .select()
+        .from(ledgerTransactions)
+        .where(eq(ledgerTransactions.idempotencyKey, idempotencyKey))
+        .limit(1);
+
+      if (existing.length > 0) {
+        return this.toDto(existing[0] as LedgerRecord);
+      }
+
+      const balanceBefore = this.numericAdd(String(wallet.balance), '0');
+      const heldBefore = this.numericAdd(String(wallet.heldBalance), '0');
+      const balanceAfter = this.numericAdd(balanceBefore, '-' + amount);
+      const heldAfter = this.numericAdd(heldBefore, amount);
+
+      if (this.numericCompare(balanceAfter, '0') < 0) {
+        throw new InsufficientFundsException();
+      }
+
+      await runner
+        .update(wallets)
+        .set({
+          balance: balanceAfter,
+          heldBalance: heldAfter,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(wallets.id, walletId));
+
+      const [ledgerRecord] = await runner
+        .insert(ledgerTransactions)
+        .values({
+          walletId,
+          type: LedgerType.HOLD,
+          amount: '-' + amount,
+          balanceBefore,
+          balanceAfter,
+          referenceId: referenceId ?? null,
+          idempotencyKey,
+        })
+        .returning();
+
+      return this.toDto(ledgerRecord as LedgerRecord);
+    }, tx);
+  }
+
+  async releaseHold(
+    walletId: string,
+    amount: string,
+    idempotencyKey: string,
+    referenceId?: string | null,
+    tx: DbOrTx = db,
+  ): Promise<LedgerTransactionDto> {
+    return this.ensureTransaction(async (runner) => {
+      this.validateAmount(amount);
+
+      const [wallet] = await runner
+        .select()
+        .from(wallets)
+        .where(eq(wallets.id, walletId))
+        .for('update');
+
+      if (!wallet) {
+        throw new NotFoundException({
+          errorCode: 'WALLET_NOT_FOUND',
+          message: 'Wallet not found',
+        });
+      }
+
+      const existing = await runner
+        .select()
+        .from(ledgerTransactions)
+        .where(eq(ledgerTransactions.idempotencyKey, idempotencyKey))
+        .limit(1);
+
+      if (existing.length > 0) {
+        return this.toDto(existing[0] as LedgerRecord);
+      }
+
+      const balanceBefore = this.numericAdd(String(wallet.balance), '0');
+      const heldBefore = this.numericAdd(String(wallet.heldBalance), '0');
+      const heldAfter = this.numericAdd(heldBefore, '-' + amount);
+      const balanceAfter = this.numericAdd(balanceBefore, amount);
+
+      if (this.numericCompare(heldAfter, '0') < 0) {
+        throw new InternalServerErrorException({
+          errorCode: 'INVALID_HELD_BALANCE',
+          message: 'Held balance cannot go below zero',
+        });
+      }
+
+      await runner
+        .update(wallets)
+        .set({
+          balance: balanceAfter,
+          heldBalance: heldAfter,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(wallets.id, walletId));
+
+      const [ledgerRecord] = await runner
+        .insert(ledgerTransactions)
+        .values({
+          walletId,
+          type: LedgerType.RELEASE_HOLD,
+          amount,
+          balanceBefore,
+          balanceAfter,
+          referenceId: referenceId ?? null,
+          idempotencyKey,
+        })
+        .returning();
+
+      return this.toDto(ledgerRecord as LedgerRecord);
+    }, tx);
+  }
+
+  async captureHold(
+    walletId: string,
+    amount: string,
+    idempotencyKey: string,
+    referenceId?: string | null,
+    tx: DbOrTx = db,
+  ): Promise<LedgerTransactionDto> {
+    return this.ensureTransaction(async (runner) => {
+      this.validateAmount(amount);
+
+      const [wallet] = await runner
+        .select()
+        .from(wallets)
+        .where(eq(wallets.id, walletId))
+        .for('update');
+
+      if (!wallet) {
+        throw new NotFoundException({
+          errorCode: 'WALLET_NOT_FOUND',
+          message: 'Wallet not found',
+        });
+      }
+
+      const existing = await runner
+        .select()
+        .from(ledgerTransactions)
+        .where(eq(ledgerTransactions.idempotencyKey, idempotencyKey))
+        .limit(1);
+
+      if (existing.length > 0) {
+        return this.toDto(existing[0] as LedgerRecord);
+      }
+
+      const balanceBefore = this.numericAdd(String(wallet.balance), '0');
+      const heldBefore = this.numericAdd(String(wallet.heldBalance), '0');
+      const heldAfter = this.numericAdd(heldBefore, '-' + amount);
+
+      if (this.numericCompare(heldAfter, '0') < 0) {
+        throw new InternalServerErrorException({
+          errorCode: 'INVALID_HELD_BALANCE',
+          message: 'Held balance cannot go below zero',
+        });
+      }
+
+      await runner
+        .update(wallets)
+        .set({
+          heldBalance: heldAfter,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(wallets.id, walletId));
+
+      const [ledgerRecord] = await runner
+        .insert(ledgerTransactions)
+        .values({
+          walletId,
+          type: LedgerType.CAPTURE_HOLD,
+          amount: '-' + amount,
+          balanceBefore,
+          balanceAfter: balanceBefore,
+          referenceId: referenceId ?? null,
+          idempotencyKey,
+        })
+        .returning();
+
+      return this.toDto(ledgerRecord as LedgerRecord);
+    }, tx);
   }
 
   private async recordTransaction(

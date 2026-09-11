@@ -117,7 +117,8 @@ function createFullTx(overrides: TxOverrides = {}): DbOrTx {
         return {
           returning: () => {
             if (insertThrows) throw insertThrows;
-            return Promise.resolve(insertRows);
+            const rows = insertRows.map((r) => ({ ...r, ...v }));
+            return Promise.resolve(rows);
           },
         };
       },
@@ -275,3 +276,42 @@ test('LedgerService handles unique idempotency key race by returning existing re
   const result = await service.credit('wallet-uuid-123', '100.00', LedgerType.TOPUP_VIETQR, 'idem-1', 'ref-1', tx);
   assert.strictEqual(result.idempotencyKey, 'idem-1');
 });
+
+test('LedgerService.hold moves funds from balance to heldBalance', async () => {
+  const capturedUpdateSet = { value: null };
+  const tx = createFullTx({
+    walletRows: [{ ...walletRecord, balance: '100.00', heldBalance: '0.00' }],
+    capturedUpdateSet,
+  });
+  const service = new LedgerService();
+  const res = await service.hold('wallet-uuid-123', '30.00', 'hold-idem-1', 'order-1', tx);
+  assert.strictEqual(res.type, LedgerType.HOLD);
+  assert.strictEqual(capturedUpdateSet.value.balance, '70.00');
+  assert.strictEqual(capturedUpdateSet.value.heldBalance, '30.00');
+});
+
+test('LedgerService.releaseHold restores funds from heldBalance back to balance', async () => {
+  const capturedUpdateSet = { value: null };
+  const tx = createFullTx({
+    walletRows: [{ ...walletRecord, balance: '70.00', heldBalance: '30.00' }],
+    capturedUpdateSet,
+  });
+  const service = new LedgerService();
+  const res = await service.releaseHold('wallet-uuid-123', '30.00', 'release-idem-1', 'order-1', tx);
+  assert.strictEqual(res.type, LedgerType.RELEASE_HOLD);
+  assert.strictEqual(capturedUpdateSet.value.balance, '100.00');
+  assert.strictEqual(capturedUpdateSet.value.heldBalance, '0.00');
+});
+
+test('LedgerService.captureHold burns funds from heldBalance', async () => {
+  const capturedUpdateSet = { value: null };
+  const tx = createFullTx({
+    walletRows: [{ ...walletRecord, balance: '70.00', heldBalance: '30.00' }],
+    capturedUpdateSet,
+  });
+  const service = new LedgerService();
+  const res = await service.captureHold('wallet-uuid-123', '30.00', 'capture-idem-1', 'order-1', tx);
+  assert.strictEqual(res.type, LedgerType.CAPTURE_HOLD);
+  assert.strictEqual(capturedUpdateSet.value.heldBalance, '0.00');
+});
+

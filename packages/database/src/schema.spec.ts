@@ -1,14 +1,23 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { users, wallets, ledgerTransactions, paymentTransactions } from './schema';
+import { users, wallets, ledgerTransactions, paymentTransactions, supplierSources, products, adminAlerts } from './schema';
 
 test('Database schema exports required tables with constraints', () => {
   assert.ok(users, 'users table must be exported');
   assert.ok(wallets, 'wallets table must be exported');
   assert.ok(ledgerTransactions, 'ledgerTransactions table must be exported');
   assert.ok(paymentTransactions, 'paymentTransactions table must be exported');
+  assert.ok(supplierSources, 'supplierSources table must be exported');
+  assert.ok(products, 'products table must be exported');
+  assert.ok(adminAlerts, 'adminAlerts table must be exported');
   assert.ok('languageCode' in users, 'users table must have languageCode column');
   assert.ok('isPremium' in users, 'users table must have isPremium column');
+  assert.ok('markupFixedVnd' in supplierSources, 'supplierSources must have markupFixedVnd column');
+  assert.ok('supplierProductUrl' in products, 'products must have supplierProductUrl column');
+  assert.ok('upstreamCost' in products, 'products must have upstreamCost column');
+  assert.ok('maxUpstreamCost' in products, 'products must have maxUpstreamCost column');
+  assert.ok('costSyncedAt' in products, 'products must have costSyncedAt column');
+  assert.ok('autoPricing' in products, 'products must have autoPricing column');
 });
 
 test('wallets table has non-negative balance check constraints', () => {

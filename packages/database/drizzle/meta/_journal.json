@@ -36,6 +36,34 @@
       "when": 1789033117867,
       "tag": "0004_fat_black_tom",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789092825330,
+      "tag": "0005_strong_dakota_north",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789097503067,
+      "tag": "0006_clean_namor",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789115125986,
+      "tag": "0007_medical_liz_osborn",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789142678641,
+      "tag": "0008_outgoing_glorian",
+      "breakpoints": true
     }
   ]
 }

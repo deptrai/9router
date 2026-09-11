@@ -1,4 +1,4 @@
-import { UserRole, OrderStatus, PaymentStatus, ProductSourcingMode, LedgerType, PaymentGateway } from '../enums';
+import { UserRole, OrderStatus, PaymentStatus, ProductSourcingMode, ProductStockStatus, InventoryStatus, LedgerType, PaymentGateway, PriceSyncAction } from '../enums';
 
 export interface UserDto {
   id: string;
@@ -29,9 +29,53 @@ export interface ProductDto {
   description?: string | null;
   category?: string | null;
   price: string;
+  imageUrl?: string | null;
   isActive: boolean;
   sourcingMode: ProductSourcingMode;
   createdAt: string;
+}
+
+export interface CatalogProductDto extends ProductDto {
+  stockStatus: ProductStockStatus;
+  availableCount: number;
+}
+
+export interface CatalogResponseDto {
+  ok: boolean;
+  products: CatalogProductDto[];
+}
+
+export interface InventorySummaryDto {
+  available: number;
+  reserved: number;
+  sold: number;
+  defective: number;
+  total: number;
+}
+
+export interface BatchAddCredentialsDto {
+  credentials: string[];
+}
+
+export interface BatchAddCredentialsResponseDto {
+  ok: boolean;
+  count: number;
+  productId: string;
+}
+
+export interface ReservedInventoryDto {
+  id: string;
+  productId: string;
+  status: InventoryStatus;
+  orderId: string | null;
+}
+
+export interface DeliveredInventoryDto {
+  id: string;
+  productId: string;
+  credentialData: string;
+  orderId: string | null;
+  soldAt: string;
 }
 
 export interface OrderDto {
@@ -40,6 +84,7 @@ export interface OrderDto {
   productId: string;
   status: OrderStatus;
   price: string;
+  productTitle?: string;
   deliveredCredential?: string | null;
   idempotencyKey?: string | null;
   createdAt: string;
@@ -157,3 +202,49 @@ export interface BitcartWebhookResponseDto {
   currentStatus?: string;
   alreadyProcessed?: boolean;
 }
+
+export interface CheckoutRequestDto {
+  productId: string;
+  idempotencyKey: string;
+}
+
+export interface CheckoutResponseDto {
+  ok: boolean;
+  order: OrderDto;
+  deliveredCredential?: string;
+}
+
+export interface CheckoutErrorDto {
+  statusCode: number;
+  errorCode: 'INSUFFICIENT_FUNDS' | 'OUT_OF_STOCK' | 'ORDER_LOCK_CONFLICT' | 'PRODUCT_NOT_FOUND';
+  missingAmount?: string;
+  message: string;
+}
+
+export interface PriceSyncItemDto {
+  productId: string;
+  slug: string;
+  action: PriceSyncAction;
+  upstreamCost?: string;
+  oldPrice?: string;
+  newPrice?: string;
+  error?: string;
+}
+
+export interface PriceSyncSummaryDto {
+  scanned: number;
+  updated: number;
+  unchanged: number;
+  deactivated: number;
+  failed: number;
+  skipped: number;
+  items: PriceSyncItemDto[];
+  startedAt: string;
+  finishedAt: string;
+}
+
+export interface SyncPricesResponseDto {
+  ok: boolean;
+  summary: PriceSyncSummaryDto;
+}
+

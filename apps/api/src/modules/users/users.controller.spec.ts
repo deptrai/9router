@@ -66,11 +66,19 @@ test('UsersController.getMe returns wallet with string balance (not number)', as
   assert.strictEqual(typeof result.wallet.heldBalance, 'string');
 });
 
-test('UsersController.getMe passes TelegramUserDto through to service and returns same DTOs', async () => {
-  const mockService = createMockUserWalletService();
+test('UsersController.getMe delegates TelegramUserDto to userWalletService', async () => {
+  let calledDto: any = null;
+  const mockService = {
+    upsertUserAndWallet: async (dto: TelegramUserDto) => {
+      calledDto = dto;
+      return { user: userDto, wallet: walletDto };
+    },
+  } as any;
   const controller = new UsersController(mockService);
-  const first = await controller.getMe(telegramUser);
-  const second = await controller.getMe(telegramUser);
+  const result = await controller.getMe(telegramUser);
 
-  assert.deepStrictEqual(first, second);
+  assert.strictEqual(calledDto.id, telegramUser.id);
+  assert.strictEqual(result.ok, true);
+  assert.deepStrictEqual(result.user, userDto);
+  assert.deepStrictEqual(result.wallet, walletDto);
 });
