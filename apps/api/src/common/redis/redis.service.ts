@@ -1,6 +1,8 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, Optional, Inject } from '@nestjs/common';
 import Redis from 'ioredis';
 import Redlock from 'redlock';
+
+export const REDIS_CLIENT = 'REDIS_CLIENT';
 
 export class RedisUnavailableError extends Error {
   constructor(message: string) {
@@ -15,7 +17,7 @@ export class RedisService implements OnModuleDestroy {
   private readonly client: Redis;
   private readonly redlock: Redlock;
 
-  constructor(client?: Redis) {
+  constructor(@Optional() @Inject(REDIS_CLIENT) client?: Redis) {
     if (client) {
       this.client = client;
     } else {
