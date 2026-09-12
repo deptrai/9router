@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
@@ -11,7 +12,7 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
   app.useGlobalFilters(new AllExceptionsFilter());
 
-  const port = process.env.PORT || 3001;
+  const port = process.env.PORT || 3201;
   // Verify database and shared-types imports at runtime
   if (db && UserRole.ADMIN) {
     console.log(`[API Bootstrap] Database and Shared-Types loaded successfully. Default role check: ${UserRole.ADMIN}`);

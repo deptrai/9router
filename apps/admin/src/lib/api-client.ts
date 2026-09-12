@@ -1,6 +1,6 @@
 'use client';
 
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/+$/, '');
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3201').replace(/\/+$/, '');
 
 export function getAdminApiKey(): string | null {
   if (typeof window === 'undefined') {

@@ -4,8 +4,8 @@ import { test, expect } from '@playwright/test';
  * Story 5.1: Admin Web Portal Product Catalog & Supplier Management E2E Tests
  */
 
-const ADMIN_URL = process.env.ADMIN_URL || 'http://localhost:3002';
-const API_URL = process.env.API_URL || 'http://localhost:3001';
+const ADMIN_URL = process.env.ADMIN_URL || 'http://localhost:3200';
+const API_URL = process.env.API_URL || 'http://localhost:3201';
 const TEST_ADMIN_KEY = 'super-secret-admin-key-that-is-at-least-32-chars-long!';
 
 test.describe('Story 5.1: Admin Web Portal E2E Tests', () => {
@@ -73,7 +73,7 @@ test.describe('Story 5.1: Admin Web Portal E2E Tests', () => {
 
     // Verify KPI cards
     await expect(page.getByText('Tổng sản phẩm')).toBeVisible();
-    await expect(page.getByText('Nhà cung cấp')).toBeVisible();
+    await expect(page.getByRole('main').getByText('Nhà cung cấp', { exact: true })).toBeVisible();
     await expect(page.getByText('Test Kiro Pro')).toBeVisible();
     await expect(page.getByText('Test Supplier Global')).toBeVisible();
   });
@@ -118,7 +118,7 @@ test.describe('Story 5.1: Admin Web Portal E2E Tests', () => {
     await expect(page.getByRole('heading', { name: 'Quản trị Sản phẩm' })).toBeVisible();
     await expect(page.getByText('Netflix Premium 1M')).toBeVisible();
     await expect(page.getByText('75.000 ₫')).toBeVisible();
-    await expect(page.getByText('IN_HOUSE')).toBeVisible();
+    await expect(page.getByText('IN_HOUSE', { exact: true })).toBeVisible();
 
     // Open create product modal
     await page.getByRole('button', { name: 'Thêm sản phẩm' }).click();
@@ -159,7 +159,7 @@ test.describe('Story 5.1: Admin Web Portal E2E Tests', () => {
 
     await expect(page.getByRole('heading', { name: 'Quản trị Nhà cung cấp' })).toBeVisible();
     await expect(page.getByText('Partner Key Source')).toBeVisible();
-    await expect(page.getByText('+12%')).toBeVisible();
+    await expect(page.getByText('+12.00%')).toBeVisible();
 
     // Open create supplier modal
     await page.getByRole('button', { name: 'Thêm nhà cung cấp' }).click();

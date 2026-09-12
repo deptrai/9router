@@ -121,7 +121,7 @@ export function createCheckoutPayload(overrides: Partial<CheckoutRequestDto> = {
 test.describe('API: External Product Checkout & Sourcing Status Polling', () => {
   let validUser: MockTelegramUser;
   let authHeader: string;
-  const baseUrl = process.env.BASE_URL || 'http://localhost:3002';
+  const baseUrl = process.env.BASE_URL || 'http://localhost:3201';
 
   test.beforeEach(async () => {
     validUser = createTelegramUser();

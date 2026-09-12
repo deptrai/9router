@@ -1,6 +1,6 @@
 'use client';
 
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/+$/, '');
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3201').replace(/\/+$/, '');
 
 /**
  * Attempts to retrieve Telegram WebApp initData from multiple sources.
