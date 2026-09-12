@@ -216,9 +216,39 @@ export interface CheckoutResponseDto {
 
 export interface CheckoutErrorDto {
   statusCode: number;
-  errorCode: 'INSUFFICIENT_FUNDS' | 'OUT_OF_STOCK' | 'ORDER_LOCK_CONFLICT' | 'PRODUCT_NOT_FOUND';
+  errorCode:
+    | 'INSUFFICIENT_FUNDS'
+    | 'OUT_OF_STOCK'
+    | 'ORDER_LOCK_CONFLICT'
+    | 'PRODUCT_NOT_FOUND'
+    | 'ORDER_IN_PROGRESS'
+    | 'SOURCING_UNAVAILABLE';
   missingAmount?: string;
   message: string;
+}
+
+/**
+ * BullMQ queue name + job payload contract shared by the producer (Story 4.2)
+ * and the scraper worker (Story 4.3). Credentials are NOT embedded in the
+ * payload — the worker resolves supplier `config_credentials` from the DB.
+ *
+ * Worker contract (Story 4.3, binding):
+ * - Discard jobs whose order is missing or not in `SOURCING` status
+ *   (e.g. an order compensated to REFUNDED after an enqueue timeout).
+ * - Re-validate the supplier at execution time: `is_active = true` and
+ *   `config_credentials` non-empty — the row may have changed or been
+ *   deleted since checkout (TOCTOU).
+ * - Re-check `upstream_cost <= max_upstream_cost` right before purchasing;
+ *   breach → fail the job and let the refund path handle it.
+ * - Terminal failure must end in a defined transition (REFUNDED via ledger
+ *   credit), never leave the order stranded in SOURCING.
+ */
+export const SOURCING_QUEUE_NAME = 'sourcing-queue';
+
+export interface SourcingJobData {
+  orderId: string;
+  productId: string;
+  supplierSourceId: string;
 }
 
 export interface PriceSyncItemDto {

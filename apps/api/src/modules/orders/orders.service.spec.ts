@@ -6,6 +6,7 @@ import {
   NotFoundException,
   ConflictException,
   HttpException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { RedisUnavailableError } from '../../common/redis/redis.service';
 
@@ -36,6 +37,19 @@ const productRecord = {
   price: '200000.00',
   isActive: true,
   sourcingMode: 'IN_HOUSE',
+  supplierSourceId: null,
+};
+
+const externalProductRecord = {
+  ...productRecord,
+  sourcingMode: 'EXTERNAL',
+  supplierSourceId: 'sup-uuid-1',
+};
+
+const hybridProductRecord = {
+  ...productRecord,
+  sourcingMode: 'HYBRID',
+  supplierSourceId: 'sup-uuid-1',
 };
 
 const reservedItem = {
@@ -72,6 +86,11 @@ const fulfilledOrderRecord = {
   fulfilledAt: new Date(),
 };
 
+const sourcingOrderRecord = {
+  ...orderRecord,
+  status: OrderStatus.SOURCING,
+};
+
 function makeService(overrides: {
   existingOrder?: any;
   userRecord?: any;
@@ -81,6 +100,11 @@ function makeService(overrides: {
   confirmResult?: any;
   lockError?: Error;
   myOrdersRows?: any[];
+  supplierActive?: boolean;
+  enqueueError?: Error | null;
+  queueReady?: boolean;
+  productSupplierId?: string | null;
+  inFlightOrder?: any;
 }) {
   const {
     existingOrder = null,
@@ -91,6 +115,11 @@ function makeService(overrides: {
     confirmResult = deliveredItem,
     lockError = null,
     myOrdersRows = [],
+    supplierActive = true,
+    enqueueError = null,
+    queueReady = true,
+    productSupplierId = 'sup-uuid-1',
+    inFlightOrder = null,
   } = overrides;
 
   const mockRedis = {
@@ -108,6 +137,7 @@ function makeService(overrides: {
     getOrCreateByUserId: async () => wr,
   };
 
+  const creditCalls: any[] = [];
   const mockLedger = {
     debit: async () => ({
       id: 'ledger-uuid-1',
@@ -120,6 +150,26 @@ function makeService(overrides: {
       idempotencyKey: 'idem-key-1',
       createdAt: new Date().toISOString(),
     }),
+    credit: async (
+      walletId: string,
+      amount: string,
+      type: any,
+      idempotencyKey: string,
+      referenceId?: string | null,
+    ) => {
+      creditCalls.push({ walletId, amount, type, idempotencyKey, referenceId });
+      return {
+        id: 'ledger-refund-1',
+        walletId,
+        type,
+        amount,
+        balanceBefore: '300000.00',
+        balanceAfter: '500000.00',
+        referenceId: referenceId ?? null,
+        idempotencyKey,
+        createdAt: new Date().toISOString(),
+      };
+    },
   };
 
   const mockInventory = {
@@ -128,6 +178,7 @@ function makeService(overrides: {
   };
 
   const telegramBotCalls: any[] = [];
+  const sourcingNoticeCalls: any[] = [];
   const mockTelegramBot = {
     sendOrderConfirmation: async (
       telegramId: number,
@@ -135,6 +186,22 @@ function makeService(overrides: {
       productTitle: string,
     ) => {
       telegramBotCalls.push({ telegramId, order, productTitle });
+    },
+    sendSourcingNotice: async (
+      telegramId: number,
+      order: any,
+      productTitle: string,
+    ) => {
+      sourcingNoticeCalls.push({ telegramId, order, productTitle });
+    },
+  };
+
+  const sourcingCalls: any[] = [];
+  const mockSourcingQueue = {
+    isReady: () => queueReady,
+    ensureSourcingJob: async (data: any) => {
+      if (enqueueError) throw enqueueError;
+      sourcingCalls.push(data);
     },
   };
 
@@ -145,6 +212,7 @@ function makeService(overrides: {
     mockWallets as any,
     mockUsers as any,
     mockTelegramBot as any,
+    mockSourcingQueue as any,
   );
 
   // Mock db.transaction to run the function with a mock tx
@@ -152,12 +220,28 @@ function makeService(overrides: {
   const originalTransaction = db.transaction;
   const originalSelect = db.select;
 
-  // Mock db.select for getOrderByIdempotencyKey
+  // Mock db.select for getOrderByIdempotencyKey + product supplier probe.
+  // tx.select(fields): isActive → supplier probe; id → in-flight order probe;
+  // no fields → product row.
+  const updateCalls: any[] = [];
   const mockTx = {
-    select: () => ({
+    select: (fields?: any) => ({
       from: () => ({
         where: () => ({
-          limit: () => Promise.resolve(pr ? [pr] : []),
+          limit: () =>
+            Promise.resolve(
+              !fields
+                ? pr
+                  ? [pr]
+                  : []
+                : 'isActive' in fields
+                  ? [{ isActive: supplierActive }]
+                  : 'id' in fields
+                    ? inFlightOrder
+                      ? [inFlightOrder]
+                      : []
+                    : [],
+            ),
         }),
       }),
     }),
@@ -167,19 +251,36 @@ function makeService(overrides: {
       }),
     }),
     update: () => ({
-      set: () => ({
-        where: () => ({
-          returning: () => Promise.resolve([fulfilledOrderRecord]),
-        }),
-      }),
+      set: (v: any) => {
+        updateCalls.push(v);
+        return {
+          where: () => ({
+            returning: () =>
+              Promise.resolve([
+                v.status === OrderStatus.SOURCING
+                  ? sourcingOrderRecord
+                  : fulfilledOrderRecord,
+              ]),
+          }),
+        };
+      },
     }),
   };
 
   db.transaction = async (fn: any) => fn(mockTx);
-  db.select = () => ({
+  db.select = (fields?: any) => ({
     from: () => ({
       where: () => ({
-        limit: () => Promise.resolve(existingOrder ? [existingOrder] : []),
+        limit: () =>
+          Promise.resolve(
+            fields && 'supplierSourceId' in fields
+              ? productSupplierId
+                ? [{ supplierSourceId: productSupplierId }]
+                : []
+              : existingOrder
+                ? [existingOrder]
+                : [],
+          ),
       }),
       leftJoin: () => ({
         where: () => ({
@@ -192,6 +293,10 @@ function makeService(overrides: {
   return {
     service,
     telegramBotCalls,
+    sourcingNoticeCalls,
+    sourcingCalls,
+    creditCalls,
+    updateCalls,
     cleanup: () => {
       db.transaction = originalTransaction;
       db.select = originalSelect;
@@ -200,12 +305,13 @@ function makeService(overrides: {
 }
 
 test('checkout returns existing order for duplicate idempotencyKey', async () => {
-  const { service, cleanup } = makeService({ existingOrder: fulfilledOrderRecord });
+  const { service, sourcingCalls, cleanup } = makeService({ existingOrder: fulfilledOrderRecord });
   try {
     const res = await service.checkout(telegramUser as any, 'prod-uuid-1', 'idem-key-1');
     assert.strictEqual(res.ok, true);
     assert.strictEqual(res.order.id, 'order-uuid-1');
     assert.strictEqual(res.order.status, OrderStatus.FULFILLED);
+    assert.strictEqual(sourcingCalls.length, 0, 'no self-heal for non-SOURCING order');
   } finally {
     cleanup();
   }
@@ -508,6 +614,347 @@ test('checkout does NOT call sendOrderConfirmation for idempotent repeat (existi
     await service.checkout(telegramUser as any, 'prod-uuid-1', 'idem-key-1');
     await new Promise((r) => setImmediate(r));
     assert.strictEqual(telegramBotCalls.length, 0, 'no notification for duplicate request');
+  } finally {
+    cleanup();
+  }
+});
+
+// ── Story 4.2: Smart sourcing routing ──────────────────────────────────────
+
+test('checkout routes EXTERNAL product with empty in-house stock to SOURCING + enqueues job', async () => {
+  const { service, sourcingCalls, telegramBotCalls, sourcingNoticeCalls, cleanup } = makeService({
+    productRecord: externalProductRecord,
+    reserveResult: null,
+  });
+  try {
+    const res = await service.checkout(telegramUser as any, 'prod-uuid-1', 'idem-key-1');
+    assert.strictEqual(res.ok, true);
+    assert.strictEqual(res.order.status, OrderStatus.SOURCING);
+    assert.strictEqual(res.deliveredCredential, undefined);
+    assert.strictEqual(sourcingCalls.length, 1);
+    assert.deepStrictEqual(sourcingCalls[0], {
+      orderId: 'order-uuid-1',
+      productId: 'prod-uuid-1',
+      supplierSourceId: 'sup-uuid-1',
+    });
+    await new Promise((r) => setImmediate(r));
+    assert.strictEqual(telegramBotCalls.length, 0, 'no order confirmation for SOURCING');
+    assert.strictEqual(sourcingNoticeCalls.length, 1, 'buyer gets a sourcing notice');
+    assert.strictEqual(sourcingNoticeCalls[0].telegramId, telegramUser.id);
+  } finally {
+    cleanup();
+  }
+});
+
+test('checkout routes HYBRID product with empty in-house stock to SOURCING', async () => {
+  const { service, sourcingCalls, cleanup } = makeService({
+    productRecord: hybridProductRecord,
+    reserveResult: null,
+  });
+  try {
+    const res = await service.checkout(telegramUser as any, 'prod-uuid-1', 'idem-key-1');
+    assert.strictEqual(res.order.status, OrderStatus.SOURCING);
+    assert.strictEqual(sourcingCalls.length, 1);
+  } finally {
+    cleanup();
+  }
+});
+
+test('checkout still throws OUT_OF_STOCK for EXTERNAL product when supplier is inactive', async () => {
+  const { service, sourcingCalls, cleanup } = makeService({
+    productRecord: externalProductRecord,
+    reserveResult: null,
+    supplierActive: false,
+  });
+  try {
+    await assert.rejects(
+      () => service.checkout(telegramUser as any, 'prod-uuid-1', 'idem-key-1'),
+      (err: any) => {
+        assert.ok(err instanceof ConflictException);
+        assert.strictEqual((err.getResponse() as any).errorCode, 'OUT_OF_STOCK');
+        return true;
+      },
+    );
+    assert.strictEqual(sourcingCalls.length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test('checkout throws OUT_OF_STOCK for EXTERNAL product without supplierSourceId', async () => {
+  const { service, sourcingCalls, cleanup } = makeService({
+    productRecord: { ...externalProductRecord, supplierSourceId: null },
+    reserveResult: null,
+  });
+  try {
+    await assert.rejects(
+      () => service.checkout(telegramUser as any, 'prod-uuid-1', 'idem-key-1'),
+      (err: any) => {
+        assert.strictEqual((err.getResponse() as any).errorCode, 'OUT_OF_STOCK');
+        return true;
+      },
+    );
+    assert.strictEqual(sourcingCalls.length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test('checkout on post-commit enqueue failure → 503 + refund compensate + order REFUNDED', async () => {
+  const enqueueErr = new Error('queue unavailable');
+  const { service, sourcingCalls, creditCalls, updateCalls, cleanup } = makeService({
+    productRecord: externalProductRecord,
+    reserveResult: null,
+    enqueueError: enqueueErr,
+  });
+  try {
+    await assert.rejects(
+      () => service.checkout(telegramUser as any, 'prod-uuid-1', 'idem-key-1'),
+      (err: any) => {
+        assert.ok(err instanceof ServiceUnavailableException);
+        assert.strictEqual(err.getStatus(), 503);
+        assert.strictEqual(
+          (err.getResponse() as any).errorCode,
+          'SOURCING_UNAVAILABLE',
+        );
+        return true;
+      },
+    );
+    assert.strictEqual(sourcingCalls.length, 0, 'enqueue threw before recording');
+    assert.strictEqual(creditCalls.length, 1, 'debit compensated with a refund credit');
+    assert.strictEqual(creditCalls[0].type, LedgerType.PURCHASE_REFUND);
+    assert.strictEqual(creditCalls[0].idempotencyKey, 'idem-key-1:refund');
+    assert.strictEqual(creditCalls[0].referenceId, 'order-uuid-1');
+    const statuses = updateCalls.map((u) => u.status);
+    assert.deepStrictEqual(statuses, [
+      OrderStatus.PAID,
+      OrderStatus.SOURCING,
+      OrderStatus.REFUNDED,
+    ]);
+  } finally {
+    cleanup();
+  }
+});
+
+test('checkout throws 503 inside tx (rollback, no charge) when sourcing queue not initialized', async () => {
+  const { service, sourcingCalls, creditCalls, updateCalls, cleanup } = makeService({
+    productRecord: externalProductRecord,
+    reserveResult: null,
+    queueReady: false,
+  });
+  try {
+    await assert.rejects(
+      () => service.checkout(telegramUser as any, 'prod-uuid-1', 'idem-key-1'),
+      (err: any) => {
+        assert.ok(err instanceof ServiceUnavailableException);
+        assert.strictEqual(
+          (err.getResponse() as any).errorCode,
+          'SOURCING_UNAVAILABLE',
+        );
+        return true;
+      },
+    );
+    assert.strictEqual(sourcingCalls.length, 0);
+    assert.strictEqual(creditCalls.length, 0, 'tx rolled back — no compensate needed');
+    const statuses = updateCalls.map((u) => u.status);
+    assert.deepStrictEqual(statuses, [OrderStatus.PAID], 'no SOURCING/REFUNDED write inside rolled-back tx');
+  } finally {
+    cleanup();
+  }
+});
+
+test('checkout returns existing SOURCING order on replay and self-heals the sourcing job', async () => {
+  const { service, sourcingCalls, telegramBotCalls, sourcingNoticeCalls, cleanup } = makeService({
+    existingOrder: sourcingOrderRecord,
+  });
+  try {
+    const res = await service.checkout(telegramUser as any, 'prod-uuid-1', 'idem-key-1');
+    assert.strictEqual(res.ok, true);
+    assert.strictEqual(res.order.status, OrderStatus.SOURCING);
+    assert.strictEqual(sourcingCalls.length, 1, 'self-heal ensures the job exists (dedup no-op when healthy)');
+    assert.deepStrictEqual(sourcingCalls[0], {
+      orderId: 'order-uuid-1',
+      productId: 'prod-uuid-1',
+      supplierSourceId: 'sup-uuid-1',
+    });
+    await new Promise((r) => setImmediate(r));
+    assert.strictEqual(telegramBotCalls.length, 0);
+    assert.strictEqual(sourcingNoticeCalls.length, 0, 'no re-notification on replay');
+  } finally {
+    cleanup();
+  }
+});
+
+test('checkout replay self-heal failure is swallowed — order still returned', async () => {
+  const { service, sourcingCalls, cleanup } = makeService({
+    existingOrder: sourcingOrderRecord,
+    enqueueError: new Error('Redis down'),
+  });
+  try {
+    const res = await service.checkout(telegramUser as any, 'prod-uuid-1', 'idem-key-1');
+    assert.strictEqual(res.ok, true);
+    assert.strictEqual(res.order.status, OrderStatus.SOURCING);
+    assert.strictEqual(sourcingCalls.length, 0, 'ensure threw before recording');
+  } finally {
+    cleanup();
+  }
+});
+
+// ── Review fixes: in-flight guard, margin guard, lock-lost-after-commit ──
+
+test('checkout throws 409 ORDER_IN_PROGRESS when an in-flight order exists for same product', async () => {
+  const { service, sourcingCalls, cleanup } = makeService({
+    productRecord: externalProductRecord,
+    inFlightOrder: { id: 'order-inflight-9' },
+  });
+  try {
+    await assert.rejects(
+      () => service.checkout(telegramUser as any, 'prod-uuid-1', 'idem-key-1'),
+      (err: any) => {
+        assert.ok(err instanceof ConflictException);
+        assert.strictEqual(
+          (err.getResponse() as any).errorCode,
+          'ORDER_IN_PROGRESS',
+        );
+        return true;
+      },
+    );
+    assert.strictEqual(sourcingCalls.length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test('checkout throws OUT_OF_STOCK when upstreamCost exceeds price (margin guard)', async () => {
+  const { service, sourcingCalls, cleanup } = makeService({
+    productRecord: {
+      ...externalProductRecord,
+      upstreamCost: '250000.00', // > price 200000 → guaranteed loss
+    },
+    reserveResult: null,
+  });
+  try {
+    await assert.rejects(
+      () => service.checkout(telegramUser as any, 'prod-uuid-1', 'idem-key-1'),
+      (err: any) => {
+        assert.ok(err instanceof ConflictException);
+        assert.strictEqual(
+          (err.getResponse() as any).errorCode,
+          'OUT_OF_STOCK',
+        );
+        return true;
+      },
+    );
+    assert.strictEqual(sourcingCalls.length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test('checkout throws OUT_OF_STOCK when upstreamCost breaches maxUpstreamCost ceiling', async () => {
+  const { service, sourcingCalls, cleanup } = makeService({
+    productRecord: {
+      ...externalProductRecord,
+      upstreamCost: '150000.00', // < price but over configured ceiling
+      maxUpstreamCost: '100000.00',
+    },
+    reserveResult: null,
+  });
+  try {
+    await assert.rejects(
+      () => service.checkout(telegramUser as any, 'prod-uuid-1', 'idem-key-1'),
+      (err: any) => {
+        assert.ok(err instanceof ConflictException);
+        assert.strictEqual(
+          (err.getResponse() as any).errorCode,
+          'OUT_OF_STOCK',
+        );
+        return true;
+      },
+    );
+    assert.strictEqual(sourcingCalls.length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test('checkout still routes to SOURCING when margin is healthy', async () => {
+  const { service, sourcingCalls, cleanup } = makeService({
+    productRecord: {
+      ...externalProductRecord,
+      upstreamCost: '150000.00',
+      maxUpstreamCost: '180000.00',
+    },
+    reserveResult: null,
+  });
+  try {
+    const res = await service.checkout(telegramUser as any, 'prod-uuid-1', 'idem-key-1');
+    assert.strictEqual(res.order.status, OrderStatus.SOURCING);
+    assert.strictEqual(sourcingCalls.length, 1);
+  } finally {
+    cleanup();
+  }
+});
+
+test('checkout returns committed order when lock is lost AFTER tx commit', async () => {
+  // withLock throws lock-lost error; the tx already committed → the order
+  // must be returned (not a misleading 409 that invites a double-charge).
+  const { service, sourcingCalls, cleanup } = makeService({
+    lockError: new RedisUnavailableError('Redlock lost during execution'),
+  });
+  const { db } = require('@repo/database');
+  const origSelect = db.select;
+  let selectCallCount = 0;
+  db.select = (fields?: any) => ({
+    from: () => ({
+      where: () => ({
+        limit: () => {
+          selectCallCount++;
+          // supplierSourceId probe (self-heal) → product supplier
+          if (fields && 'supplierSourceId' in fields) {
+            return Promise.resolve([{ supplierSourceId: 'sup-uuid-1' }]);
+          }
+          // step-1 idempotency → none; post-catch check → committed order
+          return Promise.resolve(
+            selectCallCount > 1 ? [sourcingOrderRecord] : [],
+          );
+        },
+      }),
+    }),
+  });
+  try {
+    const res = await service.checkout(telegramUser as any, 'prod-uuid-1', 'idem-key-1');
+    assert.strictEqual(res.ok, true);
+    assert.strictEqual(res.order.status, OrderStatus.SOURCING);
+    assert.strictEqual(sourcingCalls.length, 1, 'self-heal runs on the returned SOURCING order');
+  } finally {
+    db.select = origSelect;
+    cleanup();
+  }
+});
+
+test('checkout marks order PAID before reserving (state machine PENDING→PAID→FULFILLED)', async () => {
+  const { service, updateCalls, cleanup } = makeService({});
+  try {
+    const res = await service.checkout(telegramUser as any, 'prod-uuid-1', 'idem-key-1');
+    assert.strictEqual(res.order.status, OrderStatus.FULFILLED);
+    const statuses = updateCalls.map((u) => u.status);
+    assert.deepStrictEqual(statuses, [OrderStatus.PAID, OrderStatus.FULFILLED]);
+  } finally {
+    cleanup();
+  }
+});
+
+test('checkout marks PAID then SOURCING for external routing (PENDING→PAID→SOURCING)', async () => {
+  const { service, updateCalls, cleanup } = makeService({
+    productRecord: externalProductRecord,
+    reserveResult: null,
+  });
+  try {
+    const res = await service.checkout(telegramUser as any, 'prod-uuid-1', 'idem-key-1');
+    assert.strictEqual(res.order.status, OrderStatus.SOURCING);
+    const statuses = updateCalls.map((u) => u.status);
+    assert.deepStrictEqual(statuses, [OrderStatus.PAID, OrderStatus.SOURCING]);
   } finally {
     cleanup();
   }

@@ -46,3 +46,12 @@
 - **Spec test 23505 chỉ mock** — `ledger.service.spec.ts` race test không phản ánh transaction-abort thật của Postgres; cần integration test hoặc restructure retry ngoài tx.
 - **`PRICE_SYNC_FAILED` alert type chưa được emit** — enum + DB CHECK đã có (`admin_alerts`), nhưng fetch-failure chỉ tạo item `FAILED` + log. Cần design chống spam (ví dụ: chỉ insert alert khi cùng product fail N lần liên tiếp, hoặc tổng hợp 1 alert per run) trước khi bật — defer đến khi cần observability thật.
 - [ ] [Review][Defer] **`.env` không được load khi `pnpm dev`** — `main.ts` đọc `process.env.PORT` trước bất kỳ dotenv/ConfigModule nào; chạy trần → `TELEGRAM_BOT_TOKEN` missing (mọi route auth → 500 `CONFIG_TELEGRAM_BOT_TOKEN_MISSING`), PORT rơi về default 3001. Workaround: `set -a; source ./.env; set +a; pnpm dev`. Đề xuất: thêm `import 'dotenv/config'` đầu `main.ts` hoặc `ConfigModule.forRoot`. [main.ts:14] — deferred, pre-existing dev-env gap (phát hiện trong live E2E verify Story 4.1)
+
+## Deferred from: code review of 4-2-dieu-phoi-nguon-hang-thong-minh (2026-09-12) — ALL RESOLVED 2026-09-12
+
+- RESOLVED: Lock-lost-sau-commit không còn trả `ORDER_LOCK_CONFLICT` giả — catch branch query theo `idempotencyKey`, nếu order đã commit thì trả order + chạy `ensureJobForSourcingOrder` self-heal; chỉ 409 khi chắc chắn không có order. `orders.service.ts` catch + test "lock lost AFTER tx commit".
+- RESOLVED: Supplier TOCTOU được chốt thành binding contract trong JSDoc `SOURCING_QUEUE_NAME` (`shared-types/dtos/index.ts`) — worker 4.3 phải discard job non-SOURCING, re-validate `is_active` + `config_credentials`, re-check `maxUpstreamCost`, và terminal failure → REFUNDED, không bao giờ để order kẹt SOURCING.
+- RESOLVED: `products_sourcing_mode_valid` CHECK constraint thêm vào `schema.ts` + migration `0009_vengeful_lyja.sql`, đã apply live và verify reject `'external'`, accept `'EXTERNAL'`.
+- RESOLVED: Margin guard trong checkout — `canSource` giờ yêu cầu `upstreamCost <= price` và `upstreamCost <= maxUpstreamCost` (khi có); `upstreamCost === null` không chặn. Vi phạm → `OUT_OF_STOCK`, không charge. 2 tests cover cả 2 nhánh.
+- RESOLVED: In-flight guard — cùng user+product đã có order `PENDING|PAID|SOURCING` → `409 ORDER_IN_PROGRESS` trước khi debit (errorCode mới trong `CheckoutErrorDto` union + branch tiếng Việt trong `CheckoutModal`). Áp dụng mọi product, không chỉ EXTERNAL.
+- RESOLVED: Orders page tự refresh — refetch on window `focus` + poll 5s chỉ khi có order `SOURCING`, cleanup đầy đủ (cancelled flag + removeEventListener + clearInterval).

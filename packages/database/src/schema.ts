@@ -130,6 +130,7 @@ export const products = pgTable(
     check('products_price_non_negative', sql`${table.price} >= 0`),
     check('products_max_upstream_cost_valid', sql`${table.maxUpstreamCost} IS NULL OR ${table.maxUpstreamCost} > 0`),
     check('products_upstream_cost_valid', sql`${table.upstreamCost} IS NULL OR ${table.upstreamCost} >= 0`),
+    check('products_sourcing_mode_valid', sql`${table.sourcingMode} IN ('IN_HOUSE', 'EXTERNAL', 'HYBRID')`),
   ]
 );
 

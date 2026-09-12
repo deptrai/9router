@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiClient } from '../../lib/api-client';
 import type { OrderDto } from '@repo/shared-types';
 import { OrderStatus } from '@repo/shared-types';
@@ -71,6 +71,9 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const ordersRef = useRef<OrderDto[] | null>(null);
+  ordersRef.current = orders;
+
   useEffect(() => {
     let cancelled = false;
     const fetchOrders = async () => {
@@ -91,8 +94,21 @@ export default function OrdersPage() {
       }
     };
     fetchOrders();
+
+    // Refetch on window focus + light polling while any order is SOURCING
+    // so a fulfilled-later order updates without manual reload.
+    const onFocus = () => fetchOrders();
+    window.addEventListener('focus', onFocus);
+    const interval = setInterval(() => {
+      if (ordersRef.current?.some((o) => o.status === 'SOURCING')) {
+        fetchOrders();
+      }
+    }, 5000);
+
     return () => {
       cancelled = true;
+      window.removeEventListener('focus', onFocus);
+      clearInterval(interval);
     };
   }, []);
 
@@ -153,6 +169,12 @@ export default function OrdersPage() {
               <p className="text-sm font-medium text-neutral-200 mt-0.5">
                 {order.price} VND
               </p>
+
+              {order.status === 'SOURCING' && (
+                <p className="text-xs text-neutral-500 mt-1">
+                  Đang lấy hàng từ nhà cung cấp ngoài…
+                </p>
+              )}
 
               {order.status === 'FULFILLED' && order.deliveredCredential && (
                 <CredentialBox credential={order.deliveredCredential} />

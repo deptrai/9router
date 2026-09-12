@@ -62,8 +62,12 @@ export default function CheckoutModal({
           setState({ kind: 'insufficient', missingAmount: body?.missingAmount ?? missing ?? '' });
         } else if (res.status === 409 && body?.errorCode === 'OUT_OF_STOCK') {
           setState({ kind: 'out-of-stock' });
+        } else if (res.status === 409 && body?.errorCode === 'ORDER_IN_PROGRESS') {
+          setState({ kind: 'error', message: 'Bạn đang có đơn hàng đang xử lý cho sản phẩm này. Vui lòng chờ hoàn tất.' });
         } else if (res.status === 409) {
           setState({ kind: 'error', message: 'Đơn hàng đang được xử lý. Vui lòng thử lại.' });
+        } else if (res.status === 503 || body?.errorCode === 'SOURCING_UNAVAILABLE') {
+          setState({ kind: 'error', message: 'Hệ thống nguồn hàng tạm gián đoạn — bạn không bị trừ tiền. Vui lòng thử lại sau.' });
         } else {
           setState({ kind: 'error', message: body?.message ?? 'Có lỗi xảy ra. Vui lòng thử lại.' });
         }

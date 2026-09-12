@@ -14,12 +14,6 @@ export class TelegramBotService {
     order: OrderDto,
     productTitle: string,
   ): Promise<void> {
-    const token = process.env.TELEGRAM_BOT_TOKEN;
-    if (!token) {
-      this.logger.warn('TELEGRAM_BOT_TOKEN not configured — skipping order confirmation');
-      return;
-    }
-
     const orderShortId = order.id.slice(0, 8);
     const credential = order.deliveredCredential ?? '';
 
@@ -34,30 +28,40 @@ export class TelegramBotService {
       .filter(Boolean)
       .join('\n');
 
-    const url = `https://api.telegram.org/bot${token}/sendMessage`;
-    const body = {
-      chat_id: String(telegramId),
+    await this.sendTelegramMessage(
+      String(telegramId),
       text,
-      parse_mode: 'HTML',
-    };
+      'order confirmation',
+    );
+  }
 
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const errBody = await res.text().catch(() => '');
-        this.logger.warn(
-          `Telegram sendMessage failed: HTTP ${res.status} ${errBody}`,
-        );
-      }
-    } catch (err: any) {
-      this.logger.warn(
-        `Telegram sendMessage error: ${err?.message ?? String(err)}`,
-      );
-    }
+  /**
+   * Notify the buyer that payment was taken and the order is being sourced
+   * externally. Durable Telegram record for the SOURCING state — the Mini App
+   * modal is transient and disappears on close.
+   * Fire-and-forget: never throws.
+   */
+  async sendSourcingNotice(
+    telegramId: number,
+    order: OrderDto,
+    productTitle: string,
+  ): Promise<void> {
+    const orderShortId = order.id.slice(0, 8);
+
+    const text = [
+      '⏳ <b>Đơn hàng đang được xử lý</b>',
+      `📦 Sản phẩm: ${escapeHtml(productTitle)}`,
+      `🆔 Đơn hàng: #${orderShortId}`,
+      `💰 Đã trừ: ${order.price} VND`,
+      'Hệ thống đang lấy hàng từ nhà cung cấp — key sẽ được giao tự động. Nếu thất bại, tiền được hoàn lại đầy đủ.',
+      'Mở Mini App → "Đơn hàng của tôi" để theo dõi.',
+    ].join('\n');
+
+    await this.sendTelegramMessage(
+      String(telegramId),
+      text,
+      'sourcing notice',
+    );
   }
 
   /**
@@ -65,21 +69,33 @@ export class TelegramBotService {
    * Fire-and-forget: never throws — notification failure must not break job execution.
    */
   async sendAdminAlert(text: string): Promise<void> {
-    const token = process.env.TELEGRAM_BOT_TOKEN;
-    if (!token) {
-      this.logger.warn('TELEGRAM_BOT_TOKEN not configured — skipping admin alert');
-      return;
-    }
-
     const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID?.trim();
     if (!adminChatId) {
       this.logger.warn('TELEGRAM_ADMIN_CHAT_ID not configured — skipping admin alert');
       return;
     }
 
+    await this.sendTelegramMessage(adminChatId, text, 'admin alert');
+  }
+
+  /**
+   * Shared sendMessage call — token check + fetch + warn-only error handling.
+   * Never throws.
+   */
+  private async sendTelegramMessage(
+    chatId: string,
+    text: string,
+    label: string,
+  ): Promise<void> {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    if (!token) {
+      this.logger.warn(`TELEGRAM_BOT_TOKEN not configured — skipping ${label}`);
+      return;
+    }
+
     const url = `https://api.telegram.org/bot${token}/sendMessage`;
     const body = {
-      chat_id: adminChatId,
+      chat_id: chatId,
       text,
       parse_mode: 'HTML',
     };
@@ -93,12 +109,12 @@ export class TelegramBotService {
       if (!res.ok) {
         const errBody = await res.text().catch(() => '');
         this.logger.warn(
-          `Telegram sendAdminAlert failed: HTTP ${res.status} ${errBody}`,
+          `Telegram ${label} failed: HTTP ${res.status} ${errBody}`,
         );
       }
     } catch (err: any) {
       this.logger.warn(
-        `Telegram sendAdminAlert error: ${err?.message ?? String(err)}`,
+        `Telegram ${label} error: ${err?.message ?? String(err)}`,
       );
     }
   }

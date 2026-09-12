@@ -64,6 +64,13 @@
       "when": 1789142678641,
       "tag": "0008_outgoing_glorian",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789173528813,
+      "tag": "0009_vengeful_lyja",
+      "breakpoints": true
     }
   ]
 }

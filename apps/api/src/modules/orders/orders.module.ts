@@ -6,9 +6,10 @@ import { InventoryModule } from '../inventory/inventory.module';
 import { WalletsModule } from '../wallets/wallets.module';
 import { UsersModule } from '../users/users.module';
 import { TelegramBotModule } from '../../common/telegram/telegram-bot.module';
+import { SuppliersModule } from '../suppliers/suppliers.module';
 
 @Module({
-  imports: [LedgerModule, InventoryModule, WalletsModule, UsersModule, TelegramBotModule],
+  imports: [LedgerModule, InventoryModule, WalletsModule, UsersModule, TelegramBotModule, SuppliersModule],
   controllers: [OrdersController],
   providers: [OrdersService],
   exports: [OrdersService],

@@ -1,0 +1,1 @@
+ALTER TABLE "products" ADD CONSTRAINT "products_sourcing_mode_valid" CHECK ("products"."sourcing_mode" IN ('IN_HOUSE', 'EXTERNAL', 'HYBRID'));
