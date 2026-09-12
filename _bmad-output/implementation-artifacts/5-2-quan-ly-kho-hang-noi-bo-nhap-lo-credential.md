@@ -1,6 +1,6 @@
 # Story 5.2: Quản lý Kho Hàng Nội bộ & Nhập Lô Credential
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
