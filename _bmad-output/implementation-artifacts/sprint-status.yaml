@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-09-10
-last_updated: 2026-09-12
+last_updated: 09-12-2026 16:23
 project: 9Router E-Commerce Platform
 project_key: 9R-ECOM
 tracking_system: file-system
@@ -69,12 +69,12 @@ development_status:
   3-4-ban-giao-credential-tuc-thi-lich-su-don-hang: done
   epic-3-retrospective: optional
 
-  epic-4: in-progress
+  epic-4: done
   4-1-dong-bo-gia-von-quy-tac-bien-loi-nhuan-tu-dong: done
   4-2-dieu-phoi-nguon-hang-thong-minh: done
   4-3-hang-doi-scraper-worker-mua-hang-tu-dong-ben-ngoai: done
-  4-4-may-trang-thai-don-hang-tu-dong-hoan-tien-60-giay: backlog
-  epic-4-retrospective: optional
+  4-4-may-trang-thai-don-hang-tu-dong-hoan-tien-60-giay: done
+  epic-4-retrospective: done
 
   epic-5: backlog
   5-1-quan-tri-danh-muc-san-pham-cau-hinh-nha-cung-cap: backlog
@@ -82,3 +82,22 @@ development_status:
   5-3-giam-sat-don-hang-can-thiep-thu-cong-hoan-tien: backlog
   5-4-bao-cao-doanh-thu-kiem-toan-so-cai-doi-soat-dong-tien: backlog
   epic-5-retrospective: optional
+action_items:
+  - id: "epic-4-retro-item-1-bổ-sung-script-worker-prod-trong-apps-ap"
+    epic: 4
+    action: "Bổ sung script worker:prod trong apps/api/package.json"
+    owner: "Amelia"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-09-12.md"
+  - id: "epic-4-retro-item-2-thiết-kế-giao-diện-admin-giám-sát-tỷ-lệ"
+    epic: 4
+    action: "Thiết kế giao diện Admin giám sát tỷ lệ timeout và scraper latency"
+    owner: "Mary"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-09-12.md"
+  - id: "epic-4-retro-item-3-hiển-thị-danh-sách-bullmq-failed-jobs-tr"
+    epic: 4
+    action: "Hiển thị danh sách BullMQ failed jobs trên Admin Dashboard"
+    owner: "Winston"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-09-12.md"
