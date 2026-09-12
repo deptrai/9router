@@ -1,5 +1,5 @@
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { eq, sql, inArray, and, desc, or, isNotNull } from 'drizzle-orm';
+import { eq, sql, inArray, and, desc, asc, or, isNotNull, lt, lte, gt, gte } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from './schema';
 
@@ -23,4 +23,4 @@ export type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export type DbOrTx = DbClient | DbTransaction;
 export * from './schema';
 export * from './crypto';
-export { schema, eq, sql, inArray, and, desc, or, isNotNull };
+export { schema, eq, sql, inArray, and, desc, asc, or, isNotNull, lt, lte, gt, gte };

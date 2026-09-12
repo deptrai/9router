@@ -1,14 +1,17 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
+import { Injectable, Inject, Optional, Logger } from '@nestjs/common';
 import type { Job } from 'bullmq';
-import { UnrecoverableError } from 'bullmq';
+import { Queue, UnrecoverableError } from 'bullmq';
+import { Redis } from 'ioredis';
 import {
   db,
   orders,
   products,
+  productInventory,
   supplierSources,
   supplierOrders,
   wallets,
   users,
+  encryptCredential,
   eq,
   and,
 } from '@repo/database';
@@ -16,6 +19,7 @@ import {
   OrderStatus,
   SupplierOrderStatus,
   LedgerType,
+  InventoryStatus,
   parseSignedDecimal,
   SourcingJobData,
   OrderDto,
@@ -29,6 +33,7 @@ import {
 import { SupplierPriceFetcherService } from '../../products/supplier-price-fetcher.service';
 import { LedgerService } from '../../ledger/ledger.service';
 import { TelegramBotService } from '../../../common/telegram/telegram-bot.service';
+import { SourcingTimeoutScheduler } from '../../../workers/sourcing-timeout.scheduler';
 
 @Injectable()
 export class SourcingExecutorService {
@@ -43,6 +48,9 @@ export class SourcingExecutorService {
     private readonly ledgerService: LedgerService,
     @Inject(TelegramBotService)
     private readonly telegramBot: TelegramBotService,
+    @Optional()
+    @Inject(SourcingTimeoutScheduler)
+    private readonly timeoutScheduler?: SourcingTimeoutScheduler,
   ) {}
 
   async execute(
@@ -171,21 +179,50 @@ export class SourcingExecutorService {
           .where(and(eq(orders.id, order.id), eq(orders.status, OrderStatus.SOURCING)))
           .returning();
 
-        if (!reserved) {
-          // Race lost: sweeper 4.4 or retry moved order already
-          return;
-        }
-
         // b. Consume supplier state NGUYÊN TỬ (FOR UPDATE trong commit — serialize per-supplier)
-        const finalRes = adapter.commit
-          ? await adapter.commit(supplier.id, purchaseRes, tx)
-          : purchaseRes;
+        let finalRes = purchaseRes;
+        if (adapter.commit) {
+          finalRes = await adapter.commit(supplier.id, purchaseRes, tx);
+        }
 
         // c. Validate credential (AC #6)
         const rawCred = finalRes?.credential;
         const trimmedCred = typeof rawCred === 'string' ? rawCred.trim() : '';
-        if (!trimmedCred || trimmedCred.length > 2000 || trimmedCred.includes('\0')) {
+        if (reserved && (!trimmedCred || trimmedCred.length > 2000 || trimmedCred.includes('\0'))) {
           throw new SupplierTerminalError('INVALID_OUTPUT');
+        }
+
+        const costVal =
+          finalRes.cost && /^\d+(\.\d{1,2})?$/.test(finalRes.cost)
+            ? finalRes.cost
+            : (costStr ?? null);
+
+        if (!reserved) {
+          // Race lost: sweeper or timeout refunded order while scraper was purchasing.
+          // Recover purchased credential into internal inventory so company funds are preserved.
+          if (trimmedCred && trimmedCred.length <= 2000 && !trimmedCred.includes('\0')) {
+            await tx.insert(productInventory).values({
+              productId: product.id,
+              credentialData: encryptCredential(trimmedCred),
+              status: InventoryStatus.AVAILABLE,
+            });
+            await tx.insert(supplierOrders).values({
+              orderId: order.id,
+              supplierSourceId: supplier.id,
+              externalOrderId: finalRes.externalOrderId ? String(finalRes.externalOrderId).slice(0, 255) : null,
+              cost: costVal,
+              status: SupplierOrderStatus.SUCCESS,
+              rawPayload: { note: 'ORPHANED_CREDENTIAL_RECOVERED_TO_INVENTORY_AFTER_TIMEOUT' },
+              completedAt: new Date(),
+            });
+            this.logger.warn(`Order ${order.id} was refunded by timeout; recovered credential into inventory for product ${product.id}`);
+            if (this.telegramBot?.sendAdminAlert) {
+              void this.telegramBot.sendAdminAlert(
+                `⚠️ Đơn hàng #${order.id.slice(0, 8)} đã hoàn tiền cho khách do timeout 60s, credential mua ngoài đã được tự động thu hồi về kho nội bộ.`,
+              ).catch(() => {});
+            }
+          }
+          return;
         }
 
         // d. Ghi credential + audit
@@ -197,11 +234,6 @@ export class SourcingExecutorService {
           })
           .where(eq(orders.id, order.id))
           .returning();
-
-        const costVal =
-          finalRes.cost && /^\d+(\.\d{1,2})?$/.test(finalRes.cost)
-            ? finalRes.cost
-            : (costStr ?? null);
 
         await tx.insert(supplierOrders).values({
           orderId: order.id,
@@ -224,13 +256,20 @@ export class SourcingExecutorService {
           };
       });
 
-      if (committed && buyer?.telegramId && fulfilledOrder) {
-        const orderDto = this.toOrderDto(fulfilledOrder, product.title);
-        this.telegramBot
-          .sendOrderConfirmation(buyer.telegramId, orderDto, product.title)
-          .catch((err) => {
-            this.logger.warn(`Failed to send order confirmation: ${err?.message ?? err}`);
-          });
+      if (committed && fulfilledOrder) {
+        // Cancel 60s delayed timeout job since order was fulfilled successfully
+        if (this.timeoutScheduler) {
+          void this.timeoutScheduler.cancelTimeout(order.id).catch(() => {});
+        }
+
+        if (buyer?.telegramId) {
+          const orderDto = this.toOrderDto(fulfilledOrder, product.title);
+          this.telegramBot
+            .sendOrderConfirmation(buyer.telegramId, orderDto, product.title)
+            .catch((err) => {
+              this.logger.warn(`Failed to send order confirmation: ${err?.message ?? err}`);
+            });
+        }
       }
     } catch (err: any) {
       if (err instanceof SupplierTerminalError) {

@@ -110,3 +110,29 @@ test('getMyOrders returns empty array when no orders', async () => {
   const res = await controller.getMyOrders(telegramUser as any);
   assert.deepStrictEqual(res, []);
 });
+
+test('GET /api/orders/:id returns OrderDto on success', async () => {
+  const mockService = {
+    getOrderByIdForUser: async (user: any, orderId: string) => {
+      assert.strictEqual(user.id, telegramUser.id);
+      assert.strictEqual(orderId, 'order-uuid-1');
+      return mockOrder as OrderDto;
+    },
+  } as any;
+  const controller = new OrdersController(mockService);
+  const res = await controller.getOrderById(telegramUser as any, 'order-uuid-1');
+  assert.strictEqual(res.id, 'order-uuid-1');
+  assert.strictEqual(res.status, OrderStatus.FULFILLED);
+});
+
+test('GET /api/orders/:id throws NotFoundException when order not found', async () => {
+  const mockService = {
+    getOrderByIdForUser: async () => null,
+  } as any;
+  const controller = new OrdersController(mockService);
+  await assert.rejects(
+    () => controller.getOrderById(telegramUser as any, 'missing-id'),
+    (err: any) => err?.getResponse()?.errorCode === 'ORDER_NOT_FOUND',
+  );
+});
+

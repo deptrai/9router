@@ -8,15 +8,25 @@ import { OrderStatus } from '@repo/shared-types';
 function StatusBadge({ status }: { status: OrderStatus }) {
   const cls =
     status === OrderStatus.FULFILLED
-      ? 'bg-green-600/20 text-green-400'
-      : status === OrderStatus.PENDING ||
-          status === OrderStatus.PAID ||
-          status === OrderStatus.SOURCING
-        ? 'bg-yellow-600/20 text-yellow-400'
-        : 'bg-red-600/20 text-red-400';
+      ? 'bg-green-600/20 text-green-400 border border-green-500/30'
+      : status === OrderStatus.REFUNDED
+        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+        : status === OrderStatus.PENDING ||
+            status === OrderStatus.PAID ||
+            status === OrderStatus.SOURCING
+          ? 'bg-yellow-600/20 text-yellow-400 border border-yellow-500/30'
+          : 'bg-red-600/20 text-red-400 border border-red-500/30';
+
+  const label =
+    status === OrderStatus.REFUNDED
+      ? 'ĐÃ HOÀN TIỀN'
+      : status === OrderStatus.SOURCING
+        ? 'ĐANG LẤY HÀNG'
+        : status;
+
   return (
-    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${cls}`}>
-      {status}
+    <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold ${cls}`}>
+      {label}
     </span>
   );
 }
@@ -174,6 +184,14 @@ export default function OrdersPage() {
                 <p className="text-xs text-neutral-500 mt-1">
                   Đang lấy hàng từ nhà cung cấp ngoài…
                 </p>
+              )}
+
+              {order.status === 'REFUNDED' && (
+                <div className="mt-2 rounded-lg bg-amber-500/10 border border-amber-500/20 p-2.5">
+                  <p className="text-xs text-amber-300 font-medium">
+                    Đã hoàn lại 100% tiền vào ví do nhà cung cấp không phản hồi hoặc quá 60s.
+                  </p>
+                </div>
               )}
 
               {order.status === 'FULFILLED' && order.deliveredCredential && (

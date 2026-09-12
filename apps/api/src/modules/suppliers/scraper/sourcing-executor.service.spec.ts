@@ -701,7 +701,7 @@ test('[P0] SourcingExecutor: invalid output credential after commit causes rollb
   }
 });
 
-test('[P1] SourcingExecutor: race lost on fulfill does not write audit and does not notify', async () => {
+test('[P1] SourcingExecutor: race lost on fulfill recovers credential into inventory and audits recovery', async () => {
   const { service, cleanup, auditInserts, telegramCalls } = createHarness({
     fulfillRowsAffected: 0, // 0 rows updated
   });
@@ -712,8 +712,12 @@ test('[P1] SourcingExecutor: race lost on fulfill does not write audit and does 
       opts: { attempts: 3 },
     } as any);
 
-    // Early return: no audit row inserted, no telegram confirmation
-    assert.strictEqual(auditInserts.length, 0);
+    // Credential is recovered to inventory and audited; customer is NOT confirmed
+    assert.strictEqual(auditInserts.length, 1);
+    assert.strictEqual(auditInserts[0].status, SupplierOrderStatus.SUCCESS);
+    assert.deepStrictEqual(auditInserts[0].rawPayload, {
+      note: 'ORPHANED_CREDENTIAL_RECOVERED_TO_INVENTORY_AFTER_TIMEOUT',
+    });
     assert.strictEqual(telegramCalls.length, 0);
   } finally {
     cleanup();

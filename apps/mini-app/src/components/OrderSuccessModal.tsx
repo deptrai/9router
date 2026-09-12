@@ -1,30 +1,122 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import type { OrderDto } from '@repo/shared-types';
+import { apiClient } from '../lib/api-client';
 
 export default function OrderSuccessModal({
   order,
-  credential,
+  credential: initialCredential,
   onClose,
 }: {
   order: OrderDto;
   credential: string;
   onClose: () => void;
 }) {
+  const [currentOrder, setCurrentOrder] = useState<OrderDto>(order);
+  const [credential, setCredential] = useState<string>(initialCredential);
   const [copied, setCopied] = useState(false);
-  const isSuccess = order.status === 'FULFILLED' && credential.length > 0;
+  const [countdown, setCountdown] = useState<number>(60);
+
+  const isSuccess = currentOrder.status === 'FULFILLED' && credential.length > 0;
+  const isRefunded = currentOrder.status === 'REFUNDED';
   const isProcessing =
-    order.status === 'SOURCING' ||
-    order.status === 'PAID' ||
-    order.status === 'PENDING';
+    currentOrder.status === 'SOURCING' ||
+    currentOrder.status === 'PAID' ||
+    currentOrder.status === 'PENDING';
+
+  // Haptic feedback on initial open if in SOURCING mode
+  useEffect(() => {
+    if (isProcessing) {
+      window.Telegram?.WebApp?.HapticFeedback?.impactOccurred('light');
+    }
+  }, []);
+
+  // 60-second countdown timer for visual progress
+  useEffect(() => {
+    if (!isProcessing) return;
+    const timer = setInterval(() => {
+      setCountdown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isProcessing]);
+
+  // Real-time polling for SOURCING orders
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    if (!isProcessing) return;
+
+    let timeoutId: NodeJS.Timeout;
+    const startTime = Date.now();
+    const MAX_POLL_DURATION_MS = 75_000; // 75s circuit breaker
+
+    const pollSingleOrder = async () => {
+      if (!isMountedRef.current) return;
+
+      try {
+        const updated = await apiClient.get<OrderDto>(`/api/orders/${order.id}`);
+        if (!isMountedRef.current || !updated) return;
+
+        if (updated.status !== currentOrder.status) {
+          setCurrentOrder(updated);
+
+          if (updated.status === 'FULFILLED') {
+            if (updated.deliveredCredential) {
+              setCredential(updated.deliveredCredential);
+            }
+            window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
+            return; // Terminal state reached
+          }
+
+          if (updated.status === 'REFUNDED') {
+            window.dispatchEvent(new Event('wallet_refresh'));
+            window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('warning');
+            return; // Terminal state reached
+          }
+        }
+      } catch {
+        // Fallback: poll general orders array if single-order endpoint is unavailable
+        try {
+          const list = await apiClient.get<OrderDto[]>('/api/orders');
+          const found = list?.find((o) => o.id === order.id);
+          if (isMountedRef.current && found && found.status !== currentOrder.status) {
+            setCurrentOrder(found);
+            if (found.status === 'FULFILLED') {
+              if (found.deliveredCredential) setCredential(found.deliveredCredential);
+              window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
+              return;
+            }
+            if (found.status === 'REFUNDED') {
+              window.dispatchEvent(new Event('wallet_refresh'));
+              window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('warning');
+              return;
+            }
+          }
+        } catch {
+          // Network errors are tolerated silently during polling
+        }
+      }
+
+      if (Date.now() - startTime < MAX_POLL_DURATION_MS && isMountedRef.current) {
+        timeoutId = setTimeout(pollSingleOrder, 2500);
+      }
+    };
+
+    timeoutId = setTimeout(pollSingleOrder, 2500);
+
+    return () => {
+      isMountedRef.current = false;
+      clearTimeout(timeoutId);
+    };
+  }, [order.id, isProcessing, currentOrder.status]);
 
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(credential);
       setCopied(true);
-      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
+      window.Telegram?.WebApp?.HapticFeedback?.impactOccurred('light');
       setTimeout(() => setCopied(false), 2000);
     } catch {
       // Fallback for older WebView
@@ -47,16 +139,18 @@ export default function OrderSuccessModal({
 
         <div className="text-center">
           <div className="text-4xl mb-2">
-            {isSuccess ? '🎉' : isProcessing ? '⏳' : '❌'}
+            {isSuccess ? '🎉' : isRefunded ? '🛡️' : isProcessing ? '⏳' : '❌'}
           </div>
           <h2 className="text-base font-bold text-neutral-50">
             {isSuccess
               ? 'Mua hàng thành công!'
-              : isProcessing
-                ? 'Đơn hàng đang xử lý'
-                : 'Đơn hàng không thành công'}
+              : isRefunded
+                ? 'Đã hoàn tiền vào ví'
+                : isProcessing
+                  ? 'Đơn hàng đang xử lý'
+                  : 'Đơn hàng không thành công'}
           </h2>
-          <p className="text-xs text-neutral-400 mt-1">Đơn hàng #{order.id.slice(0, 8)}</p>
+          <p className="text-xs text-neutral-400 mt-1">Đơn hàng #{currentOrder.id.slice(0, 8)}</p>
         </div>
 
         {isSuccess ? (
@@ -66,14 +160,26 @@ export default function OrderSuccessModal({
               {credential}
             </p>
           </div>
+        ) : isRefunded ? (
+          <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-4 text-center">
+            <p className="text-sm text-amber-300 font-medium">
+              Nhà cung cấp tạm hết hàng, hệ thống đã hoàn trả 100% tiền vào ví của bạn.
+            </p>
+          </div>
         ) : (
           <div className="rounded-xl bg-neutral-800 p-4">
-            <p className="text-sm text-neutral-300 text-center">
-              {isProcessing
-                ? 'Hệ thống đang lấy hàng từ nhà cung cấp — key sẽ được giao tự động trong giây lát. Nếu thất bại, tiền được hoàn lại đầy đủ.'
-                : order.status === 'REFUNDED'
-                  ? 'Đơn hàng đã được hoàn tiền — số dư đã về ví của bạn.'
-                  : 'Đơn hàng không thể hoàn tất. Vui lòng liên hệ hỗ trợ nếu tài khoản đã bị trừ tiền.'}
+            <p className="text-sm text-neutral-300 text-center mb-3">
+              Đang lấy tài khoản từ đối tác (thường mất 15-30s)... Nếu quá 60s, tiền được hoàn lại 100% vào ví.
+            </p>
+            {/* 60s Countdown Progress Bar */}
+            <div className="w-full bg-neutral-700/50 rounded-full h-2 overflow-hidden">
+              <div
+                className="bg-amber-500 h-2 transition-all duration-1000 ease-linear rounded-full"
+                style={{ width: `${Math.max(5, (countdown / 60) * 100)}%` }}
+              />
+            </div>
+            <p className="text-xs text-neutral-400 text-right mt-1.5 font-mono">
+              Thời gian tối đa: {countdown}s
             </p>
           </div>
         )}
@@ -94,7 +200,7 @@ export default function OrderSuccessModal({
             onClick={onClose}
             className="flex-1 h-11 rounded-xl bg-neutral-800 text-neutral-300 text-sm font-semibold active:bg-neutral-700 transition-colors"
           >
-            Xong
+            {isSuccess || isRefunded ? 'Xong' : 'Đóng (Vẫn xử lý nền)'}
           </button>
         </div>
 

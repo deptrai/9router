@@ -3,8 +3,11 @@ import {
   Get,
   Post,
   Body,
+  Param,
   UseGuards,
   BadRequestException,
+  NotFoundException,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { TelegramAuthGuard } from '../../common/guards/telegram-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -24,6 +27,21 @@ export class OrdersController {
   @Get()
   async getMyOrders(@CurrentUser() telegramUser: TelegramUserDto): Promise<OrderDto[]> {
     return this.ordersService.getMyOrders(telegramUser);
+  }
+
+  @Get(':id')
+  async getOrderById(
+    @CurrentUser() telegramUser: TelegramUserDto,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<OrderDto> {
+    const order = await this.ordersService.getOrderByIdForUser(telegramUser, id);
+    if (!order) {
+      throw new NotFoundException({
+        errorCode: 'ORDER_NOT_FOUND',
+        message: `Order ${id} not found`,
+      });
+    }
+    return order;
   }
 
   @Post('checkout')

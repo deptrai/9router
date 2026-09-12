@@ -174,6 +174,7 @@ export const orders = pgTable(
   (table) => [
     index('orders_user_id_idx').on(table.userId),
     index('orders_product_id_idx').on(table.productId),
+    index('orders_status_created_at_idx').on(table.status, table.createdAt),
     check('orders_status_valid', sql`${table.status} IN ('PENDING', 'PAID', 'SOURCING', 'FULFILLED', 'REFUNDED', 'FAILED')`),
   ]
 );

@@ -1,5 +1,7 @@
 import {
   Injectable,
+  Inject,
+  Optional,
   Logger,
   NotFoundException,
   ConflictException,
@@ -37,6 +39,8 @@ import { WalletsService } from '../wallets/wallets.service';
 import { UsersService } from '../users/users.service';
 import { TelegramBotService } from '../../common/telegram/telegram-bot.service';
 import { SourcingQueueService } from '../suppliers/sourcing-queue.service';
+import { SourcingTimeoutScheduler } from '../../workers/sourcing-timeout.scheduler';
+import { assertValidOrderTransition } from './order-state-machine';
 import { InsufficientFundsException } from '../../common/exceptions/insufficient-funds.exception';
 
 type OrderRecord = typeof orders.$inferSelect;
@@ -75,6 +79,9 @@ export class OrdersService {
     private readonly usersService: UsersService,
     private readonly telegramBotService: TelegramBotService,
     private readonly sourcingQueue: SourcingQueueService,
+    @Optional()
+    @Inject(SourcingTimeoutScheduler)
+    private readonly sourcingTimeoutScheduler?: SourcingTimeoutScheduler,
   ) {}
 
   /**
@@ -247,6 +254,7 @@ export class OrdersService {
 
             // f. Debit committed → order is paid (FR-14 state machine:
             //    PENDING → PAID → FULFILLED | SOURCING)
+            assertValidOrderTransition(order.status as OrderStatus, OrderStatus.PAID);
             await tx
               .update(orders)
               .set({ status: OrderStatus.PAID })
@@ -298,6 +306,7 @@ export class OrdersService {
                 });
               }
 
+              assertValidOrderTransition(OrderStatus.PAID, OrderStatus.SOURCING);
               const [sourcing] = await tx
                 .update(orders)
                 .set({ status: OrderStatus.SOURCING })
@@ -333,6 +342,7 @@ export class OrdersService {
             );
 
             // i. Update order → FULFILLED
+            assertValidOrderTransition(OrderStatus.PAID, OrderStatus.FULFILLED);
             const [fulfilled] = await tx
               .update(orders)
               .set({
@@ -415,6 +425,7 @@ export class OrdersService {
               info.orderId,
               tx,
             );
+            assertValidOrderTransition(OrderStatus.SOURCING, OrderStatus.REFUNDED);
             await tx
               .update(orders)
               .set({ status: OrderStatus.REFUNDED })
@@ -431,6 +442,17 @@ export class OrdersService {
           errorCode: 'SOURCING_UNAVAILABLE',
           message: 'Sourcing queue is not available',
         });
+      }
+
+      // Sourcing job enqueued successfully -> Arm 60s timeout post-commit with fallback to sweeper
+      if (this.sourcingTimeoutScheduler) {
+        try {
+          await this.sourcingTimeoutScheduler.scheduleTimeout(result.order.id, 60_000);
+        } catch (timeoutErr: any) {
+          this.logger.warn(
+            `Failed to schedule timeout for order ${result.order.id}: ${timeoutErr?.message || timeoutErr} — sweeper will act as fallback`,
+          );
+        }
       }
 
       // Payment taken + job queued — tell the buyer it is being processed
@@ -525,6 +547,26 @@ export class OrdersService {
       .orderBy(desc(orders.createdAt));
 
     return rows.map((r) => toOrderDto(r.order, r.productTitle ?? undefined));
+  }
+
+  /**
+   * Get a single order by ID for the current user.
+   * Joins products to include productTitle.
+   */
+  async getOrderByIdForUser(
+    telegramUser: TelegramUserDto,
+    orderId: string,
+  ): Promise<OrderDto | null> {
+    const userRecord = await this.usersService.upsertByTelegram(telegramUser);
+
+    const [row] = await db
+      .select({ order: orders, productTitle: products.title })
+      .from(orders)
+      .leftJoin(products, eq(orders.productId, products.id))
+      .where(and(eq(orders.id, orderId), eq(orders.userId, userRecord.id)))
+      .limit(1);
+
+    return row ? toOrderDto(row.order, row.productTitle ?? undefined) : null;
   }
 
   async getOrderByIdempotencyKey(key: string): Promise<OrderDto | null> {
