@@ -169,3 +169,31 @@ test('sendAdminAlert sends alert payload to admin chat id', async () => {
   }
 });
 
+test('sendRefundNotice sends expected refund message with HTML escaping', async () => {
+  const origToken = process.env.TELEGRAM_BOT_TOKEN;
+  process.env.TELEGRAM_BOT_TOKEN = 'test-token-xyz';
+  const fetchCalls: any[] = [];
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async (url: any, init: any) => {
+    fetchCalls.push({ url: String(url), init });
+    return new Response('{"ok":true}', { status: 200 });
+  };
+
+  try {
+    const svc = new TelegramBotService();
+    await svc.sendRefundNotice(123456, mockOrder, 'Netflix & Spotify <Premium>');
+    assert.strictEqual(fetchCalls.length, 1);
+    const parsed = JSON.parse(fetchCalls[0].init.body as string);
+    assert.strictEqual(parsed.chat_id, '123456');
+    assert.strictEqual(parsed.parse_mode, 'HTML');
+    assert(parsed.text.includes('Netflix &amp; Spotify &lt;Premium&gt;'));
+    assert(parsed.text.includes('không thể giao từ nhà cung cấp ngoài'));
+    assert(parsed.text.includes('200000.00 VND đã được hoàn lại đầy đủ'));
+  } finally {
+    globalThis.fetch = origFetch;
+    if (origToken !== undefined) process.env.TELEGRAM_BOT_TOKEN = origToken;
+    else delete process.env.TELEGRAM_BOT_TOKEN;
+  }
+});
+
+

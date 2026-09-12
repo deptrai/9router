@@ -65,6 +65,29 @@ export class TelegramBotService {
   }
 
   /**
+   * Notify the buyer that sourcing failed and the order amount was refunded.
+   * Fire-and-forget: never throws.
+   */
+  async sendRefundNotice(
+    telegramId: number,
+    order: OrderDto,
+    productTitle: string,
+  ): Promise<void> {
+    const orderShortId = order.id.slice(0, 8);
+
+    const text = [
+      `❌ Đơn hàng #${orderShortId} — ${escapeHtml(productTitle)} không thể giao từ nhà cung cấp ngoài.`,
+      `💰 ${order.price} VND đã được hoàn lại đầy đủ vào ví của bạn.`,
+    ].join('\n');
+
+    await this.sendTelegramMessage(
+      String(telegramId),
+      text,
+      'refund notice',
+    );
+  }
+
+  /**
    * Send alert message to store admin via Telegram Bot API.
    * Fire-and-forget: never throws — notification failure must not break job execution.
    */

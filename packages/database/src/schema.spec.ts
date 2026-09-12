@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { users, wallets, ledgerTransactions, paymentTransactions, supplierSources, products, adminAlerts } from './schema';
+import { users, wallets, ledgerTransactions, paymentTransactions, supplierSources, products, adminAlerts, supplierOrders } from './schema';
 
 test('Database schema exports required tables with constraints', () => {
   assert.ok(users, 'users table must be exported');
@@ -10,6 +10,10 @@ test('Database schema exports required tables with constraints', () => {
   assert.ok(supplierSources, 'supplierSources table must be exported');
   assert.ok(products, 'products table must be exported');
   assert.ok(adminAlerts, 'adminAlerts table must be exported');
+  assert.ok(supplierOrders, 'supplierOrders table must be exported');
+  assert.ok('orderId' in supplierOrders, 'supplierOrders must have orderId');
+  assert.ok('status' in supplierOrders, 'supplierOrders must have status');
+  assert.ok('cost' in supplierOrders, 'supplierOrders must have cost');
   assert.ok('languageCode' in users, 'users table must have languageCode column');
   assert.ok('isPremium' in users, 'users table must have isPremium column');
   assert.ok('markupFixedVnd' in supplierSources, 'supplierSources must have markupFixedVnd column');

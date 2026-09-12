@@ -6,7 +6,9 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "nest start",
     "dev": "nest start --watch",
-    "test": "tsx --test src/**/*.spec.ts",
+    "test": "tsx --test \"src/**/*.spec.ts\"",
+    "worker": "tsx src/worker.ts",
+    "worker:watch": "tsx watch src/worker.ts",
     "lint": "tsc --noEmit"
   },
   "dependencies": {

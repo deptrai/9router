@@ -67,3 +67,10 @@ export enum PriceSyncAction {
   FAILED = 'FAILED',
   SKIPPED = 'SKIPPED',
 }
+
+export enum SupplierOrderStatus {
+  PENDING = 'PENDING',
+  SUCCESS = 'SUCCESS',
+  FAILED = 'FAILED',
+}
+

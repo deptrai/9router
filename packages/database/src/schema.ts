@@ -178,6 +178,31 @@ export const orders = pgTable(
   ]
 );
 
+export const supplierOrders = pgTable(
+  'supplier_orders',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orderId: uuid('order_id')
+      .notNull()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    supplierSourceId: uuid('supplier_source_id').references(() => supplierSources.id, { onDelete: 'set null' }),
+    externalOrderId: varchar('external_order_id', { length: 255 }),
+    cost: numeric('cost', { precision: 18, scale: 2 }),
+    status: varchar('status', { length: 32 }).notNull().default('PENDING'),
+    rawPayload: jsonb('raw_payload'),
+    errorMessage: text('error_message'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('supplier_orders_order_idx').on(table.orderId),
+    index('supplier_orders_supplier_idx').on(table.supplierSourceId),
+    index('supplier_orders_status_idx').on(table.status),
+    check('supplier_orders_status_valid', sql`${table.status} IN ('PENDING', 'SUCCESS', 'FAILED')`),
+    check('supplier_orders_cost_non_negative', sql`${table.cost} IS NULL OR ${table.cost} >= 0`),
+  ]
+);
+
 export const productInventory = pgTable(
   'product_inventory',
   {
