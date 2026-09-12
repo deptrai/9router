@@ -959,3 +959,236 @@ test('checkout marks PAID then SOURCING for external routing (PENDING→PAID→S
     cleanup();
   }
 });
+
+// ---------------------------------------------------------------------------
+// Story 5.3: Admin Orders & Manual Refund Tests
+// ---------------------------------------------------------------------------
+
+test('[P0] OrdersService: listAdminOrders returns paginated order rows with total count', async () => {
+  const { service, cleanup } = makeService({});
+  const chainBuilder: any = {
+    innerJoin: () => chainBuilder,
+    leftJoin: () => chainBuilder,
+    where: () => chainBuilder,
+    orderBy: () => chainBuilder,
+    limit: () => chainBuilder,
+    offset: () => Promise.resolve([
+      {
+        order: {
+          id: 'order-1',
+          userId: 'user-1',
+          productId: 'prod-1',
+          price: '50000.00',
+          status: OrderStatus.PAID,
+          createdAt: new Date(),
+          fulfilledAt: null,
+        },
+        user: {
+          telegramId: 111222,
+          username: 'test_user',
+        },
+        product: {
+          title: 'Test Product',
+          sourcingMode: 'IN_HOUSE',
+        },
+        supplier: null,
+      },
+    ]),
+    then: (resolve: any) => resolve([{ count: 1 }]),
+  };
+
+  const mockTx: any = {
+    select: (fields?: any) => ({
+      from: (table: any) => chainBuilder,
+    }),
+  };
+
+  try {
+    const result = await service.listAdminOrders({ limit: 10, offset: 0 }, mockTx);
+    assert.strictEqual(result.orders.length, 1);
+    assert.strictEqual(result.orders[0].id, 'order-1');
+    assert.strictEqual(result.orders[0].telegramId, 111222);
+    assert.strictEqual(result.orders[0].productTitle, 'Test Product');
+  } finally {
+    cleanup();
+  }
+});
+
+test('[P0] OrdersService: getAdminOrderDetail returns complete order, customer, product, and traces', async () => {
+  const { service, cleanup } = makeService({});
+  const mockTx: any = {
+    select: (fields?: any) => ({
+      from: (table: any) => ({
+        innerJoin: () => ({
+          leftJoin: () => ({
+            innerJoin: () => ({
+              where: () => ({
+                limit: () => Promise.resolve([
+                  {
+                    order: {
+                      id: 'order-1',
+                      userId: 'user-1',
+                      productId: 'prod-1',
+                      price: '50000.00',
+                      status: OrderStatus.FULFILLED,
+                      deliveredCredential: 'user@example.com:password123',
+                      createdAt: new Date(),
+                      fulfilledAt: new Date(),
+                    },
+                    user: {
+                      id: 'user-1',
+                      telegramId: 111222,
+                      username: 'test_user',
+                      firstName: 'Test',
+                      lastName: 'User',
+                    },
+                    wallet: {
+                      balance: '120000.00',
+                    },
+                    product: {
+                      id: 'prod-1',
+                      title: 'Test Product',
+                      slug: 'test-product',
+                      price: '50000.00',
+                      sourcingMode: 'IN_HOUSE',
+                      category: 'AI',
+                    },
+                  },
+                ]),
+              }),
+            }),
+          }),
+        }),
+        leftJoin: () => ({
+          where: () => ({
+            orderBy: () => Promise.resolve([]),
+          }),
+        }),
+        where: () => ({
+          orderBy: () => Promise.resolve([]),
+        }),
+      }),
+    }),
+  };
+
+  try {
+    const detail = await service.getAdminOrderDetail('order-1', mockTx);
+    assert.strictEqual(detail.order.id, 'order-1');
+    assert.strictEqual(detail.customer.telegramId, 111222);
+    assert.strictEqual(detail.product.title, 'Test Product');
+    assert.ok(detail.order.deliveredCredential?.includes('***'), 'credential must be masked');
+  } finally {
+    cleanup();
+  }
+});
+
+test('[P0] OrdersService: adminManualRefund refunds wallet, sets REFUNDED status, and notifies customer', async () => {
+  let creditCalled = false;
+  let noticeSent = false;
+  const { service, cleanup } = makeService({});
+
+  (service as any).ledgerService = {
+    credit: async () => {
+      creditCalled = true;
+      return {};
+    },
+  };
+  (service as any).telegramBotService = {
+    sendRefundNotice: async () => {
+      noticeSent = true;
+    },
+  };
+
+  const mockTx: any = {
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          for: () => ({
+            limit: () => Promise.resolve([
+              {
+                id: 'order-1',
+                userId: 'user-1',
+                productId: 'prod-1',
+                price: '50000.00',
+                status: OrderStatus.FULFILLED,
+              },
+            ]),
+          }),
+          limit: () => Promise.resolve([
+            { id: 'user-1', telegramId: 111222 },
+          ]),
+        }),
+      }),
+    }),
+    update: () => ({
+      set: () => ({
+        where: () => ({
+          returning: () => Promise.resolve([
+            {
+              id: 'order-1',
+              status: OrderStatus.REFUNDED,
+              price: '50000.00',
+            },
+          ]),
+        }),
+      }),
+    }),
+  };
+
+  try {
+    const res = await service.adminManualRefund('order-1', 'admin-user', 'Faulty key replacement', false, mockTx);
+    assert.strictEqual(res.ok, true);
+    assert.strictEqual(res.refunded, true);
+    assert.strictEqual(res.orderId, 'order-1');
+    assert.strictEqual(res.refundedAmount, '50000.00');
+    assert.strictEqual(creditCalled, true, 'LedgerService.credit must be called');
+  } finally {
+    cleanup();
+  }
+});
+
+test('[P1] OrdersService: adminManualRefund rejects REFUNDED or PENDING orders with ConflictException', async () => {
+  const { service, cleanup } = makeService({});
+
+  const mockTxRefunded: any = {
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          for: () => ({
+            limit: () => Promise.resolve([
+              { id: 'order-1', status: OrderStatus.REFUNDED },
+            ]),
+          }),
+        }),
+      }),
+    }),
+  };
+
+  const mockTxPending: any = {
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          for: () => ({
+            limit: () => Promise.resolve([
+              { id: 'order-2', status: OrderStatus.PENDING },
+            ]),
+          }),
+        }),
+      }),
+    }),
+  };
+
+  try {
+    await assert.rejects(
+      () => service.adminManualRefund('order-1', 'admin-user', 'Test', false, mockTxRefunded),
+      (err: any) => err.response?.errorCode === 'ORDER_ALREADY_REFUNDED' || err.errorCode === 'ORDER_ALREADY_REFUNDED',
+    );
+
+    await assert.rejects(
+      () => service.adminManualRefund('order-2', 'admin-user', 'Test', false, mockTxPending),
+      (err: any) => err.response?.errorCode === 'ORDER_CANNOT_BE_REFUNDED' || err.errorCode === 'ORDER_CANNOT_BE_REFUNDED',
+    );
+  } finally {
+    cleanup();
+  }
+});

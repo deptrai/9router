@@ -404,3 +404,84 @@ export interface DecryptCredentialResponseDto {
   ok: boolean;
   credential: string;
 }
+
+// ---------------------------------------------------------------------------
+// Admin Orders & Manual Refund Management DTOs (Story 5.3)
+// ---------------------------------------------------------------------------
+
+export interface AdminOrderListItemDto {
+  id: string;
+  userId: string;
+  telegramId: number;
+  username: string | null;
+  productId: string;
+  productTitle: string;
+  price: string;
+  status: OrderStatus;
+  sourcingMode: ProductSourcingMode;
+  supplierName: string | null;
+  createdAt: string;
+  fulfilledAt: string | null;
+}
+
+export interface SupplierOrderTraceDto {
+  id: string;
+  orderId: string;
+  supplierName: string | null;
+  externalOrderId: string | null;
+  cost: string | null;
+  status: string;
+  rawPayload: unknown | null;
+  errorMessage: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface AdminOrderDetailDto {
+  order: OrderDto;
+  customer: {
+    id: string;
+    telegramId: number;
+    username: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    walletBalance: string;
+  };
+  product: {
+    id: string;
+    title: string;
+    slug: string;
+    price: string;
+    sourcingMode: ProductSourcingMode;
+    category: string | null;
+  };
+  supplierTraces: SupplierOrderTraceDto[];
+  ledgerTransactions: LedgerTransactionDto[];
+}
+
+export interface AdminManualRefundDto {
+  reason: string;
+  markCredentialDefective?: boolean;
+}
+
+export interface AdminManualRefundResponseDto {
+  ok: boolean;
+  refunded: boolean;
+  orderId: string;
+  refundedAmount: string;
+  refundedAt: string;
+}
+
+export interface ListAdminOrdersQueryDto {
+  limit?: number;
+  offset?: number;
+  status?: OrderStatus;
+  search?: string;
+  productId?: string;
+}
+
+export interface ListAdminOrdersResponseDto {
+  ok: boolean;
+  orders: AdminOrderListItemDto[];
+  total: number;
+}

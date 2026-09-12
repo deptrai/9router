@@ -32,27 +32,23 @@ test('[P0] OrderStateMachine: VALID_ORDER_TRANSITIONS allows valid transitions f
   assert.strictEqual(allowed.includes(OrderStatus.PENDING), false, 'Backtrack SOURCING -> PENDING forbidden');
 });
 
-test('[P0] OrderStateMachine: terminal states (FULFILLED, REFUNDED, FAILED) have zero allowed transitions', () => {
-  assert.deepStrictEqual(VALID_ORDER_TRANSITIONS[OrderStatus.FULFILLED], [], 'FULFILLED must have no transitions');
+test('[P0] OrderStateMachine: FULFILLED allows REFUNDED transition for customer disputes / manual refunds', () => {
+  assert.deepStrictEqual(VALID_ORDER_TRANSITIONS[OrderStatus.FULFILLED], [OrderStatus.REFUNDED], 'FULFILLED must only allow REFUNDED');
   assert.deepStrictEqual(VALID_ORDER_TRANSITIONS[OrderStatus.REFUNDED], [], 'REFUNDED must have no transitions');
   assert.deepStrictEqual(VALID_ORDER_TRANSITIONS[OrderStatus.FAILED], [], 'FAILED must have no transitions');
 });
 
-test('[P0] OrderStateMachine: assertValidOrderTransition throws when transitioning from terminal FULFILLED', () => {
-  assert.throws(
-    () => assertValidOrderTransition(OrderStatus.FULFILLED, OrderStatus.REFUNDED),
-    (err: any) => {
-      assert(err instanceof InvalidOrderTransitionException);
-      assert.strictEqual(err.from, OrderStatus.FULFILLED);
-      assert.strictEqual(err.to, OrderStatus.REFUNDED);
-      return true;
-    },
-    'Must throw when transitioning from FULFILLED to REFUNDED',
-  );
+test('[P0] OrderStateMachine: assertValidOrderTransition allows FULFILLED -> REFUNDED, throws for other FULFILLED transitions', () => {
+  assert.doesNotThrow(() => assertValidOrderTransition(OrderStatus.FULFILLED, OrderStatus.REFUNDED));
   assert.throws(
     () => assertValidOrderTransition(OrderStatus.FULFILLED, OrderStatus.PAID),
     InvalidOrderTransitionException,
     'Must throw when transitioning from FULFILLED to PAID',
+  );
+  assert.throws(
+    () => assertValidOrderTransition(OrderStatus.FULFILLED, OrderStatus.SOURCING),
+    InvalidOrderTransitionException,
+    'Must throw when transitioning from FULFILLED to SOURCING',
   );
 });
 
@@ -88,6 +84,7 @@ test('[P1] OrderStateMachine: assertValidOrderTransition permits valid transitio
   assert.doesNotThrow(() => assertValidOrderTransition(OrderStatus.PAID, OrderStatus.FULFILLED));
   assert.doesNotThrow(() => assertValidOrderTransition(OrderStatus.SOURCING, OrderStatus.FULFILLED));
   assert.doesNotThrow(() => assertValidOrderTransition(OrderStatus.SOURCING, OrderStatus.REFUNDED));
+  assert.doesNotThrow(() => assertValidOrderTransition(OrderStatus.FULFILLED, OrderStatus.REFUNDED));
 });
 
 test('[P1] OrderStateMachine: assertValidOrderTransition rejects invalid skipping transitions (PENDING -> SOURCING)', () => {
@@ -116,6 +113,7 @@ test('[P1] OrderStateMachine: assertValidOrderTransition rejects self transition
 
 test('[P2] OrderStateMachine: isValidOrderTransition returns boolean without throwing', () => {
   assert.strictEqual(isValidOrderTransition(OrderStatus.SOURCING, OrderStatus.REFUNDED), true);
+  assert.strictEqual(isValidOrderTransition(OrderStatus.FULFILLED, OrderStatus.REFUNDED), true);
   assert.strictEqual(isValidOrderTransition(OrderStatus.REFUNDED, OrderStatus.FULFILLED), false);
   assert.strictEqual(isValidOrderTransition(OrderStatus.PENDING, OrderStatus.REFUNDED), false);
 });

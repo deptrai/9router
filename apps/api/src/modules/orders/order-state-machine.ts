@@ -4,7 +4,7 @@ export const VALID_ORDER_TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]
   [OrderStatus.PENDING]: [OrderStatus.PAID, OrderStatus.FAILED],
   [OrderStatus.PAID]: [OrderStatus.SOURCING, OrderStatus.FULFILLED, OrderStatus.REFUNDED],
   [OrderStatus.SOURCING]: [OrderStatus.FULFILLED, OrderStatus.REFUNDED],
-  [OrderStatus.FULFILLED]: [],
+  [OrderStatus.FULFILLED]: [OrderStatus.REFUNDED],
   [OrderStatus.REFUNDED]: [],
   [OrderStatus.FAILED]: [],
 };
