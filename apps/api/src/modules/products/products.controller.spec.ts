@@ -44,6 +44,6 @@ test('POST /products/sync-prices delegates to priceSyncService and has proper gu
   // Verify guards applied at method level
   const guards = Reflect.getMetadata('__guards__', controller.syncPrices);
   assert.ok(Array.isArray(guards));
-  assert.ok(guards.includes(TelegramAuthGuard));
   assert.ok(guards.includes(AdminRoleGuard));
+  assert.ok(!guards.includes(TelegramAuthGuard));
 });

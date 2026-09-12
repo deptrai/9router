@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { ForbiddenException, UnauthorizedException, ExecutionContext } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException, InternalServerErrorException, ExecutionContext } from '@nestjs/common';
 import { AdminRoleGuard } from './admin-role.guard';
 import { UserRole } from '@repo/shared-types';
 
@@ -152,7 +152,7 @@ test('AdminRoleGuard throws 401 with invalid x-admin-key header', async () => {
   }
 });
 
-test('AdminRoleGuard throws 401 when ADMIN_API_KEY is not configured or < 32 chars', async () => {
+test('AdminRoleGuard throws 500 when ADMIN_API_KEY is not configured or < 32 chars', async () => {
   const origKey = process.env.ADMIN_API_KEY;
   process.env.ADMIN_API_KEY = 'short-key-16char'; // < 32 chars
 
@@ -160,16 +160,14 @@ test('AdminRoleGuard throws 401 when ADMIN_API_KEY is not configured or < 32 cha
     const guard = new AdminRoleGuard({} as any);
     const context = createMockContext(undefined, { 'x-admin-key': 'short-key-16char' });
 
-    await assert.rejects(
-      () => guard.canActivate(context),
-      (err: any) => {
-        assert.ok(err instanceof UnauthorizedException);
-        const res = err.getResponse() as any;
-        assert.strictEqual(res.errorCode, 'AUTH_INVALID_ADMIN_KEY');
-        assert.match(res.message, /min 32 chars/i);
-        return true;
-      },
-    );
+    try {
+      await guard.canActivate(context);
+      assert.fail('Should have thrown');
+    } catch (err: any) {
+      // Server misconfiguration must fail closed with 500, not 401
+      assert.strictEqual(err.status, 500);
+      assert.strictEqual(err.response?.errorCode, 'INTERNAL_SERVER_ERROR');
+    }
   } finally {
     if (origKey !== undefined) process.env.ADMIN_API_KEY = origKey;
     else delete process.env.ADMIN_API_KEY;

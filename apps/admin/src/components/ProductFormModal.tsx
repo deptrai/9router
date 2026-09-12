@@ -11,6 +11,23 @@ import {
 import { apiClient } from '../lib/api-client';
 import { useToast } from './Toast';
 
+/** Parse a decimal string to scale-2 BigInt units (1 VND = 100 units) */
+function parseToScale2(value: string): bigint {
+  const trimmed = value.trim();
+  if (!trimmed || isNaN(Number(trimmed))) return 0n;
+  const [intPart, decPart = ''] = trimmed.split('.');
+  const dec = (decPart + '00').slice(0, 2);
+  return BigInt(intPart) * 100n + BigInt(dec);
+}
+
+/** Format scale-2 BigInt units back to decimal string */
+function formatScale2(units: bigint): string {
+  const vnd = units / 100n;
+  const cents = units % 100n;
+  return `${vnd}.${cents.toString().padStart(2, '0')}`;
+}
+
+
 interface ProductFormModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -72,17 +89,21 @@ export function ProductFormModal({
     }
   }, [product, suppliers, isOpen]);
 
-  // Real-time calculated price preview
+  // Real-time calculated price preview — mirrors computeRetailPrice from pricing.engine.ts
+  // using BigInt scale-2 integer arithmetic to avoid floating-point rounding discrepancies
   const selectedSupplier = suppliers.find((s) => s.id === supplierSourceId);
   let previewPrice: string | null = null;
   if (autoPricing && upstreamCost && selectedSupplier) {
-    const costNum = parseFloat(upstreamCost);
-    const pct = parseFloat(selectedSupplier.markupPercentage || '0');
-    const fixed = parseFloat(selectedSupplier.markupFixedVnd || '0');
-    if (!isNaN(costNum) && costNum > 0) {
-      const raw = costNum * (1 + pct / 100) + fixed;
-      const rounded = Math.round(raw / 1000) * 1000;
-      previewPrice = rounded.toFixed(2);
+    try {
+      const costUnits = parseToScale2(upstreamCost);
+      const pctBp = parseToScale2(selectedSupplier.markupPercentage || '0');
+      const fixedUnits = parseToScale2(selectedSupplier.markupFixedVnd || '0');
+      const rawUnits = (costUnits * (10_000n + pctBp) + fixedUnits * 10_000n) / 10_000n;
+      const rounded = ((rawUnits + 50_000n) / 100_000n) * 100_000n;
+      const finalUnits = rounded < 100_000n ? 100_000n : rounded;
+      previewPrice = formatScale2(finalUnits);
+    } catch {
+      previewPrice = null;
     }
   }
 

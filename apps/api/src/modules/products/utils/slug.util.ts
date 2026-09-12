@@ -1,4 +1,4 @@
-import { products, type DbOrTx } from '@repo/database';
+import { products, eq, or, sql, type DbOrTx } from '@repo/database';
 
 /**
  * Normalizes a string (with full Vietnamese diacritics support) into a kebab-case slug.
@@ -29,10 +29,16 @@ export async function generateUniqueSlug(
 ): Promise<string> {
   const baseSlug = slugify(title);
 
-  // Query existing slugs matching baseSlug
+  // Query existing slugs matching baseSlug or prefixed variants only
   const existingRows = await tx
     .select({ slug: products.slug, id: products.id })
-    .from(products);
+    .from(products)
+    .where(
+      or(
+        eq(products.slug, baseSlug),
+        sql`${products.slug} LIKE ${baseSlug + '-%'}`,
+      ),
+    );
 
   const matching = existingRows.filter(
     (row) =>

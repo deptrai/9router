@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  InternalServerErrorException,
   Optional,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -28,10 +29,11 @@ export class AdminRoleGuard implements CanActivate {
     if (adminKeyHeader && typeof adminKeyHeader === 'string') {
       const configuredKey = process.env.ADMIN_API_KEY;
       if (!configuredKey || configuredKey.length < 32) {
-        throw new UnauthorizedException({
-          statusCode: 401,
-          errorCode: 'AUTH_INVALID_ADMIN_KEY',
-          message: 'Admin API Key not configured securely on server (min 32 chars)',
+        console.error('[AdminRoleGuard] ADMIN_API_KEY is not configured or is less than 32 characters');
+        throw new InternalServerErrorException({
+          statusCode: 500,
+          errorCode: 'INTERNAL_SERVER_ERROR',
+          message: 'Internal server error',
         });
       }
 

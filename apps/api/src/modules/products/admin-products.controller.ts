@@ -90,6 +90,22 @@ export class AdminProductsController {
       });
     }
 
+    if (body.upstreamCost !== undefined && body.upstreamCost !== null && (typeof body.upstreamCost !== 'string' || !/^\d+(\.\d{1,2})?$/.test(body.upstreamCost))) {
+      throw new BadRequestException({
+        statusCode: 400,
+        errorCode: 'INVALID_PRODUCT_PAYLOAD',
+        message: 'upstreamCost must be a valid non-negative numeric string',
+      });
+    }
+
+    if (body.maxUpstreamCost !== undefined && body.maxUpstreamCost !== null && (typeof body.maxUpstreamCost !== 'string' || !/^\d+(\.\d{1,2})?$/.test(body.maxUpstreamCost))) {
+      throw new BadRequestException({
+        statusCode: 400,
+        errorCode: 'INVALID_PRODUCT_PAYLOAD',
+        message: 'maxUpstreamCost must be a valid non-negative numeric string',
+      });
+    }
+
     const product = await this.productsService.createProduct(body);
     return { ok: true, product };
   }
@@ -120,6 +136,30 @@ export class AdminProductsController {
         statusCode: 400,
         errorCode: 'INVALID_PRODUCT_PAYLOAD',
         message: 'Product price must be a valid non-negative numeric string',
+      });
+    }
+
+    if (body.sourcingMode !== undefined && !['IN_HOUSE', 'EXTERNAL', 'HYBRID'].includes(body.sourcingMode)) {
+      throw new BadRequestException({
+        statusCode: 400,
+        errorCode: 'INVALID_PRODUCT_PAYLOAD',
+        message: 'Invalid sourcingMode',
+      });
+    }
+
+    if (body.upstreamCost !== undefined && body.upstreamCost !== null && (typeof body.upstreamCost !== 'string' || !/^\d+(\.\d{1,2})?$/.test(body.upstreamCost))) {
+      throw new BadRequestException({
+        statusCode: 400,
+        errorCode: 'INVALID_PRODUCT_PAYLOAD',
+        message: 'upstreamCost must be a valid non-negative numeric string',
+      });
+    }
+
+    if (body.maxUpstreamCost !== undefined && body.maxUpstreamCost !== null && (typeof body.maxUpstreamCost !== 'string' || !/^\d+(\.\d{1,2})?$/.test(body.maxUpstreamCost))) {
+      throw new BadRequestException({
+        statusCode: 400,
+        errorCode: 'INVALID_PRODUCT_PAYLOAD',
+        message: 'maxUpstreamCost must be a valid non-negative numeric string',
       });
     }
 

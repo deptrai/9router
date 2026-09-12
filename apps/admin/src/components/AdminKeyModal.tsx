@@ -37,8 +37,8 @@ export function AdminKeyModal() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!keyInput || keyInput.trim().length < 16) {
-      setError('Admin API Key phải có độ dài tối thiểu 16 ký tự (khuyến nghị 32 ký tự trở lên)');
+    if (!keyInput || keyInput.trim().length < 32) {
+      setError('Admin API Key phải có độ dài tối thiểu 32 ký tự');
       return;
     }
 

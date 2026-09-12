@@ -13,7 +13,9 @@ test('slugify: normalizes Vietnamese accents and special characters into kebab-c
 test('generateUniqueSlug: returns base slug when no collision exists', async () => {
   const mockTx: any = {
     select: () => ({
-      from: () => Promise.resolve([]),
+      from: () => ({
+        where: () => Promise.resolve([]),
+      }),
     }),
   };
 
@@ -24,11 +26,13 @@ test('generateUniqueSlug: returns base slug when no collision exists', async () 
 test('generateUniqueSlug: appends incremental suffix when collision exists', async () => {
   const mockTx: any = {
     select: () => ({
-      from: () =>
-        Promise.resolve([
-          { slug: 'netflix-premium', id: 'other-id-1' },
-          { slug: 'netflix-premium-2', id: 'other-id-2' },
-        ]),
+      from: () => ({
+        where: () =>
+          Promise.resolve([
+            { slug: 'netflix-premium', id: 'other-id-1' },
+            { slug: 'netflix-premium-2', id: 'other-id-2' },
+          ]),
+      }),
     }),
   };
 
@@ -39,10 +43,12 @@ test('generateUniqueSlug: appends incremental suffix when collision exists', asy
 test('generateUniqueSlug: reuses existing slug when current product already owns it', async () => {
   const mockTx: any = {
     select: () => ({
-      from: () =>
-        Promise.resolve([
-          { slug: 'netflix-premium', id: 'current-product-id' },
-        ]),
+      from: () => ({
+        where: () =>
+          Promise.resolve([
+            { slug: 'netflix-premium', id: 'current-product-id' },
+          ]),
+      }),
     }),
   };
 

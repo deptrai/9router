@@ -126,6 +126,14 @@ export class SuppliersController {
       });
     }
 
+    if (body.configCredentials !== undefined && body.configCredentials !== null && (typeof body.configCredentials !== 'object' || Array.isArray(body.configCredentials))) {
+      throw new BadRequestException({
+        statusCode: 400,
+        errorCode: 'INVALID_SUPPLIER_PAYLOAD',
+        message: 'configCredentials must be a valid JSON object',
+      });
+    }
+
     const supplier = await this.suppliersService.updateSupplier(id, body);
     return { ok: true, supplier };
   }

@@ -305,16 +305,22 @@ export class ProductsService {
     }
 
     // 3. Price calculation if autoPricing
+    const shouldAutoPrice = dto.autoPricing ?? true;
     let finalPrice = dto.price;
-    if (dto.autoPricing && dto.upstreamCost && supplierRecord) {
+    if (shouldAutoPrice && dto.upstreamCost && supplierRecord) {
       try {
         finalPrice = computeRetailPrice(
           dto.upstreamCost,
           supplierRecord.markupPercentage,
           supplierRecord.markupFixedVnd,
         );
-      } catch {
-        finalPrice = dto.price;
+      } catch (err) {
+        console.error('[ProductsService] Auto-pricing calculation failed on create:', err);
+        throw new BadRequestException({
+          statusCode: 400,
+          errorCode: 'INVALID_PRODUCT_PAYLOAD',
+          message: 'Auto-pricing calculation failed. Check upstreamCost and supplier markup values.',
+        });
       }
     }
 
@@ -390,10 +396,12 @@ export class ProductsService {
     }
 
     const newSourcingMode = dto.sourcingMode ?? (existing.sourcingMode as ProductSourcingMode);
-    const newSupplierId = dto.supplierSourceId !== undefined ? dto.supplierSourceId : existing.supplierSourceId;
+    let newSupplierId = dto.supplierSourceId !== undefined ? dto.supplierSourceId : existing.supplierSourceId;
 
     let supplierName: string | null = null;
     let supplierRecord: typeof supplierSources.$inferSelect | undefined;
+
+    const willBeActive = dto.isActive ?? existing.isActive;
 
     if (newSourcingMode === ProductSourcingMode.EXTERNAL || newSourcingMode === ProductSourcingMode.HYBRID) {
       if (!newSupplierId) {
@@ -404,13 +412,22 @@ export class ProductsService {
         });
       }
 
-      const [activeSupplier] = await tx
-        .select({ id: supplierSources.id })
+      const [foundSup] = await tx
+        .select()
         .from(supplierSources)
-        .where(and(eq(supplierSources.id, newSupplierId), eq(supplierSources.isActive, true)))
+        .where(eq(supplierSources.id, newSupplierId))
         .limit(1);
 
-      if (!activeSupplier) {
+      if (!foundSup) {
+        throw new BadRequestException({
+          statusCode: 400,
+          errorCode: 'INVALID_PRODUCT_PAYLOAD',
+          message: 'Referenced supplier source does not exist',
+        });
+      }
+
+      // Only enforce active supplier when the product will be active
+      if (willBeActive && !foundSup.isActive) {
         throw new BadRequestException({
           statusCode: 400,
           errorCode: 'INVALID_PRODUCT_PAYLOAD',
@@ -418,28 +435,23 @@ export class ProductsService {
         });
       }
 
-      const [foundSup] = await tx
-        .select()
-        .from(supplierSources)
-        .where(eq(supplierSources.id, newSupplierId))
-        .limit(1);
-
-      if (!foundSup || !foundSup.isActive) {
-        throw new BadRequestException({
-          statusCode: 400,
-          errorCode: 'INVALID_PRODUCT_PAYLOAD',
-          message: 'Referenced supplier source does not exist or is inactive',
-        });
-      }
       supplierRecord = foundSup;
       supplierName = foundSup.name;
-    } else if (newSupplierId) {
-      const [foundSup] = await tx
-        .select({ name: supplierSources.name })
-        .from(supplierSources)
-        .where(eq(supplierSources.id, newSupplierId))
-        .limit(1);
-      supplierName = foundSup?.name ?? null;
+    } else {
+      // IN_HOUSE: clear supplier link
+      if (dto.sourcingMode === ProductSourcingMode.IN_HOUSE && dto.supplierSourceId === undefined) {
+        // Explicitly clear the supplier link when switching to IN_HOUSE
+        // unless a specific supplierSourceId is provided
+        newSupplierId = null;
+      }
+      if (newSupplierId) {
+        const [foundSup] = await tx
+          .select({ name: supplierSources.name })
+          .from(supplierSources)
+          .where(eq(supplierSources.id, newSupplierId))
+          .limit(1);
+        supplierName = foundSup?.name ?? null;
+      }
     }
 
     // Slug immutability: only change slug if explicitly supplied
@@ -463,19 +475,27 @@ export class ProductsService {
     }
 
     // Price calculation if autoPricing
-    let finalPrice = dto.price ?? existing.price;
     const isAutoPricing = dto.autoPricing !== undefined ? dto.autoPricing : existing.autoPricing;
     const effectiveUpstream = dto.upstreamCost !== undefined ? dto.upstreamCost : existing.upstreamCost;
+    let finalPrice = existing.price;
 
-    if (isAutoPricing && effectiveUpstream && supplierRecord) {
+    if (dto.price !== undefined && dto.autoPricing === undefined) {
+      // Explicit price update without changing autoPricing — use provided price directly
+      finalPrice = dto.price;
+    } else if (isAutoPricing && effectiveUpstream && supplierRecord) {
       try {
         finalPrice = computeRetailPrice(
           effectiveUpstream,
           supplierRecord.markupPercentage,
           supplierRecord.markupFixedVnd,
         );
-      } catch {
-        finalPrice = dto.price ?? existing.price;
+      } catch (err) {
+        console.error('[ProductsService] Auto-pricing calculation failed:', err);
+        throw new BadRequestException({
+          statusCode: 400,
+          errorCode: 'INVALID_PRODUCT_PAYLOAD',
+          message: 'Auto-pricing calculation failed. Check upstreamCost and supplier markup values.',
+        });
       }
     }
 
