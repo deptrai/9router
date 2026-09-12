@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
 import type { Job } from 'bullmq';
 import { UnrecoverableError } from 'bullmq';
 import {
@@ -35,9 +35,13 @@ export class SourcingExecutorService {
   private readonly logger = new Logger(SourcingExecutorService.name);
 
   constructor(
+    @Inject(AdapterRegistryService)
     private readonly adapterRegistry: AdapterRegistryService,
+    @Inject(SupplierPriceFetcherService)
     private readonly priceFetcher: SupplierPriceFetcherService,
+    @Inject(LedgerService)
     private readonly ledgerService: LedgerService,
+    @Inject(TelegramBotService)
     private readonly telegramBot: TelegramBotService,
   ) {}
 

@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Inject,
   Logger,
   OnModuleInit,
   OnModuleDestroy,
@@ -15,7 +16,10 @@ export class SourcingWorker implements OnModuleInit, OnModuleDestroy {
   private worker?: Worker;
   private connection?: Redis;
 
-  constructor(private readonly executor: SourcingExecutorService) {}
+  constructor(
+    @Inject(SourcingExecutorService)
+    private readonly executor: SourcingExecutorService,
+  ) {}
 
   protected createConnection(url: string): Redis {
     return new Redis(url, {

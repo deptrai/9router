@@ -7,8 +7,8 @@
     "start": "nest start",
     "dev": "nest start --watch",
     "test": "tsx --test \"src/**/*.spec.ts\"",
-    "worker": "tsx src/worker.ts",
-    "worker:watch": "tsx watch src/worker.ts",
+    "worker": "nest start --entryFile worker",
+    "worker:watch": "nest start --entryFile worker --watch",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
