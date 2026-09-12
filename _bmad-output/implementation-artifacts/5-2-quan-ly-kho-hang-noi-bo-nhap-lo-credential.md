@@ -7,7 +7,7 @@ Status: ready-for-dev
 ## Story
 
 As an Admin (Quản trị viên kho hàng),  
-I want a dedicated web management interface to inspect in-house product inventory and bulk-import digital keys/credentials via multi-line text paste,  
+I want a dedicated web management interface to inspect in-house product inventory and bulk-import digital credentials via multi-line text paste,  
 so that I can quickly replenish stock for high-demand digital items with AES-256-GCM encryption and monitor real-time stock metrics (available, reserved, sold, defective) across the catalog.
 
 ## Acceptance Criteria
@@ -18,34 +18,42 @@ so that I can quickly replenish stock for high-demand digital items with AES-256
    - **Then** the `AdminRoleGuard` validates the credentials in constant time using SHA-256 comparison and grants access.
    - **And** unauthenticated or invalid requests receive HTTP 401 `AUTH_UNAUTHORIZED` / `AUTH_INVALID_ADMIN_KEY`.
    - **And** server key misconfiguration (< 32 chars) fails closed with HTTP 500 `INTERNAL_SERVER_ERROR`.
+   - **And** all route parameters (`:productId`, `:id`) are strictly validated using `new ParseUUIDPipe({ version: '4' })`.
 
 2. **Bulk Credential Ingestion Endpoint (`POST /api/admin/inventory/products/:productId/batch`):**
-   - **Given** an Admin posting a batch payload `{ credentials: string[] }` for a valid product `productId`,
+   - **Given** an Admin posting a batch payload `{ credentials: string[] }` for product `productId`,
    - **When** the endpoint processes the batch,
-   - **Then** each line is trimmed, empty lines and comment lines (starting with `#`) are filtered out.
-   - **And** the server checks that the product exists and has `sourcingMode` in `['IN_HOUSE', 'HYBRID']`; if `sourcingMode === 'EXTERNAL'`, it rejects with HTTP 400 `PRODUCT_DOES_NOT_ACCEPT_INVENTORY`.
-   - **And** if the array of valid lines exceeds 500, it rejects with HTTP 400 `BATCH_SIZE_EXCEEDED`.
+   - **Then** raw input text normalizes CRLF (`\r\n` → `\n`), trims each line, and filters out empty lines and comment lines (starting with `#`).
+   - **And** if no valid lines remain, the server rejects with HTTP 400 `EMPTY_BATCH_PAYLOAD`.
+   - **And** enforces safety limits: each line must be $\le 2,048$ characters (`LINE_TOO_LONG`), and the total valid lines cannot exceed 500 (`BATCH_SIZE_EXCEEDED`).
+   - **And** checks that the target product exists, is active (`isActive = true`), and has `sourcingMode` in `['IN_HOUSE', 'HYBRID']`; if `isActive = false`, rejects with HTTP 400 `PRODUCT_IS_INACTIVE`; if `sourcingMode === 'EXTERNAL'`, rejects with HTTP 400 `PRODUCT_DOES_NOT_ACCEPT_INVENTORY`.
+   - **And** automatically deduplicates identical credential lines within the submitted batch using `new Set()` prior to encryption.
    - **And** each credential string is encrypted with AES-256-GCM using `encryptCredential()` from `@repo/database` and inserted into `product_inventory` with `status = 'AVAILABLE'` in a single atomic database transaction.
    - **And** returns `{ ok: true, count: number, productId: string, addedAt: string }`.
 
-3. **Inventory Inspection & Masking Endpoint (`GET /api/admin/inventory/products/:productId`):**
+3. **Inventory Inspection & Deterministic Masking Endpoint (`GET /api/admin/inventory/products/:productId`):**
    - **Given** an Admin querying inventory items for a product with query parameters `?limit=50&offset=0&status=AVAILABLE`,
    - **When** the query executes,
-   - **Then** the API returns paginated records `{ ok: true, items: AdminInventoryItemDto[], total: number }`.
-   - **And** the `credentialData` field is masked by default (e.g. `user****@domain.com` or `XXXX-****-YYYY`) to prevent unauthorized mass exposure on operator screens.
-   - **And** individual item details can be inspected/decrypted via `GET /api/admin/inventory/items/:id/decrypt` (audit-logged).
+   - **Then** the API returns paginated records `{ ok: true, items: AdminInventoryItemDto[], total: number }`. If no items exist, returns `{ ok: true, items: [], total: 0 }` with HTTP 200.
+   - **And** the `credentialData` field is masked by default using a deterministic algorithm:
+     - Email credential (`user@domain.com`): mask username part (`u***r@domain.com`).
+     - User/Pass credential (`user:password`): mask password segment (`user:********`).
+     - License Key format (contains hyphens e.g. `XXXX-YYYY-ZZZZ`): preserve first and last chunks (`XXXX-****-ZZZZ`).
+     - Generic fallback: if length $\le 6$ characters show `***`; if length $> 6$ characters, preserve first 3 and last 3 characters with `***` in between.
+   - **And** an individual credential can be decrypted via `GET /api/admin/inventory/items/:id/decrypt`, which requires valid admin auth and logs an audit record (Admin ID, IP address, timestamp) to prevent silent data exfiltration.
 
 4. **Credential Removal & Defective Status Guard (`DELETE /api/admin/inventory/items/:id` & `PATCH /api/admin/inventory/items/:id/status`):**
    - **Given** an Admin attempting to delete or change status of a credential record by `id`,
-   - **When** the credential has `status = 'AVAILABLE'` or `status = 'DEFECTIVE'`,
-   - **Then** the record can be deleted from `product_inventory` or updated to `DEFECTIVE`.
-   - **And** if the credential has `status = 'RESERVED'` or `status = 'SOLD'`, the deletion is rejected with HTTP 409 Conflict `CANNOT_DELETE_ACTIVE_OR_SOLD_CREDENTIAL` to preserve order fulfillment records and audit trails.
+   - **When** executing the deletion, it executes an atomic conditional delete:
+     `DELETE FROM product_inventory WHERE id = :id AND status IN ('AVAILABLE', 'DEFECTIVE') RETURNING id`
+   - **And** if 0 rows are deleted because the credential has `status = 'RESERVED'` or `status = 'SOLD'`, the request is rejected with HTTP 409 Conflict `CANNOT_DELETE_ACTIVE_OR_SOLD_CREDENTIAL` to preserve buyer fulfillment history and prevent race conditions with active checkout locks.
+   - **And** an Admin can toggle status to `DEFECTIVE` (`PATCH /api/admin/inventory/items/:id/status` with `{ status: 'DEFECTIVE' }`) for pre-sale defective keys.
 
 5. **Admin Web Portal Inventory Management UI (`apps/admin/src/app/inventory/page.tsx`):**
    - **Given** an Admin navigating to `/inventory` in the Admin Web Portal,
    - **When** the page renders,
-   - **Then** it displays a Product Selector dropdown/combobox (showing title, stock count, sourcing mode).
-   - **And** shows 4 real-time KPI summary cards for the selected product:
+   - **Then** it displays a searchable Product Selector (combobox) showing title, stock count, and sourcing badge. If no products exist in the store, an empty state guide with link to `/products` is displayed.
+   - **And** displays 4 real-time KPI summary cards for the selected product:
      - Khả dụng (`AVAILABLE`): Emerald badge + count
      - Đang giữ chỗ (`RESERVED`): Blue badge + count
      - Đã bán (`SOLD`): Slate badge + count
@@ -56,8 +64,8 @@ so that I can quickly replenish stock for high-demand digital items with AES-256
    - **Given** an Admin clicking "Nhập lô Credential" for a product,
    - **When** the modal opens,
    - **Then** it provides a large monospace textarea for pasting multi-line text (e.g. license keys, email:pass).
-   - **And** provides a live line counter (e.g. "Đã phát hiện X dòng hợp lệ, loại bỏ Y dòng trống").
-   - **And** displays safety warning if product has `sourcingMode = 'EXTERNAL'`.
+   - **And** provides a live line counter (e.g. "Đã phát hiện X dòng hợp lệ, loại bỏ Y dòng trống/chú thích").
+   - **And** displays an immediate blocking warning if the selected product has `sourcingMode = 'EXTERNAL'` or `isActive = false`.
    - **And** upon submission, calls `POST /api/admin/inventory/products/:productId/batch`, shows a success toast (e.g. "Đã nhập thành công X key vào kho"), closes modal, and refreshes the table and stock counts immediately.
 
 7. **Dashboard Overview KPI Live Integration (`apps/admin/src/app/page.tsx`):**
@@ -70,40 +78,41 @@ so that I can quickly replenish stock for high-demand digital items with AES-256
 - [ ] Task 1: Mở rộng DTOs và Contracts trong `@repo/shared-types` (AC: #1, #2, #3, #4)
   - [ ] Subtask 1.1: Định nghĩa `AdminInventoryItemDto` (id, productId, status, orderId, addedAt, soldAt, maskedCredential).
   - [ ] Subtask 1.2: Định nghĩa `AdminGlobalInventorySummaryDto` (totalAvailable, totalReserved, totalSold, totalDefective, productStockSummaries).
-  - [ ] Subtask 1.3: Định nghĩa `BatchImportCredentialsDto` và `BatchImportCredentialsResponseDto`.
+  - [ ] Subtask 1.3: Định nghĩa `BatchImportCredentialsDto` (credentials, allowDuplicates) và `BatchImportCredentialsResponseDto`.
   - [ ] Subtask 1.4: Định nghĩa `UpdateCredentialStatusDto` (status: `AVAILABLE` | `DEFECTIVE`).
 
 - [ ] Task 2: Mở rộng `InventoryService` và Tiện ích Masking Backend (AC: #1, #2, #3, #4)
-  - [ ] Subtask 2.1: Triển khai hàm bảo mật `maskCredential(plaintext: string): string` trong `apps/api/src/modules/inventory/utils/credential-mask.util.ts`.
-  - [ ] Subtask 2.2: Bổ sung method `listProductInventory(productId, query, tx)` trong `InventoryService` hỗ trợ phân trang (`limit`, `offset`), filter theo `status`, và tự động giải mã + mask dữ liệu trước khi trả về.
+  - [ ] Subtask 2.1: Triển khai hàm bảo mật `maskCredential(plaintext: string): string` trong `apps/api/src/modules/inventory/utils/credential-mask.util.ts` theo thuật toán xác định.
+  - [ ] Subtask 2.2: Bổ sung method `listProductInventory(productId, query, tx)` trong `InventoryService` hỗ trợ phân trang (`limit`, `offset`), filter theo `status`, và tự động giải mã + mask dữ liệu trước khi trả về (trả về mảng rỗng nếu 0 records).
   - [ ] Subtask 2.3: Bổ sung method `getGlobalInventorySummary(tx)` trong `InventoryService` tính tổng kho toàn hệ thống.
-  - [ ] Subtask 2.4: Bổ sung method `deleteCredential(id, tx)` kiểm tra `status IN ('AVAILABLE', 'DEFECTIVE')`; ném `409 ConflictException` (`CANNOT_DELETE_ACTIVE_OR_SOLD_CREDENTIAL`) nếu trạng thái là `RESERVED` hoặc `SOLD`.
-  - [ ] Subtask 2.5: Bổ sung method `updateCredentialStatus(id, newStatus, tx)` cho phép đổi trạng thái giữa `AVAILABLE` và `DEFECTIVE`.
-  - [ ] Subtask 2.6: Bổ sung method `decryptSingleCredential(id, tx)` trả về plaintext của 1 credential duy nhất phục vụ admin audit.
+  - [ ] Subtask 2.4: Bổ sung method `batchImportCredentials(productId, lines, tx)` validate `isActive`, `sourcingMode != EXTERNAL`, giới hạn 2,048 chars/dòng, tối đa 500 lines, deduplicate `new Set()`, mã hóa AES-256-GCM.
+  - [ ] Subtask 2.5: Bổ sung method `deleteCredential(id, tx)` thực thi atomic conditional delete `WHERE id = :id AND status IN ('AVAILABLE', 'DEFECTIVE')`; ném `409 ConflictException` (`CANNOT_DELETE_ACTIVE_OR_SOLD_CREDENTIAL`) nếu 0 rows deleted.
+  - [ ] Subtask 2.6: Bổ sung method `updateCredentialStatus(id, newStatus, tx)` cho phép đổi trạng thái giữa `AVAILABLE` và `DEFECTIVE`.
+  - [ ] Subtask 2.7: Bổ sung method `decryptSingleCredential(id, tx)` trả về plaintext của 1 credential duy nhất kèm audit logging.
 
 - [ ] Task 3: Triển khai `AdminInventoryController` với `AdminRoleGuard` (AC: #1, #2, #3, #4)
-  - [ ] Subtask 3.1: Khởi tạo `@Controller('admin/inventory')` được bảo vệ bằng `@UseGuards(AdminRoleGuard)`.
+  - [ ] Subtask 3.1: Khởi tạo `@Controller('admin/inventory')` được bảo vệ bằng `@UseGuards(AdminRoleGuard)` (giữ nguyên `inventory.controller.ts` cho các luồng public).
   - [ ] Subtask 3.2: Khai báo endpoint `GET /summary` trả về thống kê kho toàn cục.
-  - [ ] Subtask 3.3: Khai báo endpoint `GET /products/:productId` trả về danh sách inventory items có phân trang.
-  - [ ] Subtask 3.4: Khai báo endpoint `GET /products/:productId/summary` trả về stock metrics chi tiết của sản phẩm.
-  - [ ] Subtask 3.5: Khai báo endpoint `POST /products/:productId/batch` thực hiện ingest credentials hàng loạt (validate tối đa 500, encrypt AES-256-GCM, transactional insert).
-  - [ ] Subtask 3.6: Khai báo endpoint `DELETE /items/:id` và `PATCH /items/:id/status` với guard kiểm tra tính toàn vẹn trạng thái.
-  - [ ] Subtask 3.7: Khai báo endpoint `GET /items/:id/decrypt` cho phép xem chi tiết credential giải mã.
+  - [ ] Subtask 3.3: Khai báo endpoint `GET /products/:productId` (kèm `ParseUUIDPipe`) trả về danh sách inventory items có phân trang.
+  - [ ] Subtask 3.4: Khai báo endpoint `GET /products/:productId/summary` (kèm `ParseUUIDPipe`) trả về stock metrics chi tiết của sản phẩm.
+  - [ ] Subtask 3.5: Khai báo endpoint `POST /products/:productId/batch` (kèm `ParseUUIDPipe`) thực hiện ingest credentials hàng loạt (validate tối đa 500, encrypt AES-256-GCM, transactional insert).
+  - [ ] Subtask 3.6: Khai báo endpoint `DELETE /items/:id` và `PATCH /items/:id/status` (kèm `ParseUUIDPipe`) với guard kiểm tra tính toàn vẹn trạng thái.
+  - [ ] Subtask 3.7: Khai báo endpoint `GET /items/:id/decrypt` (kèm `ParseUUIDPipe`) cho phép xem chi tiết credential giải mã kèm audit log.
   - [ ] Subtask 3.8: Đăng ký `AdminInventoryController` vào `InventoryModule`.
 
 - [ ] Task 4: Triển khai Giao diện Quản lý Kho Hàng trong `apps/admin` (AC: #5, #6, #7)
-  - [ ] Subtask 4.1: Xây dựng modal `BatchImportModal.tsx` hỗ trợ nhập liệu đa dòng, live line counter, validate định dạng, và preview số lượng key.
+  - [ ] Subtask 4.1: Xây dựng modal `BatchImportModal.tsx` hỗ trợ nhập liệu đa dòng, live line counter, chuẩn hóa CRLF, và preview số lượng key.
   - [ ] Subtask 4.2: Xây dựng trang `/inventory` (`apps/admin/src/app/inventory/page.tsx`) với:
-    - Bộ chọn sản phẩm (Product Selector) và nút "Nhập lô Credential".
+    - Bộ chọn sản phẩm dạng search combobox và nút "Nhập lô Credential".
     - 4 KPI summary cards (Khả dụng, Đang giữ chỗ, Đã bán, Lỗi).
     - Bộ lọc trạng thái (`ALL`, `AVAILABLE`, `RESERVED`, `SOLD`, `DEFECTIVE`).
     - Bảng danh sách credential kèm nút copy/view masked key, nút xóa, nút báo hỏng.
-    - Phân trang bảng danh sách (50 item/trang).
+    - Phân trang bảng danh sách (50 item/trang) và empty state nếu chưa có sản phẩm.
   - [ ] Subtask 4.3: Cập nhật card "Kho key nội bộ" trong `apps/admin/src/app/page.tsx` hiển thị số lượng key khả dụng thực tế.
 
 - [ ] Task 5: Kiểm thử Tự động Toàn diện (Unit, Integration & E2E) (AC: #1 - #7)
-  - [ ] Subtask 5.1: Viết unit tests cho `credential-mask.util.spec.ts` (test các định dạng email:pass, license key, chuỗi ngắn).
-  - [ ] Subtask 5.2: Viết integration tests cho `InventoryService` mới trong `inventory.service.spec.ts` (test bulk ingest, conflict khi xóa sold key, pagination, getGlobalSummary).
+  - [ ] Subtask 5.1: Viết unit tests cho `credential-mask.util.spec.ts` (test các định dạng email, user:pass, license key, chuỗi ngắn).
+  - [ ] Subtask 5.2: Viết integration tests cho `InventoryService` mới trong `inventory.service.spec.ts` (test bulk ingest, conflict khi xóa sold key, atomic conditional delete, pagination, getGlobalSummary).
   - [ ] Subtask 5.3: Viết integration tests cho `AdminInventoryController` trong `admin-inventory.controller.spec.ts`.
   - [ ] Subtask 5.4: Xây dựng bộ test Playwright E2E `tests/e2e/admin-inventory-management.spec.ts` kiểm thử toàn bộ luồng trên browser:
     - Đăng nhập Admin qua modal API key.
@@ -122,16 +131,19 @@ so that I can quickly replenish stock for high-demand digital items with AES-256
    - Tất cả credential khi được nhập qua batch paste phải đi qua `encryptCredential()` (AES-256-GCM với IV ngẫu nhiên và authTag) trước khi ghi vào `product_inventory.credential_data`.
    - Tiền tố mã hóa chuẩn: `enc:v1:<iv>:<authTag>:<ciphertext>`.
 
-2. **Quy tắc Che Dữ liệu (Masking Invariant):**
-   - Bảng hiển thị danh sách trong Admin Console KHÔNG BAO GIỜ hiển thị toàn bộ nội dung credential cùng lúc để tránh nguy cơ shoulder-surfing hoặc lộ thông tin khi quay màn hình.
-   - Áp dụng hàm `maskCredential()` ở tầng backend trước khi trả response DTO. Chỉ giải mã đầy đủ khi admin kích hoạt hành động "Xem chi tiết" cho 1 item cụ thể.
+2. **Quy tắc Che Dữ liệu Xác định (Deterministic Masking Invariant):**
+   - Bảng hiển thị danh sách trong Admin Console KHÔNG BAO GIỜ hiển thị toàn bộ nội dung credential cùng lúc.
+   - Áp dụng hàm `maskCredential()` ở tầng backend trước khi trả response DTO.
+   - Chỉ giải mã đầy đủ khi admin kích hoạt endpoint `GET /items/:id/decrypt` (có audit log ghi nhận danh tính admin, IP, thời gian).
 
-3. **Quy tắc Toàn vẹn Tham chiếu Kho Hàng (Zero Data Corruption):**
+3. **Quy tắc Toàn vẹn Tham chiếu Kho Hàng (Zero Data Corruption & Concurrency Safety):**
    - Một credential đã gán `status = 'SOLD'` hoặc `order_id IS NOT NULL` là bằng chứng lịch sử đơn hàng đã giao dịch. Tuyệt đối KHÔNG ĐƯỢC PHÉP hard-delete (ném lỗi `409 ConflictException: CANNOT_DELETE_ACTIVE_OR_SOLD_CREDENTIAL`).
-   - Chỉ cho phép xóa các bản ghi ở trạng thái `AVAILABLE` (chưa từng bán) hoặc `DEFECTIVE`.
+   - Phép xóa phải sử dụng atomic conditional delete: `DELETE ... WHERE id = :id AND status IN ('AVAILABLE', 'DEFECTIVE')` để chống race condition với luồng checkout đồng thời.
 
-4. **Giới hạn Lô Ingest (DoS Protection):**
-   - Mỗi mẻ nhập lô giới hạn tối đa **500 bản ghi** (`BATCH_SIZE_EXCEEDED`). Nếu người dùng paste vượt quá 500 dòng, frontend phải cảnh báo và backend phải từ chối ngay lập tức để bảo vệ tài nguyên CPU mã hóa crypto.
+4. **Giới hạn Lô Ingest & Chuẩn hóa (DoS Protection & Normalization):**
+   - Mỗi mẻ nhập lô giới hạn tối đa **500 bản ghi** (`BATCH_SIZE_EXCEEDED`).
+   - Mỗi dòng giới hạn tối đa **2,048 ký tự** (`LINE_TOO_LONG`).
+   - Tự động chuẩn hóa `\r\n` thành `\n` và lọc sạch comment/dòng trống. Ném `400 EMPTY_BATCH_PAYLOAD` nếu không có dòng hợp lệ.
 
 5. **Constructor Injection Invariant (Bài học Epic 4 & Story 5.1):**
    - Tất cả controller và service mới trong NestJS bắt buộc khai báo `@Inject(...)` trên từng constructor parameter (ví dụ `@Inject(InventoryService)`).
