@@ -80,9 +80,10 @@ export class LedgerService {
     idempotencyKey: string,
     referenceId?: string | null,
     tx: DbOrTx = db,
+    metadata?: Record<string, unknown> | null,
   ): Promise<LedgerTransactionDto> {
     return this.ensureTransaction(
-      (runner) => this.recordTransaction(walletId, amount, type, idempotencyKey, referenceId ?? null, runner, true),
+      (runner) => this.recordTransaction(walletId, amount, type, idempotencyKey, referenceId ?? null, runner, true, metadata ?? null),
       tx,
     );
   }
@@ -94,9 +95,10 @@ export class LedgerService {
     idempotencyKey: string,
     referenceId?: string | null,
     tx: DbOrTx = db,
+    metadata?: Record<string, unknown> | null,
   ): Promise<LedgerTransactionDto> {
     return this.ensureTransaction(
-      (runner) => this.recordTransaction(walletId, amount, type, idempotencyKey, referenceId ?? null, runner, false),
+      (runner) => this.recordTransaction(walletId, amount, type, idempotencyKey, referenceId ?? null, runner, false, metadata ?? null),
       tx,
     );
   }
@@ -317,6 +319,7 @@ export class LedgerService {
     referenceId: string | null,
     runner: DbOrTx,
     isCredit: boolean,
+    metadata: Record<string, unknown> | null = null,
   ): Promise<LedgerTransactionDto> {
     this.validateAmount(amount);
 
@@ -370,6 +373,7 @@ export class LedgerService {
           balanceAfter,
           referenceId,
           idempotencyKey,
+          metadata: metadata ?? null,
         })
         .returning();
 

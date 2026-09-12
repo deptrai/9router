@@ -90,15 +90,19 @@ export function OrderDetailModal({
 
   const handleRevealCredential = async () => {
     if (decryptedKey) {
+      // Toggle off — hide plaintext and revert to masked display
       setDecryptedKey(null);
       return;
     }
     if (!detail?.order.id) return;
     setRevealing(true);
     try {
-      // If order has delivered in-house credential item, can fetch decrypt
-      // Alternatively, the deliveredCredential in detail is already the delivery plaintext or masked
-      setDecryptedKey(detail.order.deliveredCredential || 'Không có credential');
+      // Call admin reveal endpoint — server logs [AUDIT] and returns plaintext
+      const res = await apiClient.post<{ ok: boolean; plaintext: string }>(
+        `/api/admin/orders/${detail.order.id}/reveal-credential`,
+        {},
+      );
+      setDecryptedKey(res.plaintext);
     } catch (err: any) {
       showToast(err?.message || 'Không thể giải mã credential', 'error');
     } finally {
@@ -356,6 +360,19 @@ export function OrderDetailModal({
                   {detail.order.deliveredCredential && (
                     <div className="flex items-center gap-2">
                       <button
+                        onClick={handleRevealCredential}
+                        disabled={revealing}
+                        title={decryptedKey ? 'Ẩn plaintext' : 'Giải mã xem plaintext'}
+                        className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-emerald-400 transition-colors disabled:opacity-50"
+                      >
+                        {decryptedKey ? (
+                          <EyeOff className="w-3.5 h-3.5" />
+                        ) : (
+                          <Eye className="w-3.5 h-3.5" />
+                        )}
+                        <span>{revealing ? 'Đang giải mã...' : decryptedKey ? 'Ẩn' : 'Giải mã'}</span>
+                      </button>
+                      <button
                         onClick={() =>
                           handleCopy(
                             decryptedKey || detail.order.deliveredCredential || '',
@@ -376,8 +393,12 @@ export function OrderDetailModal({
                 </div>
 
                 <div className="p-3 rounded-lg bg-slate-900 border border-slate-800/80 font-mono text-xs text-slate-300 break-all">
-                  {detail.order.deliveredCredential || (
-                    <span className="text-slate-500 italic">Chưa giao credential hoặc đơn hàng chưa hoàn tất</span>
+                  {decryptedKey ? (
+                    <span className="text-emerald-400">{decryptedKey}</span>
+                  ) : (
+                    detail.order.deliveredCredential || (
+                      <span className="text-slate-500 italic">Chưa giao credential hoặc đơn hàng chưa hoàn tất</span>
+                    )
                   )}
                 </div>
               </div>

@@ -39,7 +39,7 @@ test('[P0] AdminOrdersController.listOrders delegates to service with parsed que
   };
 
   const controller = new AdminOrdersController(mockService as any);
-  const result = await controller.listOrders('20', '0', 'SOURCING', '123456', 'prod-1');
+  const result = await controller.listOrders('20', '0', 'SOURCING', '123456', 'a1b2c3d4-e5f6-4000-8000-000000000001');
 
   assert.strictEqual(result.ok, true);
   assert.strictEqual(result.orders.length, 1);
@@ -48,7 +48,7 @@ test('[P0] AdminOrdersController.listOrders delegates to service with parsed que
   assert.strictEqual(capturedQuery.offset, 0);
   assert.strictEqual(capturedQuery.status, OrderStatus.SOURCING);
   assert.strictEqual(capturedQuery.search, '123456');
-  assert.strictEqual(capturedQuery.productId, 'prod-1');
+  assert.strictEqual(capturedQuery.productId, 'a1b2c3d4-e5f6-4000-8000-000000000001');
 });
 
 test('[P0] AdminOrdersController.getOrderDetail returns detailed order payload', async () => {

@@ -20,6 +20,13 @@ import { apiClient } from '../../lib/api-client';
 import { useToast } from '../../components/Toast';
 import { OrderDetailModal } from '../../components/OrderDetailModal';
 
+interface KpiCounts {
+  total: number;
+  sourcing: number;
+  fulfilled: number;
+  refunded: number;
+}
+
 export default function AdminOrdersPage() {
   const { showToast } = useToast();
   const [orders, setOrders] = useState<AdminOrderListItemDto[]>([]);
@@ -31,6 +38,9 @@ export default function AdminOrdersPage() {
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [page, setPage] = useState(0);
   const pageSize = 50;
+
+  // KPI counts — fetched separately so they reflect system-wide totals, not current page
+  const [kpi, setKpi] = useState<KpiCounts>({ total: 0, sourcing: 0, fulfilled: 0, refunded: 0 });
 
   // Selected order for modal
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
@@ -63,9 +73,39 @@ export default function AdminOrdersPage() {
     }
   };
 
+  // Fetch system-wide KPI counts (independent of current filters/pagination)
+  const fetchKpi = async () => {
+    try {
+      const params = new URLSearchParams();
+      params.set('limit', '10000'); // fetch all to compute KPI counts
+      params.set('offset', '0');
+      const res = await apiClient.get<{
+        ok: boolean;
+        orders: AdminOrderListItemDto[];
+        total: number;
+      }>(`/api/admin/orders?${params.toString()}`);
+
+      const all = res.orders || [];
+      setKpi({
+        total: res.total || 0,
+        sourcing: all.filter((o) => o.status === 'SOURCING').length,
+        fulfilled: all.filter((o) => o.status === 'FULFILLED').length,
+        refunded: all.filter((o) => o.status === 'REFUNDED').length,
+      });
+    } catch (err) {
+      // KPI failure is non-fatal — keep showing page-level data
+      console.warn('Failed to fetch KPI counts', err);
+    }
+  };
+
   useEffect(() => {
     fetchOrders();
   }, [page, statusFilter]);
+
+  // Load KPI once on mount + refresh when needed
+  useEffect(() => {
+    fetchKpi();
+  }, []);
 
   // Debounced search
   useEffect(() => {
@@ -75,14 +115,6 @@ export default function AdminOrdersPage() {
     }, 300);
     return () => clearTimeout(timer);
   }, [search]);
-
-  // Calculate quick KPI summaries from orders in view
-  const kpiStats = useMemo(() => {
-    const sourcing = orders.filter((o) => o.status === 'SOURCING').length;
-    const fulfilled = orders.filter((o) => o.status === 'FULFILLED').length;
-    const refunded = orders.filter((o) => o.status === 'REFUNDED').length;
-    return { sourcing, fulfilled, refunded, total };
-  }, [orders, total]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
@@ -118,7 +150,7 @@ export default function AdminOrdersPage() {
             <span className="text-xs font-semibold uppercase tracking-wider">Tổng đơn hàng</span>
             <Package className="w-4 h-4 text-amber-400" />
           </div>
-          <p className="text-2xl font-bold font-mono text-slate-100">{total}</p>
+          <p className="text-2xl font-bold font-mono text-slate-100">{kpi.total}</p>
         </div>
 
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
@@ -126,7 +158,7 @@ export default function AdminOrdersPage() {
             <span className="text-xs font-semibold uppercase tracking-wider">Chờ mua ngoài</span>
             <Clock className="w-4 h-4" />
           </div>
-          <p className="text-2xl font-bold font-mono text-blue-400">{kpiStats.sourcing}</p>
+          <p className="text-2xl font-bold font-mono text-blue-400">{kpi.sourcing}</p>
           <p className="text-[11px] text-slate-500 mt-1">Hàng đợi scraper đang xử lý</p>
         </div>
 
@@ -135,7 +167,7 @@ export default function AdminOrdersPage() {
             <span className="text-xs font-semibold uppercase tracking-wider">Hoàn tất</span>
             <CheckCircle className="w-4 h-4" />
           </div>
-          <p className="text-2xl font-bold font-mono text-emerald-400">{kpiStats.fulfilled}</p>
+          <p className="text-2xl font-bold font-mono text-emerald-400">{kpi.fulfilled}</p>
           <p className="text-[11px] text-slate-500 mt-1">Đã giao credential cho khách</p>
         </div>
 
@@ -144,7 +176,7 @@ export default function AdminOrdersPage() {
             <span className="text-xs font-semibold uppercase tracking-wider">Đã hoàn tiền</span>
             <RotateCcw className="w-4 h-4 text-slate-400" />
           </div>
-          <p className="text-2xl font-bold font-mono text-slate-300">{kpiStats.refunded}</p>
+          <p className="text-2xl font-bold font-mono text-slate-300">{kpi.refunded}</p>
           <p className="text-[11px] text-slate-500 mt-1">Đã hoàn 100% ví</p>
         </div>
       </div>
@@ -331,7 +363,10 @@ export default function AdminOrdersPage() {
         isOpen={Boolean(selectedOrderId)}
         orderId={selectedOrderId}
         onClose={() => setSelectedOrderId(null)}
-        onOrderRefunded={fetchOrders}
+        onOrderRefunded={() => {
+          fetchOrders();
+          fetchKpi();
+        }}
         showToast={showToast}
       />
     </main>

@@ -797,6 +797,46 @@ export class OrdersService {
   }
 
   /**
+   * Reveals the plaintext delivered credential for admin audit purposes.
+   * Logs an [AUDIT] entry tracking which admin revealed which order.
+   */
+  async revealAdminCredential(
+    orderId: string,
+    adminId: string,
+  ): Promise<{ ok: boolean; plaintext: string }> {
+    const [order] = await db
+      .select()
+      .from(orders)
+      .where(eq(orders.id, orderId))
+      .limit(1);
+
+    if (!order) {
+      throw new NotFoundException({
+        statusCode: 404,
+        errorCode: "ORDER_NOT_FOUND",
+        message: `Order ${orderId} not found`,
+      });
+    }
+
+    if (!order.deliveredCredential) {
+      throw new NotFoundException({
+        statusCode: 404,
+        errorCode: "NO_CREDENTIAL_DELIVERED",
+        message: `Order ${orderId} has no delivered credential`,
+      });
+    }
+
+    this.logger.log(
+      `[AUDIT] Admin ${adminId} revealed delivered credential for order ${orderId}`,
+    );
+
+    return {
+      ok: true,
+      plaintext: order.deliveredCredential,
+    };
+  }
+
+  /**
    * Manually refunds an order in PAID, SOURCING, or FULFILLED status.
    * Atomically transitions state to REFUNDED, credits user wallet via LedgerService,
    * optionally marks delivered in-house credential as DEFECTIVE, and logs an audit record.
@@ -883,7 +923,7 @@ export class OrdersService {
         });
       }
 
-      const idempotencyKey = `${orderId}:admin-refund:${Date.now()}`;
+      const idempotencyKey = `${orderId}:admin-refund`;
       await this.ledgerService.credit(
         wallet.id,
         order.price,
@@ -891,6 +931,12 @@ export class OrdersService {
         idempotencyKey,
         order.id,
         runner,
+        {
+          reason,
+          adminId,
+          source: 'ADMIN_MANUAL_REFUND',
+          markCredentialDefective,
+        },
       );
 
       if (markCredentialDefective) {
@@ -898,20 +944,6 @@ export class OrdersService {
           .update(productInventory)
           .set({ status: InventoryStatus.DEFECTIVE })
           .where(eq(productInventory.orderId, orderId));
-      }
-
-      try {
-        const [user] = await runner.select().from(users).where(eq(users.id, order.userId)).limit(1);
-        const [product] = await runner.select().from(products).where(eq(products.id, order.productId)).limit(1);
-        if (user && product) {
-          await this.telegramBotService.sendRefundNotice(
-            user.telegramId,
-            toOrderDto(updatedOrder, product.title),
-            product.title,
-          );
-        }
-      } catch (err: any) {
-        this.logger.warn(`Failed to send Telegram refund notice for order ${orderId}: ${err?.message}`);
       }
 
       this.logger.log(
@@ -924,7 +956,34 @@ export class OrdersService {
         orderId: order.id,
         refundedAmount: order.price,
         refundedAt: new Date().toISOString(),
+        userId: order.userId,
+        productId: order.productId,
       };
     });
+  }
+
+  /**
+   * Sends post-commit Telegram notification for manual refund.
+   * Must be called AFTER the transaction commits to avoid holding FOR UPDATE locks
+   * during external HTTP calls.
+   */
+  async notifyRefundCommit(
+    userId: string,
+    productId: string,
+    updatedOrder: OrderDto,
+  ): Promise<void> {
+    try {
+      const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      const [product] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
+      if (user && product) {
+        await this.telegramBotService.sendRefundNotice(
+          user.telegramId,
+          updatedOrder,
+          product.title,
+        );
+      }
+    } catch (err: any) {
+      this.logger.warn(`Failed to send Telegram refund notice for order ${updatedOrder.id}: ${err?.message}`);
+    }
   }
 }

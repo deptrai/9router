@@ -470,6 +470,9 @@ export interface AdminManualRefundResponseDto {
   orderId: string;
   refundedAmount: string;
   refundedAt: string;
+  /** Internal — populated for post-commit notify; stripped before response if needed */
+  userId?: string;
+  productId?: string;
 }
 
 export interface ListAdminOrdersQueryDto {

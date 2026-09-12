@@ -42,9 +42,24 @@ export class AdminOrdersController {
     @Query('search') search?: string,
     @Query('productId') productId?: string,
   ): Promise<ListAdminOrdersResponseDto> {
+    // Validate and sanitize pagination params — reject NaN to avoid Postgres errors
+    const parsedLimit = limit ? parseInt(limit, 10) : 50;
+    const parsedOffset = offset ? parseInt(offset, 10) : 0;
+    const safeLimit = Number.isNaN(parsedLimit) || parsedLimit < 1 ? 50 : Math.min(parsedLimit, 100);
+    const safeOffset = Number.isNaN(parsedOffset) || parsedOffset < 0 ? 0 : parsedOffset;
+
+    // Validate productId as UUID v4 when provided
+    if (productId && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(productId.trim())) {
+      throw new BadRequestException({
+        statusCode: 400,
+        errorCode: 'INVALID_PRODUCT_ID',
+        message: 'productId must be a valid UUID v4',
+      });
+    }
+
     const query = {
-      limit: limit ? parseInt(limit, 10) : 50,
-      offset: offset ? parseInt(offset, 10) : 0,
+      limit: safeLimit,
+      offset: safeOffset,
       status: status as OrderStatus,
       search: search?.trim() || undefined,
       productId: productId?.trim() || undefined,
@@ -75,6 +90,20 @@ export class AdminOrdersController {
   }
 
   /**
+   * POST /api/admin/orders/:id/reveal-credential
+   * Decrypts and returns the plaintext delivered credential for audit/debugging.
+   * Logged via [AUDIT] tag for tracking admin access.
+   */
+  @Post(':id/reveal-credential')
+  async revealCredential(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Req() req: any,
+  ): Promise<{ ok: boolean; plaintext: string }> {
+    const adminId = String(req.user?.id ?? 'web-admin');
+    return this.ordersService.revealAdminCredential(id, adminId);
+  }
+
+  /**
    * POST /api/admin/orders/:id/refund
    * Triggers an atomic manual refund for an order in PAID, SOURCING, or FULFILLED status.
    */
@@ -93,11 +122,34 @@ export class AdminOrdersController {
     }
 
     const adminId = String(req.user?.id ?? 'web-admin');
-    return this.ordersService.adminManualRefund(
+    const result = await this.ordersService.adminManualRefund(
       id,
       adminId,
       body.reason.trim(),
       Boolean(body.markCredentialDefective),
     );
+
+    // Fire-and-forget Telegram notification AFTER transaction commits.
+    // This avoids holding FOR UPDATE locks during external HTTP calls.
+    if (result.userId && result.productId) {
+      void this.ordersService.notifyRefundCommit(
+        result.userId,
+        result.productId,
+        {
+          id: result.orderId,
+          status: 'REFUNDED' as any,
+          price: result.refundedAmount,
+        } as any,
+      );
+    }
+
+    // Strip internal fields from response
+    return {
+      ok: result.ok,
+      refunded: result.refunded,
+      orderId: result.orderId,
+      refundedAmount: result.refundedAmount,
+      refundedAt: result.refundedAt,
+    };
   }
 }
