@@ -30,6 +30,8 @@ export default function AdminProductsPage() {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [sourcingFilter, setSourcingFilter] = useState('ALL');
+  const [page, setPage] = useState(0);
+  const pageSize = 50;
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<AdminProductDto | null>(null);
@@ -75,6 +77,17 @@ export default function AdminProductsPage() {
       return matchSearch && matchCat && matchSourcing;
     });
   }, [products, search, categoryFilter, sourcingFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
+  const paginatedProducts = useMemo(
+    () => filteredProducts.slice(page * pageSize, (page + 1) * pageSize),
+    [filteredProducts, page],
+  );
+
+  // Reset to page 0 when filters change
+  useEffect(() => {
+    setPage(0);
+  }, [search, categoryFilter, sourcingFilter]);
 
   const handleToggleActive = async (p: AdminProductDto) => {
     try {
@@ -219,14 +232,14 @@ export default function AdminProductsPage() {
                     Đang tải danh sách sản phẩm...
                   </td>
                 </tr>
-              ) : filteredProducts.length === 0 ? (
+              ) : paginatedProducts.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="py-12 text-center text-slate-500">
                     Không tìm thấy sản phẩm nào phù hợp.
                   </td>
                 </tr>
               ) : (
-                filteredProducts.map((p) => (
+                paginatedProducts.map((p) => (
                   <tr key={p.id} className="hover:bg-slate-800/40 transition-colors">
                     <td className="py-3.5 px-4 font-medium text-slate-100">
                       <div>
@@ -332,6 +345,34 @@ export default function AdminProductsPage() {
           </table>
         </div>
       </div>
+
+      {/* Pagination Controls */}
+      {filteredProducts.length > pageSize && (
+        <div className="flex items-center justify-between mt-4 px-1">
+          <p className="text-xs text-slate-500">
+            Hiển thị {page * pageSize + 1}–{Math.min((page + 1) * pageSize, filteredProducts.length)} / {filteredProducts.length} sản phẩm
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Trước
+            </button>
+            <span className="text-xs text-slate-400 font-mono">
+              {page + 1} / {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+              disabled={page >= totalPages - 1}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Sau
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Product Form Modal */}
       <ProductFormModal

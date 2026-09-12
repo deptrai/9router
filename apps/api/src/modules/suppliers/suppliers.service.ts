@@ -8,6 +8,7 @@ import {
   db,
   eq,
   and,
+  or,
   sql,
   desc,
   supplierSources,
@@ -22,11 +23,29 @@ import type {
 
 @Injectable()
 export class SuppliersService {
-  async listSuppliers(tx: DbOrTx = db): Promise<SupplierSourceDto[]> {
-    const allSuppliers = await tx
+  async listSuppliers(opts?: { limit?: number; offset?: number; search?: string }, tx: DbOrTx = db): Promise<SupplierSourceDto[]> {
+    const limit = Math.min(opts?.limit ?? 100, 500);
+    const offset = opts?.offset ?? 0;
+    const search = opts?.search?.trim();
+
+    let query = tx
       .select()
       .from(supplierSources)
-      .orderBy(desc(supplierSources.createdAt));
+      .orderBy(desc(supplierSources.createdAt))
+      .limit(limit)
+      .offset(offset)
+      .$dynamic();
+
+    if (search) {
+      query = query.where(
+        or(
+          sql`${supplierSources.name} ILIKE ${'%' + search + '%'}`,
+          sql`${supplierSources.type} ILIKE ${'%' + search + '%'}`,
+        ),
+      );
+    }
+
+    const allSuppliers = await query;
 
     if (allSuppliers.length === 0) {
       return [];

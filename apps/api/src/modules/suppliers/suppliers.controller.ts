@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   Inject,
   ParseUUIDPipe,
@@ -28,9 +29,17 @@ export class SuppliersController {
   ) {}
 
   @Get()
-  async listSuppliers(): Promise<{ ok: boolean; suppliers: SupplierSourceDto[] }> {
-    const suppliers = await this.suppliersService.listSuppliers();
-    return { ok: true, suppliers };
+  async listSuppliers(
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+    @Query('search') search?: string,
+  ): Promise<{ ok: boolean; suppliers: SupplierSourceDto[]; total: number }> {
+    const suppliers = await this.suppliersService.listSuppliers({
+      limit: limit ? parseInt(limit, 10) : undefined,
+      offset: offset ? parseInt(offset, 10) : undefined,
+      search,
+    });
+    return { ok: true, suppliers, total: suppliers.length };
   }
 
   @Get(':id')

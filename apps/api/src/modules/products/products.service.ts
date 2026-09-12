@@ -10,6 +10,7 @@ import {
   sql,
   inArray,
   and,
+  or,
   desc,
   products,
   productInventory,
@@ -97,15 +98,34 @@ export class ProductsService {
   /**
    * Lists all products (active + inactive) with inventory metrics for Admin Console.
    */
-  async listAdminProducts(tx: DbOrTx = db): Promise<AdminProductDto[]> {
-    const allProducts = await tx
+  async listAdminProducts(opts?: { limit?: number; offset?: number; search?: string }, tx: DbOrTx = db): Promise<AdminProductDto[]> {
+    const limit = Math.min(opts?.limit ?? 100, 500);
+    const offset = opts?.offset ?? 0;
+    const search = opts?.search?.trim();
+
+    let query = tx
       .select({
         product: products,
         supplierName: supplierSources.name,
       })
       .from(products)
       .leftJoin(supplierSources, eq(products.supplierSourceId, supplierSources.id))
-      .orderBy(desc(products.createdAt));
+      .orderBy(desc(products.createdAt))
+      .limit(limit)
+      .offset(offset)
+      .$dynamic();
+
+    if (search) {
+      query = query.where(
+        or(
+          sql`${products.title} ILIKE ${'%' + search + '%'}`,
+          sql`${products.slug} ILIKE ${'%' + search + '%'}`,
+          sql`${products.category} ILIKE ${'%' + search + '%'}`,
+        ),
+      );
+    }
+
+    const allProducts = await query;
 
     if (allProducts.length === 0) {
       return [];

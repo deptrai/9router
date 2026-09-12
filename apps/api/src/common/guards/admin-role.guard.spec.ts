@@ -173,3 +173,139 @@ test('AdminRoleGuard throws 500 when ADMIN_API_KEY is not configured or < 32 cha
     else delete process.env.ADMIN_API_KEY;
   }
 });
+
+// --- Telegram WebApp tma <initData> auth flow tests ---
+
+function buildTmaInitData(botToken: string, userId: number, firstName = 'TmaAdmin'): string {
+  const crypto = require('node:crypto');
+  const user = JSON.stringify({ id: userId, first_name: firstName, is_bot: false });
+  const authDate = Math.floor(Date.now() / 1000).toString();
+  const pairs: [string, string][] = [
+    ['auth_date', authDate],
+    ['query_id', 'AAE1'],
+    ['user', user],
+  ];
+  pairs.sort((a, b) => a[0].localeCompare(b[0]));
+  const dataCheckString = pairs.map(([k, v]) => `${k}=${v}`).join('\n');
+  const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
+  const hash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+  return `auth_date=${authDate}&query_id=AAE1&user=${encodeURIComponent(user)}&hash=${hash}`;
+}
+
+test('AdminRoleGuard allows Telegram admin via Authorization: tma <initData>', async () => {
+  const origToken = process.env.TELEGRAM_BOT_TOKEN;
+  const botToken = 'test-bot-token-1234567890abcdef';
+  process.env.TELEGRAM_BOT_TOKEN = botToken;
+
+  try {
+    const initData = buildTmaInitData(botToken, 555001);
+    const mockDb = {
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            limit: () => Promise.resolve([{ id: 'u-tma', telegramId: 555001, role: UserRole.ADMIN }]),
+          }),
+        }),
+      }),
+    };
+
+    const guard = new AdminRoleGuard(mockDb as any);
+    const context = createMockContext(undefined, { authorization: `tma ${initData}` });
+
+    const allowed = await guard.canActivate(context);
+    assert.strictEqual(allowed, true);
+
+    const req = context.switchToHttp().getRequest() as any;
+    assert.strictEqual(req.user.id, 555001);
+    assert.strictEqual(req.user.role, UserRole.ADMIN);
+  } finally {
+    if (origToken !== undefined) process.env.TELEGRAM_BOT_TOKEN = origToken;
+    else delete process.env.TELEGRAM_BOT_TOKEN;
+  }
+});
+
+test('AdminRoleGuard throws 403 when tma user has CUSTOMER role', async () => {
+  const origToken = process.env.TELEGRAM_BOT_TOKEN;
+  const botToken = 'test-bot-token-1234567890abcdef';
+  process.env.TELEGRAM_BOT_TOKEN = botToken;
+
+  try {
+    const initData = buildTmaInitData(botToken, 555002);
+    const mockDb = {
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            limit: () => Promise.resolve([{ id: 'u-cust', telegramId: 555002, role: UserRole.CUSTOMER }]),
+          }),
+        }),
+      }),
+    };
+
+    const guard = new AdminRoleGuard(mockDb as any);
+    const context = createMockContext(undefined, { authorization: `tma ${initData}` });
+
+    await assert.rejects(
+      () => guard.canActivate(context),
+      (err: any) => {
+        assert.ok(err instanceof ForbiddenException);
+        assert.strictEqual(err.getResponse()?.errorCode, 'AUTH_FORBIDDEN_NOT_ADMIN');
+        return true;
+      },
+    );
+  } finally {
+    if (origToken !== undefined) process.env.TELEGRAM_BOT_TOKEN = origToken;
+    else delete process.env.TELEGRAM_BOT_TOKEN;
+  }
+});
+
+test('AdminRoleGuard throws 401 when tma initData signature is invalid', async () => {
+  const origToken = process.env.TELEGRAM_BOT_TOKEN;
+  const botToken = 'test-bot-token-1234567890abcdef';
+  process.env.TELEGRAM_BOT_TOKEN = botToken;
+
+  try {
+    const mockDb = {
+      select: () => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }) }),
+    };
+
+    const guard = new AdminRoleGuard(mockDb as any);
+    const context = createMockContext(undefined, { authorization: 'tma invalid_data_here' });
+
+    await assert.rejects(
+      () => guard.canActivate(context),
+      (err: any) => {
+        assert.ok(err instanceof UnauthorizedException);
+        assert.strictEqual(err.getResponse()?.errorCode, 'AUTH_INVALID_INIT_DATA');
+        return true;
+      },
+    );
+  } finally {
+    if (origToken !== undefined) process.env.TELEGRAM_BOT_TOKEN = origToken;
+    else delete process.env.TELEGRAM_BOT_TOKEN;
+  }
+});
+
+test('AdminRoleGuard throws 401 when TELEGRAM_BOT_TOKEN is not configured for tma', async () => {
+  const origToken = process.env.TELEGRAM_BOT_TOKEN;
+  delete process.env.TELEGRAM_BOT_TOKEN;
+
+  try {
+    const mockDb = {
+      select: () => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }) }),
+    };
+
+    const guard = new AdminRoleGuard(mockDb as any);
+    const context = createMockContext(undefined, { authorization: 'tma some_data' });
+
+    await assert.rejects(
+      () => guard.canActivate(context),
+      (err: any) => {
+        assert.ok(err instanceof UnauthorizedException);
+        assert.strictEqual(err.getResponse()?.errorCode, 'AUTH_UNAUTHORIZED');
+        return true;
+      },
+    );
+  } finally {
+    if (origToken !== undefined) process.env.TELEGRAM_BOT_TOKEN = origToken;
+  }
+});

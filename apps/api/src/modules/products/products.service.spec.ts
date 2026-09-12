@@ -159,3 +159,316 @@ test('listCatalog includes imageUrl and ISO createdAt in DTO', async () => {
   assert.equal(out[0].imageUrl, 'https://cdn/x.png');
   assert.equal(out[0].createdAt, '2026-09-11T00:00:00.000Z');
 });
+
+// --- createProduct / updateProduct / deleteProduct tests ---
+
+test('createProduct applies auto-pricing via computeRetailPrice when autoPricing+upstreamCost provided', async () => {
+  const insertedRows: any[] = [];
+  const mockTx: any = {
+    select: (fields?: any) => ({
+      from: (table: any) => {
+        const name = table?.[Symbol.for('drizzle:Name')] ?? '';
+        // For supplier_sources lookup
+        if (name === 'supplier_sources') {
+          return {
+            where: () => ({
+              limit: () => Promise.resolve([{
+                id: 'sup-1',
+                name: 'Test Supplier',
+                isActive: true,
+                markupPercentage: '10.00',
+                markupFixedVnd: '5000.00',
+              }]),
+            }),
+          };
+        }
+        // For products slug collision check (generateUniqueSlug)
+        return {
+          where: () => Promise.resolve([]), // no existing slugs
+        };
+      },
+    }),
+    insert: () => ({
+      values: (vals: any) => ({
+        returning: () => {
+          insertedRows.push(vals);
+          return Promise.resolve([{
+            id: 'prod-new',
+            title: vals.title,
+            slug: vals.slug,
+            description: vals.description,
+            category: vals.category,
+            price: vals.price,
+            imageUrl: vals.imageUrl,
+            isActive: vals.isActive,
+            sourcingMode: vals.sourcingMode,
+            supplierSourceId: vals.supplierSourceId,
+            supplierProductUrl: vals.supplierProductUrl,
+            upstreamCost: vals.upstreamCost,
+            maxUpstreamCost: vals.maxUpstreamCost,
+            costSyncedAt: null,
+            autoPricing: vals.autoPricing,
+            createdAt: new Date(),
+          }]);
+        },
+      }),
+    }),
+  };
+
+  const service = new ProductsService();
+  const result = await service.createProduct({
+    title: 'Auto Priced Product',
+    price: '10000.00',
+    sourcingMode: 'EXTERNAL',
+    supplierSourceId: 'sup-1',
+    upstreamCost: '50000.00',
+    autoPricing: true,
+  } as any, mockTx);
+
+  // cost=50000 * (1+10%) + 5000 = 60000 -> rounds to 60000
+  assert.strictEqual(result.price, '60000.00');
+  assert.strictEqual(result.supplierSourceName, 'Test Supplier');
+});
+
+test('createProduct uses provided price when autoPricing is false', async () => {
+  const mockTx: any = {
+    select: () => ({
+      from: () => ({
+        where: () => Promise.resolve([]), // slug collision check returns empty
+      }),
+    }),
+    insert: () => ({
+      values: (vals: any) => ({
+        returning: () => Promise.resolve([{
+          id: 'prod-2',
+          title: vals.title,
+          slug: 'manual-priced',
+          description: null,
+          category: vals.category,
+          price: vals.price,
+          imageUrl: null,
+          isActive: vals.isActive,
+          sourcingMode: vals.sourcingMode,
+          supplierSourceId: null,
+          supplierProductUrl: null,
+          upstreamCost: null,
+          maxUpstreamCost: null,
+          costSyncedAt: null,
+          autoPricing: vals.autoPricing,
+          createdAt: new Date(),
+        }]),
+      }),
+    }),
+  };
+
+  const service = new ProductsService();
+  const result = await service.createProduct({
+    title: 'Manual Priced',
+    price: '99999.00',
+    sourcingMode: 'IN_HOUSE',
+    autoPricing: false,
+  } as any, mockTx);
+
+  assert.strictEqual(result.price, '99999.00');
+});
+
+test('updateProduct recalculates price when autoPricing stays true and supplier linked', async () => {
+  const mockTx: any = {
+    select: (fields?: any) => ({
+      from: (table: any) => {
+        const name = table?.[Symbol.for('drizzle:Name')] ?? '';
+        return {
+          where: () => {
+            // products table (existing product lookup + slug check)
+            if (name === 'products') {
+              return {
+                limit: () => Promise.resolve([{
+                  id: 'prod-1',
+                  title: 'Existing',
+                  slug: 'existing',
+                  isActive: true,
+                  sourcingMode: 'EXTERNAL',
+                  supplierSourceId: 'sup-1',
+                  upstreamCost: '30000.00',
+                  autoPricing: true,
+                  price: '38000.00',
+                  createdAt: new Date(),
+                }]),
+              };
+            }
+            // supplier_sources table
+            if (name === 'supplier_sources') {
+              return {
+                limit: () => Promise.resolve([{
+                  id: 'sup-1',
+                  name: 'Supplier A',
+                  isActive: true,
+                  markupPercentage: '20.00',
+                  markupFixedVnd: '2000.00',
+                }]),
+              };
+            }
+            // product_inventory counts
+            return Promise.resolve([{ count: 0 }]);
+          },
+        };
+      },
+    }),
+    update: () => ({
+      set: (vals: any) => ({
+        where: () => ({
+          returning: () => Promise.resolve([{
+            id: 'prod-1',
+            title: vals.title ?? 'Existing',
+            slug: vals.slug ?? 'existing',
+            description: vals.description,
+            category: vals.category,
+            price: vals.price,
+            imageUrl: vals.imageUrl,
+            isActive: vals.isActive,
+            sourcingMode: vals.sourcingMode,
+            supplierSourceId: vals.supplierSourceId,
+            supplierProductUrl: vals.supplierProductUrl,
+            upstreamCost: vals.upstreamCost,
+            maxUpstreamCost: vals.maxUpstreamCost,
+            costSyncedAt: null,
+            autoPricing: vals.autoPricing,
+            createdAt: new Date(),
+          }]),
+        }),
+      }),
+    }),
+  };
+
+  const service = new ProductsService();
+  // Update upstreamCost -> price should recalculate via markup
+  const result = await service.updateProduct('prod-1', { upstreamCost: '40000.00' } as any, mockTx);
+  // 40000 * 1.20 + 2000 = 50000 -> rounds to 50000
+  assert.strictEqual(result.price, '50000.00');
+});
+
+test('updateProduct preserves explicit price when autoPricing unchanged', async () => {
+  const mockTx: any = {
+    select: (fields?: any) => ({
+      from: (table: any) => {
+        const name = table?.[Symbol.for('drizzle:Name')] ?? '';
+        return {
+          where: () => {
+            if (name === 'products') {
+              return {
+                limit: () => Promise.resolve([{
+                  id: 'prod-1', title: 'P', slug: 'p', isActive: true,
+                  sourcingMode: 'IN_HOUSE', supplierSourceId: null,
+                  upstreamCost: null, autoPricing: false, price: '10000.00',
+                  createdAt: new Date(),
+                }]),
+              };
+            }
+            if (name === 'product_inventory') {
+              return Promise.resolve([{ count: 0 }]);
+            }
+            return Promise.resolve([]);
+          },
+        };
+      },
+    }),
+    update: () => ({
+      set: (vals: any) => ({
+        where: () => ({
+          returning: () => Promise.resolve([{
+            id: 'prod-1', title: 'P', slug: 'p', isActive: true,
+            sourcingMode: 'IN_HOUSE', supplierSourceId: null,
+            supplierProductUrl: null, upstreamCost: null, maxUpstreamCost: null,
+            costSyncedAt: null, autoPricing: vals.autoPricing ?? false,
+            price: vals.price, createdAt: new Date(),
+          }]),
+        }),
+      }),
+    }),
+  };
+
+  const service = new ProductsService();
+  const result = await service.updateProduct('prod-1', { price: '77777.00' } as any, mockTx);
+  assert.strictEqual(result.price, '77777.00');
+});
+
+test('deleteProduct soft-deactivates when hard=false', async () => {
+  let softDeleted = false;
+  const mockTx: any = {
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: () => Promise.resolve([{ id: 'prod-del', isActive: true }]),
+        }),
+      }),
+    }),
+    update: () => ({
+      set: (vals: any) => {
+        if (vals.isActive === false) softDeleted = true;
+        return { where: async () => {} };
+      },
+    }),
+  };
+
+  const service = new ProductsService();
+  await service.deleteProduct('prod-del', false, mockTx);
+  assert.strictEqual(softDeleted, true);
+});
+
+test('deleteProduct throws ConflictException when orders exist (hard delete)', async () => {
+  const mockTx: any = {
+    select: () => ({
+      from: (table: any) => {
+        const name = table?.[Symbol.for('drizzle:Name')] ?? '';
+        return {
+          where: () => ({
+            limit: () => {
+              if (name === 'orders') return Promise.resolve([{ id: 'ord-1' }]);
+              if (name === 'products') return Promise.resolve([{ id: 'prod-del' }]);
+              return Promise.resolve([]);
+            },
+          }),
+        };
+      },
+    }),
+  };
+
+  const service = new ProductsService();
+  await assert.rejects(
+    async () => service.deleteProduct('prod-del', true, mockTx),
+    (err: any) => {
+      assert.strictEqual(err.status ?? err.statusCode, 409);
+      assert.strictEqual(err.response?.errorCode ?? err.getResponse?.()?.errorCode, 'PRODUCT_CANNOT_BE_HARD_DELETED');
+      return true;
+    },
+  );
+});
+
+test('deleteProduct hard-deletes when no linked orders or inventory', async () => {
+  let hardDeleted = false;
+  const mockTx: any = {
+    select: () => ({
+      from: (table: any) => {
+        const name = table?.[Symbol.for('drizzle:Name')] ?? '';
+        return {
+          where: () => ({
+            limit: () => {
+              if (name === 'products') return Promise.resolve([{ id: 'prod-clean' }]);
+              return Promise.resolve([]); // no orders, no inventory
+            },
+          }),
+        };
+      },
+    }),
+    delete: () => ({
+      where: () => {
+        hardDeleted = true;
+        return Promise.resolve();
+      },
+    }),
+  };
+
+  const service = new ProductsService();
+  await service.deleteProduct('prod-clean', true, mockTx);
+  assert.strictEqual(hardDeleted, true);
+});

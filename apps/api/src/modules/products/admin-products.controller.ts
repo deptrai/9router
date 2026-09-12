@@ -30,9 +30,17 @@ export class AdminProductsController {
   ) {}
 
   @Get()
-  async listAdminProducts(): Promise<{ ok: boolean; products: AdminProductDto[] }> {
-    const products = await this.productsService.listAdminProducts();
-    return { ok: true, products };
+  async listAdminProducts(
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+    @Query('search') search?: string,
+  ): Promise<{ ok: boolean; products: AdminProductDto[]; total: number }> {
+    const products = await this.productsService.listAdminProducts({
+      limit: limit ? parseInt(limit, 10) : undefined,
+      offset: offset ? parseInt(offset, 10) : undefined,
+      search,
+    });
+    return { ok: true, products, total: products.length };
   }
 
   @Get(':id')
