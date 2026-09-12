@@ -11,23 +11,28 @@ import {
   ShieldCheck,
   Zap,
 } from 'lucide-react';
-import type { AdminProductDto, SupplierSourceDto } from '@repo/shared-types';
+import type { AdminProductDto, SupplierSourceDto, AdminGlobalInventorySummaryDto } from '@repo/shared-types';
 import { apiClient } from '../lib/api-client';
 
 export default function AdminHomePage() {
   const [products, setProducts] = useState<AdminProductDto[]>([]);
   const [suppliers, setSuppliers] = useState<SupplierSourceDto[]>([]);
+  const [inventorySummary, setInventorySummary] = useState<AdminGlobalInventorySummaryDto | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const loadOverview = async () => {
       try {
-        const [prodRes, supRes] = await Promise.all([
+        const [prodRes, supRes, invRes] = await Promise.all([
           apiClient.get<{ ok: boolean; products: AdminProductDto[] }>('/api/admin/products'),
           apiClient.get<{ ok: boolean; suppliers: SupplierSourceDto[] }>('/api/admin/suppliers'),
+          apiClient.get<{ ok: boolean; summary: AdminGlobalInventorySummaryDto }>('/api/admin/inventory/summary').catch(() => null),
         ]);
         setProducts(prodRes.products || []);
         setSuppliers(supRes.suppliers || []);
+        if (invRes) {
+          setInventorySummary(invRes.summary);
+        }
       } catch {
         // Handled silently
       } finally {
@@ -40,7 +45,8 @@ export default function AdminHomePage() {
   const totalActive = products.filter((p) => p.isActive).length;
   const totalExternal = products.filter((p) => p.sourcingMode !== 'IN_HOUSE').length;
   const activeSuppliers = suppliers.filter((s) => s.isActive).length;
-  const totalInventory = products.reduce((acc, p) => acc + (p.availableCount || 0), 0);
+  // Use live inventory summary if available, fallback to product counts
+  const totalInventory = inventorySummary?.totalAvailable ?? products.reduce((acc, p) => acc + (p.availableCount || 0), 0);
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -59,6 +65,13 @@ export default function AdminHomePage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Link
+              href="/inventory"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-colors"
+            >
+              <Layers className="w-4 h-4" />
+              <span>Kho hàng</span>
+            </Link>
             <Link
               href="/products"
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition-colors shadow-lg shadow-amber-500/20"
@@ -120,7 +133,7 @@ export default function AdminHomePage() {
             {loading ? '...' : totalInventory}
           </p>
           <p className="text-[11px] text-slate-400 mt-1">
-            Key khả dụng trong kho (Story 5.2)
+            {inventorySummary ? `${inventorySummary.productStockSummaries.length} sản phẩm có kho` : 'Đang tải...'}
           </p>
         </div>
       </div>

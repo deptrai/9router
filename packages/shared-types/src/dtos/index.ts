@@ -339,3 +339,68 @@ export interface CreateSupplierSourceDto {
 export interface UpdateSupplierSourceDto extends Partial<CreateSupplierSourceDto> {}
 
 
+
+// ---------------------------------------------------------------------------
+// Admin Inventory Management DTOs (Story 5.2)
+// ---------------------------------------------------------------------------
+
+export interface AdminInventoryItemDto {
+  id: string;
+  productId: string;
+  status: InventoryStatus;
+  orderId: string | null;
+  addedAt: string;
+  soldAt: string | null;
+  maskedCredential: string;
+}
+
+export interface ProductStockSummaryDto {
+  productId: string;
+  productTitle: string;
+  available: number;
+  reserved: number;
+  sold: number;
+  defective: number;
+  total: number;
+}
+
+export interface AdminGlobalInventorySummaryDto {
+  totalAvailable: number;
+  totalReserved: number;
+  totalSold: number;
+  totalDefective: number;
+  productStockSummaries: ProductStockSummaryDto[];
+}
+
+export interface BatchImportCredentialsDto {
+  credentials: string[];
+  allowDuplicates?: boolean;
+}
+
+export interface BatchImportCredentialsResponseDto {
+  ok: boolean;
+  count: number;
+  productId: string;
+  addedAt: string;
+}
+
+export interface UpdateCredentialStatusDto {
+  status: 'AVAILABLE' | 'DEFECTIVE';
+}
+
+export interface ListInventoryQueryDto {
+  limit?: number;
+  offset?: number;
+  status?: InventoryStatus;
+}
+
+export interface ListInventoryResponseDto {
+  ok: boolean;
+  items: AdminInventoryItemDto[];
+  total: number;
+}
+
+export interface DecryptCredentialResponseDto {
+  ok: boolean;
+  credential: string;
+}
