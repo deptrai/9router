@@ -78,8 +78,8 @@ development_status:
 
   epic-5: in-progress
   5-1-quan-tri-danh-muc-san-pham-cau-hinh-nha-cung-cap: done
-  5-2-quan-ly-kho-hang-noi-bo-nhap-lo-credential: ready-for-dev
-  5-3-giam-sat-don-hang-can-thiep-thu-cong-hoan-tien: backlog
+  5-2-quan-ly-kho-hang-noi-bo-nhap-lo-credential: done
+  5-3-giam-sat-don-hang-can-thiep-thu-cong-hoan-tien: ready-for-dev
   5-4-bao-cao-doanh-thu-kiem-toan-so-cai-doi-soat-dong-tien: backlog
   epic-5-retrospective: optional
 action_items:
