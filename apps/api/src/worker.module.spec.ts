@@ -6,7 +6,7 @@ import { WorkerModule } from './worker.module';
 import { SourcingWorker } from './workers/sourcing.worker';
 import { SourcingExecutorService } from './modules/suppliers/scraper/sourcing-executor.service';
 
-test('WorkerModule boots clean application context without missing dependencies', async () => {
+test('[P0] WorkerModule: boots clean application context without missing dependencies', async () => {
   const origDisabled = process.env.SOURCING_WORKER_DISABLED;
   process.env.SOURCING_WORKER_DISABLED = 'true';
 

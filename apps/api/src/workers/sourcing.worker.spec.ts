@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import { SourcingWorker } from './sourcing.worker';
 
-test('SourcingWorker: does not construct worker when SOURCING_WORKER_DISABLED=true', async () => {
+test('[P1] SourcingWorker: does not construct worker when SOURCING_WORKER_DISABLED=true', async () => {
   const orig = process.env.SOURCING_WORKER_DISABLED;
   process.env.SOURCING_WORKER_DISABLED = 'true';
   try {
@@ -16,7 +16,7 @@ test('SourcingWorker: does not construct worker when SOURCING_WORKER_DISABLED=tr
   }
 });
 
-test('SourcingWorker: onModuleDestroy gracefully closes worker and disconnects redis', async () => {
+test('[P1] SourcingWorker: onModuleDestroy gracefully closes worker and disconnects redis', async () => {
   const worker = new SourcingWorker({} as any);
   let workerClosed = false;
   let redisDisconnected = false;
@@ -38,14 +38,14 @@ test('SourcingWorker: onModuleDestroy gracefully closes worker and disconnects r
   assert.strictEqual(redisDisconnected, true);
 });
 
-test('SourcingWorker: onModuleDestroy is safe when worker/connection are undefined', async () => {
+test('[P2] SourcingWorker: onModuleDestroy is safe when worker/connection are undefined', async () => {
   const worker = new SourcingWorker({} as any);
   await assert.doesNotReject(async () => {
     await worker.onModuleDestroy();
   });
 });
 
-test('SourcingWorker: onModuleInit configures Worker with correct queue, lockDuration, maxStalledCount and concurrency', async () => {
+test('[P0] SourcingWorker: onModuleInit configures Worker with correct queue, lockDuration, maxStalledCount and concurrency', async () => {
   const origDisabled = process.env.SOURCING_WORKER_DISABLED;
   const origConcurrency = process.env.SOURCING_WORKER_CONCURRENCY;
 
@@ -99,7 +99,7 @@ test('SourcingWorker: onModuleInit configures Worker with correct queue, lockDur
   }
 });
 
-test('SourcingWorker: registered processor callback delegates to executor.execute(job)', async () => {
+test('[P0] SourcingWorker: registered processor callback delegates to executor.execute(job)', async () => {
   let capturedProcessor: any = null;
   let executedJob: any = null;
 

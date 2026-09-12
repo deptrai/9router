@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import { ConfigPoolAdapter } from './config-pool.adapter';
 import { SupplierTerminalError } from './supplier-adapter';
 
-test('ConfigPoolAdapter.purchase returns pool[0] without mutating credentials', async () => {
+test('[P0] ConfigPoolAdapter.purchase: returns pool[0] without mutating credentials', async () => {
   const adapter = new ConfigPoolAdapter();
   const mockSupplier = {
     id: 'sup-1',
@@ -30,7 +30,20 @@ test('ConfigPoolAdapter.purchase returns pool[0] without mutating credentials', 
   assert.deepStrictEqual(pool, ['KEY-A', 'KEY-B', 'KEY-C']);
 });
 
-test('ConfigPoolAdapter.purchase throws SupplierTerminalError when credentialPool is empty or invalid', async () => {
+test('[P1] ConfigPoolAdapter.purchase: trims whitespace around credential', async () => {
+  const adapter = new ConfigPoolAdapter();
+  const mockSupplier = {
+    id: 'sup-1',
+    configCredentials: {
+      credentialPool: ['   TRIMMED-KEY   '],
+    },
+  };
+
+  const res = await adapter.purchase({} as any, mockSupplier as any);
+  assert.strictEqual(res.credential, 'TRIMMED-KEY');
+});
+
+test('[P1] ConfigPoolAdapter.purchase: throws SupplierTerminalError when credentialPool is empty or invalid', async () => {
   const adapter = new ConfigPoolAdapter();
 
   await assert.rejects(
@@ -57,9 +70,23 @@ test('ConfigPoolAdapter.purchase throws SupplierTerminalError when credentialPoo
       return true;
     },
   );
+
+  await assert.rejects(
+    async () => {
+      await adapter.purchase(
+        {} as any,
+        { configCredentials: { credentialPool: ['   '] } } as any,
+      );
+    },
+    (err: any) => {
+      assert(err instanceof SupplierTerminalError);
+      assert.strictEqual(err.message, 'CREDENTIAL_POOL_EMPTY');
+      return true;
+    },
+  );
 });
 
-test('ConfigPoolAdapter.commit re-reads FOR UPDATE and shifts the credential pool within transaction', async () => {
+test('[P0] ConfigPoolAdapter.commit: re-reads FOR UPDATE and shifts the credential pool within transaction', async () => {
   const adapter = new ConfigPoolAdapter();
 
   let updateSetPayload: any = null;
@@ -106,7 +133,7 @@ test('ConfigPoolAdapter.commit re-reads FOR UPDATE and shifts the credential poo
   assert.strictEqual(updateSetPayload.configCredentials.otherField, 'val');
 });
 
-test('ConfigPoolAdapter.commit throws SupplierTerminalError if pool is empty in DB', async () => {
+test('[P1] ConfigPoolAdapter.commit: throws SupplierTerminalError if pool is empty in DB', async () => {
   const adapter = new ConfigPoolAdapter();
 
   const mockTx: any = {
@@ -134,6 +161,36 @@ test('ConfigPoolAdapter.commit throws SupplierTerminalError if pool is empty in 
   await assert.rejects(
     async () => {
       await adapter.commit('sup-1', { credential: 'KEY-1' }, mockTx);
+    },
+    (err: any) => {
+      assert(err instanceof SupplierTerminalError);
+      assert.strictEqual(err.message, 'CREDENTIAL_POOL_EMPTY');
+      return true;
+    },
+  );
+});
+
+test('[P1] ConfigPoolAdapter.commit: throws SupplierTerminalError if supplier row not found in DB', async () => {
+  const adapter = new ConfigPoolAdapter();
+
+  const mockTx: any = {
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          for: async (_lock: string) => [], // No row found
+        }),
+      }),
+    }),
+    update: () => ({
+      set: () => ({
+        where: async () => {},
+      }),
+    }),
+  };
+
+  await assert.rejects(
+    async () => {
+      await adapter.commit('missing-sup', { credential: 'KEY-1' }, mockTx);
     },
     (err: any) => {
       assert(err instanceof SupplierTerminalError);

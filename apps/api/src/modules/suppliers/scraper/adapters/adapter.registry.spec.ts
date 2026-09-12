@@ -4,7 +4,7 @@ import { AdapterRegistryService } from './adapter.registry';
 import { ConfigPoolAdapter } from './config-pool.adapter';
 import { ISupplierAdapter } from './supplier-adapter';
 
-test('AdapterRegistryService registers ConfigPoolAdapter by default on construction', () => {
+test('[P1] AdapterRegistryService registers ConfigPoolAdapter by default on construction', () => {
   const configPoolAdapter = new ConfigPoolAdapter();
   const registry = new AdapterRegistryService(configPoolAdapter);
 
@@ -12,14 +12,14 @@ test('AdapterRegistryService registers ConfigPoolAdapter by default on construct
   assert.strictEqual(resolved, configPoolAdapter);
 });
 
-test('AdapterRegistryService returns undefined for unregistered adapter types', () => {
+test('[P2] AdapterRegistryService returns undefined for unregistered adapter types', () => {
   const configPoolAdapter = new ConfigPoolAdapter();
   const registry = new AdapterRegistryService(configPoolAdapter);
 
   assert.strictEqual(registry.get('NON_EXISTENT_TYPE'), undefined);
 });
 
-test('AdapterRegistryService allows registering and retrieving custom adapters', () => {
+test('[P1] AdapterRegistryService allows registering and retrieving custom adapters', () => {
   const configPoolAdapter = new ConfigPoolAdapter();
   const registry = new AdapterRegistryService(configPoolAdapter);
 

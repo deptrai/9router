@@ -79,6 +79,7 @@ interface MockSetupOptions {
   fetchCostError?: Error;
   fulfillRowsAffected?: number;
   refundRowsAffected?: number;
+  telegramError?: Error;
 }
 
 function createHarness(opts: MockSetupOptions = {}) {
@@ -92,6 +93,7 @@ function createHarness(opts: MockSetupOptions = {}) {
     fetchCostError,
     fulfillRowsAffected = 1,
     refundRowsAffected = 1,
+    telegramError,
   } = opts;
 
   const mockAdapter = opts.adapter ?? {
@@ -135,9 +137,11 @@ function createHarness(opts: MockSetupOptions = {}) {
   const telegramCalls: { type: 'confirmation' | 'refund'; args: any[] }[] = [];
   const telegramBot = {
     sendOrderConfirmation: async (...args: any[]) => {
+      if (telegramError) throw telegramError;
       telegramCalls.push({ type: 'confirmation', args });
     },
     sendRefundNotice: async (...args: any[]) => {
+      if (telegramError) throw telegramError;
       telegramCalls.push({ type: 'refund', args });
     },
   };
@@ -242,7 +246,7 @@ function createHarness(opts: MockSetupOptions = {}) {
   };
 }
 
-test('SourcingExecutor: silently discards job if order is missing', async () => {
+test('[P2] SourcingExecutor: silently discards job if order is missing', async () => {
   const { service, cleanup, ledgerCalls } = createHarness({
     orderRow: null,
   });
@@ -258,7 +262,7 @@ test('SourcingExecutor: silently discards job if order is missing', async () => 
   }
 });
 
-test('SourcingExecutor: silently discards job if order is not in SOURCING status', async () => {
+test('[P2] SourcingExecutor: silently discards job if order is not in SOURCING status', async () => {
   const { service, cleanup, ledgerCalls } = createHarness({
     orderRow: { ...testOrder, status: OrderStatus.FULFILLED },
   });
@@ -274,7 +278,7 @@ test('SourcingExecutor: silently discards job if order is not in SOURCING status
   }
 });
 
-test('SourcingExecutor: terminal failure when product is missing -> refunds order', async () => {
+test('[P1] SourcingExecutor: terminal failure when product is missing -> refunds order', async () => {
   const { service, cleanup, ledgerCalls, auditInserts } = createHarness({
     productRow: null,
   });
@@ -307,7 +311,7 @@ test('SourcingExecutor: terminal failure when product is missing -> refunds orde
   }
 });
 
-test('SourcingExecutor: terminal failure when supplier is missing -> audit row has supplierSourceId null', async () => {
+test('[P1] SourcingExecutor: terminal failure when supplier is missing -> audit row has supplierSourceId null', async () => {
   const { service, cleanup, ledgerCalls, auditInserts, telegramCalls } = createHarness({
     supplierRow: null,
   });
@@ -338,7 +342,7 @@ test('SourcingExecutor: terminal failure when supplier is missing -> audit row h
   }
 });
 
-test('SourcingExecutor: terminal failure when supplier is inactive', async () => {
+test('[P1] SourcingExecutor: terminal failure when supplier is inactive', async () => {
   const { service, cleanup, auditInserts } = createHarness({
     supplierRow: { ...testSupplier, isActive: false },
   });
@@ -363,7 +367,7 @@ test('SourcingExecutor: terminal failure when supplier is inactive', async () =>
   }
 });
 
-test('SourcingExecutor: terminal failure when adapter is missing for supplier type', async () => {
+test('[P1] SourcingExecutor: terminal failure when adapter is missing for supplier type', async () => {
   const { service, cleanup, auditInserts } = createHarness({
     supplierRow: { ...testSupplier, type: 'UNKNOWN_SCRAPER' },
   });
@@ -388,7 +392,7 @@ test('SourcingExecutor: terminal failure when adapter is missing for supplier ty
   }
 });
 
-test('SourcingExecutor: terminal failure on margin breach (upstreamCost > maxUpstreamCost)', async () => {
+test('[P0] SourcingExecutor: terminal failure on margin breach (upstreamCost > maxUpstreamCost)', async () => {
   const { service, cleanup, auditInserts } = createHarness({
     upstreamCost: '95000.00', // max is 80000.00
   });
@@ -413,7 +417,7 @@ test('SourcingExecutor: terminal failure on margin breach (upstreamCost > maxUps
   }
 });
 
-test('SourcingExecutor: terminal failure on margin breach (upstreamCost > order.price)', async () => {
+test('[P0] SourcingExecutor: terminal failure on margin breach (upstreamCost > order.price)', async () => {
   const { service, cleanup, auditInserts } = createHarness({
     productRow: { ...testProduct, maxUpstreamCost: null },
     upstreamCost: '110000.00', // order price is 100000.00
@@ -439,7 +443,7 @@ test('SourcingExecutor: terminal failure on margin breach (upstreamCost > order.
   }
 });
 
-test('SourcingExecutor: retryable error rethrows without refund when attempts remain', async () => {
+test('[P0] SourcingExecutor: retryable error rethrows without refund when attempts remain', async () => {
   const { service, cleanup, ledgerCalls, auditInserts } = createHarness({
     adapter: {
       purchase: async () => {
@@ -471,7 +475,7 @@ test('SourcingExecutor: retryable error rethrows without refund when attempts re
   }
 });
 
-test('SourcingExecutor: retry exhaustion on final attempt triggers refund path', async () => {
+test('[P0] SourcingExecutor: retry exhaustion on final attempt triggers refund path', async () => {
   const { service, cleanup, ledgerCalls, auditInserts } = createHarness({
     adapter: {
       purchase: async () => {
@@ -503,7 +507,7 @@ test('SourcingExecutor: retry exhaustion on final attempt triggers refund path',
   }
 });
 
-test('SourcingExecutor: terminal error from adapter immediately refunds and marks unrecoverable', async () => {
+test('[P0] SourcingExecutor: terminal error from adapter immediately refunds and marks unrecoverable', async () => {
   const { service, cleanup, ledgerCalls, auditInserts } = createHarness({
     adapter: {
       purchase: async () => {
@@ -534,7 +538,7 @@ test('SourcingExecutor: terminal error from adapter immediately refunds and mark
   }
 });
 
-test('SourcingExecutor: success path fulfills order, writes audit, and sends confirmation', async () => {
+test('[P0] SourcingExecutor: success path fulfills order, writes audit, and sends confirmation', async () => {
   let commitCalled = false;
   const { service, cleanup, ledgerCalls, auditInserts, orderUpdates, telegramCalls } =
     createHarness({
@@ -578,7 +582,7 @@ test('SourcingExecutor: success path fulfills order, writes audit, and sends con
   }
 });
 
-test('SourcingExecutor: terminal failure when upstream price fetch fails -> COST_UNAVAILABLE refund', async () => {
+test('[P1] SourcingExecutor: terminal failure when upstream price fetch fails -> COST_UNAVAILABLE refund', async () => {
   const { service, cleanup, ledgerCalls, auditInserts } = createHarness({
     fetchCostError: new Error('Price provider timeout'),
   });
@@ -605,7 +609,7 @@ test('SourcingExecutor: terminal failure when upstream price fetch fails -> COST
   }
 });
 
-test('SourcingExecutor: terminal failure when configCredentials is empty object -> SUPPLIER_INVALID', async () => {
+test('[P1] SourcingExecutor: terminal failure when configCredentials is empty object -> SUPPLIER_INVALID', async () => {
   const { service, cleanup, auditInserts } = createHarness({
     supplierRow: { ...testSupplier, configCredentials: {} },
   });
@@ -630,7 +634,7 @@ test('SourcingExecutor: terminal failure when configCredentials is empty object 
   }
 });
 
-test('SourcingExecutor: purchase timeout throws SupplierRetryableError when attempts remain', async () => {
+test('[P0] SourcingExecutor: purchase timeout throws SupplierRetryableError when attempts remain', async () => {
   const origTimeout = process.env.SOURCING_PURCHASE_TIMEOUT_MS;
   process.env.SOURCING_PURCHASE_TIMEOUT_MS = '20'; // 20ms
 
@@ -663,7 +667,7 @@ test('SourcingExecutor: purchase timeout throws SupplierRetryableError when atte
   }
 });
 
-test('SourcingExecutor: invalid output credential after commit causes rollback and refund', async () => {
+test('[P0] SourcingExecutor: invalid output credential after commit causes rollback and refund', async () => {
   const { service, cleanup, ledgerCalls, auditInserts } = createHarness({
     adapter: {
       purchase: async () => ({ credential: 'HINT' }),
@@ -697,7 +701,7 @@ test('SourcingExecutor: invalid output credential after commit causes rollback a
   }
 });
 
-test('SourcingExecutor: race lost on fulfill does not write audit and does not notify', async () => {
+test('[P1] SourcingExecutor: race lost on fulfill does not write audit and does not notify', async () => {
   const { service, cleanup, auditInserts, telegramCalls } = createHarness({
     fulfillRowsAffected: 0, // 0 rows updated
   });
@@ -716,7 +720,7 @@ test('SourcingExecutor: race lost on fulfill does not write audit and does not n
   }
 });
 
-test('SourcingExecutor: race lost on refund does not credit wallet or insert audit', async () => {
+test('[P1] SourcingExecutor: race lost on refund does not credit wallet or insert audit', async () => {
   const { service, cleanup, ledgerCalls, auditInserts, telegramCalls } = createHarness({
     supplierRow: null,
     refundRowsAffected: 0, // 0 rows updated on refund
@@ -731,6 +735,58 @@ test('SourcingExecutor: race lost on refund does not credit wallet or insert aud
     assert.strictEqual(ledgerCalls.length, 0);
     assert.strictEqual(auditInserts.length, 0);
     assert.strictEqual(telegramCalls.length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test('[P1] SourcingExecutor: telegram notification failure during fulfillment does not fail fulfillment or audit', async () => {
+  const { service, cleanup, orderUpdates, auditInserts } = createHarness({
+    telegramError: new Error('Telegram Bot API network timeout'),
+  });
+
+  try {
+    await service.execute({
+      data: { orderId: 'order-1', productId: 'prod-1', supplierSourceId: 'sup-1' },
+      attemptsMade: 0,
+      opts: { attempts: 3 },
+    } as any);
+
+    assert.strictEqual(orderUpdates.length, 2);
+    assert.strictEqual(orderUpdates[0].status, OrderStatus.FULFILLED);
+    assert.strictEqual(auditInserts.length, 1);
+    assert.strictEqual(auditInserts[0].status, SupplierOrderStatus.SUCCESS);
+  } finally {
+    cleanup();
+  }
+});
+
+test('[P1] SourcingExecutor: telegram refund notification failure does not suppress terminal refund error', async () => {
+  const { service, cleanup, ledgerCalls, auditInserts } = createHarness({
+    productRow: null,
+    telegramError: new Error('Telegram Bot API 403 Blocked'),
+  });
+
+  try {
+    await assert.rejects(
+      async () => {
+        await service.execute({
+          data: { orderId: 'order-1', productId: 'prod-missing', supplierSourceId: 'sup-1' },
+          attemptsMade: 0,
+          opts: { attempts: 3 },
+        } as any);
+      },
+      (err: any) => {
+        assert(err instanceof UnrecoverableError);
+        assert.strictEqual(err.message, 'PRODUCT_MISSING');
+        return true;
+      },
+    );
+
+    // Ledger refund and audit insert were completed before telegram warning
+    assert.strictEqual(ledgerCalls.length, 1);
+    assert.strictEqual(auditInserts.length, 1);
+    assert.strictEqual(auditInserts[0].status, SupplierOrderStatus.FAILED);
   } finally {
     cleanup();
   }
