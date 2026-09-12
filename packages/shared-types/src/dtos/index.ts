@@ -278,3 +278,64 @@ export interface SyncPricesResponseDto {
   summary: PriceSyncSummaryDto;
 }
 
+// ---------------------------------------------------------------------------
+// Admin Products & Suppliers Management DTOs (Story 5.1)
+// ---------------------------------------------------------------------------
+
+export interface AdminProductDto extends ProductDto {
+  supplierSourceId?: string | null;
+  supplierSourceName?: string | null;
+  supplierProductUrl?: string | null;
+  upstreamCost?: string | null;
+  maxUpstreamCost?: string | null;
+  costSyncedAt?: string | null;
+  autoPricing: boolean;
+  availableCount: number;
+  soldCount: number;
+}
+
+export interface CreateProductDto {
+  title: string;
+  slug?: string;
+  description?: string | null;
+  category?: string | null;
+  price: string;
+  imageUrl?: string | null;
+  sourcingMode: ProductSourcingMode;
+  supplierSourceId?: string | null;
+  supplierProductUrl?: string | null;
+  upstreamCost?: string | null;
+  maxUpstreamCost?: string | null;
+  autoPricing?: boolean;
+  isActive?: boolean;
+}
+
+export interface UpdateProductDto extends Partial<CreateProductDto> {}
+
+export interface SupplierSourceDto {
+  id: string;
+  name: string;
+  type: string;
+  targetUrl?: string | null;
+  configCredentials?: Record<string, any> | null;
+  markupPercentage: string;
+  markupFixedVnd: string;
+  isActive: boolean;
+  linkedProductsCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateSupplierSourceDto {
+  name: string;
+  type?: string;
+  targetUrl?: string | null;
+  configCredentials?: Record<string, any> | null;
+  markupPercentage?: string;
+  markupFixedVnd?: string;
+  isActive?: boolean;
+}
+
+export interface UpdateSupplierSourceDto extends Partial<CreateSupplierSourceDto> {}
+
+

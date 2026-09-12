@@ -24,7 +24,7 @@ export class ProductsController {
   }
 
   @Post('sync-prices')
-  @UseGuards(TelegramAuthGuard, AdminRoleGuard)
+  @UseGuards(AdminRoleGuard)
   async syncPrices(): Promise<SyncPricesResponseDto> {
     return { ok: true, summary: await this.priceSyncService.syncAll() };
   }
