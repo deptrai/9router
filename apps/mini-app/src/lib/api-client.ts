@@ -37,8 +37,21 @@ export function getTelegramInitData(): string | null {
   const fromUrl =
     hashParams.get('tgWebAppData') || searchParams.get('tgWebAppData');
   if (fromUrl) {
+    try {
+      window.sessionStorage?.setItem('tg_init_data', fromUrl);
+      (window as any).__telegramInitData = fromUrl;
+    } catch {}
     return fromUrl;
   }
+
+  // Source 3b: sessionStorage fallback (persists across Next.js client-side navigation)
+  try {
+    const stored = window.sessionStorage?.getItem('tg_init_data');
+    if (stored) {
+      (window as any).__telegramInitData = stored;
+      return stored;
+    }
+  } catch {}
 
   // Source 4: NEXT_PUBLIC_DEV_TG_INIT_DATA for localhost dev
   if (process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_DEV_TG_INIT_DATA) {
