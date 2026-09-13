@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-09-10
-last_updated: 09-13-2026 10:45
+last_updated: 09-13-2026 12:26
 project: 9Router E-Commerce Platform
 project_key: 9R-ECOM
 tracking_system: file-system
@@ -106,18 +106,18 @@ action_items:
     action: "Trích xuất các hàm format tiền tệ, ngày tháng, và tỷ lệ vào module dùng
       chung apps/admin/src/lib/formatters.ts"
     owner: "Amelia"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-13.md"
   - id: "epic-5-retro-item-5-tách-các-phương-thức-quản-trị-của-orders"
     epic: 5
     action: "Tách các phương thức quản trị của OrdersService sang AdminOrdersService"
     owner: "Winston"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-13.md"
   - id: "epic-5-retro-item-6-chuẩn-bị-file-cấu-hình-docker-compose-pr"
     epic: 5
     action: "Chuẩn bị file cấu hình docker-compose.prod.yml hoàn chỉnh tích hợp script
       worker:prod và biến môi trường bảo mật"
     owner: "Luisphan"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-13.md"
