@@ -1,0 +1,26 @@
+# ============================================================================
+# Dockerfile for 9Router Telegram Relay Service (Story 6.1)
+# ============================================================================
+
+FROM node:22-alpine AS runner
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+WORKDIR /app
+ENV NODE_ENV=production
+ENV RELAY_HOST=0.0.0.0
+ENV RELAY_PORT=3800
+
+# Copy lockfile and package manifests for production install
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY packages/tsconfig/package.json ./packages/tsconfig/
+COPY apps/telegram-relay/package.json ./apps/telegram-relay/
+
+RUN pnpm install --frozen-lockfile --prod
+
+# Copy application source directly (ESM Node app, no dist compile step)
+COPY apps/telegram-relay/src ./apps/telegram-relay/src
+
+# Internal port only, no host publish
+EXPOSE 3800
+
+# Suppress Node 22 localStorage experimental warnings for GramJS
+CMD ["node", "--disable-warning=ExperimentalWarning", "apps/telegram-relay/src/main.js"]

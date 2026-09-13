@@ -1,0 +1,22 @@
+{
+  "name": "@repo/telegram-relay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/main.js",
+    "dev": "tsx watch src/main.js",
+    "test": "NODE_OPTIONS=\"--disable-warning=ExperimentalWarning\" tsx --test \"src/**/*.spec.js\"",
+    "login": "node src/login.js",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "telegram": "2.26.22"
+  },
+  "devDependencies": {
+    "@repo/tsconfig": "workspace:*",
+    "@types/node": "^22.13.1",
+    "tsx": "^4.23.13",
+    "typescript": "^5.7.3"
+  }
+}

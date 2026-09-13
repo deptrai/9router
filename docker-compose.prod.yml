@@ -47,6 +47,35 @@ services:
       - 9router-internal
 
   # --------------------------------------------------------------------------
+  # Telegram Relay Service: Single-Session MTProto Relay (Story 6.1)
+  # --------------------------------------------------------------------------
+  telegram-relay:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.telegram-relay
+    container_name: 9router-prod-telegram-relay
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      RELAY_HOST: 0.0.0.0
+      RELAY_PORT: 3800
+      RELAY_AUTH_TOKEN: ${RELAY_AUTH_TOKEN}
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
+      TELEGRAM_SESSION: ${TELEGRAM_SESSION}
+      RELAY_POLL_MS: ${RELAY_POLL_MS:-3000}
+    expose:
+      - "3800"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3800/liveness || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - 9router-internal
+
+  # --------------------------------------------------------------------------
   # Backend API Server: NestJS
   # --------------------------------------------------------------------------
   api:
@@ -64,6 +93,8 @@ services:
       STORE_ENC_KEY: ${STORE_ENC_KEY}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       TELEGRAM_BOT_SECRET: ${TELEGRAM_BOT_SECRET}
+      TELEGRAM_SCRAPER_RELAY_URL: ${TELEGRAM_SCRAPER_RELAY_URL:-http://telegram-relay:3800/relay}
+      TELEGRAM_SCRAPER_RELAY_TOKEN: ${RELAY_AUTH_TOKEN:-}
       VIETQR_CLIENT_ID: ${VIETQR_CLIENT_ID:-}
       VIETQR_API_KEY: ${VIETQR_API_KEY:-}
       BITCART_API_URL: ${BITCART_API_URL:-}
@@ -96,6 +127,8 @@ services:
       REDIS_URL: redis://redis:6379
       STORE_ENC_KEY: ${STORE_ENC_KEY}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_SCRAPER_RELAY_URL: ${TELEGRAM_SCRAPER_RELAY_URL:-http://telegram-relay:3800/relay}
+      TELEGRAM_SCRAPER_RELAY_TOKEN: ${RELAY_AUTH_TOKEN:-}
       SOURCING_PURCHASE_TIMEOUT_MS: ${SOURCING_PURCHASE_TIMEOUT_MS:-45000}
     depends_on:
       postgres:

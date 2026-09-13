@@ -6,7 +6,13 @@
     "TELEGRAM_BOT_TOKEN",
     "PORT",
     "NEXT_PUBLIC_API_URL",
-    "NODE_ENV"
+    "NODE_ENV",
+    "TELEGRAM_API_ID",
+    "TELEGRAM_API_HASH",
+    "TELEGRAM_SESSION",
+    "RELAY_AUTH_TOKEN",
+    "RELAY_PORT",
+    "RELAY_POLL_MS"
   ],
   "tasks": {
     "build": {

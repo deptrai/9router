@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-09-10
-last_updated: 09-13-2026 12:26
+last_updated: 09-13-2026 13:30
 project: 9Router E-Commerce Platform
 project_key: 9R-ECOM
 tracking_system: file-system
@@ -82,6 +82,13 @@ development_status:
   5-3-giam-sat-don-hang-can-thiep-thu-cong-hoan-tien: done
   5-4-bao-cao-doanh-thu-kiem-toan-so-cai-doi-soat-dong-tien: done
   epic-5-retrospective: done
+
+  epic-6: in-progress
+  6-1-telegram-relay-service-single-session: done
+  6-2-backend-sync-engine-adapter-parser-queue: backlog
+  6-3-admin-experience-supplier-form-product-review: backlog
+  epic-6-retrospective: optional
+
 action_items:
   - id: "epic-4-retro-item-1-bổ-sung-script-worker-prod-trong-apps-ap"
     epic: 4
