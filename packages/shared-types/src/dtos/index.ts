@@ -488,3 +488,69 @@ export interface ListAdminOrdersResponseDto {
   orders: AdminOrderListItemDto[];
   total: number;
 }
+
+// ============================================================================
+// Story 5.4: Finance & Reconciliation DTOs
+// ============================================================================
+
+/**
+ * High-level finance reconciliation summary — verifies the invariant:
+ *   Total Deposits - Total Purchases + Total Refunds = Sum of Wallet Balances
+ * All monetary values are NUMERIC strings (never JS number) to preserve precision.
+ */
+export interface AdminFinanceSummaryDto {
+  /** Sum of TOPUP_VIETQR + TOPUP_CRYPTO ledger entries (amount > 0) */
+  totalDepositsVnd: string;
+  /** Sum of |amount| for STORE_PURCHASE ledger entries (amount < 0) */
+  totalPurchasesVnd: string;
+  /** Sum of PURCHASE_REFUND ledger entries (amount > 0) */
+  totalRefundsVnd: string;
+  /** Sum of wallets.balance across all user wallets */
+  totalWalletLiabilitiesVnd: string;
+  /** (deposits - purchases + refunds) - walletLiabilities; MUST be ~0 for clean state */
+  reconciledDelta: string;
+  /** true iff ABS(reconciledDelta) <= 0.01 VND tolerance */
+  isReconciled: boolean;
+  /** Suspicious ledger rows when !isReconciled — limited to 50 most recent */
+  anomalousTransactions: LedgerTransactionDto[];
+}
+
+/**
+ * One revenue bucket entry — used for time-series charts.
+ * Buckets with zero activity still appear (zero-filled) so charts render continuous timelines.
+ */
+export interface AdminRevenueMetricDto {
+  /** ISO 8601 timestamp marking bucket start (UTC) */
+  bucket: string;
+  /** Sum of |amount| for STORE_PURCHASE transactions in bucket */
+  revenueVnd: string;
+  /** Sum of supplier_orders.cost for orders fulfilled in bucket */
+  costVnd: string;
+  /** revenueVnd - costVnd */
+  profitVnd: string;
+  /** Count of orders.status='FULFILLED' AND fulfilled_at in bucket */
+  orderCount: number;
+}
+
+/**
+ * Integrity violation detail — one flagged rule violation.
+ */
+export interface LedgerIntegrityViolationDto {
+  /** Rule identifier, e.g. 'WALLET_LEDGER_MISMATCH', 'ZERO_AMOUNT_NON_HOLD', 'NEGATIVE_BALANCE_AFTER', 'REFUND_WITHOUT_LEDGER' */
+  rule: string;
+  /** Severity: 'low' | 'medium' | 'high' */
+  severity: 'low' | 'medium' | 'high';
+  /** UUID of the offending wallet/ledger/order row */
+  offendingId: string;
+  /** Human-readable detail for admin drill-down */
+  detail: string;
+}
+
+/**
+ * Ledger integrity check result — violations array is empty when clean.
+ */
+export interface AdminLedgerIntegrityDto {
+  violations: LedgerIntegrityViolationDto[];
+  /** Convenience flag — true iff violations.length === 0 */
+  isClean: boolean;
+}

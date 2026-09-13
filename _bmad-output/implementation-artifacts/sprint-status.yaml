@@ -1,5 +1,5 @@
 # generated: 2026-09-10
-# last_updated: 09-13-2026 02:00
+# last_updated: 09-13-2026 02:30
 # project: 9Router E-Commerce Platform
 # project_key: 9R-ECOM
 # tracking_system: file-system
@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-09-10
-last_updated: 09-13-2026 02:00
+last_updated: 09-13-2026 02:30
 project: 9Router E-Commerce Platform
 project_key: 9R-ECOM
 tracking_system: file-system
@@ -76,11 +76,11 @@ development_status:
   4-4-may-trang-thai-don-hang-tu-dong-hoan-tien-60-giay: done
   epic-4-retrospective: done
 
-  epic-5: in-progress
+  epic-5: done
   5-1-quan-tri-danh-muc-san-pham-cau-hinh-nha-cung-cap: done
   5-2-quan-ly-kho-hang-noi-bo-nhap-lo-credential: done
   5-3-giam-sat-don-hang-can-thiep-thu-cong-hoan-tien: done
-  5-4-bao-cao-doanh-thu-kiem-toan-so-cai-doi-soat-dong-tien: ready-for-dev
+  5-4-bao-cao-doanh-thu-kiem-toan-so-cai-doi-soat-dong-tien: done
   epic-5-retrospective: optional
 action_items:
   - id: "epic-4-retro-item-1-bổ-sung-script-worker-prod-trong-apps-ap"
