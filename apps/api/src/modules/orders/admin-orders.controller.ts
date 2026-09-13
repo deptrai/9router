@@ -12,7 +12,7 @@ import {
   Req,
 } from '@nestjs/common';
 import { AdminRoleGuard } from '../../common/guards/admin-role.guard';
-import { OrdersService } from './orders.service';
+import { AdminOrdersService } from './admin-orders.service';
 import type {
   AdminOrderListItemDto,
   AdminOrderDetailDto,
@@ -26,8 +26,8 @@ import type {
 @Controller('admin/orders')
 export class AdminOrdersController {
   constructor(
-    @Inject(OrdersService)
-    private readonly ordersService: OrdersService,
+    @Inject(AdminOrdersService)
+    private readonly adminOrdersService: AdminOrdersService,
   ) {}
 
   /**
@@ -65,7 +65,7 @@ export class AdminOrdersController {
       productId: productId?.trim() || undefined,
     };
 
-    const result = await this.ordersService.listAdminOrders(query);
+    const result = await this.adminOrdersService.listAdminOrders(query);
     return {
       ok: true,
       orders: result.orders,
@@ -82,7 +82,7 @@ export class AdminOrdersController {
   async getOrderDetail(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
   ): Promise<{ ok: boolean; order: AdminOrderDetailDto }> {
-    const order = await this.ordersService.getAdminOrderDetail(id);
+    const order = await this.adminOrdersService.getAdminOrderDetail(id);
     return {
       ok: true,
       order,
@@ -100,7 +100,7 @@ export class AdminOrdersController {
     @Req() req: any,
   ): Promise<{ ok: boolean; plaintext: string }> {
     const adminId = String(req.user?.id ?? 'web-admin');
-    return this.ordersService.revealAdminCredential(id, adminId);
+    return this.adminOrdersService.revealAdminCredential(id, adminId);
   }
 
   /**
@@ -122,7 +122,7 @@ export class AdminOrdersController {
     }
 
     const adminId = String(req.user?.id ?? 'web-admin');
-    const result = await this.ordersService.adminManualRefund(
+    const result = await this.adminOrdersService.adminManualRefund(
       id,
       adminId,
       body.reason.trim(),
@@ -132,7 +132,7 @@ export class AdminOrdersController {
     // Fire-and-forget Telegram notification AFTER transaction commits.
     // This avoids holding FOR UPDATE locks during external HTTP calls.
     if (result.userId && result.productId) {
-      void this.ordersService.notifyRefundCommit(
+      void this.adminOrdersService.notifyRefundCommit(
         result.userId,
         result.productId,
         {

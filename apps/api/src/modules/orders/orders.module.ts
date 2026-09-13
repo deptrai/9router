@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { OrdersController } from './orders.controller';
 import { AdminOrdersController } from './admin-orders.controller';
 import { OrdersService } from './orders.service';
+import { AdminOrdersService } from './admin-orders.service';
 import { SourcingTimeoutService } from './sourcing-timeout.service';
 import { SourcingTimeoutScheduler } from '../../workers/sourcing-timeout.scheduler';
 import { LedgerModule } from '../ledger/ledger.module';
@@ -14,7 +15,7 @@ import { SuppliersModule } from '../suppliers/suppliers.module';
 @Module({
   imports: [LedgerModule, InventoryModule, WalletsModule, UsersModule, TelegramBotModule, SuppliersModule],
   controllers: [OrdersController, AdminOrdersController],
-  providers: [OrdersService, SourcingTimeoutService, SourcingTimeoutScheduler],
-  exports: [OrdersService, SourcingTimeoutService, SourcingTimeoutScheduler],
+  providers: [OrdersService, AdminOrdersService, SourcingTimeoutService, SourcingTimeoutScheduler],
+  exports: [OrdersService, AdminOrdersService, SourcingTimeoutService, SourcingTimeoutScheduler],
 })
 export class OrdersModule {}
