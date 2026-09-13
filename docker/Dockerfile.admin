@@ -12,12 +12,14 @@ WORKDIR /app
 FROM base AS builder
 
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY packages/tsconfig/package.json ./packages/tsconfig/
 COPY packages/shared-types/package.json ./packages/shared-types/
 COPY apps/admin/package.json ./apps/admin/
 
 RUN pnpm install --frozen-lockfile
 
-COPY tsconfig.json ./
+# Copy shared tsconfig presets + source code
+COPY packages/tsconfig/ ./packages/tsconfig/
 COPY packages/shared-types/ ./packages/shared-types/
 COPY apps/admin/ ./apps/admin/
 
