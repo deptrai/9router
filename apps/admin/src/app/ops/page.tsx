@@ -16,6 +16,7 @@ import type {
   FailedJobDto,
 } from '@repo/shared-types';
 import { apiClient } from '../../lib/api-client';
+import { formatMs, formatPct, formatDate } from '../../lib/formatters';
 import { useToast } from '../../components/Toast';
 
 const REFRESH_INTERVAL_MS = 30_000;
@@ -82,24 +83,7 @@ export default function AdminOpsPage() {
     }
   };
 
-  const formatMs = (ms: number | null | undefined): string => {
-    if (ms == null || !Number.isFinite(ms)) return '—';
-    if (ms < 1000) return `${Math.round(ms)}ms`;
-    return `${(ms / 1000).toFixed(1)}s`;
-  };
 
-  const formatPct = (pct: number | null | undefined): string => {
-    if (pct == null || !Number.isFinite(pct)) return '—';
-    return `${pct.toFixed(1)}%`;
-  };
-
-  const formatDate = (iso: string | null | undefined): string => {
-    if (!iso) return '—';
-    return new Date(iso).toLocaleString('vi-VN', {
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
-      day: '2-digit', month: '2-digit',
-    });
-  };
 
   const timeoutPct = Number.isFinite(metrics?.timeoutRatePct) ? metrics!.timeoutRatePct : 0;
   const timeoutColor =

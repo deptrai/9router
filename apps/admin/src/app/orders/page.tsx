@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import type { AdminOrderListItemDto, OrderStatus } from '@repo/shared-types';
 import { apiClient } from '../../lib/api-client';
+import { formatVnd, formatDate } from '../../lib/formatters';
 import { useToast } from '../../components/Toast';
 import { OrderDetailModal } from '../../components/OrderDetailModal';
 
@@ -277,7 +278,7 @@ export default function AdminOrdersPage() {
                     </td>
 
                     <td className="py-3.5 px-3 text-right font-mono font-bold text-slate-100">
-                      {parseFloat(o.price).toLocaleString('vi-VN')} ₫
+                      {formatVnd(o.price)}
                     </td>
 
                     <td className="py-3.5 px-3 text-center">
@@ -311,7 +312,7 @@ export default function AdminOrdersPage() {
                     </td>
 
                     <td className="py-3.5 px-3 text-slate-400 text-[11px]">
-                      {new Date(o.createdAt).toLocaleString('vi-VN')}
+                      {formatDate(o.createdAt)}
                     </td>
 
                     <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>

@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import type { AdminOrderDetailDto } from '@repo/shared-types';
 import { apiClient } from '../lib/api-client';
+import { formatVnd, formatDate } from '../lib/formatters';
 
 interface OrderDetailModalProps {
   isOpen: boolean;
@@ -124,7 +125,7 @@ export function OrderDetailModal({
         },
       );
 
-      showToast(`Đã hoàn tiền ${parseFloat(res.refundedAmount).toLocaleString('vi-VN')} ₫ vào ví khách hàng`, 'success');
+      showToast(`Đã hoàn tiền ${formatVnd(res.refundedAmount)} vào ví khách hàng`, 'success');
       setShowRefundDialog(false);
       setRefundReason('');
       onOrderRefunded();
@@ -195,7 +196,7 @@ export function OrderDetailModal({
                     {detail.order.status}
                   </span>
                   <div className="font-mono text-base font-bold text-slate-100">
-                    {parseFloat(detail.order.price).toLocaleString('vi-VN')} ₫
+                    {formatVnd(detail.order.price)}
                   </div>
                 </div>
 
@@ -233,7 +234,7 @@ export function OrderDetailModal({
                   <p className="text-[11px] text-slate-400">
                     Hệ thống sẽ cộng lại{' '}
                     <strong className="text-slate-200">
-                      {parseFloat(detail.order.price).toLocaleString('vi-VN')} ₫
+                      {formatVnd(detail.order.price)}
                     </strong>{' '}
                     vào ví của khách hàng và cập nhật trạng thái đơn thành <span className="text-slate-200">REFUNDED</span>.
                   </p>
@@ -310,7 +311,7 @@ export function OrderDetailModal({
                     <div className="flex justify-between">
                       <span>Số dư ví hiện tại:</span>
                       <span className="font-mono text-emerald-400 font-semibold">
-                        {parseFloat(detail.customer.walletBalance).toLocaleString('vi-VN')} ₫
+                        {formatVnd(detail.customer.walletBalance)}
                       </span>
                     </div>
                   </div>
@@ -346,7 +347,7 @@ export function OrderDetailModal({
                     <div className="flex justify-between">
                       <span>Ngày tạo đơn:</span>
                       <span className="font-mono text-slate-300">
-                        {new Date(detail.order.createdAt).toLocaleString('vi-VN')}
+                        {formatDate(detail.order.createdAt)}
                       </span>
                     </div>
                   </div>

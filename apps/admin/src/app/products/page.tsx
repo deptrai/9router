@@ -18,6 +18,7 @@ import {
   type SupplierSourceDto,
 } from '@repo/shared-types';
 import { apiClient } from '../../lib/api-client';
+import { formatVnd } from '../../lib/formatters';
 import { useToast } from '../../components/Toast';
 import { ProductFormModal } from '../../components/ProductFormModal';
 
@@ -265,11 +266,11 @@ export default function AdminProductsPage() {
                     </td>
 
                     <td className="py-3.5 px-3 text-right font-mono font-semibold text-slate-100">
-                      {parseFloat(p.price).toLocaleString('vi-VN')} ₫
+                      {formatVnd(p.price)}
                     </td>
 
                     <td className="py-3.5 px-3 text-right font-mono text-slate-400">
-                      {p.upstreamCost ? `${parseFloat(p.upstreamCost).toLocaleString('vi-VN')} ₫` : '—'}
+                      {formatVnd(p.upstreamCost)}
                     </td>
 
                     <td className="py-3.5 px-3 text-center">

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import type { AdminProductDto, SupplierSourceDto, AdminGlobalInventorySummaryDto } from '@repo/shared-types';
 import { apiClient } from '../lib/api-client';
+import { formatVnd } from '../lib/formatters';
 
 export default function AdminHomePage() {
   const [products, setProducts] = useState<AdminProductDto[]>([]);
@@ -161,7 +162,7 @@ export default function AdminHomePage() {
                 </div>
                 <div className="text-right font-mono">
                   <p className="font-semibold text-slate-100">
-                    {parseFloat(p.price).toLocaleString('vi-VN')} ₫
+                    {formatVnd(p.price)}
                   </p>
                   <span className={`text-[10px] ${p.isActive ? 'text-emerald-400' : 'text-slate-500'}`}>
                     {p.isActive ? 'Đang bán' : 'Tạm ngưng'}

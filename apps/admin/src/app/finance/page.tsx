@@ -20,6 +20,7 @@ import type {
   AdminLedgerIntegrityDto,
 } from '@repo/shared-types';
 import { apiClient } from '../../lib/api-client';
+import { formatVnd, formatCompactVnd, formatDate } from '../../lib/formatters';
 import { useToast } from '../../components/Toast';
 
 type Granularity = 'daily' | 'weekly' | 'monthly';
@@ -101,12 +102,7 @@ export default function AdminFinancePage() {
     return () => clearInterval(id);
   }, []);
 
-  const formatVnd = (v: string | undefined | null) => {
-    if (v === undefined || v === null || v === '') return '—';
-    const n = parseFloat(v);
-    if (Number.isNaN(n)) return '—';
-    return `${n.toLocaleString('vi-VN')} ₫`;
-  };
+
 
   const delta = summary?.reconciledDelta ?? '0.00';
   const deltaNum = parseFloat(delta);
@@ -359,7 +355,7 @@ export default function AdminFinancePage() {
                     {formatVnd(tx.amount)}
                   </p>
                   <p className="text-[10px] text-slate-500">
-                    {new Date(tx.createdAt).toLocaleString('vi-VN')}
+                    {formatDate(tx.createdAt)}
                   </p>
                 </div>
               </div>
@@ -417,11 +413,7 @@ function SimpleLineChart({ data }: { data: AdminRevenueMetricDto[] }) {
       .join(' ');
   };
 
-  const formatTick = (v: number) => {
-    if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
-    if (v >= 1_000) return `${(v / 1_000).toFixed(0)}K`;
-    return v.toFixed(0);
-  };
+
 
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => minV + f * range);
 
@@ -449,7 +441,7 @@ function SimpleLineChart({ data }: { data: AdminRevenueMetricDto[] }) {
               fontSize={10}
               fontFamily="monospace"
             >
-              {formatTick(v)}
+              {formatCompactVnd(v)}
             </text>
           </g>
         );

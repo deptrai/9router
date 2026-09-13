@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import type { AdminProductDto, AdminInventoryItemDto, ProductStockSummaryDto } from '@repo/shared-types';
 import { apiClient } from '../../lib/api-client';
+import { formatDate } from '../../lib/formatters';
 import { BatchImportModal } from '../../components/BatchImportModal';
 
 export default function AdminInventoryPage() {
@@ -198,10 +199,7 @@ export default function AdminInventoryPage() {
     );
   };
 
-  const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return '—';
-    return new Date(dateStr).toLocaleString('vi-VN');
-  };
+
 
   if (loading) {
     return (
