@@ -255,3 +255,35 @@ test('retryFailedJob throws ServiceUnavailableException when queue is down', asy
   const svc = new OpsService({ getQueue: () => undefined } as any);
   await assert.rejects(() => svc.retryFailedJob('job-1'), ServiceUnavailableException);
 });
+
+test('retryFailedJob re-throws infrastructure errors instead of masking as 409', async () => {
+  const job = {
+    getState: async () => 'failed',
+    retry: async () => { throw new Error('ECONNREFUSED: Redis connection lost'); },
+    data: { orderId: 'o-1' },
+  };
+  const queue = makeQueueMock({ getJob: async () => job });
+  const svc = new OpsService({ getQueue: () => queue } as any);
+  // Should throw the raw Redis error, not ConflictException
+  await assert.rejects(
+    () => svc.retryFailedJob('job-1'),
+    (err: any) => err.message.includes('ECONNREFUSED')
+  );
+});
+
+test('retryFailedJob maps JobNotInState race error to ConflictException', async () => {
+  const job = {
+    getState: async () => 'failed',
+    retry: async () => { throw new Error('Job job-1 is not in the failed state. retry'); },
+    data: { orderId: 'o-1' },
+  };
+  const queue = makeQueueMock({ getJob: async () => job });
+  const svc = new OpsService({ getQueue: () => queue } as any);
+  await assert.rejects(() => svc.retryFailedJob('job-1'), ConflictException);
+});
+
+test('getFailedJobs returns empty array for limit <= 0', async () => {
+  const svc = new OpsService({ getQueue: () => makeQueueMock() } as any);
+  const jobs = await svc.getFailedJobs(0);
+  assert.deepStrictEqual(jobs, []);
+});

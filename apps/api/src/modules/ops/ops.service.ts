@@ -106,7 +106,7 @@ export class OpsService {
           ON ${supplierSources.id} = ${supplierOrders.supplierSourceId}
         WHERE ${supplierOrders.createdAt} >= ${since}
         GROUP BY ${supplierOrders.supplierSourceId}, ${supplierSources.name}
-        ORDER BY success_count DESC
+        ORDER BY COUNT(*) FILTER (WHERE ${supplierOrders.status} = 'SUCCESS') DESC
       `)
     ).rows;
 
@@ -138,6 +138,7 @@ export class OpsService {
    * `job.finishedOn ?? job.timestamp` — BullMQ Job has no `failedAt` field.
    */
   async getFailedJobs(limit: number = 20): Promise<FailedJobDto[]> {
+    if (limit <= 0) return [];
     const queue = this.requireQueue();
     const jobs = await queue.getFailed(0, Math.max(0, limit - 1));
     return jobs.map((job) => this.toFailedJobDto(job));
@@ -169,7 +170,24 @@ export class OpsService {
       });
     }
 
-    await job.retry();
+    try {
+      await job.retry();
+    } catch (err: any) {
+      // Race: job left 'failed' state between getState() and retry() —
+      // BullMQ throws "Job {id} is not in the {state} state" (JobNotInState).
+      // Only that specific error maps to 409; infrastructure failures re-throw.
+      const isStateError =
+        err?.message?.includes('is not in the') ||
+        err?.message?.includes('Missing key for job');
+      if (isStateError) {
+        this.logger.warn(`retryFailedJob race for job ${jobId}: ${err?.message}`);
+        throw new ConflictException({
+          errorCode: 'JOB_NOT_FAILED',
+          message: `Job ${jobId} is no longer in 'failed' state`,
+        });
+      }
+      throw err;
+    }
     this.logger.log(`[AUDIT] Admin retried sourcing job ${jobId} (orderId=${job.data?.orderId})`);
     return { jobId, state: 'waiting' };
   }
@@ -180,7 +198,10 @@ export class OpsService {
     try {
       const counts = await queue.getJobCounts('failed');
       return counts.failed ?? 0;
-    } catch {
+    } catch (err: any) {
+      // Log rather than swallow — Redis may be down and 0 would
+      // mislead operators into thinking the dead-letter queue is clear.
+      this.logger.warn(`getFailedJobCount failed (Redis may be down): ${err?.message || err}`);
       return 0;
     }
   }
@@ -197,7 +218,7 @@ export class OpsService {
   }
 
   private toFailedJobDto(job: Job): FailedJobDto {
-    const finishedMs = job.finishedOn ?? job.timestamp;
+    const finishedMs = job.finishedOn ?? job.timestamp ?? Date.now();
     return {
       jobId: String(job.id ?? ''),
       orderId: String(job.data?.orderId ?? ''),

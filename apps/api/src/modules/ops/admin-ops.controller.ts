@@ -94,8 +94,15 @@ export class AdminOpsController {
     max: number,
   ): number {
     if (!value) return defaultValue;
-    const n = parseInt(value, 10);
-    if (Number.isNaN(n) || n < 1) {
+    if (!/^\d+$/.test(value.trim())) {
+      throw new BadRequestException({
+        statusCode: 400,
+        errorCode: 'INVALID_PARAM',
+        message: `Query param '${param}' must be a positive integer`,
+      });
+    }
+    const n = parseInt(value.trim(), 10);
+    if (n < 1) {
       throw new BadRequestException({
         statusCode: 400,
         errorCode: 'INVALID_PARAM',
