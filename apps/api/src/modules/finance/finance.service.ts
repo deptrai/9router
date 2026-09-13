@@ -40,12 +40,14 @@ export class FinanceService {
   ): Promise<AdminFinanceSummaryDto> {
     const fromTs = from ?? new Date(0);
     const toTs = to ?? new Date();
+    const isAllTime = !from || from.getTime() <= 0;
 
-    const [depositRow, purchaseRow, refundRow, liabilitiesRow] = await Promise.all([
+    const [depositRow, purchaseRow, refundRow, liabilitiesRow, windowLedgerRow] = await Promise.all([
       client.execute<{ total: string | null }>(sql`
         SELECT COALESCE(SUM(amount), 0)::text AS total
         FROM ${ledgerTransactions}
-        WHERE ${ledgerTransactions.type} IN (${LedgerType.TOPUP_VIETQR}, ${LedgerType.TOPUP_CRYPTO})
+        WHERE (${ledgerTransactions.type} IN (${LedgerType.TOPUP_VIETQR}, ${LedgerType.TOPUP_CRYPTO})
+               OR (${ledgerTransactions.type} = ${LedgerType.ADMIN_ADJUST} AND ${ledgerTransactions.amount} > 0))
           AND ${ledgerTransactions.amount} > 0
           AND ${ledgerTransactions.createdAt} >= ${fromTs}
           AND ${ledgerTransactions.createdAt} <= ${toTs}
@@ -53,7 +55,8 @@ export class FinanceService {
       client.execute<{ total: string | null }>(sql`
         SELECT COALESCE(SUM(ABS(amount)), 0)::text AS total
         FROM ${ledgerTransactions}
-        WHERE ${ledgerTransactions.type} = ${LedgerType.STORE_PURCHASE}
+        WHERE (${ledgerTransactions.type} = ${LedgerType.STORE_PURCHASE}
+               OR (${ledgerTransactions.type} = ${LedgerType.ADMIN_ADJUST} AND ${ledgerTransactions.amount} < 0))
           AND ${ledgerTransactions.amount} < 0
           AND ${ledgerTransactions.createdAt} >= ${fromTs}
           AND ${ledgerTransactions.createdAt} <= ${toTs}
@@ -67,8 +70,15 @@ export class FinanceService {
           AND ${ledgerTransactions.createdAt} <= ${toTs}
       `),
       client.execute<{ total: string | null }>(sql`
-        SELECT COALESCE(SUM(balance), 0)::text AS total
+        SELECT COALESCE(SUM(balance + held_balance), 0)::text AS total
         FROM ${wallets}
+      `),
+      // For windowed queries: sum all ledger amounts in window to verify categorized flow identity
+      client.execute<{ total: string | null }>(sql`
+        SELECT COALESCE(SUM(amount), 0)::text AS total
+        FROM ${ledgerTransactions}
+        WHERE ${ledgerTransactions.createdAt} >= ${fromTs}
+          AND ${ledgerTransactions.createdAt} <= ${toTs}
       `),
     ]);
 
@@ -76,14 +86,22 @@ export class FinanceService {
     const totalPurchases = purchaseRow.rows[0]?.total ?? '0.00';
     const totalRefunds = refundRow.rows[0]?.total ?? '0.00';
     const totalLiabilities = liabilitiesRow.rows[0]?.total ?? '0.00';
+    const windowLedgerSum = windowLedgerRow.rows[0]?.total ?? '0.00';
 
     // Compute delta using scale-2 bigint arithmetic (avoid float drift)
     const depositsUnits = parseSignedDecimal(totalDeposits);
     const purchasesUnits = parseSignedDecimal(totalPurchases);
     const refundsUnits = parseSignedDecimal(totalRefunds);
     const liabilitiesUnits = parseSignedDecimal(totalLiabilities);
+    const windowLedgerUnits = parseSignedDecimal(windowLedgerSum);
 
-    const deltaUnits = depositsUnits - purchasesUnits + refundsUnits - liabilitiesUnits;
+    // Invariant verification:
+    // - All-time: categorized net flow MUST equal current total wallet liabilities (balance + heldBalance)
+    // - Windowed: categorized net flow MUST equal net ledger transaction change in that window
+    const deltaUnits = isAllTime
+      ? depositsUnits - purchasesUnits + refundsUnits - liabilitiesUnits
+      : depositsUnits - purchasesUnits + refundsUnits - windowLedgerUnits;
+
     const deltaAbs = deltaUnits < 0n ? -deltaUnits : deltaUnits;
     const isReconciled = deltaAbs <= RECONCILIATION_TOLERANCE_UNITS;
     const reconciledDelta = formatSignedDecimal(deltaUnits);
@@ -165,6 +183,7 @@ export class FinanceService {
         COALESCE(SUM(${supplierOrders.cost}), 0)::text AS cost
       FROM ${orders}
       LEFT JOIN ${supplierOrders} ON ${supplierOrders.orderId} = ${orders.id}
+        AND (${supplierOrders.status} = 'SUCCESS' OR ${supplierOrders.status} IS NULL)
       WHERE ${orders.status} = ${OrderStatus.FULFILLED}
         AND ${orders.fulfilledAt} >= ${fromTs}
         AND ${orders.fulfilledAt} <= ${toTs}
@@ -237,12 +256,10 @@ export class FinanceService {
       SELECT
         ${wallets.id} AS "walletId",
         ${wallets.balance} AS balance,
-        (
-          SELECT COALESCE(SUM(${ledgerTransactions.amount}), 0)::text
-          FROM ${ledgerTransactions}
-          WHERE ${ledgerTransactions.walletId} = ${wallets.id}
-        ) AS "ledgerSum"
+        COALESCE(SUM(${ledgerTransactions.amount}), 0)::text AS "ledgerSum"
       FROM ${wallets}
+      LEFT JOIN ${ledgerTransactions} ON ${ledgerTransactions.walletId} = ${wallets.id}
+      GROUP BY ${wallets.id}, ${wallets.balance}
     `);
 
     for (const row of walletMismatchRows.rows) {

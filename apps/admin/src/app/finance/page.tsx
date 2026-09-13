@@ -101,8 +101,12 @@ export default function AdminFinancePage() {
     return () => clearInterval(id);
   }, []);
 
-  const formatVnd = (v: string | undefined) =>
-    v === undefined ? '—' : `${parseFloat(v).toLocaleString('vi-VN')} ₫`;
+  const formatVnd = (v: string | undefined | null) => {
+    if (v === undefined || v === null || v === '') return '—';
+    const n = parseFloat(v);
+    if (Number.isNaN(n)) return '—';
+    return `${n.toLocaleString('vi-VN')} ₫`;
+  };
 
   const delta = summary?.reconciledDelta ?? '0.00';
   const deltaNum = parseFloat(delta);
@@ -393,18 +397,25 @@ function SimpleLineChart({ data }: { data: AdminRevenueMetricDto[] }) {
   const xStep = data.length > 1 ? innerWidth / (data.length - 1) : 0;
 
   const toXY = (v: number, i: number) => {
-    const x = padLeft + i * xStep;
+    // Center single data point in viewport
+    const x = data.length === 1 ? padLeft + innerWidth / 2 : padLeft + i * xStep;
     const y = padTop + innerHeight - ((v - minV) / range) * innerHeight;
     return { x, y };
   };
 
-  const lineFor = (key: 'revenueVnd' | 'costVnd' | 'profitVnd') =>
-    data
+  const lineFor = (key: 'revenueVnd' | 'costVnd' | 'profitVnd') => {
+    if (data.length === 1) {
+      // Draw short horizontal segment across the centered point for single bucket
+      const { x, y } = toXY(parseFloat(data[0][key]), 0);
+      return `${x - 20},${y} ${x + 20},${y}`;
+    }
+    return data
       .map((d, i) => {
         const { x, y } = toXY(parseFloat(d[key]), i);
         return `${x},${y}`;
       })
       .join(' ');
+  };
 
   const formatTick = (v: number) => {
     if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;

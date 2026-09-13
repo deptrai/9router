@@ -78,6 +78,20 @@ test.describe('Story 5.4: Admin Finance API Tests', () => {
     expect(body.errorCode).toBe('INVALID_GRANULARITY');
   });
 
+  test('[P0] GET /api/admin/finance/summary supports valid date filtering', async ({ request }) => {
+    const res = await request.get(
+      `${API_URL}/api/admin/finance/summary?from=2026-09-01T00:00:00Z&to=2026-09-13T23:59:59Z`,
+      { headers: { 'x-admin-key': TEST_ADMIN_KEY } },
+    );
+
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.summary).toBeDefined();
+    expect(typeof body.summary.isReconciled).toBe('boolean');
+    expect(typeof body.summary.reconciledDelta).toBe('string');
+  });
+
   test('[P0] GET /api/admin/finance/ledger-check runs integrity validations', async ({ request }) => {
     const res = await request.get(`${API_URL}/api/admin/finance/ledger-check`, {
       headers: { 'x-admin-key': TEST_ADMIN_KEY },
