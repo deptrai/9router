@@ -97,9 +97,7 @@ test.describe('Epic 4 Retro: Admin Ops Dashboard E2E Tests', () => {
 
     // Failed jobs table
     await expect(page.getByText('Dead-letter Queue — sourcing-queue')).toBeVisible();
-    await expect(page.getByText('#job-uuid'.slice(0, 0)).or(
-      page.getByText('RETRY_EXHAUSTED:Purchase timed out after 45000ms')
-    )).toBeVisible();
+    await expect(page.getByText('RETRY_EXHAUSTED:Purchase timed out after 45000ms')).toBeVisible();
     await expect(page.getByText('SUPPLIER_INVALID')).toBeVisible();
 
     // Retry buttons
