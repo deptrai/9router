@@ -21,6 +21,12 @@ export class OpsService {
   private readonly logger = new Logger(OpsService.name);
   private readonly dbClient: any;
 
+  /** Typed wrapper around this.dbClient.execute — dbClient is `any` so
+   *  direct .execute<T>() calls are untyped-function-call errors. */
+  private async exec<T>(q: any): Promise<{ rows: T[] }> {
+    return this.dbClient.execute(q);
+  }
+
   constructor(
     @Inject(SourcingQueueService)
     private readonly sourcingQueue: SourcingQueueService,
@@ -44,7 +50,7 @@ export class OpsService {
     const since = new Date(Date.now() - windowHours * 3_600_000);
 
     const [aggRow] = (
-      await this.dbClient.execute<{ total_attempts: string; timeout_count: string; sweeper_count: string }>(sql`
+      await this.exec<{ total_attempts: string; timeout_count: string; sweeper_count: string }>(sql`
         SELECT
           COUNT(*)::text                                                              AS total_attempts,
           COUNT(*) FILTER (
@@ -69,7 +75,7 @@ export class OpsService {
 
     // Global avg latency: only SUCCESS rows with a real fulfilled_at timestamp.
     const [latRow] = (
-      await this.dbClient.execute<{ avg_ms: string | null }>(sql`
+      await this.exec<{ avg_ms: string | null }>(sql`
         SELECT AVG(
           EXTRACT(EPOCH FROM (${orders.fulfilledAt} - ${orders.createdAt})) * 1000
         )::text AS avg_ms
@@ -85,7 +91,7 @@ export class OpsService {
 
     // Per-supplier breakdown — LEFT JOIN so NULL supplier_source_id rows appear.
     const supplierRows = (
-      await this.dbClient.execute<{ supplier_source_id: string | null; supplier_name: string | null; success_count: string; fail_count: string; avg_latency_ms: string | null; timeout_count: string }>(sql`
+      await this.exec<{ supplier_source_id: string | null; supplier_name: string | null; success_count: string; fail_count: string; avg_latency_ms: string | null; timeout_count: string }>(sql`
         SELECT
           ${supplierOrders.supplierSourceId}                                          AS supplier_source_id,
           COALESCE(${supplierSources.name}, 'Chưa xác định')                          AS supplier_name,
@@ -116,7 +122,7 @@ export class OpsService {
       `)
     ).rows;
 
-    const perSupplier: SupplierOpsStatsDto[] = supplierRows.map((r) => ({
+    const perSupplier: SupplierOpsStatsDto[] = supplierRows.map((r: { supplier_source_id: string | null; supplier_name: string | null; success_count: string; fail_count: string; avg_latency_ms: string | null; timeout_count: string }) => ({
       supplierSourceId: r.supplier_source_id,
       supplierName: r.supplier_name ?? 'Chưa xác định',
       successCount: Number(r.success_count),
