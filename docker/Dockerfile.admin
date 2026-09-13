@@ -11,6 +11,11 @@ WORKDIR /app
 # ----------------------------------------------------------------------------
 FROM base AS builder
 
+# NEXT_PUBLIC_* vars are inlined into the client bundle at build time.
+# Accept it as a build arg so Dokploy can inject the public API URL.
+ARG NEXT_PUBLIC_API_URL=http://localhost:3201
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/tsconfig/package.json ./packages/tsconfig/
 COPY packages/shared-types/package.json ./packages/shared-types/
