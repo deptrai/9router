@@ -87,17 +87,17 @@ action_items:
     epic: 4
     action: "Bổ sung script worker:prod trong apps/api/package.json"
     owner: "Amelia"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-09-12.md"
   - id: "epic-4-retro-item-2-thiết-kế-giao-diện-admin-giám-sát-tỷ-lệ"
     epic: 4
     action: "Thiết kế giao diện Admin giám sát tỷ lệ timeout và scraper latency"
     owner: "Mary"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-09-12.md"
   - id: "epic-4-retro-item-3-hiển-thị-danh-sách-bullmq-failed-jobs-tr"
     epic: 4
     action: "Hiển thị danh sách BullMQ failed jobs trên Admin Dashboard"
     owner: "Winston"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-09-12.md"

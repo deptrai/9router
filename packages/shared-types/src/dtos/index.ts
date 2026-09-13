@@ -554,3 +554,73 @@ export interface AdminLedgerIntegrityDto {
   /** Convenience flag — true iff violations.length === 0 */
   isClean: boolean;
 }
+
+// ============================================================================
+// Epic 4 Retro: Operations Monitoring DTOs
+// ============================================================================
+
+/** Per-supplier sourcing stats aggregated over the metrics window. */
+export interface SupplierOpsStatsDto {
+  /** supplier_sources.id; null when the supplier row was deleted (SET NULL) */
+  supplierSourceId: string | null;
+  /** supplier_sources.name; 'Chưa xác định' when source is NULL */
+  supplierName: string;
+  /** COUNT of supplier_orders rows with status='SUCCESS' in window */
+  successCount: number;
+  /** COUNT of supplier_orders rows with status='FAILED' in window */
+  failCount: number;
+  /** AVG(orders.fulfilled_at - orders.created_at) ms for SUCCESS rows; null when no successes */
+  avgLatencyMs: number | null;
+  /** COUNT of rows matching timeout patterns (ILIKE '%TIMEOUT%' OR '%timed out%') */
+  timeoutCount: number;
+}
+
+/** Aggregated scraper/sweeper KPIs for the ops dashboard. */
+export interface AdminOpsMetricsDto {
+  /** Percentage (0–100, 2dp) of sourcing attempts that ended in timeout; 0 when no attempts */
+  timeoutRatePct: number;
+  /** COUNT of supplier_orders rows with error_message LIKE '%:SWEEPER' in window */
+  sweeperRescueCount: number;
+  /** AVG latency ms across all SUCCESS rows in window; null when no successes */
+  avgSourcingLatencyMs: number | null;
+  /** COUNT of supplier_orders rows in window (denominator for rate calcs) */
+  totalAttempts: number;
+  /** COUNT of currently-failed BullMQ jobs in sourcing-queue */
+  failedJobCount: number;
+  perSupplier: SupplierOpsStatsDto[];
+}
+
+/** One BullMQ failed job exposed to the admin dead-letter UI. */
+export interface FailedJobDto {
+  /** BullMQ job ID (= orderId for sourcing jobs) */
+  jobId: string;
+  /** SourcingJobData.orderId */
+  orderId: string;
+  /** SourcingJobData.productId */
+  productId: string;
+  /** SourcingJobData.supplierSourceId */
+  supplierSourceId: string;
+  /** job.failedReason — the last thrown error message */
+  failedReason: string;
+  /** job.attemptsMade */
+  attemptsMade: number;
+  /** ISO 8601; derived from job.finishedOn ?? job.timestamp */
+  failedAt: string;
+}
+
+export interface AdminOpsMetricsResponseDto {
+  ok: boolean;
+  metrics: AdminOpsMetricsDto;
+}
+
+export interface FailedJobsResponseDto {
+  ok: boolean;
+  jobs: FailedJobDto[];
+}
+
+export interface RetryJobResponseDto {
+  ok: boolean;
+  jobId: string;
+  /** Post-retry state — always 'waiting' on success */
+  state: 'waiting';
+}

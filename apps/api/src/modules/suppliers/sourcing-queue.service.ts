@@ -54,6 +54,15 @@ export class SourcingQueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Exposes the underlying BullMQ Queue for read-only ops introspection
+   * (getFailed, getJobCounts). Returns undefined when the queue failed to
+   * initialize — callers must treat that as SOURCING_UNAVAILABLE.
+   */
+  getQueue(): Queue | undefined {
+    return this.queue;
+  }
+
+  /**
    * Idempotent ensure: guarantees a live job exists for `data.orderId`.
    * - missing → `queue.add` (`jobId` dedup prevents duplicates)
    * - failed → `job.retry()` (a failed job still pins the `jobId`, so a plain

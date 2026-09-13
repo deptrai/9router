@@ -9,7 +9,8 @@
     "test": "tsx --test \"src/**/*.spec.ts\"",
     "worker": "nest start --entryFile worker",
     "worker:watch": "nest start --entryFile worker --watch",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "worker:prod": "node dist/worker.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.3",

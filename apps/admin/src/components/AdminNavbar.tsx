@@ -12,6 +12,7 @@ import {
   Lock,
   LayoutDashboard,
   ShieldCheck,
+  Activity,
 } from 'lucide-react';
 import { getAdminApiKey, clearAdminApiKey } from '../lib/api-client';
 
@@ -39,6 +40,7 @@ export function AdminNavbar() {
     { href: '/inventory', label: 'Kho nội bộ', icon: Layers },
     { href: '/orders', label: 'Đơn hàng', icon: ClipboardList },
     { href: '/finance', label: 'Đối soát', icon: BarChart3 },
+    { href: '/ops', label: 'Vận hành', icon: Activity },
   ];
 
   return (

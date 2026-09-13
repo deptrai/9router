@@ -10,6 +10,7 @@ import { OrdersModule } from './modules/orders/orders.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { FinanceModule } from './modules/finance/finance.module';
+import { OpsModule } from './modules/ops/ops.module';
 import { RedisModule } from './common/redis/redis.module';
 
 @Module({
@@ -24,6 +25,7 @@ import { RedisModule } from './common/redis/redis.module';
     PaymentsModule,
     SuppliersModule,
     FinanceModule,
+    OpsModule,
     RedisModule,
   ],
   controllers: [AppController],
