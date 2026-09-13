@@ -1,0 +1,158 @@
+# ============================================================================
+# 9Router E-Commerce Platform — Production Docker Compose Configuration
+# Orchestrates PostgreSQL, Redis, API Server, Sourcing Worker, Admin, and Mini-App
+# ============================================================================
+
+services:
+  # --------------------------------------------------------------------------
+  # Database: PostgreSQL 16
+  # --------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: 9router-prod-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_secure_password}
+      POSTGRES_DB: ${POSTGRES_DB:-9router_ecommerce}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-9router_ecommerce}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - 9router-internal
+
+  # --------------------------------------------------------------------------
+  # Cache & Queue Broker: Redis 7.2
+  # --------------------------------------------------------------------------
+  redis:
+    image: redis:7.2-alpine
+    container_name: 9router-prod-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_prod_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - 9router-internal
+
+  # --------------------------------------------------------------------------
+  # Backend API Server: NestJS
+  # --------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    container_name: 9router-prod-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3201
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_secure_password}@postgres:5432/${POSTGRES_DB:-9router_ecommerce}
+      REDIS_URL: redis://redis:6379
+      ADMIN_API_KEY: ${ADMIN_API_KEY}
+      STORE_ENC_KEY: ${STORE_ENC_KEY}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_BOT_SECRET: ${TELEGRAM_BOT_SECRET}
+      VIETQR_CLIENT_ID: ${VIETQR_CLIENT_ID:-}
+      VIETQR_API_KEY: ${VIETQR_API_KEY:-}
+      BITCART_API_URL: ${BITCART_API_URL:-}
+      BITCART_API_KEY: ${BITCART_API_KEY:-}
+      BITCART_MERCHANT_ID: ${BITCART_MERCHANT_ID:-}
+    ports:
+      - "${API_PORT:-3201}:3201"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - 9router-internal
+      - 9router-public
+
+  # --------------------------------------------------------------------------
+  # Asynchronous Scraper Worker: BullMQ Worker (worker:prod)
+  # --------------------------------------------------------------------------
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    container_name: 9router-prod-worker
+    restart: unless-stopped
+    command: ["node", "apps/api/dist/worker.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_secure_password}@postgres:5432/${POSTGRES_DB:-9router_ecommerce}
+      REDIS_URL: redis://redis:6379
+      STORE_ENC_KEY: ${STORE_ENC_KEY}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      SOURCING_PURCHASE_TIMEOUT_MS: ${SOURCING_PURCHASE_TIMEOUT_MS:-45000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - 9router-internal
+
+  # --------------------------------------------------------------------------
+  # Admin Portal: Next.js Standalone
+  # --------------------------------------------------------------------------
+  admin:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.admin
+    container_name: 9router-prod-admin
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3200
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3201}
+    ports:
+      - "${ADMIN_PORT:-3200}:3200"
+    depends_on:
+      - api
+    networks:
+      - 9router-internal
+      - 9router-public
+
+  # --------------------------------------------------------------------------
+  # Telegram Mini App: Next.js Standalone
+  # --------------------------------------------------------------------------
+  mini-app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mini-app
+    container_name: 9router-prod-mini-app
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3201}
+    ports:
+      - "${MINI_APP_PORT:-3000}:3000"
+    depends_on:
+      - api
+    networks:
+      - 9router-internal
+      - 9router-public
+
+networks:
+  9router-internal:
+    driver: bridge
+  9router-public:
+    driver: bridge
+
+volumes:
+  postgres_prod_data:
+  redis_prod_data:
