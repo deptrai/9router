@@ -1,6 +1,7 @@
 import {
   Injectable,
   Inject,
+  Optional,
   Logger,
   ServiceUnavailableException,
   NotFoundException,
@@ -18,11 +19,16 @@ import { SourcingQueueService } from '../suppliers/sourcing-queue.service';
 @Injectable()
 export class OpsService {
   private readonly logger = new Logger(OpsService.name);
+  private readonly dbClient: any;
 
   constructor(
     @Inject(SourcingQueueService)
     private readonly sourcingQueue: SourcingQueueService,
-  ) {}
+    @Optional()
+    dbClient?: any,
+  ) {
+    this.dbClient = dbClient ?? db;
+  }
 
   /**
    * Aggregate scraper/sweeper KPIs over the last `windowHours` hours.
@@ -38,7 +44,7 @@ export class OpsService {
     const since = new Date(Date.now() - windowHours * 3_600_000);
 
     const [aggRow] = (
-      await db.execute<{ total_attempts: string; timeout_count: string; sweeper_count: string }>(sql`
+      await this.dbClient.execute<{ total_attempts: string; timeout_count: string; sweeper_count: string }>(sql`
         SELECT
           COUNT(*)::text                                                              AS total_attempts,
           COUNT(*) FILTER (
@@ -63,7 +69,7 @@ export class OpsService {
 
     // Global avg latency: only SUCCESS rows with a real fulfilled_at timestamp.
     const [latRow] = (
-      await db.execute<{ avg_ms: string | null }>(sql`
+      await this.dbClient.execute<{ avg_ms: string | null }>(sql`
         SELECT AVG(
           EXTRACT(EPOCH FROM (${orders.fulfilledAt} - ${orders.createdAt})) * 1000
         )::text AS avg_ms
@@ -79,7 +85,7 @@ export class OpsService {
 
     // Per-supplier breakdown — LEFT JOIN so NULL supplier_source_id rows appear.
     const supplierRows = (
-      await db.execute<{ supplier_source_id: string | null; supplier_name: string | null; success_count: string; fail_count: string; avg_latency_ms: string | null; timeout_count: string }>(sql`
+      await this.dbClient.execute<{ supplier_source_id: string | null; supplier_name: string | null; success_count: string; fail_count: string; avg_latency_ms: string | null; timeout_count: string }>(sql`
         SELECT
           ${supplierOrders.supplierSourceId}                                          AS supplier_source_id,
           COALESCE(${supplierSources.name}, 'Chưa xác định')                          AS supplier_name,
@@ -139,8 +145,9 @@ export class OpsService {
    */
   async getFailedJobs(limit: number = 20): Promise<FailedJobDto[]> {
     if (limit <= 0) return [];
+    const safeLimit = Math.min(limit, 100); // defensive ceiling — controller also clamps
     const queue = this.requireQueue();
-    const jobs = await queue.getFailed(0, Math.max(0, limit - 1));
+    const jobs = await queue.getFailed(0, safeLimit - 1);
     return jobs.map((job) => this.toFailedJobDto(job));
   }
 
@@ -168,6 +175,24 @@ export class OpsService {
         errorCode: 'JOB_NOT_FAILED',
         message: `Job ${jobId} is in state '${state}' — only 'failed' jobs can be retried`,
       });
+    }
+
+    // Guard: if the order was already resolved (REFUNDED/FULFILLED), retrying
+    // would move the job to 'waiting' only for the worker to immediately discard it.
+    // Check order status first so the admin gets an honest signal.
+    const orderId = String(job.data?.orderId ?? '');
+    if (orderId) {
+      const [order] = await this.dbClient
+        .select({ status: orders.status })
+        .from(orders)
+        .where(sql`${orders.id} = ${orderId}`)
+        .limit(1);
+      if (order && order.status !== 'SOURCING') {
+        throw new ConflictException({
+          errorCode: 'JOB_NOT_RETRYABLE',
+          message: `Order ${orderId} is already '${order.status}' — retrying this job would be a no-op`,
+        });
+      }
     }
 
     try {
@@ -224,9 +249,23 @@ export class OpsService {
       orderId: String(job.data?.orderId ?? ''),
       productId: String(job.data?.productId ?? ''),
       supplierSourceId: String(job.data?.supplierSourceId ?? ''),
-      failedReason: String(job.failedReason ?? 'Unknown error'),
+      failedReason: this.sanitizeFailedReason(job.failedReason),
       attemptsMade: job.attemptsMade ?? 0,
       failedAt: new Date(finishedMs).toISOString(),
     };
+  }
+
+  /**
+   * Strips internal IPs, URLs, and token-like strings from error messages
+   * before exposing them to the admin UI — adapter errors can contain
+   * upstream hostnames, proxy addresses, or embedded query params.
+   */
+  private sanitizeFailedReason(reason: unknown): string {
+    const raw = String(reason ?? 'Unknown error');
+    return raw
+      .replace(/https?:\/\/\S+/g, '[REDACTED_URL]')
+      .replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, '[REDACTED_IP]')
+      .replace(/Bearer\s+\S+/gi, 'Bearer [REDACTED]')
+      .slice(0, 255);
   }
 }

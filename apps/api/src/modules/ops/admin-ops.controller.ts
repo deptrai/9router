@@ -109,6 +109,13 @@ export class AdminOpsController {
         message: `Query param '${param}' must be a positive integer`,
       });
     }
-    return Math.min(n, max);
+    if (n > max) {
+      throw new BadRequestException({
+        statusCode: 400,
+        errorCode: 'INVALID_PARAM',
+        message: `Query param '${param}' cannot exceed ${max}`,
+      });
+    }
+    return n;
   }
 }

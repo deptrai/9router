@@ -72,7 +72,7 @@ export default function AdminOpsPage() {
     setRetryingId(job.jobId);
     try {
       await apiClient.post(`/api/admin/ops/failed-jobs/${job.jobId}/retry`);
-      showToast(`Đã đưa job #${job.jobId.slice(0, 8)} vào hàng đợi lại`, 'success');
+      showToast(`Đã đưa job #${job.jobId?.slice(0, 8) ?? job.jobId} vào hàng đợi lại`, 'success');
       await fetchFailedJobs();
       await fetchMetrics();
     } catch (err: any) {
@@ -83,13 +83,13 @@ export default function AdminOpsPage() {
   };
 
   const formatMs = (ms: number | null | undefined): string => {
-    if (ms == null) return '—';
+    if (ms == null || !Number.isFinite(ms)) return '—';
     if (ms < 1000) return `${Math.round(ms)}ms`;
     return `${(ms / 1000).toFixed(1)}s`;
   };
 
   const formatPct = (pct: number | null | undefined): string => {
-    if (pct == null) return '—';
+    if (pct == null || !Number.isFinite(pct)) return '—';
     return `${pct.toFixed(1)}%`;
   };
 
@@ -101,7 +101,7 @@ export default function AdminOpsPage() {
     });
   };
 
-  const timeoutPct = metrics?.timeoutRatePct ?? 0;
+  const timeoutPct = Number.isFinite(metrics?.timeoutRatePct) ? metrics!.timeoutRatePct : 0;
   const timeoutColor =
     timeoutPct > 20 ? 'text-red-400' : timeoutPct > 5 ? 'text-amber-400' : 'text-emerald-400';
   const timeoutBg =
@@ -274,11 +274,11 @@ export default function AdminOpsPage() {
               <tbody>
                 {failedJobs.map((job) => (
                   <tr key={job.jobId} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
-                    <td className="px-4 py-3 font-mono text-slate-400">
-                      #{job.jobId.slice(0, 8)}
+                    <td className="px-4 py-3 font-mono text-slate-400" title={job.jobId}>
+                      #{job.jobId?.slice(0, 8) ?? '—'}
                     </td>
-                    <td className="px-4 py-3 font-mono text-slate-300">
-                      #{job.orderId.slice(0, 8)}
+                    <td className="px-4 py-3 font-mono text-slate-300" title={job.orderId}>
+                      #{job.orderId?.slice(0, 8) ?? '—'}
                     </td>
                     <td className="px-4 py-3 text-slate-300 max-w-xs truncate" title={job.failedReason}>
                       {job.failedReason}

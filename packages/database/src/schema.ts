@@ -199,6 +199,7 @@ export const supplierOrders = pgTable(
     index('supplier_orders_order_idx').on(table.orderId),
     index('supplier_orders_supplier_idx').on(table.supplierSourceId),
     index('supplier_orders_status_idx').on(table.status),
+    index('supplier_orders_created_at_idx').on(table.createdAt),
     check('supplier_orders_status_valid', sql`${table.status} IN ('PENDING', 'SUCCESS', 'FAILED')`),
     check('supplier_orders_cost_non_negative', sql`${table.cost} IS NULL OR ${table.cost} >= 0`),
   ]
