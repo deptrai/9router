@@ -11,6 +11,7 @@ import {
   type CatalogSyncJobData,
   type SyncStatusDto,
   type SyncTriggerResponseDto,
+  type TestConnectionResponseDto,
 } from './index';
 
 test('Shared types exports valid enums matching Architecture Spine', () => {
@@ -43,6 +44,13 @@ test('Shared types exports catalog sync queue constants and DTO shapes', () => {
   };
   assert.strictEqual(mockTrigger.ok, true);
   assert.strictEqual(mockTrigger.jobId, 'sync:sup-123');
+
+  const mockTestConn: TestConnectionResponseDto = {
+    ok: true,
+    status: 'healthy',
+  };
+  assert.strictEqual(mockTestConn.ok, true);
+  assert.strictEqual(mockTestConn.status, 'healthy');
 });
 
 test('Shared types exports Telegram auth interfaces', () => {

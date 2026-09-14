@@ -277,6 +277,12 @@ export interface GetSyncStatusResponseDto {
   syncStatus: SyncStatusDto;
 }
 
+export interface TestConnectionResponseDto {
+  ok: boolean;
+  status?: string;
+  error?: string;
+}
+
 export interface PriceSyncItemDto {
   productId: string;
   slug: string;

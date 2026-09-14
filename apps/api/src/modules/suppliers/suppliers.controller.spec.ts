@@ -335,3 +335,193 @@ test('[P0] SuppliersController: getSyncStatus returns status with isSyncing fals
   assert.strictEqual(result.syncStatus.consecutiveSyncFailures, 2);
   assert.strictEqual(result.syncStatus.syncIntervalSec, 7200);
 });
+
+test('[P0] SuppliersController: testConnection returns error when TELEGRAM_SCRAPER_RELAY_URL is unset', async () => {
+  const origRelayUrl = process.env.TELEGRAM_SCRAPER_RELAY_URL;
+  const origRelayToken = process.env.TELEGRAM_SCRAPER_RELAY_TOKEN;
+  delete process.env.TELEGRAM_SCRAPER_RELAY_URL;
+  delete process.env.TELEGRAM_SCRAPER_RELAY_TOKEN;
+
+  try {
+    const controller = new SuppliersController({} as any, {} as any);
+    const result = await controller.testConnection();
+
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.error, 'TELEGRAM_SCRAPER_RELAY_URL not configured');
+  } finally {
+    if (origRelayUrl !== undefined) process.env.TELEGRAM_SCRAPER_RELAY_URL = origRelayUrl;
+    else delete process.env.TELEGRAM_SCRAPER_RELAY_URL;
+    if (origRelayToken !== undefined) process.env.TELEGRAM_SCRAPER_RELAY_TOKEN = origRelayToken;
+    else delete process.env.TELEGRAM_SCRAPER_RELAY_TOKEN;
+  }
+});
+
+test('[P0] SuppliersController: testConnection returns ok true and status healthy when relay responds 200', async () => {
+  const origRelayUrl = process.env.TELEGRAM_SCRAPER_RELAY_URL;
+  const origRelayToken = process.env.TELEGRAM_SCRAPER_RELAY_TOKEN;
+  const origFetch = globalThis.fetch;
+
+  process.env.TELEGRAM_SCRAPER_RELAY_URL = 'http://relay:3800';
+  process.env.TELEGRAM_SCRAPER_RELAY_TOKEN = 'secret-token-123';
+
+  let capturedUrl = '';
+  let capturedHeaders: any = null;
+
+  globalThis.fetch = (async (url: any, opts: any) => {
+    capturedUrl = String(url);
+    capturedHeaders = opts?.headers;
+    return new Response(JSON.stringify({ ok: true, status: 'healthy', busy: false }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const controller = new SuppliersController({} as any, {} as any);
+    const result = await controller.testConnection();
+
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.status, 'healthy');
+    assert.strictEqual(capturedUrl, 'http://relay:3800/health');
+    assert.strictEqual(capturedHeaders?.Authorization, 'Bearer secret-token-123');
+  } finally {
+    globalThis.fetch = origFetch;
+    if (origRelayUrl !== undefined) process.env.TELEGRAM_SCRAPER_RELAY_URL = origRelayUrl;
+    else delete process.env.TELEGRAM_SCRAPER_RELAY_URL;
+    if (origRelayToken !== undefined) process.env.TELEGRAM_SCRAPER_RELAY_TOKEN = origRelayToken;
+    else delete process.env.TELEGRAM_SCRAPER_RELAY_TOKEN;
+  }
+});
+
+test('[P0] SuppliersController: testConnection normalizes relay URL with /relay suffix and trailing slashes', async () => {
+  const origRelayUrl = process.env.TELEGRAM_SCRAPER_RELAY_URL;
+  const origRelayToken = process.env.TELEGRAM_SCRAPER_RELAY_TOKEN;
+  const origFetch = globalThis.fetch;
+
+  process.env.TELEGRAM_SCRAPER_RELAY_URL = 'http://relay:3800/relay/';
+  process.env.TELEGRAM_SCRAPER_RELAY_TOKEN = 'token-xyz';
+
+  let capturedUrl = '';
+
+  globalThis.fetch = (async (url: any) => {
+    capturedUrl = String(url);
+    return new Response(JSON.stringify({ ok: true, status: 'healthy' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const controller = new SuppliersController({} as any, {} as any);
+    const result = await controller.testConnection();
+
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(capturedUrl, 'http://relay:3800/health');
+  } finally {
+    globalThis.fetch = origFetch;
+    if (origRelayUrl !== undefined) process.env.TELEGRAM_SCRAPER_RELAY_URL = origRelayUrl;
+    else delete process.env.TELEGRAM_SCRAPER_RELAY_URL;
+    if (origRelayToken !== undefined) process.env.TELEGRAM_SCRAPER_RELAY_TOKEN = origRelayToken;
+    else delete process.env.TELEGRAM_SCRAPER_RELAY_TOKEN;
+  }
+});
+
+test('[P0] SuppliersController: testConnection returns ok false when relay returns 503 or error status', async () => {
+  const origRelayUrl = process.env.TELEGRAM_SCRAPER_RELAY_URL;
+  const origRelayToken = process.env.TELEGRAM_SCRAPER_RELAY_TOKEN;
+  const origFetch = globalThis.fetch;
+
+  process.env.TELEGRAM_SCRAPER_RELAY_URL = 'http://relay:3800';
+  process.env.TELEGRAM_SCRAPER_RELAY_TOKEN = 'test-token';
+
+  globalThis.fetch = (async () => {
+    return new Response(JSON.stringify({ ok: false, status: 'permanently_unhealthy', error: 'SESSION_BANNED' }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const controller = new SuppliersController({} as any, {} as any);
+    const result = await controller.testConnection();
+
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.status, 'permanently_unhealthy');
+    assert.strictEqual(result.error, 'SESSION_BANNED');
+  } finally {
+    globalThis.fetch = origFetch;
+    if (origRelayUrl !== undefined) process.env.TELEGRAM_SCRAPER_RELAY_URL = origRelayUrl;
+    else delete process.env.TELEGRAM_SCRAPER_RELAY_URL;
+    if (origRelayToken !== undefined) process.env.TELEGRAM_SCRAPER_RELAY_TOKEN = origRelayToken;
+    else delete process.env.TELEGRAM_SCRAPER_RELAY_TOKEN;
+  }
+});
+
+test('[P0] SuppliersController: testConnection handles fetch network failure', async () => {
+  const origRelayUrl = process.env.TELEGRAM_SCRAPER_RELAY_URL;
+  const origRelayToken = process.env.TELEGRAM_SCRAPER_RELAY_TOKEN;
+  const origFetch = globalThis.fetch;
+
+  process.env.TELEGRAM_SCRAPER_RELAY_URL = 'http://relay:3800';
+  process.env.TELEGRAM_SCRAPER_RELAY_TOKEN = 'test-token';
+
+  globalThis.fetch = (async () => {
+    throw new Error('fetch failed: ECONNREFUSED');
+  }) as any;
+
+  try {
+    const controller = new SuppliersController({} as any, {} as any);
+    const result = await controller.testConnection();
+
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.error, 'fetch failed: ECONNREFUSED');
+  } finally {
+    globalThis.fetch = origFetch;
+    if (origRelayUrl !== undefined) process.env.TELEGRAM_SCRAPER_RELAY_URL = origRelayUrl;
+    else delete process.env.TELEGRAM_SCRAPER_RELAY_URL;
+    if (origRelayToken !== undefined) process.env.TELEGRAM_SCRAPER_RELAY_TOKEN = origRelayToken;
+    else delete process.env.TELEGRAM_SCRAPER_RELAY_TOKEN;
+  }
+});
+
+test('[P0] SuppliersController: testConnection returns error when TELEGRAM_SCRAPER_RELAY_TOKEN is unset', async () => {
+  const origRelayUrl = process.env.TELEGRAM_SCRAPER_RELAY_URL;
+  const origRelayToken = process.env.TELEGRAM_SCRAPER_RELAY_TOKEN;
+
+  process.env.TELEGRAM_SCRAPER_RELAY_URL = 'http://relay:3800';
+  delete process.env.TELEGRAM_SCRAPER_RELAY_TOKEN;
+
+  try {
+    const controller = new SuppliersController({} as any, {} as any);
+    const result = await controller.testConnection();
+
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.error, 'TELEGRAM_SCRAPER_RELAY_TOKEN not configured');
+  } finally {
+    if (origRelayUrl !== undefined) process.env.TELEGRAM_SCRAPER_RELAY_URL = origRelayUrl;
+    else delete process.env.TELEGRAM_SCRAPER_RELAY_URL;
+    if (origRelayToken !== undefined) process.env.TELEGRAM_SCRAPER_RELAY_TOKEN = origRelayToken;
+    else delete process.env.TELEGRAM_SCRAPER_RELAY_TOKEN;
+  }
+});
+
+test('[P0] SuppliersController: testConnection returns error for invalid protocol', async () => {
+  const origRelayUrl = process.env.TELEGRAM_SCRAPER_RELAY_URL;
+  const origRelayToken = process.env.TELEGRAM_SCRAPER_RELAY_TOKEN;
+
+  process.env.TELEGRAM_SCRAPER_RELAY_URL = 'ftp://relay:3800';
+  process.env.TELEGRAM_SCRAPER_RELAY_TOKEN = 'test-token';
+
+  try {
+    const controller = new SuppliersController({} as any, {} as any);
+    const result = await controller.testConnection();
+
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.error, 'TELEGRAM_SCRAPER_RELAY_URL must use http:// or https://');
+  } finally {
+    if (origRelayUrl !== undefined) process.env.TELEGRAM_SCRAPER_RELAY_URL = origRelayUrl;
+    else delete process.env.TELEGRAM_SCRAPER_RELAY_URL;
+    if (origRelayToken !== undefined) process.env.TELEGRAM_SCRAPER_RELAY_TOKEN = origRelayToken;
+    else delete process.env.TELEGRAM_SCRAPER_RELAY_TOKEN;
+  }
+});

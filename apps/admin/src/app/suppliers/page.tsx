@@ -13,8 +13,10 @@ import {
   Coins,
   Link as LinkIcon,
   Search,
+  Clock,
+  AlertTriangle,
 } from 'lucide-react';
-import type { SupplierSourceDto } from '@repo/shared-types';
+import type { SupplierSourceDto, SyncTriggerResponseDto } from '@repo/shared-types';
 import { apiClient } from '../../lib/api-client';
 import { useToast } from '../../components/Toast';
 import { SupplierFormModal } from '../../components/SupplierFormModal';
@@ -23,6 +25,7 @@ export default function AdminSuppliersPage() {
   const { showToast } = useToast();
   const [suppliers, setSuppliers] = useState<SupplierSourceDto[]>([]);
   const [loading, setLoading] = useState(true);
+  const [inlineSyncingId, setInlineSyncingId] = useState<string | null>(null);
 
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
@@ -99,6 +102,31 @@ export default function AdminSuppliersPage() {
     }
   };
 
+  const handleInlineSync = async (s: SupplierSourceDto) => {
+    if (inlineSyncingId) return;
+    setInlineSyncingId(s.id);
+    try {
+      const res = await apiClient.post<SyncTriggerResponseDto>(
+        `/api/admin/suppliers/${s.id}/sync`,
+        {},
+      );
+      showToast(`Đã kích hoạt đồng bộ (Job: ${res.jobId})`);
+      // Re-fetch suppliers to reflect new status
+      await fetchSuppliers();
+    } catch (err: any) {
+      if (err?.status === 409 || err?.body?.errorCode === 'SYNC_DEBOUNCED') {
+        showToast(
+          err?.body?.message || err?.message || 'Đồng bộ đang chạy hoặc trong thời gian chờ cooldown',
+          'error',
+        );
+      } else {
+        showToast(err?.message || 'Không thể kích hoạt đồng bộ', 'error');
+      }
+    } finally {
+      setInlineSyncingId(null);
+    }
+  };
+
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
@@ -154,9 +182,12 @@ export default function AdminSuppliersPage() {
               <tr>
                 <th className="py-3 px-4">Nhà cung cấp</th>
                 <th className="py-3 px-3">Loại tích hợp</th>
+                <th className="py-3 px-3">Đồng bộ (Sync)</th>
                 <th className="py-3 px-3">Markup (%)</th>
                 <th className="py-3 px-3 text-right">Phụ phí cố định</th>
-                <th className="py-3 px-3 text-center">SP liên kết</th>
+                <th className="py-3 px-3 text-center" title="Chỉ tính các sản phẩm đang bật (isActive = true)">
+                  SP liên kết (Bật)
+                </th>
                 <th className="py-3 px-3 text-center">Trạng thái</th>
                 <th className="py-3 px-4 text-right">Thao tác</th>
               </tr>
@@ -164,13 +195,13 @@ export default function AdminSuppliersPage() {
             <tbody className="divide-y divide-slate-800 text-slate-300">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-500">
+                  <td colSpan={8} className="py-12 text-center text-slate-500">
                     Đang tải danh sách nhà cung cấp...
                   </td>
                 </tr>
               ) : paginatedSuppliers.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-500">
+                  <td colSpan={8} className="py-12 text-center text-slate-500">
                     Chưa có nhà cung cấp nào được cấu hình.
                   </td>
                 </tr>
@@ -201,11 +232,70 @@ export default function AdminSuppliersPage() {
                         className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
                           s.type === 'CONFIG_POOL'
                             ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                            : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                            : s.type === 'TELEGRAM_BOT'
+                              ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                              : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
                         }`}
                       >
                         {s.type}
                       </span>
+                    </td>
+
+                    {/* Sync column for TELEGRAM_BOT */}
+                    <td className="py-3.5 px-3">
+                      {s.type === 'TELEGRAM_BOT' ? (
+                        <div className="flex items-center gap-2">
+                          <div className="space-y-0.5 min-w-[130px]">
+                            <div className="flex items-center gap-1 text-[11px] text-slate-300">
+                              <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                              {s.lastSyncAt ? (
+                                <span className="font-mono" title={s.lastSyncAt}>
+                                  {new Date(s.lastSyncAt).toLocaleString('vi-VN', {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                  })}
+                                </span>
+                              ) : (
+                                <span className="text-slate-500">Chưa sync</span>
+                              )}
+                              <span
+                                className="text-[10px] text-slate-500 font-mono"
+                                title={`Chu kỳ đồng bộ: ${s.syncIntervalSec || 3600} giây`}
+                              >
+                                (~{Math.round((s.syncIntervalSec || 3600) / 3600)}h)
+                              </span>
+                            </div>
+
+                            {s.lastSyncError && (
+                              <div
+                                className="flex items-center gap-1 text-[10px] text-rose-400 truncate max-w-[140px]"
+                                title={`Lỗi sync: ${s.lastSyncError}`}
+                              >
+                                <AlertTriangle className="w-2.5 h-2.5 shrink-0" />
+                                <span className="truncate">{s.lastSyncError}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleInlineSync(s)}
+                            disabled={inlineSyncingId === s.id}
+                            title="Kích hoạt đồng bộ ngay"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors disabled:opacity-50"
+                          >
+                            <RefreshCw
+                              className={`w-3.5 h-3.5 ${
+                                inlineSyncingId === s.id ? 'animate-spin text-amber-400' : ''
+                              }`}
+                            />
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-slate-600">—</span>
+                      )}
                     </td>
 
                     <td className="py-3.5 px-3 font-mono font-medium text-slate-200">
@@ -223,7 +313,10 @@ export default function AdminSuppliersPage() {
                     </td>
 
                     <td className="py-3.5 px-3 text-center">
-                      <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 font-mono font-semibold text-[11px]">
+                      <div
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 font-mono font-semibold text-[11px]"
+                        title="Chỉ tính các sản phẩm đang bật (isActive = true). Bản nháp/review chưa tính."
+                      >
                         <LinkIcon className="w-3 h-3 text-slate-500" />
                         <span>{s.linkedProductsCount ?? 0}</span>
                       </div>

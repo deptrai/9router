@@ -57,6 +57,12 @@ export default function AdminProductsPage() {
     fetchData();
   }, []);
 
+  const suppliersMap = useMemo(() => {
+    const map = new Map<string, SupplierSourceDto>();
+    suppliers.forEach((s) => map.set(s.id, s));
+    return map;
+  }, [suppliers]);
+
   const categories = useMemo(() => {
     const set = new Set<string>();
     products.forEach((p) => {
@@ -73,11 +79,15 @@ export default function AdminProductsPage() {
         p.slug.toLowerCase().includes(search.toLowerCase());
 
       const matchCat = categoryFilter === 'ALL' || p.category === categoryFilter;
-      const matchSourcing = sourcingFilter === 'ALL' || p.sourcingMode === sourcingFilter;
+      const matchSourcing =
+        sourcingFilter === 'ALL' ||
+        (sourcingFilter === 'TELEGRAM_SYNCED'
+          ? p.supplierSourceId != null && suppliersMap.get(p.supplierSourceId)?.type === 'TELEGRAM_BOT'
+          : p.sourcingMode === sourcingFilter);
 
       return matchSearch && matchCat && matchSourcing;
     });
-  }, [products, search, categoryFilter, sourcingFilter]);
+  }, [products, search, categoryFilter, sourcingFilter, suppliersMap]);
 
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
   const paginatedProducts = useMemo(
@@ -205,6 +215,7 @@ export default function AdminProductsPage() {
             <option value={ProductSourcingMode.IN_HOUSE}>IN_HOUSE (Kho nội bộ)</option>
             <option value={ProductSourcingMode.EXTERNAL}>EXTERNAL (Nguồn ngoài)</option>
             <option value={ProductSourcingMode.HYBRID}>HYBRID (Kho ➔ Ngoài)</option>
+            <option value="TELEGRAM_SYNCED">Synced from Telegram</option>
           </select>
         </div>
       </div>
@@ -240,14 +251,39 @@ export default function AdminProductsPage() {
                   </td>
                 </tr>
               ) : (
-                paginatedProducts.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="py-3.5 px-4 font-medium text-slate-100">
-                      <div>
-                        <p className="font-semibold text-sm">{p.title}</p>
-                        <p className="text-[11px] font-mono text-slate-500">{p.slug}</p>
-                      </div>
-                    </td>
+                paginatedProducts.map((p) => {
+                  const isTelegramSupplier =
+                    p.supplierSourceId != null &&
+                    suppliersMap.get(p.supplierSourceId)?.type === 'TELEGRAM_BOT';
+                  const isNeedsReview = !p.isActive && isTelegramSupplier;
+                  const isSoldOutAtSource = isTelegramSupplier && p.stock === 0;
+
+                  return (
+                    <tr key={p.id} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="py-3.5 px-4 font-medium text-slate-100">
+                        <div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="font-semibold text-sm">{p.title}</p>
+                            {isNeedsReview && (
+                              <span
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30"
+                                title="Sản phẩm đồng bộ từ Telegram đang ở trạng thái chờ duyệt đăng bán"
+                              >
+                                Needs Review
+                              </span>
+                            )}
+                            {isSoldOutAtSource && (
+                              <span
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30"
+                                title="Hết hàng tại nguồn bot Telegram (Tồn kho = 0)"
+                              >
+                                Sold Out at Source
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] font-mono text-slate-500">{p.slug}</p>
+                        </div>
+                      </td>
 
                     <td className="py-3.5 px-3">
                       <span className="inline-block px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 font-medium">
@@ -276,10 +312,10 @@ export default function AdminProductsPage() {
                     <td className="py-3.5 px-3 text-center">
                       <span
                         className={`inline-block px-2 py-0.5 rounded font-mono font-bold ${
-                          p.availableCount > 0 ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-500 bg-slate-800'
+                          (isTelegramSupplier ? (p.stock ?? 0) : p.availableCount) > 0 ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-500 bg-slate-800'
                         }`}
                       >
-                        {p.availableCount}
+                        {isTelegramSupplier ? (p.stock ?? 0) : p.availableCount}
                       </span>
                       <span className="text-[10px] text-slate-500 ml-1">/ {p.soldCount} bán</span>
                     </td>
@@ -340,8 +376,8 @@ export default function AdminProductsPage() {
                       </div>
                     </td>
                   </tr>
-                ))
-              )}
+                );
+              }))}
             </tbody>
           </table>
         </div>

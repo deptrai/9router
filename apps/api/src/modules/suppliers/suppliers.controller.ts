@@ -21,6 +21,7 @@ import type {
   UpdateSupplierSourceDto,
   SyncTriggerResponseDto,
   GetSyncStatusResponseDto,
+  TestConnectionResponseDto,
 } from '@repo/shared-types';
 
 @UseGuards(AdminRoleGuard)
@@ -161,6 +162,67 @@ export class SuppliersController {
       ok: true,
       message: 'Supplier successfully deactivated',
     };
+  }
+
+  @Post('test-connection')
+  async testConnection(): Promise<TestConnectionResponseDto> {
+    const relayUrl = process.env.TELEGRAM_SCRAPER_RELAY_URL?.trim();
+    const relayToken = process.env.TELEGRAM_SCRAPER_RELAY_TOKEN?.trim();
+
+    if (!relayUrl) {
+      return { ok: false, error: 'TELEGRAM_SCRAPER_RELAY_URL not configured' };
+    }
+
+    if (!/^https?:\/\//.test(relayUrl)) {
+      return { ok: false, error: 'TELEGRAM_SCRAPER_RELAY_URL must use http:// or https://' };
+    }
+
+    if (!relayToken) {
+      return { ok: false, error: 'TELEGRAM_SCRAPER_RELAY_TOKEN not configured' };
+    }
+
+    const cleanUrl = relayUrl.replace(/\/+$/, '').replace(/\/relay$/, '');
+    const healthEndpoint = `${cleanUrl}/health`;
+
+    try {
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${relayToken}`,
+      };
+
+      const response = await fetch(healthEndpoint, {
+        method: 'GET',
+        headers,
+        signal: AbortSignal.timeout(10_000),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        return {
+          ok: false,
+          status: data?.status,
+          error: data?.error || `Relay HTTP ${response.status}`,
+        };
+      }
+
+      if (data?.ok === true) {
+        return {
+          ok: true,
+          status: data.status || 'healthy',
+        };
+      }
+
+      return {
+        ok: false,
+        status: data?.status,
+        error: data?.error || 'Relay check failed',
+      };
+    } catch (err: any) {
+      return {
+        ok: false,
+        error: err?.message || 'Failed to connect to relay service',
+      };
+    }
   }
 
   @Post(':id/sync')

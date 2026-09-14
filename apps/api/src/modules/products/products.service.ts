@@ -464,19 +464,31 @@ export class ProductsService {
       supplierRecord = foundSup;
       supplierName = foundSup.name;
     } else {
-      // IN_HOUSE: clear supplier link
-      if (dto.sourcingMode === ProductSourcingMode.IN_HOUSE && dto.supplierSourceId === undefined) {
-        // Explicitly clear the supplier link when switching to IN_HOUSE
-        // unless a specific supplierSourceId is provided
+      // IN_HOUSE: clear supplier link only when explicitly switching to IN_HOUSE
+      // on a product that was NOT synced from Telegram (has no supplierProductId).
+      // Synced products keep supplierSourceId to maintain the catalog sync link.
+      if (
+        dto.sourcingMode === ProductSourcingMode.IN_HOUSE &&
+        dto.supplierSourceId === undefined &&
+        existing.supplierProductId == null
+      ) {
         newSupplierId = null;
       }
       if (newSupplierId) {
         const [foundSup] = await tx
-          .select({ name: supplierSources.name })
+          .select()
           .from(supplierSources)
           .where(eq(supplierSources.id, newSupplierId))
           .limit(1);
-        supplierName = foundSup?.name ?? null;
+        if (!foundSup) {
+          throw new BadRequestException({
+            statusCode: 400,
+            errorCode: 'INVALID_PRODUCT_PAYLOAD',
+            message: 'Referenced supplier source does not exist',
+          });
+        }
+        supplierRecord = foundSup;
+        supplierName = foundSup.name;
       }
     }
 
@@ -505,8 +517,15 @@ export class ProductsService {
     const effectiveUpstream = dto.upstreamCost !== undefined ? dto.upstreamCost : existing.upstreamCost;
     let finalPrice = existing.price;
 
-    if (dto.price !== undefined && dto.autoPricing === undefined) {
-      // Explicit price update without changing autoPricing — use provided price directly
+    if (!isAutoPricing && dto.price !== undefined) {
+      finalPrice = dto.price;
+    } else if (
+      dto.price !== undefined &&
+      dto.autoPricing === undefined &&
+      dto.upstreamCost === undefined
+    ) {
+      // Explicit price update without changing autoPricing or upstreamCost
+      // — use provided price directly (admin manual override)
       finalPrice = dto.price;
     } else if (isAutoPricing && effectiveUpstream && supplierRecord) {
       try {
@@ -523,6 +542,8 @@ export class ProductsService {
           message: 'Auto-pricing calculation failed. Check upstreamCost and supplier markup values.',
         });
       }
+    } else if (dto.price !== undefined) {
+      finalPrice = dto.price;
     }
 
     const [updated] = await tx

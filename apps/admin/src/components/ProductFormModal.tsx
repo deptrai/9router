@@ -91,7 +91,8 @@ export function ProductFormModal({
 
   // Real-time calculated price preview — mirrors computeRetailPrice from pricing.engine.ts
   // using BigInt scale-2 integer arithmetic to avoid floating-point rounding discrepancies
-  const selectedSupplier = suppliers.find((s) => s.id === supplierSourceId);
+  const effectiveSupplierId = supplierSourceId || product?.supplierSourceId || '';
+  const selectedSupplier = suppliers.find((s) => s.id === effectiveSupplierId);
   let previewPrice: string | null = null;
   if (autoPricing && upstreamCost && selectedSupplier) {
     try {
@@ -127,6 +128,14 @@ export function ProductFormModal({
       return;
     }
 
+    // HIGH-1 fix: preserve supplierSourceId when product has supplierProductId (synced from Telegram)
+    const finalSupplierSourceId =
+      sourcingMode === ProductSourcingMode.EXTERNAL || sourcingMode === ProductSourcingMode.HYBRID
+        ? supplierSourceId || null
+        : product?.supplierProductId != null
+          ? supplierSourceId || product.supplierSourceId || null
+          : null;
+
     const payload: CreateProductDto = {
       title: title.trim(),
       slug: slug.trim() ? slug.trim() : undefined,
@@ -134,10 +143,7 @@ export function ProductFormModal({
       price: finalPrice,
       description: description.trim() || null,
       sourcingMode,
-      supplierSourceId:
-        sourcingMode === ProductSourcingMode.EXTERNAL || sourcingMode === ProductSourcingMode.HYBRID
-          ? supplierSourceId || null
-          : null,
+      supplierSourceId: finalSupplierSourceId,
       supplierProductUrl: supplierProductUrl.trim() || null,
       upstreamCost: upstreamCost.trim() || null,
       maxUpstreamCost: maxUpstreamCost.trim() || null,
@@ -255,11 +261,25 @@ export function ProductFormModal({
             </div>
           </div>
 
-          {(sourcingMode === ProductSourcingMode.EXTERNAL || sourcingMode === ProductSourcingMode.HYBRID) && (
+          {/* Pricing & Supplier Cost Section (HIGH-3 fix: visible for EXTERNAL, HYBRID, or synced products) */}
+          {(sourcingMode === ProductSourcingMode.EXTERNAL ||
+            sourcingMode === ProductSourcingMode.HYBRID ||
+            Boolean(product?.supplierProductId)) && (
             <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl space-y-3">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400">
-                <Calculator className="w-3.5 h-3.5" />
-                <span>Cấu hình nhà cung cấp ngoài</span>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400">
+                  <Calculator className="w-3.5 h-3.5" />
+                  <span>
+                    {product?.supplierProductId
+                      ? 'Cấu hình giá bán & nguồn cấp (Đồng bộ từ Telegram)'
+                      : 'Cấu hình nhà cung cấp ngoài'}
+                  </span>
+                </div>
+                {product?.supplierProductId && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                    Sản phẩm Telegram
+                  </span>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">

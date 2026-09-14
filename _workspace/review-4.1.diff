@@ -1,0 +1,2866 @@
+diff --git a/apps/api/.env.example b/apps/api/.env.example
+index 0fe59e0f..f9958237 100644
+--- a/apps/api/.env.example
++++ b/apps/api/.env.example
+@@ -4,3 +4,8 @@ TELEGRAM_BOT_TOKEN=
+ PORT=3001
+ JWT_SECRET=your-jwt-secret-key-at-least-32-chars-long
+ JWT_EXPIRES_IN=7d
++
++# Price Sync & Admin Alert (Story 4.1)
++PRICE_SYNC_INTERVAL_MS=900000
++PRICE_SYNC_DISABLED=false
++TELEGRAM_ADMIN_CHAT_ID=
+diff --git a/apps/api/src/modules/ledger/ledger.service.spec.ts b/apps/api/src/modules/ledger/ledger.service.spec.ts
+index 057169ff..73853c59 100644
+--- a/apps/api/src/modules/ledger/ledger.service.spec.ts
++++ b/apps/api/src/modules/ledger/ledger.service.spec.ts
+@@ -117,7 +117,8 @@ function createFullTx(overrides: TxOverrides = {}): DbOrTx {
+         return {
+           returning: () => {
+             if (insertThrows) throw insertThrows;
+-            return Promise.resolve(insertRows);
++            const rows = insertRows.map((r) => ({ ...r, ...v }));
++            return Promise.resolve(rows);
+           },
+         };
+       },
+@@ -275,3 +276,42 @@ test('LedgerService handles unique idempotency key race by returning existing re
+   const result = await service.credit('wallet-uuid-123', '100.00', LedgerType.TOPUP_VIETQR, 'idem-1', 'ref-1', tx);
+   assert.strictEqual(result.idempotencyKey, 'idem-1');
+ });
++
++test('LedgerService.hold moves funds from balance to heldBalance', async () => {
++  const capturedUpdateSet = { value: null };
++  const tx = createFullTx({
++    walletRows: [{ ...walletRecord, balance: '100.00', heldBalance: '0.00' }],
++    capturedUpdateSet,
++  });
++  const service = new LedgerService();
++  const res = await service.hold('wallet-uuid-123', '30.00', 'hold-idem-1', 'order-1', tx);
++  assert.strictEqual(res.type, LedgerType.HOLD);
++  assert.strictEqual(capturedUpdateSet.value.balance, '70.00');
++  assert.strictEqual(capturedUpdateSet.value.heldBalance, '30.00');
++});
++
++test('LedgerService.releaseHold restores funds from heldBalance back to balance', async () => {
++  const capturedUpdateSet = { value: null };
++  const tx = createFullTx({
++    walletRows: [{ ...walletRecord, balance: '70.00', heldBalance: '30.00' }],
++    capturedUpdateSet,
++  });
++  const service = new LedgerService();
++  const res = await service.releaseHold('wallet-uuid-123', '30.00', 'release-idem-1', 'order-1', tx);
++  assert.strictEqual(res.type, LedgerType.RELEASE_HOLD);
++  assert.strictEqual(capturedUpdateSet.value.balance, '100.00');
++  assert.strictEqual(capturedUpdateSet.value.heldBalance, '0.00');
++});
++
++test('LedgerService.captureHold burns funds from heldBalance', async () => {
++  const capturedUpdateSet = { value: null };
++  const tx = createFullTx({
++    walletRows: [{ ...walletRecord, balance: '70.00', heldBalance: '30.00' }],
++    capturedUpdateSet,
++  });
++  const service = new LedgerService();
++  const res = await service.captureHold('wallet-uuid-123', '30.00', 'capture-idem-1', 'order-1', tx);
++  assert.strictEqual(res.type, LedgerType.CAPTURE_HOLD);
++  assert.strictEqual(capturedUpdateSet.value.heldBalance, '0.00');
++});
++
+diff --git a/apps/api/src/modules/ledger/ledger.service.ts b/apps/api/src/modules/ledger/ledger.service.ts
+index 8624459e..0196d331 100644
+--- a/apps/api/src/modules/ledger/ledger.service.ts
++++ b/apps/api/src/modules/ledger/ledger.service.ts
+@@ -1,6 +1,6 @@
+ import { Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+ import { db, eq, sql, ledgerTransactions, wallets, type DbOrTx } from '@repo/database';
+-import { LedgerType } from '@repo/shared-types';
++import { LedgerType, parseSignedDecimal, formatSignedDecimal } from '@repo/shared-types';
+ import type { LedgerTransactionDto } from '@repo/shared-types';
+ import { InsufficientFundsException } from '../../common/exceptions/insufficient-funds.exception';
+ 
+@@ -17,22 +17,6 @@ export interface LedgerRecord extends Record<string, unknown> {
+   createdAt: Date;
+ }
+ 
+-function parseSignedDecimal(value: string): bigint {
+-  const m = value.trim().match(/^(-?)(\d+)(?:\.(\d{1,2}))?$/);
+-  if (!m) throw new Error(`Invalid decimal format: ${value}`);
+-  const [, sign, intPart, decPart = ''] = m;
+-  const dec = decPart.padEnd(2, '0');
+-  const units = BigInt(intPart + dec) * (sign === '-' ? -1n : 1n);
+-  return units;
+-}
+-
+-function formatSignedDecimal(units: bigint): string {
+-  const sign = units < 0n ? '-' : '';
+-  const abs = sign ? (-units).toString() : units.toString();
+-  const padded = abs.padStart(3, '0');
+-  return `${sign}${padded.slice(0, -2)}.${padded.slice(-2)}`;
+-}
+-
+ @Injectable()
+ export class LedgerService {
+   private toDto(record: LedgerRecord): LedgerTransactionDto {
+@@ -117,6 +101,214 @@ export class LedgerService {
+     );
+   }
+ 
++  async hold(
++    walletId: string,
++    amount: string,
++    idempotencyKey: string,
++    referenceId?: string | null,
++    tx: DbOrTx = db,
++  ): Promise<LedgerTransactionDto> {
++    return this.ensureTransaction(async (runner) => {
++      this.validateAmount(amount);
++
++      const [wallet] = await runner
++        .select()
++        .from(wallets)
++        .where(eq(wallets.id, walletId))
++        .for('update');
++
++      if (!wallet) {
++        throw new NotFoundException({
++          errorCode: 'WALLET_NOT_FOUND',
++          message: 'Wallet not found',
++        });
++      }
++
++      const existing = await runner
++        .select()
++        .from(ledgerTransactions)
++        .where(eq(ledgerTransactions.idempotencyKey, idempotencyKey))
++        .limit(1);
++
++      if (existing.length > 0) {
++        return this.toDto(existing[0] as LedgerRecord);
++      }
++
++      const balanceBefore = this.numericAdd(String(wallet.balance), '0');
++      const heldBefore = this.numericAdd(String(wallet.heldBalance), '0');
++      const balanceAfter = this.numericAdd(balanceBefore, '-' + amount);
++      const heldAfter = this.numericAdd(heldBefore, amount);
++
++      if (this.numericCompare(balanceAfter, '0') < 0) {
++        throw new InsufficientFundsException();
++      }
++
++      await runner
++        .update(wallets)
++        .set({
++          balance: balanceAfter,
++          heldBalance: heldAfter,
++          updatedAt: sql`now()`,
++        })
++        .where(eq(wallets.id, walletId));
++
++      const [ledgerRecord] = await runner
++        .insert(ledgerTransactions)
++        .values({
++          walletId,
++          type: LedgerType.HOLD,
++          amount: '-' + amount,
++          balanceBefore,
++          balanceAfter,
++          referenceId: referenceId ?? null,
++          idempotencyKey,
++        })
++        .returning();
++
++      return this.toDto(ledgerRecord as LedgerRecord);
++    }, tx);
++  }
++
++  async releaseHold(
++    walletId: string,
++    amount: string,
++    idempotencyKey: string,
++    referenceId?: string | null,
++    tx: DbOrTx = db,
++  ): Promise<LedgerTransactionDto> {
++    return this.ensureTransaction(async (runner) => {
++      this.validateAmount(amount);
++
++      const [wallet] = await runner
++        .select()
++        .from(wallets)
++        .where(eq(wallets.id, walletId))
++        .for('update');
++
++      if (!wallet) {
++        throw new NotFoundException({
++          errorCode: 'WALLET_NOT_FOUND',
++          message: 'Wallet not found',
++        });
++      }
++
++      const existing = await runner
++        .select()
++        .from(ledgerTransactions)
++        .where(eq(ledgerTransactions.idempotencyKey, idempotencyKey))
++        .limit(1);
++
++      if (existing.length > 0) {
++        return this.toDto(existing[0] as LedgerRecord);
++      }
++
++      const balanceBefore = this.numericAdd(String(wallet.balance), '0');
++      const heldBefore = this.numericAdd(String(wallet.heldBalance), '0');
++      const heldAfter = this.numericAdd(heldBefore, '-' + amount);
++      const balanceAfter = this.numericAdd(balanceBefore, amount);
++
++      if (this.numericCompare(heldAfter, '0') < 0) {
++        throw new InternalServerErrorException({
++          errorCode: 'INVALID_HELD_BALANCE',
++          message: 'Held balance cannot go below zero',
++        });
++      }
++
++      await runner
++        .update(wallets)
++        .set({
++          balance: balanceAfter,
++          heldBalance: heldAfter,
++          updatedAt: sql`now()`,
++        })
++        .where(eq(wallets.id, walletId));
++
++      const [ledgerRecord] = await runner
++        .insert(ledgerTransactions)
++        .values({
++          walletId,
++          type: LedgerType.RELEASE_HOLD,
++          amount,
++          balanceBefore,
++          balanceAfter,
++          referenceId: referenceId ?? null,
++          idempotencyKey,
++        })
++        .returning();
++
++      return this.toDto(ledgerRecord as LedgerRecord);
++    }, tx);
++  }
++
++  async captureHold(
++    walletId: string,
++    amount: string,
++    idempotencyKey: string,
++    referenceId?: string | null,
++    tx: DbOrTx = db,
++  ): Promise<LedgerTransactionDto> {
++    return this.ensureTransaction(async (runner) => {
++      this.validateAmount(amount);
++
++      const [wallet] = await runner
++        .select()
++        .from(wallets)
++        .where(eq(wallets.id, walletId))
++        .for('update');
++
++      if (!wallet) {
++        throw new NotFoundException({
++          errorCode: 'WALLET_NOT_FOUND',
++          message: 'Wallet not found',
++        });
++      }
++
++      const existing = await runner
++        .select()
++        .from(ledgerTransactions)
++        .where(eq(ledgerTransactions.idempotencyKey, idempotencyKey))
++        .limit(1);
++
++      if (existing.length > 0) {
++        return this.toDto(existing[0] as LedgerRecord);
++      }
++
++      const balanceBefore = this.numericAdd(String(wallet.balance), '0');
++      const heldBefore = this.numericAdd(String(wallet.heldBalance), '0');
++      const heldAfter = this.numericAdd(heldBefore, '-' + amount);
++
++      if (this.numericCompare(heldAfter, '0') < 0) {
++        throw new InternalServerErrorException({
++          errorCode: 'INVALID_HELD_BALANCE',
++          message: 'Held balance cannot go below zero',
++        });
++      }
++
++      await runner
++        .update(wallets)
++        .set({
++          heldBalance: heldAfter,
++          updatedAt: sql`now()`,
++        })
++        .where(eq(wallets.id, walletId));
++
++      const [ledgerRecord] = await runner
++        .insert(ledgerTransactions)
++        .values({
++          walletId,
++          type: LedgerType.CAPTURE_HOLD,
++          amount: '-' + amount,
++          balanceBefore,
++          balanceAfter: balanceBefore,
++          referenceId: referenceId ?? null,
++          idempotencyKey,
++        })
++        .returning();
++
++      return this.toDto(ledgerRecord as LedgerRecord);
++    }, tx);
++  }
++
+   private async recordTransaction(
+     walletId: string,
+     amount: string,
+diff --git a/apps/api/src/modules/products/products.module.ts b/apps/api/src/modules/products/products.module.ts
+index ecb899b2..27081ddd 100644
+--- a/apps/api/src/modules/products/products.module.ts
++++ b/apps/api/src/modules/products/products.module.ts
+@@ -1,4 +1,20 @@
+ import { Module } from '@nestjs/common';
++import { ProductsController } from './products.controller';
++import { ProductsService } from './products.service';
++import { PriceSyncService } from './price-sync.service';
++import { SupplierPriceFetcherService } from './supplier-price-fetcher.service';
++import { PriceSyncScheduler } from '../../workers/price-sync.scheduler';
++import { TelegramBotModule } from '../../common/telegram/telegram-bot.module';
+ 
+-@Module({})
++@Module({
++  imports: [TelegramBotModule],
++  controllers: [ProductsController],
++  providers: [
++    ProductsService,
++    PriceSyncService,
++    SupplierPriceFetcherService,
++    PriceSyncScheduler,
++  ],
++  exports: [ProductsService, PriceSyncService, SupplierPriceFetcherService],
++})
+ export class ProductsModule {}
+diff --git a/packages/database/src/index.ts b/packages/database/src/index.ts
+index 8df69721..b9259c33 100644
+--- a/packages/database/src/index.ts
++++ b/packages/database/src/index.ts
+@@ -1,5 +1,5 @@
+ import { drizzle } from 'drizzle-orm/node-postgres';
+-import { eq, sql } from 'drizzle-orm';
++import { eq, sql, inArray, and, desc } from 'drizzle-orm';
+ import pg from 'pg';
+ import * as schema from './schema';
+ 
+@@ -22,4 +22,5 @@ export type DbClient = typeof db;
+ export type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+ export type DbOrTx = DbClient | DbTransaction;
+ export * from './schema';
+-export { schema, eq, sql };
++export * from './crypto';
++export { schema, eq, sql, inArray, and, desc };
+diff --git a/packages/database/src/schema.spec.ts b/packages/database/src/schema.spec.ts
+index 456cc8ba..fc57c7e5 100644
+--- a/packages/database/src/schema.spec.ts
++++ b/packages/database/src/schema.spec.ts
+@@ -1,14 +1,23 @@
+ import { test } from 'node:test';
+ import assert from 'node:assert';
+-import { users, wallets, ledgerTransactions, paymentTransactions } from './schema';
++import { users, wallets, ledgerTransactions, paymentTransactions, supplierSources, products, adminAlerts } from './schema';
+ 
+ test('Database schema exports required tables with constraints', () => {
+   assert.ok(users, 'users table must be exported');
+   assert.ok(wallets, 'wallets table must be exported');
+   assert.ok(ledgerTransactions, 'ledgerTransactions table must be exported');
+   assert.ok(paymentTransactions, 'paymentTransactions table must be exported');
++  assert.ok(supplierSources, 'supplierSources table must be exported');
++  assert.ok(products, 'products table must be exported');
++  assert.ok(adminAlerts, 'adminAlerts table must be exported');
+   assert.ok('languageCode' in users, 'users table must have languageCode column');
+   assert.ok('isPremium' in users, 'users table must have isPremium column');
++  assert.ok('markupFixedVnd' in supplierSources, 'supplierSources must have markupFixedVnd column');
++  assert.ok('supplierProductUrl' in products, 'products must have supplierProductUrl column');
++  assert.ok('upstreamCost' in products, 'products must have upstreamCost column');
++  assert.ok('maxUpstreamCost' in products, 'products must have maxUpstreamCost column');
++  assert.ok('costSyncedAt' in products, 'products must have costSyncedAt column');
++  assert.ok('autoPricing' in products, 'products must have autoPricing column');
+ });
+ 
+ test('wallets table has non-negative balance check constraints', () => {
+diff --git a/packages/database/src/schema.ts b/packages/database/src/schema.ts
+index f33edde3..4bf0abb9 100644
+--- a/packages/database/src/schema.ts
++++ b/packages/database/src/schema.ts
+@@ -1,4 +1,4 @@
+-import { pgTable, uuid, varchar, bigint, timestamp, check, numeric, boolean, jsonb, text } from 'drizzle-orm/pg-core';
++import { pgTable, uuid, varchar, bigint, timestamp, check, index, numeric, boolean, jsonb, text } from 'drizzle-orm/pg-core';
+ import { sql } from 'drizzle-orm';
+ 
+ export const users = pgTable('users', {
+@@ -43,13 +43,19 @@ export const ledgerTransactions = pgTable(
+       .references(() => wallets.id, { onDelete: 'cascade' }),
+     type: varchar('type', { length: 30 }).notNull(),
+     amount: numeric('amount', { precision: 15, scale: 2 }).notNull(),
++    currency: varchar('currency', { length: 10 }).notNull().default('VND'),
+     balanceBefore: numeric('balance_before', { precision: 15, scale: 2 }).notNull(),
+     balanceAfter: numeric('balance_after', { precision: 15, scale: 2 }).notNull(),
+     referenceId: varchar('reference_id', { length: 100 }),
+     idempotencyKey: varchar('idempotency_key', { length: 100 }).unique(),
+     metadata: jsonb('metadata'),
+     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+-  }
++  },
++  (table) => [
++    index('ledger_wallet_id_idx').on(table.walletId),
++    index('ledger_reference_id_idx').on(table.referenceId),
++    index('ledger_created_at_idx').on(table.createdAt),
++  ]
+ );
+ 
+ export const paymentTransactions = pgTable(
+@@ -74,3 +80,119 @@ export const paymentTransactions = pgTable(
+     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+   }
+ );
++
++export const supplierSources = pgTable(
++  'supplier_sources',
++  {
++    id: uuid('id').primaryKey().defaultRandom(),
++    name: varchar('name', { length: 255 }).notNull(),
++    type: varchar('type', { length: 50 }).notNull().default('WEB_SCRAPER'),
++    targetUrl: varchar('target_url', { length: 512 }),
++    configCredentials: jsonb('config_credentials'),
++    markupPercentage: numeric('markup_percentage', { precision: 8, scale: 2 }).notNull().default('0.00'),
++    markupFixedVnd: numeric('markup_fixed_vnd', { precision: 15, scale: 2 }).notNull().default('0.00'),
++    isActive: boolean('is_active').notNull().default(true),
++    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
++    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
++  },
++  (table) => [
++    check('supplier_markup_non_negative', sql`${table.markupPercentage} >= 0`),
++    check('supplier_markup_fixed_non_negative', sql`${table.markupFixedVnd} >= 0`),
++  ]
++);
++
++export const products = pgTable(
++  'products',
++  {
++    id: uuid('id').primaryKey().defaultRandom(),
++    title: varchar('title', { length: 255 }).notNull(),
++    slug: varchar('slug', { length: 255 }).notNull().unique(),
++    description: text('description'),
++    category: varchar('category', { length: 100 }),
++    price: numeric('price', { precision: 15, scale: 2 }).notNull(),
++    imageUrl: varchar('image_url', { length: 512 }),
++    isActive: boolean('is_active').notNull().default(true),
++    sourcingMode: varchar('sourcing_mode', { length: 20 }).notNull().default('IN_HOUSE'),
++    supplierSourceId: uuid('supplier_source_id').references(() => supplierSources.id, {
++      onDelete: 'set null',
++    }),
++    supplierProductUrl: varchar('supplier_product_url', { length: 512 }),
++    upstreamCost: numeric('upstream_cost', { precision: 15, scale: 2 }),
++    maxUpstreamCost: numeric('max_upstream_cost', { precision: 15, scale: 2 }),
++    costSyncedAt: timestamp('cost_synced_at', { withTimezone: true }),
++    autoPricing: boolean('auto_pricing').notNull().default(true),
++    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
++    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
++  },
++  (table) => [
++    index('products_supplier_source_id_idx').on(table.supplierSourceId),
++    index('products_active_category_idx').on(table.isActive, table.category),
++    check('products_price_non_negative', sql`${table.price} >= 0`),
++    check('products_max_upstream_cost_valid', sql`${table.maxUpstreamCost} IS NULL OR ${table.maxUpstreamCost} > 0`),
++    check('products_upstream_cost_valid', sql`${table.upstreamCost} IS NULL OR ${table.upstreamCost} >= 0`),
++  ]
++);
++
++export const adminAlerts = pgTable(
++  'admin_alerts',
++  {
++    id: uuid('id').primaryKey().defaultRandom(),
++    type: varchar('type', { length: 50 }).notNull(),
++    severity: varchar('severity', { length: 20 }).notNull().default('WARN'),
++    productId: uuid('product_id').references(() => products.id, { onDelete: 'set null' }),
++    supplierSourceId: uuid('supplier_source_id').references(() => supplierSources.id, { onDelete: 'set null' }),
++    message: text('message').notNull(),
++    payload: jsonb('payload'),
++    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
++    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
++  },
++  (table) => [
++    index('admin_alerts_type_idx').on(table.type),
++    index('admin_alerts_created_at_idx').on(table.createdAt),
++    check('admin_alerts_type_valid', sql`${table.type} IN ('PRICE_THRESHOLD_EXCEEDED', 'PRICE_SYNC_FAILED')`),
++  ]
++);
++
++export const orders = pgTable(
++  'orders',
++  {
++    id: uuid('id').primaryKey().defaultRandom(),
++    userId: uuid('user_id')
++      .notNull()
++      .references(() => users.id, { onDelete: 'cascade' }),
++    productId: uuid('product_id')
++      .notNull()
++      .references(() => products.id, { onDelete: 'restrict' }),
++    price: numeric('price', { precision: 15, scale: 2 }).notNull(),
++    status: varchar('status', { length: 20 }).notNull().default('PENDING'),
++    idempotencyKey: varchar('idempotency_key', { length: 255 }).unique(),
++    deliveredCredential: text('delivered_credential'),
++    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
++    fulfilledAt: timestamp('fulfilled_at', { withTimezone: true }),
++  },
++  (table) => [
++    index('orders_user_id_idx').on(table.userId),
++    index('orders_product_id_idx').on(table.productId),
++    check('orders_status_valid', sql`${table.status} IN ('PENDING', 'PAID', 'SOURCING', 'FULFILLED', 'REFUNDED', 'FAILED')`),
++  ]
++);
++
++export const productInventory = pgTable(
++  'product_inventory',
++  {
++    id: uuid('id').primaryKey().defaultRandom(),
++    productId: uuid('product_id')
++      .notNull()
++      .references(() => products.id, { onDelete: 'cascade' }),
++    credentialData: text('credential_data').notNull(),
++    status: varchar('status', { length: 20 }).notNull().default('AVAILABLE'),
++    orderId: uuid('order_id').references(() => orders.id, { onDelete: 'set null' }),
++    addedAt: timestamp('added_at', { withTimezone: true }).notNull().defaultNow(),
++    soldAt: timestamp('sold_at', { withTimezone: true }),
++  },
++  (table) => [
++    index('product_inventory_product_id_idx').on(table.productId),
++    index('product_inventory_prod_status_idx').on(table.productId, table.status),
++    check('product_inventory_status_valid', sql`${table.status} IN ('AVAILABLE', 'RESERVED', 'SOLD', 'DEFECTIVE')`),
++  ]
++);
+diff --git a/packages/database/src/seed.ts b/packages/database/src/seed.ts
+index c36dbd95..d50d1fe1 100644
+--- a/packages/database/src/seed.ts
++++ b/packages/database/src/seed.ts
+@@ -1,47 +1,51 @@
+-import { db, closeDb } from './index';
+-import { users, wallets } from './schema';
++import { db, closeDb, encryptCredential } from './index';
++import { users, wallets, supplierSources, products, productInventory } from './schema';
+ import { eq } from 'drizzle-orm';
+ 
+ async function seed() {
+   console.log('Seeding initial test user and wallet...');
+ 
+-  const testTelegramId = 123456789;
+-  const existingUser = await db.select().from(users).where(eq(users.telegramId, testTelegramId)).limit(1);
++  await db.transaction(async (tx) => {
++    const testTelegramId = 123456789;
++    const existingUser = await tx.select().from(users).where(eq(users.telegramId, testTelegramId)).limit(1);
+ 
+-  let userId: string;
+-  if (existingUser.length > 0) {
+-    userId = existingUser[0].id;
+-    console.log(`User already exists with ID: ${userId}`);
+-  } else {
+-    const [newUser] = await db
+-      .insert(users)
+-      .values({
+-        telegramId: testTelegramId,
+-        username: 'testuser',
+-        firstName: 'Test',
+-        lastName: 'User',
+-        role: 'CUSTOMER',
+-      })
+-      .returning();
+-    userId = newUser.id;
+-    console.log(`Created user with ID: ${userId}`);
+-  }
++    let userId: string;
++    if (existingUser.length > 0) {
++      userId = existingUser[0].id;
++      console.log(`User already exists with ID: ${userId}`);
++    } else {
++      const [newUser] = await tx
++        .insert(users)
++        .values({
++          telegramId: testTelegramId,
++          username: 'testuser',
++          firstName: 'Test',
++          lastName: 'User',
++          role: 'CUSTOMER',
++        })
++        .returning();
++      userId = newUser.id;
++      console.log(`Created user with ID: ${userId}`);
++    }
+ 
+-  const existingWallet = await db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1);
+-  if (existingWallet.length === 0) {
+-    const [newWallet] = await db
+-      .insert(wallets)
+-      .values({
+-        userId,
+-        balance: '100000.00',
+-        heldBalance: '0.00',
+-        currency: 'VND',
+-      })
+-      .returning();
+-    console.log(`Created wallet with ID: ${newWallet.id}, balance: ${newWallet.balance}`);
+-  } else {
+-    console.log(`Wallet already exists with ID: ${existingWallet[0].id}, balance: ${existingWallet[0].balance}`);
+-  }
++    const existingWallet = await tx.select().from(wallets).where(eq(wallets.userId, userId)).limit(1);
++    if (existingWallet.length === 0) {
++      const [newWallet] = await tx
++        .insert(wallets)
++        .values({
++          userId,
++          balance: '100000.00',
++          heldBalance: '0.00',
++          currency: 'VND',
++        })
++        .returning();
++      console.log(`Created wallet with ID: ${newWallet.id}, balance: ${newWallet.balance}`);
++    } else {
++      console.log(`Wallet already exists with ID: ${existingWallet[0].id}, balance: ${existingWallet[0].balance}`);
++    }
++
++    await seedCatalog(tx);
++  });
+ 
+   console.log('Seed completed successfully!');
+   await closeDb();
+@@ -53,3 +57,90 @@ seed().catch(async (err) => {
+   await closeDb();
+   process.exit(1);
+ });
++
++// --- Story 3.1: seed sample products / supplier / inventory for manual verify ---
++
++async function seedCatalog(tx: any = db) {
++  console.log('Seeding catalog (Story 3.1)...');
++
++  // Supplier source (external fallback) — idempotent by name.
++  let supId: string;
++  const [existingSup] = await tx.select().from(supplierSources).where(eq(supplierSources.name, 'Partner Shop A')).limit(1);
++  if (existingSup) {
++    supId = existingSup.id;
++    await tx.update(supplierSources).set({
++      markupFixedVnd: '10000.00',
++      configCredentials: { priceMap: { 'office-365': '80000.00', 'spotify-1m': '40000.00' } },
++    }).where(eq(supplierSources.id, supId));
++  } else {
++    const [s] = await tx.insert(supplierSources).values({
++      name: 'Partner Shop A', type: 'API', targetUrl: 'https://partner.example.com',
++      markupPercentage: '20.00',
++      markupFixedVnd: '10000.00',
++      configCredentials: { priceMap: { 'office-365': '80000.00', 'spotify-1m': '40000.00' } },
++      isActive: true,
++    }).returning();
++    supId = s.id;
++    console.log(`Created supplier source ${supId}`);
++  }
++
++  const catalog = [
++    { title: 'Key Kiro Pro', slug: 'kiro-pro', category: 'AI Tools', price: '120000.00', sourcingMode: 'IN_HOUSE', imageUrl: null, desc: 'AI coding assistant license' },
++    { title: 'Tài khoản ChatGPT Plus', slug: 'chatgpt-plus', category: 'AI Tools', price: '250000.00', sourcingMode: 'IN_HOUSE', imageUrl: null, desc: 'ChatGPT Plus 1 tháng' },
++    { title: 'JetBrains All Products', slug: 'jetbrains-all', category: 'Dev Tools', price: '450000.00', sourcingMode: 'IN_HOUSE', imageUrl: null, desc: 'IDE pack license' },
++    {
++      title: 'Office 365 Key', slug: 'office-365', category: 'Office', price: '99000.00', sourcingMode: 'EXTERNAL', supplierSourceId: supId, imageUrl: null,
++      desc: 'Office 365 key — auto-source when in-house empty',
++      maxUpstreamCost: '90000.00', autoPricing: true, supplierProductUrl: 'https://partner.example.com/item/office-365',
++    },
++    { title: 'Cursor Pro (Hết hàng)', slug: 'cursor-pro', category: 'Dev Tools', price: '480000.00', sourcingMode: 'IN_HOUSE', imageUrl: null, desc: 'Cursor Pro account — tạm hết hàng' },
++    { title: 'Netflix Premium 1M', slug: 'netflix-1m', category: 'Giải trí', price: '75000.00', sourcingMode: 'IN_HOUSE', imageUrl: null, desc: 'Netflix premium account' },
++    {
++      title: 'Spotify Premium 1M', slug: 'spotify-1m', category: 'Giải trí', price: '55000.00', sourcingMode: 'EXTERNAL', supplierSourceId: supId, imageUrl: null,
++      desc: 'Spotify premium — external source',
++      maxUpstreamCost: '50000.00', autoPricing: true, supplierProductUrl: 'https://partner.example.com/item/spotify-1m',
++    },
++  ];
++
++  for (const p of catalog as any[]) {
++    const [existing] = await tx.select().from(products).where(eq(products.slug, p.slug)).limit(1);
++    let prodId: string;
++    if (existing) {
++      prodId = existing.id;
++      if (p.sourcingMode === 'EXTERNAL') {
++        await tx.update(products).set({
++          maxUpstreamCost: p.maxUpstreamCost ?? null,
++          autoPricing: p.autoPricing ?? true,
++          supplierProductUrl: p.supplierProductUrl ?? null,
++          supplierSourceId: p.supplierSourceId ?? null,
++        }).where(eq(products.id, prodId));
++      }
++    } else {
++      const [np] = await tx.insert(products).values({
++        title: p.title, slug: p.slug, category: p.category, price: p.price,
++        sourcingMode: p.sourcingMode, supplierSourceId: p.supplierSourceId ?? null,
++        supplierProductUrl: p.supplierProductUrl ?? null,
++        maxUpstreamCost: p.maxUpstreamCost ?? null,
++        autoPricing: p.autoPricing ?? true,
++        imageUrl: p.imageUrl, description: p.desc, isActive: true,
++      }).returning();
++      prodId = np.id;
++      console.log(`Created product ${p.slug} (${prodId})`);
++    }
++
++    // Give IN_HOUSE products some inventory, except out-of-stock demo products.
++    if (p.sourcingMode === 'IN_HOUSE' && p.slug !== 'cursor-pro') {
++      const existingInv = await tx.select().from(productInventory).where(eq(productInventory.productId, prodId)).limit(1);
++      if (existingInv.length === 0) {
++        const items = Array.from({ length: 3 }, (_, i) => ({
++          productId: prodId,
++          credentialData: encryptCredential(`KEY-${p.slug.toUpperCase()}-XXXX-${i}`),
++          status: 'AVAILABLE',
++        }));
++        await tx.insert(productInventory).values(items);
++        console.log(`  +3 encrypted inventory for ${p.slug}`);
++      }
++    }
++  }
++  console.log('Catalog seed done.');
++}
+diff --git a/packages/shared-types/src/dtos/index.ts b/packages/shared-types/src/dtos/index.ts
+index c0b74222..709bdd4a 100644
+--- a/packages/shared-types/src/dtos/index.ts
++++ b/packages/shared-types/src/dtos/index.ts
+@@ -1,4 +1,4 @@
+-import { UserRole, OrderStatus, PaymentStatus, ProductSourcingMode, LedgerType, PaymentGateway } from '../enums';
++import { UserRole, OrderStatus, PaymentStatus, ProductSourcingMode, ProductStockStatus, InventoryStatus, LedgerType, PaymentGateway, PriceSyncAction } from '../enums';
+ 
+ export interface UserDto {
+   id: string;
+@@ -29,17 +29,62 @@ export interface ProductDto {
+   description?: string | null;
+   category?: string | null;
+   price: string;
++  imageUrl?: string | null;
+   isActive: boolean;
+   sourcingMode: ProductSourcingMode;
+   createdAt: string;
+ }
+ 
++export interface CatalogProductDto extends ProductDto {
++  stockStatus: ProductStockStatus;
++  availableCount: number;
++}
++
++export interface CatalogResponseDto {
++  ok: boolean;
++  products: CatalogProductDto[];
++}
++
++export interface InventorySummaryDto {
++  available: number;
++  reserved: number;
++  sold: number;
++  defective: number;
++  total: number;
++}
++
++export interface BatchAddCredentialsDto {
++  credentials: string[];
++}
++
++export interface BatchAddCredentialsResponseDto {
++  ok: boolean;
++  count: number;
++  productId: string;
++}
++
++export interface ReservedInventoryDto {
++  id: string;
++  productId: string;
++  status: InventoryStatus;
++  orderId: string | null;
++}
++
++export interface DeliveredInventoryDto {
++  id: string;
++  productId: string;
++  credentialData: string;
++  orderId: string | null;
++  soldAt: string;
++}
++
+ export interface OrderDto {
+   id: string;
+   userId: string;
+   productId: string;
+   status: OrderStatus;
+   price: string;
++  productTitle?: string;
+   deliveredCredential?: string | null;
+   idempotencyKey?: string | null;
+   createdAt: string;
+@@ -157,3 +202,49 @@ export interface BitcartWebhookResponseDto {
+   currentStatus?: string;
+   alreadyProcessed?: boolean;
+ }
++
++export interface CheckoutRequestDto {
++  productId: string;
++  idempotencyKey: string;
++}
++
++export interface CheckoutResponseDto {
++  ok: boolean;
++  order: OrderDto;
++  deliveredCredential?: string;
++}
++
++export interface CheckoutErrorDto {
++  statusCode: number;
++  errorCode: 'INSUFFICIENT_FUNDS' | 'OUT_OF_STOCK' | 'ORDER_LOCK_CONFLICT' | 'PRODUCT_NOT_FOUND';
++  missingAmount?: string;
++  message: string;
++}
++
++export interface PriceSyncItemDto {
++  productId: string;
++  slug: string;
++  action: PriceSyncAction;
++  upstreamCost?: string;
++  oldPrice?: string;
++  newPrice?: string;
++  error?: string;
++}
++
++export interface PriceSyncSummaryDto {
++  scanned: number;
++  updated: number;
++  unchanged: number;
++  deactivated: number;
++  failed: number;
++  skipped: number;
++  items: PriceSyncItemDto[];
++  startedAt: string;
++  finishedAt: string;
++}
++
++export interface SyncPricesResponseDto {
++  ok: boolean;
++  summary: PriceSyncSummaryDto;
++}
++
+diff --git a/packages/shared-types/src/enums/index.ts b/packages/shared-types/src/enums/index.ts
+index 25dd689f..a254c06b 100644
+--- a/packages/shared-types/src/enums/index.ts
++++ b/packages/shared-types/src/enums/index.ts
+@@ -40,9 +40,30 @@ export enum LedgerType {
+   STORE_PURCHASE = 'STORE_PURCHASE',
+   PURCHASE_REFUND = 'PURCHASE_REFUND',
+   ADMIN_ADJUST = 'ADMIN_ADJUST',
++  HOLD = 'HOLD',
++  RELEASE_HOLD = 'RELEASE_HOLD',
++  CAPTURE_HOLD = 'CAPTURE_HOLD',
+ }
+ 
+ export enum PaymentGateway {
+   VIETQR = 'VIETQR',
+   BITCART = 'BITCART',
+ }
++
++export enum ProductStockStatus {
++  IN_STOCK = 'IN_STOCK',
++  OUT_OF_STOCK = 'OUT_OF_STOCK',
++}
++
++export enum AdminAlertType {
++  PRICE_THRESHOLD_EXCEEDED = 'PRICE_THRESHOLD_EXCEEDED',
++  PRICE_SYNC_FAILED = 'PRICE_SYNC_FAILED',
++}
++
++export enum PriceSyncAction {
++  UPDATED = 'UPDATED',
++  UNCHANGED = 'UNCHANGED',
++  DEACTIVATED = 'DEACTIVATED',
++  FAILED = 'FAILED',
++  SKIPPED = 'SKIPPED',
++}
+diff --git a/packages/shared-types/src/index.ts b/packages/shared-types/src/index.ts
+index 10322ab9..403c6f58 100644
+--- a/packages/shared-types/src/index.ts
++++ b/packages/shared-types/src/index.ts
+@@ -1,2 +1,3 @@
+ export * from './enums';
+ export * from './dtos';
++export * from './utils';
+diff --git a/packages/shared-types/src/utils/decimal.ts b/packages/shared-types/src/utils/decimal.ts
+new file mode 100644
+index 00000000..46d622ac
+--- /dev/null
++++ b/packages/shared-types/src/utils/decimal.ts
+@@ -0,0 +1,20 @@
++/**
++2 * Money decimal helpers using BigInt scale-2 (1/100 VND).
++3 * Canonical utilities extracted from ledger & orders domain logic.
++4 */
++
++export function parseSignedDecimal(value: string): bigint {
++  const m = value.trim().match(/^(-?)(\d+)(?:\.(\d{1,2}))?$/);
++  if (!m) throw new Error(`Invalid decimal format: ${value}`);
++  const [, sign, intPart, decPart = ''] = m;
++  const dec = decPart.padEnd(2, '0');
++  const units = BigInt(intPart + dec) * (sign === '-' ? -1n : 1n);
++  return units;
++}
++
++export function formatSignedDecimal(units: bigint): string {
++  const sign = units < 0n ? '-' : '';
++  const abs = sign ? (-units).toString() : units.toString();
++  const padded = abs.padStart(3, '0');
++  return `${sign}${padded.slice(0, -2)}.${padded.slice(-2)}`;
++}
+diff --git a/packages/shared-types/src/utils/index.ts b/packages/shared-types/src/utils/index.ts
+new file mode 100644
+index 00000000..303ca0be
+--- /dev/null
++++ b/packages/shared-types/src/utils/index.ts
+@@ -0,0 +1 @@
++export * from './decimal';
+diff --git a/apps/api/src/common/guards/admin-role.guard.ts b/apps/api/src/common/guards/admin-role.guard.ts
+new file mode 100644
+index 00000000..e617df8d
+--- /dev/null
++++ b/apps/api/src/common/guards/admin-role.guard.ts
+@@ -0,0 +1,47 @@
++import {
++  CanActivate,
++  ExecutionContext,
++  ForbiddenException,
++  Injectable,
++  Optional,
++} from '@nestjs/common';
++import { db, eq, users, type DbOrTx } from '@repo/database';
++import { UserRole, type TelegramUserDto } from '@repo/shared-types';
++
++@Injectable()
++export class AdminRoleGuard implements CanActivate {
++  private readonly dbClient: DbOrTx;
++
++  constructor(@Optional() dbClient?: DbOrTx) {
++    this.dbClient = dbClient ?? db;
++  }
++
++  async canActivate(context: ExecutionContext): Promise<boolean> {
++    const request = context.switchToHttp().getRequest();
++    const telegramUser: TelegramUserDto | undefined = request.user;
++
++    if (!telegramUser || typeof telegramUser.id !== 'number') {
++      throw new ForbiddenException({
++        statusCode: 403,
++        errorCode: 'AUTH_FORBIDDEN_NOT_ADMIN',
++        message: 'Admin role required',
++      });
++    }
++
++    const [userRecord] = await this.dbClient
++      .select({ role: users.role })
++      .from(users)
++      .where(eq(users.telegramId, telegramUser.id))
++      .limit(1);
++
++    if (!userRecord || userRecord.role !== UserRole.ADMIN) {
++      throw new ForbiddenException({
++        statusCode: 403,
++        errorCode: 'AUTH_FORBIDDEN_NOT_ADMIN',
++        message: 'Admin role required',
++      });
++    }
++
++    return true;
++  }
++}
+diff --git a/apps/api/src/common/guards/admin-role.guard.spec.ts b/apps/api/src/common/guards/admin-role.guard.spec.ts
+new file mode 100644
+index 00000000..380e80e5
+--- /dev/null
++++ b/apps/api/src/common/guards/admin-role.guard.spec.ts
+@@ -0,0 +1,106 @@
++import { test } from 'node:test';
++import assert from 'node:assert';
++import { ForbiddenException, ExecutionContext } from '@nestjs/common';
++import { AdminRoleGuard } from './admin-role.guard';
++import { UserRole } from '@repo/shared-types';
++
++function createMockContext(user?: any): ExecutionContext {
++  const request = { user };
++  return {
++    switchToHttp: () => ({
++      getRequest: () => request,
++    }),
++  } as unknown as ExecutionContext;
++}
++
++test('AdminRoleGuard allows user with ADMIN role', async () => {
++  const mockDb = {
++    select: () => ({
++      from: () => ({
++        where: () => ({
++          limit: () => Promise.resolve([{ id: 'u1', telegramId: 12345, role: UserRole.ADMIN }]),
++        }),
++      }),
++    }),
++  };
++
++  const guard = new AdminRoleGuard(mockDb as any);
++  const context = createMockContext({ id: 12345, firstName: 'Admin' });
++
++  const result = await guard.canActivate(context);
++  assert.strictEqual(result, true);
++});
++
++test('AdminRoleGuard throws 403 ForbiddenException when user role is CUSTOMER', async () => {
++  const mockDb = {
++    select: () => ({
++      from: () => ({
++        where: () => ({
++          limit: () => Promise.resolve([{ id: 'u2', telegramId: 67890, role: UserRole.CUSTOMER }]),
++        }),
++      }),
++    }),
++  };
++
++  const guard = new AdminRoleGuard(mockDb as any);
++  const context = createMockContext({ id: 67890, firstName: 'Customer' });
++
++  await assert.rejects(
++    () => guard.canActivate(context),
++    (err: any) => {
++      assert.ok(err instanceof ForbiddenException);
++      const res = err.getResponse() as any;
++      assert.strictEqual(res.errorCode, 'AUTH_FORBIDDEN_NOT_ADMIN');
++      assert.strictEqual(res.statusCode, 403);
++      return true;
++    },
++  );
++});
++
++test('AdminRoleGuard throws 403 ForbiddenException when user row is not found in database', async () => {
++  const mockDb = {
++    select: () => ({
++      from: () => ({
++        where: () => ({
++          limit: () => Promise.resolve([]),
++        }),
++      }),
++    }),
++  };
++
++  const guard = new AdminRoleGuard(mockDb as any);
++  const context = createMockContext({ id: 99999, firstName: 'Ghost' });
++
++  await assert.rejects(
++    () => guard.canActivate(context),
++    (err: any) => {
++      assert.ok(err instanceof ForbiddenException);
++      const res = err.getResponse() as any;
++      assert.strictEqual(res.errorCode, 'AUTH_FORBIDDEN_NOT_ADMIN');
++      return true;
++    },
++  );
++});
++
++test('AdminRoleGuard throws 403 ForbiddenException when request has no user', async () => {
++  const mockDb = {
++    select: () => ({
++      from: () => ({
++        where: () => ({
++          limit: () => Promise.resolve([]),
++        }),
++      }),
++    }),
++  };
++
++  const guard = new AdminRoleGuard(mockDb as any);
++  const context = createMockContext(undefined);
++
++  await assert.rejects(
++    () => guard.canActivate(context),
++    (err: any) => {
++      assert.ok(err instanceof ForbiddenException);
++      return true;
++    },
++  );
++});
+diff --git a/apps/api/src/common/telegram/telegram-bot.module.ts b/apps/api/src/common/telegram/telegram-bot.module.ts
+new file mode 100644
+index 00000000..a9aeeb11
+--- /dev/null
++++ b/apps/api/src/common/telegram/telegram-bot.module.ts
+@@ -0,0 +1,8 @@
++import { Module } from '@nestjs/common';
++import { TelegramBotService } from './telegram-bot.service';
++
++@Module({
++  providers: [TelegramBotService],
++  exports: [TelegramBotService],
++})
++export class TelegramBotModule {}
+diff --git a/apps/api/src/common/telegram/telegram-bot.service.ts b/apps/api/src/common/telegram/telegram-bot.service.ts
+new file mode 100644
+index 00000000..03fb3d6b
+--- /dev/null
++++ b/apps/api/src/common/telegram/telegram-bot.service.ts
+@@ -0,0 +1,112 @@
++import { Injectable, Logger } from '@nestjs/common';
++import type { OrderDto } from '@repo/shared-types';
++
++@Injectable()
++export class TelegramBotService {
++  private readonly logger = new Logger(TelegramBotService.name);
++
++  /**
++   * Send order confirmation message to the buyer via Telegram Bot API.
++   * Fire-and-forget: never throws — notification failure must not break checkout.
++   */
++  async sendOrderConfirmation(
++    telegramId: number,
++    order: OrderDto,
++    productTitle: string,
++  ): Promise<void> {
++    const token = process.env.TELEGRAM_BOT_TOKEN;
++    if (!token) {
++      this.logger.warn('TELEGRAM_BOT_TOKEN not configured — skipping order confirmation');
++      return;
++    }
++
++    const orderShortId = order.id.slice(0, 8);
++    const credential = order.deliveredCredential ?? '';
++
++    const text = [
++      '🎉 <b>Mua hàng thành công!</b>',
++      `📦 Sản phẩm: ${escapeHtml(productTitle)}`,
++      `🆔 Đơn hàng: #${orderShortId}`,
++      `💰 Giá: ${order.price} VND`,
++      credential ? `🔑 Credential: <code>${escapeHtml(credential)}</code>` : '',
++      'Mở Mini App → "Đơn hàng của tôi" để xem lại.',
++    ]
++      .filter(Boolean)
++      .join('\n');
++
++    const url = `https://api.telegram.org/bot${token}/sendMessage`;
++    const body = {
++      chat_id: String(telegramId),
++      text,
++      parse_mode: 'HTML',
++    };
++
++    try {
++      const res = await fetch(url, {
++        method: 'POST',
++        headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify(body),
++      });
++      if (!res.ok) {
++        const errBody = await res.text().catch(() => '');
++        this.logger.warn(
++          `Telegram sendMessage failed: HTTP ${res.status} ${errBody}`,
++        );
++      }
++    } catch (err: any) {
++      this.logger.warn(
++        `Telegram sendMessage error: ${err?.message ?? String(err)}`,
++      );
++    }
++  }
++
++  /**
++   * Send alert message to store admin via Telegram Bot API.
++   * Fire-and-forget: never throws — notification failure must not break job execution.
++   */
++  async sendAdminAlert(text: string): Promise<void> {
++    const token = process.env.TELEGRAM_BOT_TOKEN;
++    if (!token) {
++      this.logger.warn('TELEGRAM_BOT_TOKEN not configured — skipping admin alert');
++      return;
++    }
++
++    const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID;
++    if (!adminChatId || adminChatId.trim() === '') {
++      this.logger.warn('TELEGRAM_ADMIN_CHAT_ID not configured — skipping admin alert');
++      return;
++    }
++
++    const url = `https://api.telegram.org/bot${token}/sendMessage`;
++    const body = {
++      chat_id: adminChatId,
++      text,
++      parse_mode: 'HTML',
++    };
++
++    try {
++      const res = await fetch(url, {
++        method: 'POST',
++        headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify(body),
++      });
++      if (!res.ok) {
++        const errBody = await res.text().catch(() => '');
++        this.logger.warn(
++          `Telegram sendAdminAlert failed: HTTP ${res.status} ${errBody}`,
++        );
++      }
++    } catch (err: any) {
++      this.logger.warn(
++        `Telegram sendAdminAlert error: ${err?.message ?? String(err)}`,
++      );
++    }
++  }
++}
++
++export function escapeHtml(s: string): string {
++  return s
++    .replace(/&/g, '&amp;')
++    .replace(/</g, '&lt;')
++    .replace(/>/g, '&gt;');
++}
+diff --git a/apps/api/src/common/telegram/telegram-bot.service.spec.ts b/apps/api/src/common/telegram/telegram-bot.service.spec.ts
+new file mode 100644
+index 00000000..92988475
+--- /dev/null
++++ b/apps/api/src/common/telegram/telegram-bot.service.spec.ts
+@@ -0,0 +1,171 @@
++import 'reflect-metadata';
++import { test } from 'node:test';
++import assert from 'node:assert';
++import { TelegramBotService } from './telegram-bot.service';
++import { OrderStatus } from '@repo/shared-types';
++import type { OrderDto } from '@repo/shared-types';
++
++const mockOrder: OrderDto = {
++  id: 'order-uuid-12345678',
++  userId: 'user-uuid-1',
++  productId: 'prod-uuid-1',
++  status: OrderStatus.FULFILLED,
++  price: '200000.00',
++  productTitle: 'Test Product',
++  deliveredCredential: 'MY-SECRET-KEY',
++  createdAt: new Date().toISOString(),
++  fulfilledAt: new Date().toISOString(),
++};
++
++test('sendOrderConfirmation does nothing when TELEGRAM_BOT_TOKEN is missing', async () => {
++  const orig = process.env.TELEGRAM_BOT_TOKEN;
++  delete process.env.TELEGRAM_BOT_TOKEN;
++  const fetchCalls: any[] = [];
++  const origFetch = globalThis.fetch;
++  globalThis.fetch = async (...args: any[]) => {
++    fetchCalls.push(args);
++    return new Response('{}', { status: 200 });
++  };
++  try {
++    const svc = new TelegramBotService();
++    await svc.sendOrderConfirmation(12345, mockOrder, 'Test Product');
++    assert.strictEqual(fetchCalls.length, 0, 'fetch should not be called');
++  } finally {
++    globalThis.fetch = origFetch;
++    if (orig !== undefined) process.env.TELEGRAM_BOT_TOKEN = orig;
++  }
++});
++
++test('sendOrderConfirmation calls fetch with correct URL and payload', async () => {
++  const orig = process.env.TELEGRAM_BOT_TOKEN;
++  process.env.TELEGRAM_BOT_TOKEN = 'test-bot-token';
++  const fetchCalls: any[] = [];
++  const origFetch = globalThis.fetch;
++  globalThis.fetch = async (url: any, init: any) => {
++    fetchCalls.push({ url: String(url), init });
++    return new Response('{"ok":true}', { status: 200 });
++  };
++  try {
++    const svc = new TelegramBotService();
++    await svc.sendOrderConfirmation(98765, mockOrder, 'Test Product');
++    assert.strictEqual(fetchCalls.length, 1);
++    const call = fetchCalls[0];
++    assert.ok(call.url.includes('bot test-bot-token'.replace(' ', '')) || call.url.includes('bottest-bot-token'));
++    const parsed = JSON.parse(call.init.body as string);
++    assert.strictEqual(parsed.chat_id, '98765');
++    assert.strictEqual(parsed.parse_mode, 'HTML');
++    assert.ok(parsed.text.includes('Test Product'));
++    assert.ok(parsed.text.includes('MY-SECRET-KEY'));
++  } finally {
++    globalThis.fetch = origFetch;
++    if (orig !== undefined) process.env.TELEGRAM_BOT_TOKEN = orig;
++    else delete process.env.TELEGRAM_BOT_TOKEN;
++  }
++});
++
++test('sendOrderConfirmation does not throw when fetch fails', async () => {
++  const orig = process.env.TELEGRAM_BOT_TOKEN;
++  process.env.TELEGRAM_BOT_TOKEN = 'test-bot-token';
++  const origFetch = globalThis.fetch;
++  globalThis.fetch = async () => {
++    throw new Error('network error');
++  };
++  try {
++    const svc = new TelegramBotService();
++    await svc.sendOrderConfirmation(98765, mockOrder, 'Test Product');
++    // Should not throw
++  } finally {
++    globalThis.fetch = origFetch;
++    if (orig !== undefined) process.env.TELEGRAM_BOT_TOKEN = orig;
++    else delete process.env.TELEGRAM_BOT_TOKEN;
++  }
++});
++
++test('sendOrderConfirmation escapes HTML in productTitle and credential', async () => {
++  const orig = process.env.TELEGRAM_BOT_TOKEN;
++  process.env.TELEGRAM_BOT_TOKEN = 'test-bot-token';
++  const fetchCalls: any[] = [];
++  const origFetch = globalThis.fetch;
++  globalThis.fetch = async (url: any, init: any) => {
++    fetchCalls.push({ url: String(url), init });
++    return new Response('{"ok":true}', { status: 200 });
++  };
++  try {
++    const svc = new TelegramBotService();
++    const orderWithHtml: OrderDto = {
++      ...mockOrder,
++      deliveredCredential: '<script>alert("xss")</script>&key=1',
++    };
++    await svc.sendOrderConfirmation(98765, orderWithHtml, 'VPN <Fast & Secure>');
++    assert.strictEqual(fetchCalls.length, 1);
++    const parsed = JSON.parse(fetchCalls[0].init.body as string);
++    assert.ok(parsed.text.includes('VPN &lt;Fast &amp; Secure&gt;'));
++    assert.ok(parsed.text.includes('&lt;script&gt;alert("xss")&lt;/script&gt;&amp;key=1'));
++    assert.ok(!parsed.text.includes('<script>'));
++  } finally {
++    globalThis.fetch = origFetch;
++    if (orig !== undefined) process.env.TELEGRAM_BOT_TOKEN = orig;
++    else delete process.env.TELEGRAM_BOT_TOKEN;
++  }
++});
++
++test('sendAdminAlert does nothing when TELEGRAM_BOT_TOKEN or TELEGRAM_ADMIN_CHAT_ID is missing', async () => {
++  const origToken = process.env.TELEGRAM_BOT_TOKEN;
++  const origChatId = process.env.TELEGRAM_ADMIN_CHAT_ID;
++  delete process.env.TELEGRAM_BOT_TOKEN;
++  delete process.env.TELEGRAM_ADMIN_CHAT_ID;
++
++  const fetchCalls: any[] = [];
++  const origFetch = globalThis.fetch;
++  globalThis.fetch = async (...args: any[]) => {
++    fetchCalls.push(args);
++    return new Response('{}', { status: 200 });
++  };
++
++  try {
++    const svc = new TelegramBotService();
++    await svc.sendAdminAlert('Test alert');
++    assert.strictEqual(fetchCalls.length, 0);
++
++    process.env.TELEGRAM_BOT_TOKEN = 'test-token';
++    await svc.sendAdminAlert('Test alert without chat id');
++    assert.strictEqual(fetchCalls.length, 0);
++  } finally {
++    globalThis.fetch = origFetch;
++    if (origToken !== undefined) process.env.TELEGRAM_BOT_TOKEN = origToken;
++    else delete process.env.TELEGRAM_BOT_TOKEN;
++    if (origChatId !== undefined) process.env.TELEGRAM_ADMIN_CHAT_ID = origChatId;
++    else delete process.env.TELEGRAM_ADMIN_CHAT_ID;
++  }
++});
++
++test('sendAdminAlert sends alert payload to admin chat id', async () => {
++  const origToken = process.env.TELEGRAM_BOT_TOKEN;
++  const origChatId = process.env.TELEGRAM_ADMIN_CHAT_ID;
++  process.env.TELEGRAM_BOT_TOKEN = 'test-token';
++  process.env.TELEGRAM_ADMIN_CHAT_ID = '999888';
++
++  const fetchCalls: any[] = [];
++  const origFetch = globalThis.fetch;
++  globalThis.fetch = async (url: any, init: any) => {
++    fetchCalls.push({ url: String(url), init });
++    return new Response('{"ok":true}', { status: 200 });
++  };
++
++  try {
++    const svc = new TelegramBotService();
++    await svc.sendAdminAlert('⚠️ Alert message');
++    assert.strictEqual(fetchCalls.length, 1);
++    const parsed = JSON.parse(fetchCalls[0].init.body as string);
++    assert.strictEqual(parsed.chat_id, '999888');
++    assert.strictEqual(parsed.parse_mode, 'HTML');
++    assert.strictEqual(parsed.text, '⚠️ Alert message');
++  } finally {
++    globalThis.fetch = origFetch;
++    if (origToken !== undefined) process.env.TELEGRAM_BOT_TOKEN = origToken;
++    else delete process.env.TELEGRAM_BOT_TOKEN;
++    if (origChatId !== undefined) process.env.TELEGRAM_ADMIN_CHAT_ID = origChatId;
++    else delete process.env.TELEGRAM_ADMIN_CHAT_ID;
++  }
++});
++
+diff --git a/apps/api/src/modules/products/pricing.engine.ts b/apps/api/src/modules/products/pricing.engine.ts
+new file mode 100644
+index 00000000..00bd0c4c
+--- /dev/null
++++ b/apps/api/src/modules/products/pricing.engine.ts
+@@ -0,0 +1,79 @@
++import { parseSignedDecimal, formatSignedDecimal } from '@repo/shared-types';
++
++/**
++ * 1,000 VND in scale-2 units (1 VND = 100 units -> 1,000 VND = 100,000 units).
++ */
++const THOUSAND_VND_UNITS = 100_000n;
++const HALF_THOUSAND_VND_UNITS = 50_000n;
++
++/**
++ * Calculate raw retail price in scale-2 units before rounding.
++ * Formula: Cost * (1 + X/100) + Fixed
++ *
++ * @param costUnits Wholesale cost in scale-2 units (C * 100)
++ * @param markupPctBp Markup percentage in basis points (X% * 100, e.g. 20.00% = 2000n)
++ * @param fixedUnits Fixed markup in scale-2 units (Y * 100)
++ */
++export function computeRetailPriceUnits(
++  costUnits: bigint,
++  markupPctBp: bigint,
++  fixedUnits: bigint,
++): bigint {
++  // (costUnits * (10_000n + markupPctBp) + 5_000n) / 10_000n + fixedUnits
++  const percentageMarkedUp =
++    (costUnits * (10_000n + markupPctBp) + 5_000n) / 10_000n;
++  return percentageMarkedUp + fixedUnits;
++}
++
++/**
++ * Round price in scale-2 units to the nearest 1,000 VND.
++ * Floors to at least 1,000 VND (100,000 units) so retail price is never 0 VND.
++ */
++export function roundToThousandVnd(units: bigint): bigint {
++  const rounded = ((units + HALF_THOUSAND_VND_UNITS) / THOUSAND_VND_UNITS) * THOUSAND_VND_UNITS;
++  if (rounded < THOUSAND_VND_UNITS) {
++    return THOUSAND_VND_UNITS;
++  }
++  return rounded;
++}
++
++/**
++ * Recalculate retail price from wholesale cost and markup rules.
++ * Returns decimal string formatted to scale 2 (e.g. '130000.00').
++ *
++ * @param upstreamCost Decimal string of wholesale cost
++ * @param markupPct Decimal string of markup percentage (e.g. '20.00')
++ * @param markupFixedVnd Decimal string of fixed markup VND (e.g. '10000.00')
++ */
++export function computeRetailPrice(
++  upstreamCost: string,
++  markupPct: string,
++  markupFixedVnd: string,
++): string {
++  const costUnits = parseSignedDecimal(upstreamCost);
++  const markupPctBp = parseSignedDecimal(markupPct);
++  const fixedUnits = parseSignedDecimal(markupFixedVnd);
++
++  const rawUnits = computeRetailPriceUnits(costUnits, markupPctBp, fixedUnits);
++  const finalUnits = roundToThousandVnd(rawUnits);
++
++  return formatSignedDecimal(finalUnits);
++}
++
++/**
++ * Check if upstream cost strictly exceeds the maximum allowed threshold.
++ *
++ * @param upstreamCost Decimal string of current upstream cost
++ * @param maxUpstreamCost Nullable decimal string of maximum threshold
++ */
++export function exceedsMaxCost(
++  upstreamCost: string,
++  maxUpstreamCost: string | null | undefined,
++): boolean {
++  if (!maxUpstreamCost || maxUpstreamCost.trim() === '') {
++    return false;
++  }
++  const cost = parseSignedDecimal(upstreamCost);
++  const max = parseSignedDecimal(maxUpstreamCost);
++  return cost > max;
++}
+diff --git a/apps/api/src/modules/products/pricing.engine.spec.ts b/apps/api/src/modules/products/pricing.engine.spec.ts
+new file mode 100644
+index 00000000..49f8e8a0
+--- /dev/null
++++ b/apps/api/src/modules/products/pricing.engine.spec.ts
+@@ -0,0 +1,51 @@
++import { test } from 'node:test';
++import assert from 'node:assert';
++import {
++  computeRetailPrice,
++  computeRetailPriceUnits,
++  roundToThousandVnd,
++  exceedsMaxCost,
++} from './pricing.engine';
++
++test('computeRetailPrice computes percentage and fixed markup accurately', () => {
++  // 100k + 20% + 10k = 130k
++  const price = computeRetailPrice('100000.00', '20.00', '10000.00');
++  assert.strictEqual(price, '130000.00');
++});
++
++test('computeRetailPrice rounds to nearest 1,000 VND correctly', () => {
++  // 83333.33 * 1.2 = 99999.996 -> round to nearest 1,000 VND -> 100,000
++  const price = computeRetailPrice('83333.33', '20.00', '0.00');
++  assert.strictEqual(price, '100000.00');
++
++  // 45000 * 1.155 = 51975 -> round to nearest 1,000 VND -> 52,000
++  const price2 = computeRetailPrice('45000.00', '15.50', '0.00');
++  assert.strictEqual(price2, '52000.00');
++});
++
++test('computeRetailPrice handles fixed-only markup', () => {
++  const price = computeRetailPrice('50000.00', '0.00', '15000.00');
++  assert.strictEqual(price, '65000.00');
++});
++
++test('computeRetailPrice floors to 1,000 VND if rounded result is below 1,000 VND', () => {
++  const price = computeRetailPrice('100.00', '0.00', '0.00');
++  assert.strictEqual(price, '1000.00');
++
++  const zeroPrice = computeRetailPrice('0.00', '0.00', '0.00');
++  assert.strictEqual(zeroPrice, '1000.00');
++});
++
++test('exceedsMaxCost checks threshold correctly', () => {
++  assert.strictEqual(exceedsMaxCost('200000.00', '150000.00'), true);
++  assert.strictEqual(exceedsMaxCost('100000.00', '150000.00'), false);
++  assert.strictEqual(exceedsMaxCost('150000.00', '150000.00'), false); // strictly greater than threshold
++  assert.strictEqual(exceedsMaxCost('999999.00', null), false);
++  assert.strictEqual(exceedsMaxCost('999999.00', undefined as any), false);
++});
++
++test('computeRetailPrice rejects invalid decimal format', () => {
++  assert.throws(() => computeRetailPrice('abc', '0.00', '0.00'));
++  assert.throws(() => computeRetailPrice('100.00', 'invalid', '0.00'));
++  assert.throws(() => computeRetailPrice('100.00', '0.00', 'invalid'));
++});
+diff --git a/apps/api/src/modules/products/supplier-price-fetcher.service.ts b/apps/api/src/modules/products/supplier-price-fetcher.service.ts
+new file mode 100644
+index 00000000..b57507e6
+--- /dev/null
++++ b/apps/api/src/modules/products/supplier-price-fetcher.service.ts
+@@ -0,0 +1,53 @@
++import { Injectable } from '@nestjs/common';
++import { products, supplierSources } from '@repo/database';
++import { parseSignedDecimal, formatSignedDecimal } from '@repo/shared-types';
++
++@Injectable()
++export class SupplierPriceFetcherService {
++  /**
++   * v1: Reads upstream wholesale cost from supplier.configCredentials.priceMap[product.slug].
++   * Story 4.3 will introduce live scrapers/APIs according to supplier.type.
++   *
++   * @param product Target product record
++   * @param supplier Associated supplier source record
++   * @returns Decimal string representing wholesale cost (e.g. '80000.00')
++   * @throws Error with 'PRICE_FETCH_FAILED' if price is missing or invalid
++   */
++  async fetchUpstreamCost(
++    product: typeof products.$inferSelect,
++    supplier: typeof supplierSources.$inferSelect,
++  ): Promise<string> {
++    const credentials = supplier.configCredentials as Record<string, any> | null | undefined;
++    if (!credentials || typeof credentials !== 'object') {
++      throw new Error(
++        `PRICE_FETCH_FAILED: supplier ${supplier.name} (${supplier.id}) has no configCredentials`,
++      );
++    }
++
++    const priceMap = credentials.priceMap;
++    if (!priceMap || typeof priceMap !== 'object') {
++      throw new Error(
++        `PRICE_FETCH_FAILED: supplier ${supplier.name} (${supplier.id}) has no priceMap in configCredentials`,
++      );
++    }
++
++    const rawCost = priceMap[product.slug];
++    if (rawCost === undefined || rawCost === null || typeof rawCost !== 'string' || rawCost.trim() === '') {
++      throw new Error(
++        `PRICE_FETCH_FAILED: no configured cost for slug "${product.slug}" from supplier ${supplier.name}`,
++      );
++    }
++
++    try {
++      const units = parseSignedDecimal(rawCost);
++      if (units < 0n) {
++        throw new Error('Cost cannot be negative');
++      }
++      return formatSignedDecimal(units);
++    } catch (err: any) {
++      throw new Error(
++        `PRICE_FETCH_FAILED: invalid cost value "${rawCost}" for slug "${product.slug}": ${err?.message || String(err)}`,
++      );
++    }
++  }
++}
+diff --git a/apps/api/src/modules/products/supplier-price-fetcher.service.spec.ts b/apps/api/src/modules/products/supplier-price-fetcher.service.spec.ts
+new file mode 100644
+index 00000000..eab79dc4
+--- /dev/null
++++ b/apps/api/src/modules/products/supplier-price-fetcher.service.spec.ts
+@@ -0,0 +1,112 @@
++import { test } from 'node:test';
++import assert from 'node:assert';
++import { SupplierPriceFetcherService } from './supplier-price-fetcher.service';
++
++test('fetchUpstreamCost returns cost from priceMap when configured', async () => {
++  const service = new SupplierPriceFetcherService();
++  const mockProduct = {
++    id: 'p1',
++    slug: 'office-365',
++    title: 'Office 365',
++  } as any;
++  const mockSupplier = {
++    id: 's1',
++    name: 'Partner Shop A',
++    configCredentials: {
++      priceMap: {
++        'office-365': '80000.00',
++      },
++    },
++  } as any;
++
++  const cost = await service.fetchUpstreamCost(mockProduct, mockSupplier);
++  assert.strictEqual(cost, '80000.00');
++});
++
++test('fetchUpstreamCost throws PRICE_FETCH_FAILED when slug is missing in priceMap', async () => {
++  const service = new SupplierPriceFetcherService();
++  const mockProduct = {
++    id: 'p1',
++    slug: 'unknown-item',
++    title: 'Unknown',
++  } as any;
++  const mockSupplier = {
++    id: 's1',
++    name: 'Partner Shop A',
++    configCredentials: {
++      priceMap: {
++        'office-365': '80000.00',
++      },
++    },
++  } as any;
++
++  await assert.rejects(
++    () => service.fetchUpstreamCost(mockProduct, mockSupplier),
++    (err: Error) => {
++      assert.ok(err.message.includes('PRICE_FETCH_FAILED'));
++      return true;
++    },
++  );
++});
++
++test('fetchUpstreamCost throws PRICE_FETCH_FAILED when cost string is malformed', async () => {
++  const service = new SupplierPriceFetcherService();
++  const mockProduct = {
++    id: 'p1',
++    slug: 'office-365',
++    title: 'Office 365',
++  } as any;
++  const mockSupplier = {
++    id: 's1',
++    name: 'Partner Shop A',
++    configCredentials: {
++      priceMap: {
++        'office-365': 'invalid-amount',
++      },
++    },
++  } as any;
++
++  await assert.rejects(
++    () => service.fetchUpstreamCost(mockProduct, mockSupplier),
++    (err: Error) => {
++      assert.ok(err.message.includes('PRICE_FETCH_FAILED'));
++      return true;
++    },
++  );
++});
++
++test('fetchUpstreamCost throws PRICE_FETCH_FAILED when configCredentials is null or has no priceMap', async () => {
++  const service = new SupplierPriceFetcherService();
++  const mockProduct = {
++    id: 'p1',
++    slug: 'office-365',
++    title: 'Office 365',
++  } as any;
++  const mockSupplierNoConfig = {
++    id: 's1',
++    name: 'Partner Shop A',
++    configCredentials: null,
++  } as any;
++
++  await assert.rejects(
++    () => service.fetchUpstreamCost(mockProduct, mockSupplierNoConfig),
++    (err: Error) => {
++      assert.ok(err.message.includes('PRICE_FETCH_FAILED'));
++      return true;
++    },
++  );
++
++  const mockSupplierNoPriceMap = {
++    id: 's2',
++    name: 'Partner Shop B',
++    configCredentials: {},
++  } as any;
++
++  await assert.rejects(
++    () => service.fetchUpstreamCost(mockProduct, mockSupplierNoPriceMap),
++    (err: Error) => {
++      assert.ok(err.message.includes('PRICE_FETCH_FAILED'));
++      return true;
++    },
++  );
++});
+diff --git a/apps/api/src/modules/products/price-sync.service.ts b/apps/api/src/modules/products/price-sync.service.ts
+new file mode 100644
+index 00000000..287fee51
+--- /dev/null
++++ b/apps/api/src/modules/products/price-sync.service.ts
+@@ -0,0 +1,299 @@
++import { Injectable, Logger, Optional } from '@nestjs/common';
++import {
++  db,
++  eq,
++  sql,
++  products,
++  supplierSources,
++  adminAlerts,
++  type DbOrTx,
++} from '@repo/database';
++import {
++  AdminAlertType,
++  PriceSyncAction,
++  ProductSourcingMode,
++  type PriceSyncItemDto,
++  type PriceSyncSummaryDto,
++} from '@repo/shared-types';
++import { RedisService, RedisUnavailableError } from '../../common/redis/redis.service';
++import { SupplierPriceFetcherService } from './supplier-price-fetcher.service';
++import { TelegramBotService, escapeHtml } from '../../common/telegram/telegram-bot.service';
++import { computeRetailPrice, exceedsMaxCost } from './pricing.engine';
++
++@Injectable()
++export class PriceSyncService {
++  private readonly logger = new Logger(PriceSyncService.name);
++  private readonly dbClient: DbOrTx;
++
++  constructor(
++    private readonly redisService: RedisService,
++    private readonly priceFetcher: SupplierPriceFetcherService,
++    private readonly telegramBotService: TelegramBotService,
++    @Optional() dbClient?: DbOrTx,
++  ) {
++    this.dbClient = dbClient ?? db;
++  }
++
++  /**
++   * Orchestrates price synchronization across all eligible external products.
++   * Acquires a distributed lock if available; fails open to run without lock if Redis unavailable.
++   */
++  async syncAll(): Promise<PriceSyncSummaryDto> {
++    try {
++      return await this.redisService.withLock(
++        'lock:price-sync',
++        300_000,
++        async () => this.runSyncRoutine(),
++      );
++    } catch (err: any) {
++      if (
++        err instanceof RedisUnavailableError ||
++        err?.name === 'ExecutionError' ||
++        err?.name === 'LockError' ||
++        err?.name === 'ResourceLockedError'
++      ) {
++        this.logger.warn(
++          `Could not acquire price sync lock (${err?.message || String(err)}) — proceeding without lock`,
++        );
++        return this.runSyncRoutine();
++      }
++      throw err;
++    }
++  }
++
++  /**
++   * Core sync routine.
++   */
++  private async runSyncRoutine(): Promise<PriceSyncSummaryDto> {
++    const startedAt = new Date().toISOString();
++
++    const rows = await this.dbClient
++      .select({ product: products, supplier: supplierSources })
++      .from(products)
++      .innerJoin(supplierSources, eq(products.supplierSourceId, supplierSources.id));
++
++    const items: PriceSyncItemDto[] = [];
++    let scanned = 0;
++    let updated = 0;
++    let unchanged = 0;
++    let deactivated = 0;
++    let failed = 0;
++    let skipped = 0;
++
++    for (const row of rows) {
++      scanned++;
++      const { product, supplier } = row;
++
++      // Classify before sync (AC #3)
++      if (product.sourcingMode === ProductSourcingMode.IN_HOUSE) {
++        skipped++;
++        items.push({
++          productId: product.id,
++          slug: product.slug,
++          action: PriceSyncAction.SKIPPED,
++          oldPrice: product.price,
++        });
++        continue;
++      }
++
++      if (product.autoPricing === false) {
++        skipped++;
++        items.push({
++          productId: product.id,
++          slug: product.slug,
++          action: PriceSyncAction.SKIPPED,
++          oldPrice: product.price,
++        });
++        continue;
++      }
++
++      if (supplier.isActive === false) {
++        skipped++;
++        items.push({
++          productId: product.id,
++          slug: product.slug,
++          action: PriceSyncAction.SKIPPED,
++          oldPrice: product.price,
++        });
++        continue;
++      }
++
++      // Process product sync
++      const result = await this.syncOne(product, supplier);
++      items.push(result);
++
++      if (result.action === PriceSyncAction.UPDATED) updated++;
++      else if (result.action === PriceSyncAction.UNCHANGED) unchanged++;
++      else if (result.action === PriceSyncAction.DEACTIVATED) deactivated++;
++      else if (result.action === PriceSyncAction.FAILED) failed++;
++      else if (result.action === PriceSyncAction.SKIPPED) skipped++;
++    }
++
++    const finishedAt = new Date().toISOString();
++
++    this.logger.log(
++      `Price sync completed: ${JSON.stringify({ scanned, updated, unchanged, deactivated, failed, skipped })}`,
++    );
++
++    return {
++      scanned,
++      updated,
++      unchanged,
++      deactivated,
++      failed,
++      skipped,
++      items,
++      startedAt,
++      finishedAt,
++    };
++  }
++
++  /**
++   * Sync a single product with its supplier wholesale cost and markup rules.
++   */
++  private async syncOne(
++    product: typeof products.$inferSelect,
++    supplier: typeof supplierSources.$inferSelect,
++  ): Promise<PriceSyncItemDto> {
++    let upstreamCost: string;
++    try {
++      upstreamCost = await this.priceFetcher.fetchUpstreamCost(product, supplier);
++    } catch (err: any) {
++      this.logger.warn(
++        `Price fetch failed for ${product.slug} (${product.id}): ${err?.message || String(err)}`,
++      );
++      return {
++        productId: product.id,
++        slug: product.slug,
++        action: PriceSyncAction.FAILED,
++        oldPrice: product.price,
++        error: err?.message || String(err),
++      };
++    }
++
++    const isThresholdExceeded = exceedsMaxCost(upstreamCost, product.maxUpstreamCost);
++
++    if (isThresholdExceeded) {
++      if (product.isActive === true) {
++        // Active product exceeding threshold -> deactivate and create admin alert
++        await this.dbClient.transaction(async (tx) => {
++          await tx
++            .select({ id: products.id })
++            .from(products)
++            .where(eq(products.id, product.id))
++            .for('update');
++
++          await tx
++            .update(products)
++            .set({
++              isActive: false,
++              upstreamCost,
++              costSyncedAt: sql`now()`,
++            })
++            .where(eq(products.id, product.id));
++
++          const alertMessage = `Upstream cost ${upstreamCost} exceeded max threshold ${product.maxUpstreamCost} for product ${product.title} (${product.slug})`;
++          await tx.insert(adminAlerts).values({
++            type: AdminAlertType.PRICE_THRESHOLD_EXCEEDED,
++            severity: 'WARN',
++            productId: product.id,
++            supplierSourceId: supplier.id,
++            message: alertMessage,
++            payload: {
++              productId: product.id,
++              slug: product.slug,
++              upstreamCost,
++              maxUpstreamCost: product.maxUpstreamCost,
++            },
++          });
++        });
++
++        // Fire-and-forget admin telegram alert
++        const tgText = `⚠️ <b>Giá vốn vượt ngưỡng</b>\n📦 ${escapeHtml(product.title)} (${escapeHtml(product.slug)})\nGiá vốn: ${upstreamCost} > Ngưỡng: ${product.maxUpstreamCost}\nSản phẩm đã được tự động ẩn.`;
++        void this.telegramBotService.sendAdminAlert(tgText).catch(() => {});
++
++        return {
++          productId: product.id,
++          slug: product.slug,
++          action: PriceSyncAction.DEACTIVATED,
++          upstreamCost,
++          oldPrice: product.price,
++          newPrice: product.price,
++        };
++      } else {
++        // Already inactive -> update cost without creating duplicate alert
++        if (upstreamCost !== product.upstreamCost) {
++          await this.dbClient.transaction(async (tx) => {
++            await tx
++              .select({ id: products.id })
++              .from(products)
++              .where(eq(products.id, product.id))
++              .for('update');
++
++            await tx
++              .update(products)
++              .set({
++                upstreamCost,
++                costSyncedAt: sql`now()`,
++              })
++              .where(eq(products.id, product.id));
++          });
++        }
++
++        return {
++          productId: product.id,
++          slug: product.slug,
++          action: PriceSyncAction.UNCHANGED,
++          upstreamCost,
++          oldPrice: product.price,
++          newPrice: product.price,
++        };
++      }
++    }
++
++    // Cost within acceptable threshold -> compute retail price
++    const newPrice = computeRetailPrice(
++      upstreamCost,
++      supplier.markupPercentage,
++      supplier.markupFixedVnd,
++    );
++
++    if (newPrice === product.price && upstreamCost === product.upstreamCost) {
++      return {
++        productId: product.id,
++        slug: product.slug,
++        action: PriceSyncAction.UNCHANGED,
++        upstreamCost,
++        oldPrice: product.price,
++        newPrice: product.price,
++      };
++    }
++
++    // Persist new price & upstream cost in transaction
++    await this.dbClient.transaction(async (tx) => {
++      await tx
++        .select({ id: products.id })
++        .from(products)
++        .where(eq(products.id, product.id))
++        .for('update');
++
++      await tx
++        .update(products)
++        .set({
++          price: newPrice,
++          upstreamCost,
++          costSyncedAt: sql`now()`,
++        })
++        .where(eq(products.id, product.id));
++    });
++
++    return {
++      productId: product.id,
++      slug: product.slug,
++      action: PriceSyncAction.UPDATED,
++      upstreamCost,
++      oldPrice: product.price,
++      newPrice,
++    };
++  }
++}
+diff --git a/apps/api/src/modules/products/price-sync.service.spec.ts b/apps/api/src/modules/products/price-sync.service.spec.ts
+new file mode 100644
+index 00000000..6bf83ba2
+--- /dev/null
++++ b/apps/api/src/modules/products/price-sync.service.spec.ts
+@@ -0,0 +1,320 @@
++import { test } from 'node:test';
++import assert from 'node:assert';
++import { PriceSyncService } from './price-sync.service';
++import { PriceSyncAction, AdminAlertType, ProductSourcingMode } from '@repo/shared-types';
++
++function createMockDeps() {
++  const mockRedis = {
++    withLock: async (_key: string, _ttl: number, fn: any) => fn(),
++  };
++
++  const fetcherCalls: any[] = [];
++  const mockFetcher = {
++    fetchUpstreamCost: async (product: any, _supplier: any) => {
++      fetcherCalls.push(product.slug);
++      if (product.slug === 'fail-item') {
++        throw new Error('PRICE_FETCH_FAILED: upstream timeout');
++      }
++      if (product.mockCost) {
++        return product.mockCost;
++      }
++      return '100000.00';
++    },
++  };
++
++  const alertCalls: any[] = [];
++  const mockTelegram = {
++    sendAdminAlert: async (text: string) => {
++      alertCalls.push(text);
++    },
++  };
++
++  return { mockRedis, mockFetcher, fetcherCalls, mockTelegram, alertCalls };
++}
++
++function createMockDb(rows: any[]) {
++  const updates: any[] = [];
++  const inserts: any[] = [];
++
++  const makeThenable = (res: any) => ({
++    then: (resolve: any) => Promise.resolve(res).then(resolve),
++    for: () => makeThenable(res),
++  });
++
++  const tx: any = {
++    select: () => ({
++      from: () => ({
++        where: () => ({
++          for: () => Promise.resolve([]),
++        }),
++      }),
++    }),
++    update: (table: any) => ({
++      set: (values: any) => ({
++        where: (whereClause: any) => {
++          updates.push({ table, values, whereClause });
++          return Promise.resolve([values]);
++        },
++      }),
++    }),
++    insert: (table: any) => ({
++      values: (values: any) => {
++        inserts.push({ table, values });
++        return Promise.resolve([values]);
++      },
++    }),
++  };
++
++  const dbMock: any = {
++    select: () => ({
++      from: () => ({
++        innerJoin: () => Promise.resolve(rows),
++      }),
++    }),
++    transaction: async (fn: any) => fn(tx),
++  };
++
++  return { dbMock, updates, inserts, tx };
++}
++
++test('PriceSyncService happy path updates external product price', async () => {
++  const { mockRedis, mockFetcher, mockTelegram } = createMockDeps();
++  const product = {
++    id: 'prod-1',
++    slug: 'spotify-1m',
++    title: 'Spotify 1M',
++    price: '50000.00',
++    upstreamCost: '40000.00',
++    maxUpstreamCost: '60000.00',
++    sourcingMode: ProductSourcingMode.EXTERNAL,
++    autoPricing: true,
++    isActive: true,
++    mockCost: '45000.00',
++  };
++  const supplier = {
++    id: 'sup-1',
++    name: 'Partner A',
++    markupPercentage: '20.00',
++    markupFixedVnd: '10000.00',
++    isActive: true,
++  };
++
++  const { dbMock, updates } = createMockDb([{ product, supplier }]);
++  const service = new PriceSyncService(mockRedis as any, mockFetcher as any, mockTelegram as any, dbMock as any);
++
++  const summary = await service.syncAll();
++  assert.strictEqual(summary.scanned, 1);
++  assert.strictEqual(summary.updated, 1);
++  assert.strictEqual(summary.items[0].action, PriceSyncAction.UPDATED);
++  // Cost 45k * 1.2 + 10k = 64k -> rounded 64k = '64000.00'
++  assert.strictEqual(summary.items[0].newPrice, '64000.00');
++  assert.strictEqual(updates.length, 1);
++  assert.strictEqual(updates[0].values.price, '64000.00');
++});
++
++test('PriceSyncService marks UNCHANGED when cost and rounded price do not change', async () => {
++  const { mockRedis, mockFetcher, mockTelegram } = createMockDeps();
++  const product = {
++    id: 'prod-1',
++    slug: 'office-365',
++    title: 'Office 365',
++    price: '130000.00',
++    upstreamCost: '100000.00',
++    maxUpstreamCost: null,
++    sourcingMode: ProductSourcingMode.EXTERNAL,
++    autoPricing: true,
++    isActive: true,
++    mockCost: '100000.00', // 100k * 1.2 + 10k = 130k -> exactly current price
++  };
++  const supplier = {
++    id: 'sup-1',
++    name: 'Partner A',
++    markupPercentage: '20.00',
++    markupFixedVnd: '10000.00',
++    isActive: true,
++  };
++
++  const { dbMock, updates } = createMockDb([{ product, supplier }]);
++  const service = new PriceSyncService(mockRedis as any, mockFetcher as any, mockTelegram as any, dbMock as any);
++
++  const summary = await service.syncAll();
++  assert.strictEqual(summary.unchanged, 1);
++  assert.strictEqual(summary.updated, 0);
++  assert.strictEqual(summary.items[0].action, PriceSyncAction.UNCHANGED);
++  assert.strictEqual(updates.length, 0, 'Should not perform dirty writes when price and cost unchanged');
++});
++
++test('PriceSyncService deactivates active product and creates alert when cost exceeds max threshold', async () => {
++  const { mockRedis, mockFetcher, mockTelegram, alertCalls } = createMockDeps();
++  const product = {
++    id: 'prod-breach',
++    slug: 'netflix-breach',
++    title: 'Netflix 1M',
++    price: '100000.00',
++    upstreamCost: '80000.00',
++    maxUpstreamCost: '90000.00',
++    sourcingMode: ProductSourcingMode.EXTERNAL,
++    autoPricing: true,
++    isActive: true,
++    mockCost: '120000.00', // Exceeds 90k threshold
++  };
++  const supplier = {
++    id: 'sup-1',
++    name: 'Partner A',
++    markupPercentage: '20.00',
++    markupFixedVnd: '0.00',
++    isActive: true,
++  };
++
++  const { dbMock, updates, inserts } = createMockDb([{ product, supplier }]);
++  const service = new PriceSyncService(mockRedis as any, mockFetcher as any, mockTelegram as any, dbMock as any);
++
++  const summary = await service.syncAll();
++  assert.strictEqual(summary.deactivated, 1);
++  assert.strictEqual(summary.items[0].action, PriceSyncAction.DEACTIVATED);
++  assert.strictEqual(updates[0].values.isActive, false);
++  assert.strictEqual(inserts.length, 1);
++  assert.strictEqual(inserts[0].values.type, AdminAlertType.PRICE_THRESHOLD_EXCEEDED);
++  assert.strictEqual(alertCalls.length, 1);
++  assert.ok(alertCalls[0].includes('120000.00'));
++});
++
++test('PriceSyncService does not duplicate alert if product is already inactive on breach', async () => {
++  const { mockRedis, mockFetcher, mockTelegram, alertCalls } = createMockDeps();
++  const product = {
++    id: 'prod-already-inactive',
++    slug: 'netflix-inactive',
++    title: 'Netflix 1M',
++    price: '100000.00',
++    upstreamCost: '80000.00',
++    maxUpstreamCost: '90000.00',
++    sourcingMode: ProductSourcingMode.EXTERNAL,
++    autoPricing: true,
++    isActive: false, // Already inactive!
++    mockCost: '130000.00',
++  };
++  const supplier = {
++    id: 'sup-1',
++    name: 'Partner A',
++    markupPercentage: '20.00',
++    markupFixedVnd: '0.00',
++    isActive: true,
++  };
++
++  const { dbMock, inserts } = createMockDb([{ product, supplier }]);
++  const service = new PriceSyncService(mockRedis as any, mockFetcher as any, mockTelegram as any, dbMock as any);
++
++  const summary = await service.syncAll();
++  assert.strictEqual(summary.unchanged, 1);
++  assert.strictEqual(summary.deactivated, 0);
++  assert.strictEqual(inserts.length, 0, 'No alert should be created for already inactive product');
++  assert.strictEqual(alertCalls.length, 0);
++});
++
++test('PriceSyncService counts FAILED and continues processing other items when fetcher throws', async () => {
++  const { mockRedis, mockFetcher, mockTelegram } = createMockDeps();
++  const product1 = {
++    id: 'p-fail',
++    slug: 'fail-item',
++    title: 'Fail Item',
++    price: '50000.00',
++    upstreamCost: '30000.00',
++    sourcingMode: ProductSourcingMode.EXTERNAL,
++    autoPricing: true,
++    isActive: true,
++  };
++  const product2 = {
++    id: 'p-ok',
++    slug: 'ok-item',
++    title: 'OK Item',
++    price: '50000.00',
++    upstreamCost: '30000.00',
++    sourcingMode: ProductSourcingMode.EXTERNAL,
++    autoPricing: true,
++    isActive: true,
++    mockCost: '40000.00',
++  };
++  const supplier = {
++    id: 'sup-1',
++    name: 'Partner A',
++    markupPercentage: '0.00',
++    markupFixedVnd: '10000.00',
++    isActive: true,
++  };
++
++  const { dbMock } = createMockDb([
++    { product: product1, supplier },
++    { product: product2, supplier },
++  ]);
++  const service = new PriceSyncService(mockRedis as any, mockFetcher as any, mockTelegram as any, dbMock as any);
++
++  const summary = await service.syncAll();
++  assert.strictEqual(summary.scanned, 2);
++  assert.strictEqual(summary.failed, 1);
++  assert.strictEqual(summary.updated, 1);
++  assert.strictEqual(summary.items[0].action, PriceSyncAction.FAILED);
++  assert.strictEqual(summary.items[1].action, PriceSyncAction.UPDATED);
++});
++
++test('PriceSyncService skips IN_HOUSE products, autoPricing=false, and inactive suppliers', async () => {
++  const { mockRedis, mockFetcher, mockTelegram } = createMockDeps();
++  const rows = [
++    {
++      product: { id: 'p1', slug: 'in-house', sourcingMode: ProductSourcingMode.IN_HOUSE, autoPricing: true, isActive: true },
++      supplier: { id: 's1', isActive: true },
++    },
++    {
++      product: { id: 'p2', slug: 'manual-price', sourcingMode: ProductSourcingMode.EXTERNAL, autoPricing: false, isActive: true },
++      supplier: { id: 's1', isActive: true },
++    },
++    {
++      product: { id: 'p3', slug: 'inactive-sup', sourcingMode: ProductSourcingMode.EXTERNAL, autoPricing: true, isActive: true },
++      supplier: { id: 's2', isActive: false },
++    },
++  ];
++
++  const { dbMock } = createMockDb(rows);
++  const service = new PriceSyncService(mockRedis as any, mockFetcher as any, mockTelegram as any, dbMock as any);
++
++  const summary = await service.syncAll();
++  assert.strictEqual(summary.scanned, 3);
++  assert.strictEqual(summary.skipped, 3);
++  assert.strictEqual(summary.updated, 0);
++  assert.strictEqual(summary.items.length, 3);
++  assert.ok(summary.items.every((it) => it.action === PriceSyncAction.SKIPPED));
++});
++
++test('PriceSyncService still marks DEACTIVATED even if sendAdminAlert throws', async () => {
++  const { mockRedis, mockFetcher } = createMockDeps();
++  const failingTelegram = {
++    sendAdminAlert: async () => {
++      throw new Error('Telegram API connection error');
++    },
++  };
++  const product = {
++    id: 'prod-breach',
++    slug: 'breach-item',
++    title: 'Breach Item',
++    price: '100000.00',
++    upstreamCost: '80000.00',
++    maxUpstreamCost: '90000.00',
++    sourcingMode: ProductSourcingMode.EXTERNAL,
++    autoPricing: true,
++    isActive: true,
++    mockCost: '120000.00',
++  };
++  const supplier = {
++    id: 'sup-1',
++    name: 'Partner A',
++    markupPercentage: '0.00',
++    markupFixedVnd: '0.00',
++    isActive: true,
++  };
++
++  const { dbMock } = createMockDb([{ product, supplier }]);
++  const service = new PriceSyncService(mockRedis as any, mockFetcher as any, failingTelegram as any, dbMock as any);
++
++  const summary = await service.syncAll();
++  assert.strictEqual(summary.deactivated, 1);
++  assert.strictEqual(summary.items[0].action, PriceSyncAction.DEACTIVATED);
++});
+diff --git a/apps/api/src/modules/products/products.controller.ts b/apps/api/src/modules/products/products.controller.ts
+new file mode 100644
+index 00000000..d389a5f8
+--- /dev/null
++++ b/apps/api/src/modules/products/products.controller.ts
+@@ -0,0 +1,31 @@
++import { Controller, Get, Post, UseGuards } from '@nestjs/common';
++import { ProductsService } from './products.service';
++import { PriceSyncService } from './price-sync.service';
++import { TelegramAuthGuard } from '../../common/guards/telegram-auth.guard';
++import { AdminRoleGuard } from '../../common/guards/admin-role.guard';
++import type { CatalogResponseDto, SyncPricesResponseDto } from '@repo/shared-types';
++
++/**
++ * Products endpoint:
++ * - GET /api/products: Public storefront catalog. No auth required.
++ * - POST /api/products/sync-prices: Protected by TelegramAuthGuard & AdminRoleGuard.
++ */
++@Controller('products')
++export class ProductsController {
++  constructor(
++    private readonly productsService: ProductsService,
++    private readonly priceSyncService: PriceSyncService,
++  ) {}
++
++  @Get()
++  async listCatalog(): Promise<CatalogResponseDto> {
++    const products = await this.productsService.listCatalog();
++    return { ok: true, products };
++  }
++
++  @Post('sync-prices')
++  @UseGuards(TelegramAuthGuard, AdminRoleGuard)
++  async syncPrices(): Promise<SyncPricesResponseDto> {
++    return { ok: true, summary: await this.priceSyncService.syncAll() };
++  }
++}
+diff --git a/apps/api/src/modules/products/products.controller.spec.ts b/apps/api/src/modules/products/products.controller.spec.ts
+new file mode 100644
+index 00000000..b4483ce7
+--- /dev/null
++++ b/apps/api/src/modules/products/products.controller.spec.ts
+@@ -0,0 +1,49 @@
++import 'reflect-metadata';
++import { test } from 'node:test';
++import assert from 'node:assert';
++import { ProductsController } from './products.controller';
++import { ProductStockStatus, ProductSourcingMode } from '@repo/shared-types';
++import { TelegramAuthGuard } from '../../common/guards/telegram-auth.guard';
++import { AdminRoleGuard } from '../../common/guards/admin-role.guard';
++
++test('ProductsController.listCatalog returns { ok: true, products }', async () => {
++  const sample = [{
++    id: 'p1', title: 'Kiro', slug: 'kiro', description: null, category: 'AI',
++    price: '1000.00', imageUrl: null, isActive: true,
++    sourcingMode: ProductSourcingMode.IN_HOUSE, createdAt: '2026-09-11T00:00:00.000Z',
++    stockStatus: ProductStockStatus.IN_STOCK, availableCount: 5,
++  }];
++  const service = { listCatalog: async () => sample } as any;
++  const priceSync = {} as any;
++  const controller = new ProductsController(service, priceSync);
++  const res = await controller.listCatalog();
++  assert.equal(res.ok, true);
++  assert.equal(res.products.length, 1);
++  assert.equal(res.products[0].stockStatus, ProductStockStatus.IN_STOCK);
++});
++
++test('POST /products/sync-prices delegates to priceSyncService and has proper guards', async () => {
++  const sampleSummary = {
++    scanned: 5, updated: 2, unchanged: 2, deactivated: 1, failed: 0, skipped: 0,
++    items: [], startedAt: '2026-09-11T00:00:00.000Z', finishedAt: '2026-09-11T00:00:01.000Z',
++  };
++  let syncCalled = false;
++  const mockPriceSync = {
++    syncAll: async () => {
++      syncCalled = true;
++      return sampleSummary;
++    },
++  };
++  const controller = new ProductsController({} as any, mockPriceSync as any);
++
++  const res = await controller.syncPrices();
++  assert.strictEqual(syncCalled, true);
++  assert.strictEqual(res.ok, true);
++  assert.deepStrictEqual(res.summary, sampleSummary);
++
++  // Verify guards applied at method level
++  const guards = Reflect.getMetadata('__guards__', controller.syncPrices);
++  assert.ok(Array.isArray(guards));
++  assert.ok(guards.includes(TelegramAuthGuard));
++  assert.ok(guards.includes(AdminRoleGuard));
++});
+diff --git a/apps/api/src/modules/orders/orders.service.ts b/apps/api/src/modules/orders/orders.service.ts
+new file mode 100644
+index 00000000..67c01ce6
+--- /dev/null
++++ b/apps/api/src/modules/orders/orders.service.ts
+@@ -0,0 +1,312 @@
++import {
++  Injectable,
++  NotFoundException,
++  ConflictException,
++  HttpException,
++  HttpStatus,
++} from '@nestjs/common';
++import {
++  db,
++  desc,
++  eq,
++  and,
++  sql,
++  orders,
++  products,
++  type DbOrTx,
++} from '@repo/database';
++import {
++  OrderStatus,
++  LedgerType,
++  parseSignedDecimal,
++  formatSignedDecimal,
++  type OrderDto,
++  type CheckoutResponseDto,
++  type TelegramUserDto,
++} from '@repo/shared-types';
++import { RedisService, RedisUnavailableError } from '../../common/redis/redis.service';
++import { LedgerService } from '../ledger/ledger.service';
++import { InventoryService } from '../inventory/inventory.service';
++import { WalletsService } from '../wallets/wallets.service';
++import { UsersService } from '../users/users.service';
++import { TelegramBotService } from '../../common/telegram/telegram-bot.service';
++import { InsufficientFundsException } from '../../common/exceptions/insufficient-funds.exception';
++
++type OrderRecord = typeof orders.$inferSelect;
++
++function toOrderDto(record: OrderRecord, productTitle?: string): OrderDto {
++  return {
++    id: record.id,
++    userId: record.userId,
++    productId: record.productId,
++    status: record.status as OrderStatus,
++    price: record.price,
++    productTitle,
++    deliveredCredential: record.deliveredCredential ?? null,
++    idempotencyKey: record.idempotencyKey ?? null,
++    createdAt:
++      record.createdAt instanceof Date
++        ? record.createdAt.toISOString()
++        : String(record.createdAt),
++    fulfilledAt: record.fulfilledAt
++      ? record.fulfilledAt instanceof Date
++        ? record.fulfilledAt.toISOString()
++        : String(record.fulfilledAt)
++      : null,
++  };
++}
++
++@Injectable()
++export class OrdersService {
++  constructor(
++    private readonly redisService: RedisService,
++    private readonly ledgerService: LedgerService,
++    private readonly inventoryService: InventoryService,
++    private readonly walletsService: WalletsService,
++    private readonly usersService: UsersService,
++    private readonly telegramBotService: TelegramBotService,
++  ) {}
++
++  /**
++   * One-tap checkout: debit wallet + bind credential atomically.
++   *
++   * Flow:
++   * 1. Idempotency check (no locks needed)
++   * 2. Resolve telegram user → internal userRecord
++   * 3. Acquire Redlock on wallet + inventory
++   * 4. Single PG transaction: wallet debit → order PENDING → reserve → confirmSold → FULFILLED
++   */
++  async checkout(
++    telegramUser: TelegramUserDto,
++    productId: string,
++    idempotencyKey: string,
++  ): Promise<CheckoutResponseDto> {
++    // Step 1: Idempotency — return existing order without touching locks/DB
++    const existing = await this.getOrderByIdempotencyKey(idempotencyKey);
++    if (existing) {
++      return {
++        ok: true,
++        order: existing,
++        deliveredCredential: existing.deliveredCredential ?? undefined,
++      };
++    }
++
++    // Step 2: Resolve user outside lock (needed for lock key)
++    const userRecord = await this.usersService.upsertByTelegram(telegramUser);
++
++    // Step 3: Acquire distributed locks
++    let result: CheckoutResponseDto;
++    // Track productTitle + userRecord.telegramId for post-commit notification
++    let productTitleForNotification: string | undefined;
++    try {
++      result = await this.redisService.withLock(
++        [`lock:wallet:${userRecord.id}`, `lock:inventory:${productId}`],
++        5000,
++        async () => {
++          // Double-check idempotency inside lock in case a concurrent request
++          // with the same idempotencyKey finished while this request waited for the lock.
++          const lockedExisting = await this.getOrderByIdempotencyKey(idempotencyKey);
++          if (lockedExisting) {
++            return {
++              ok: true,
++              order: lockedExisting,
++              deliveredCredential: lockedExisting.deliveredCredential ?? undefined,
++            };
++          }
++
++          // Step 4: Single atomic DB transaction
++          return db.transaction(async (tx) => {
++            // a. Get wallet
++            const wallet = await this.walletsService.getOrCreateByUserId(
++              userRecord.id,
++              tx,
++            );
++
++            // b. Get product
++            const [product] = await tx
++              .select()
++              .from(products)
++              .where(
++                and(
++                  eq(products.id, productId),
++                  eq(products.isActive, true),
++                ),
++              )
++              .limit(1);
++
++            if (!product) {
++              throw new NotFoundException({
++                errorCode: 'PRODUCT_NOT_FOUND',
++                message: `Product ${productId} not found or inactive`,
++              });
++            }
++
++            productTitleForNotification = product.title;
++
++            // c. Check balance (BigInt arithmetic — no float)
++            const balanceUnits = parseSignedDecimal(String(wallet.balance));
++            const priceUnits = parseSignedDecimal(String(product.price));
++
++            if (balanceUnits < priceUnits) {
++              const missingAmount = formatSignedDecimal(priceUnits - balanceUnits);
++              throw new HttpException(
++                {
++                  statusCode: HttpStatus.PAYMENT_REQUIRED,
++                  errorCode: 'INSUFFICIENT_FUNDS',
++                  missingAmount,
++                  message: `Insufficient balance. Missing ${missingAmount} VND.`,
++                },
++                HttpStatus.PAYMENT_REQUIRED,
++              );
++            }
++
++            // d. Insert order PENDING → get orderId
++            //    If a concurrent request with same idempotencyKey already committed,
++            //    Postgres raises 23505. Caught in the outer catch block (below)
++            //    because the tx is aborted once a statement fails inside it.
++            const [order] = await tx
++              .insert(orders)
++              .values({
++                userId: userRecord.id,
++                productId,
++                price: product.price,
++                status: OrderStatus.PENDING,
++                idempotencyKey,
++              })
++              .returning();
++
++            // e. Debit wallet (ledger does FOR UPDATE internally)
++            try {
++              await this.ledgerService.debit(
++                wallet.id,
++                product.price,
++                LedgerType.STORE_PURCHASE,
++                idempotencyKey,
++                order.id,
++                tx,
++              );
++            } catch (e) {
++              if (e instanceof InsufficientFundsException) {
++                const missing = formatSignedDecimal(priceUnits - balanceUnits);
++                throw new HttpException(
++                  {
++                    statusCode: HttpStatus.PAYMENT_REQUIRED,
++                    errorCode: 'INSUFFICIENT_FUNDS',
++                    missingAmount: missing,
++                    message: `Insufficient balance. Missing ${missing} VND.`,
++                  },
++                  HttpStatus.PAYMENT_REQUIRED,
++                );
++              }
++              throw e;
++            }
++
++            // f. Reserve credential — null = out of stock
++            const reserved = await this.inventoryService.reserveCredential(
++              productId,
++              order.id,
++              tx,
++            );
++            if (!reserved) {
++              throw new ConflictException({
++                errorCode: 'OUT_OF_STOCK',
++                message: `Product ${productId} is out of stock`,
++              });
++            }
++
++            // g. Confirm sale — get plaintext credential
++            const delivered = await this.inventoryService.confirmSold(
++              reserved.id,
++              order.id,
++              tx,
++            );
++
++            // h. Update order → FULFILLED
++            const [fulfilled] = await tx
++              .update(orders)
++              .set({
++                status: OrderStatus.FULFILLED,
++                deliveredCredential: delivered.credentialData,
++                fulfilledAt: sql`now()`,
++              })
++              .where(eq(orders.id, order.id))
++              .returning();
++
++            return {
++              ok: true,
++              order: toOrderDto(fulfilled),
++              deliveredCredential: delivered.credentialData,
++            };
++          });
++        },
++      );
++    } catch (e: any) {
++      // Unique constraint violation on idempotencyKey — another concurrent
++      // request already committed this order. Return the existing one (200).
++      if (e?.code === '23505') {
++        const existing = await this.getOrderByIdempotencyKey(idempotencyKey);
++        if (existing) {
++          return {
++            ok: true,
++            order: existing,
++            deliveredCredential: existing.deliveredCredential ?? undefined,
++          };
++        }
++      }
++      // Lock acquisition failure or lock lost mid-flight
++      if (
++        e instanceof RedisUnavailableError ||
++        e?.name === 'ExecutionError' ||
++        e?.name === 'LockError' ||
++        e?.name === 'ResourceLockedError'
++      ) {
++        throw new ConflictException({
++          errorCode: 'ORDER_LOCK_CONFLICT',
++          message: 'Could not acquire checkout lock. Please try again.',
++        });
++      }
++      throw e;
++    }
++
++    // Post-commit: notify buyer via Telegram Bot (fire-and-forget — never throws)
++    if (result.order.status === 'FULFILLED' && productTitleForNotification) {
++      void this.telegramBotService
++        .sendOrderConfirmation(
++          telegramUser.id,
++          result.order,
++          productTitleForNotification,
++        )
++        .catch(() => {
++          // Errors already logged inside sendOrderConfirmation — swallow here
++        });
++    }
++
++    return result;
++  }
++
++  /**
++   * List all orders for the current user, sorted by createdAt DESC.
++   * Joins products to include productTitle.
++   */
++  async getMyOrders(telegramUser: TelegramUserDto): Promise<OrderDto[]> {
++    const userRecord = await this.usersService.upsertByTelegram(telegramUser);
++
++    const rows = await db
++      .select({ order: orders, productTitle: products.title })
++      .from(orders)
++      .leftJoin(products, eq(orders.productId, products.id))
++      .where(eq(orders.userId, userRecord.id))
++      .orderBy(desc(orders.createdAt));
++
++    return rows.map((r) => toOrderDto(r.order, r.productTitle ?? undefined));
++  }
++
++  async getOrderByIdempotencyKey(key: string): Promise<OrderDto | null> {
++    const [order] = await db
++      .select()
++      .from(orders)
++      .where(eq(orders.idempotencyKey, key))
++      .limit(1);
++    return order ? toOrderDto(order) : null;
++  }
++}
+diff --git a/apps/api/src/workers/price-sync.scheduler.ts b/apps/api/src/workers/price-sync.scheduler.ts
+new file mode 100644
+index 00000000..98356df3
+--- /dev/null
++++ b/apps/api/src/workers/price-sync.scheduler.ts
+@@ -0,0 +1,66 @@
++import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
++import { Queue, Worker } from 'bullmq';
++import { Redis } from 'ioredis';
++import { PriceSyncService } from '../modules/products/price-sync.service';
++
++@Injectable()
++export class PriceSyncScheduler implements OnModuleInit, OnModuleDestroy {
++  private readonly logger = new Logger(PriceSyncScheduler.name);
++  private connection?: Redis;
++  private queue?: Queue;
++  private worker?: Worker;
++
++  constructor(private readonly priceSync: PriceSyncService) {}
++
++  async onModuleInit() {
++    if (process.env.PRICE_SYNC_DISABLED === 'true') {
++      this.logger.log('PriceSyncScheduler is disabled (PRICE_SYNC_DISABLED=true)');
++      return;
++    }
++
++    try {
++      this.connection = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6381', {
++        maxRetriesPerRequest: null,
++        enableReadyCheck: false,
++      });
++
++      this.queue = new Queue('price-sync', { connection: this.connection });
++
++      const intervalMs = Number(process.env.PRICE_SYNC_INTERVAL_MS ?? 900_000);
++      await this.queue.upsertJobScheduler(
++        'price-sync-all',
++        { every: intervalMs },
++        { name: 'sync-all', data: {} },
++      );
++
++      this.worker = new Worker(
++        'price-sync',
++        async () => {
++          try {
++            await this.priceSync.syncAll();
++          } catch (err: any) {
++            this.logger.error(
++              `Scheduled price sync job error: ${err?.message || String(err)}`,
++              err?.stack,
++            );
++          }
++        },
++        { connection: this.connection },
++      );
++
++      this.logger.log(`PriceSyncScheduler initialized with ${intervalMs}ms interval`);
++    } catch (err: any) {
++      this.logger.error(`Failed to initialize PriceSyncScheduler: ${err?.message || String(err)}`);
++    }
++  }
++
++  async onModuleDestroy() {
++    try {
++      await this.worker?.close();
++      await this.queue?.close();
++      this.connection?.disconnect();
++    } catch (err: any) {
++      this.logger.warn(`Error closing PriceSyncScheduler: ${err?.message || String(err)}`);
++    }
++  }
++}
+diff --git a/packages/database/drizzle/0008_outgoing_glorian.sql b/packages/database/drizzle/0008_outgoing_glorian.sql
+new file mode 100644
+index 00000000..ba031a59
+--- /dev/null
++++ b/packages/database/drizzle/0008_outgoing_glorian.sql
+@@ -0,0 +1,26 @@
++CREATE TABLE "admin_alerts" (
++	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
++	"type" varchar(50) NOT NULL,
++	"severity" varchar(20) DEFAULT 'WARN' NOT NULL,
++	"product_id" uuid,
++	"supplier_source_id" uuid,
++	"message" text NOT NULL,
++	"payload" jsonb,
++	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
++	"resolved_at" timestamp with time zone,
++	CONSTRAINT "admin_alerts_type_valid" CHECK ("admin_alerts"."type" IN ('PRICE_THRESHOLD_EXCEEDED', 'PRICE_SYNC_FAILED'))
++);
++--> statement-breakpoint
++ALTER TABLE "products" ADD COLUMN "supplier_product_url" varchar(512);--> statement-breakpoint
++ALTER TABLE "products" ADD COLUMN "upstream_cost" numeric(15, 2);--> statement-breakpoint
++ALTER TABLE "products" ADD COLUMN "max_upstream_cost" numeric(15, 2);--> statement-breakpoint
++ALTER TABLE "products" ADD COLUMN "cost_synced_at" timestamp with time zone;--> statement-breakpoint
++ALTER TABLE "products" ADD COLUMN "auto_pricing" boolean DEFAULT true NOT NULL;--> statement-breakpoint
++ALTER TABLE "supplier_sources" ADD COLUMN "markup_fixed_vnd" numeric(15, 2) DEFAULT '0.00' NOT NULL;--> statement-breakpoint
++ALTER TABLE "admin_alerts" ADD CONSTRAINT "admin_alerts_product_id_products_id_fk" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
++ALTER TABLE "admin_alerts" ADD CONSTRAINT "admin_alerts_supplier_source_id_supplier_sources_id_fk" FOREIGN KEY ("supplier_source_id") REFERENCES "public"."supplier_sources"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
++CREATE INDEX "admin_alerts_type_idx" ON "admin_alerts" USING btree ("type");--> statement-breakpoint
++CREATE INDEX "admin_alerts_created_at_idx" ON "admin_alerts" USING btree ("created_at");--> statement-breakpoint
++ALTER TABLE "products" ADD CONSTRAINT "products_max_upstream_cost_valid" CHECK ("products"."max_upstream_cost" IS NULL OR "products"."max_upstream_cost" > 0);--> statement-breakpoint
++ALTER TABLE "products" ADD CONSTRAINT "products_upstream_cost_valid" CHECK ("products"."upstream_cost" IS NULL OR "products"."upstream_cost" >= 0);--> statement-breakpoint
++ALTER TABLE "supplier_sources" ADD CONSTRAINT "supplier_markup_fixed_non_negative" CHECK ("supplier_sources"."markup_fixed_vnd" >= 0);
+\ No newline at end of file
