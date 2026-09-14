@@ -277,6 +277,24 @@ test('LedgerService handles unique idempotency key race by returning existing re
   assert.strictEqual(result.idempotencyKey, 'idem-1');
 });
 
+test('LedgerService throws ConflictException when idempotency key belongs to another wallet', async () => {
+  const otherWalletRecord = {
+    ...ledgerRecord,
+    walletId: 'different-wallet-uuid-999',
+    idempotencyKey: 'idem-cross-wallet',
+  };
+  const tx = createFullTx({ idempotencyRows: [otherWalletRecord] });
+  const service = new LedgerService();
+  await assert.rejects(
+    () => service.credit('wallet-uuid-123', '100.00', LedgerType.TOPUP_VIETQR, 'idem-cross-wallet', 'ref-1', tx),
+    (e: any) => {
+      assert.strictEqual(e.getStatus(), 409);
+      assert.strictEqual(e.getResponse().errorCode, 'IDEMPOTENCY_KEY_COLLISION');
+      return true;
+    },
+  );
+});
+
 test('LedgerService.hold moves funds from balance to heldBalance', async () => {
   const capturedUpdateSet = { value: null };
   const tx = createFullTx({

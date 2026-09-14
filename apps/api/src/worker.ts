@@ -1,3 +1,11 @@
+import dotenv from 'dotenv';
+import path from 'node:path';
+
+// Pre-load environment variables from apps/api/.env and root .env
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config({ path: path.resolve(process.cwd(), 'apps/api/.env') });
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { WorkerModule } from './worker.module';

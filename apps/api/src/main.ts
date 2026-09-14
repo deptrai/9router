@@ -18,6 +18,7 @@ async function bootstrap() {
   app.enableCors();
   app.setGlobalPrefix('api');
   app.useGlobalFilters(new AllExceptionsFilter());
+  app.enableShutdownHooks();
 
   const port = process.env.PORT || 3201;
   // Verify database and shared-types imports at runtime

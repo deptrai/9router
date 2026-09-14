@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, NotFoundException, ConflictException } from '@nestjs/common';
 import { db, eq, sql, ledgerTransactions, wallets, type DbOrTx } from '@repo/database';
 import { LedgerType, parseSignedDecimal, formatSignedDecimal } from '@repo/shared-types';
 import type { LedgerTransactionDto } from '@repo/shared-types';
@@ -133,6 +133,12 @@ export class LedgerService {
         .limit(1);
 
       if (existing.length > 0) {
+        if (existing[0].walletId !== walletId) {
+          throw new ConflictException({
+            errorCode: 'IDEMPOTENCY_KEY_COLLISION',
+            message: 'Idempotency key already used for another wallet',
+          });
+        }
         return this.toDto(existing[0] as LedgerRecord);
       }
 
@@ -201,6 +207,12 @@ export class LedgerService {
         .limit(1);
 
       if (existing.length > 0) {
+        if (existing[0].walletId !== walletId) {
+          throw new ConflictException({
+            errorCode: 'IDEMPOTENCY_KEY_COLLISION',
+            message: 'Idempotency key already used for another wallet',
+          });
+        }
         return this.toDto(existing[0] as LedgerRecord);
       }
 
@@ -272,6 +284,12 @@ export class LedgerService {
         .limit(1);
 
       if (existing.length > 0) {
+        if (existing[0].walletId !== walletId) {
+          throw new ConflictException({
+            errorCode: 'IDEMPOTENCY_KEY_COLLISION',
+            message: 'Idempotency key already used for another wallet',
+          });
+        }
         return this.toDto(existing[0] as LedgerRecord);
       }
 
@@ -304,6 +322,12 @@ export class LedgerService {
           balanceAfter: balanceBefore,
           referenceId: referenceId ?? null,
           idempotencyKey,
+          metadata: {
+            operation: 'CAPTURE_HOLD',
+            heldBefore,
+            heldAfter,
+            note: 'Captured from held balance without double deducting ledger balance',
+          },
         })
         .returning();
 
@@ -343,6 +367,12 @@ export class LedgerService {
       .limit(1);
 
     if (existing.length > 0) {
+      if (existing[0].walletId !== walletId) {
+        throw new ConflictException({
+          errorCode: 'IDEMPOTENCY_KEY_COLLISION',
+          message: 'Idempotency key already used for another wallet',
+        });
+      }
       return this.toDto(existing[0] as LedgerRecord);
     }
 
@@ -390,14 +420,32 @@ export class LedgerService {
         throw new InsufficientFundsException();
       }
       if (e?.code === '23505') {
-        const retried = await runner
-          .select()
-          .from(ledgerTransactions)
-          .where(eq(ledgerTransactions.idempotencyKey, idempotencyKey))
-          .limit(1);
-        if (retried.length > 0) {
-          return this.toDto(retried[0] as LedgerRecord);
+        try {
+          const retried = await runner
+            .select()
+            .from(ledgerTransactions)
+            .where(eq(ledgerTransactions.idempotencyKey, idempotencyKey))
+            .limit(1);
+          if (retried.length > 0) {
+            if (retried[0].walletId !== walletId) {
+              throw new ConflictException({
+                errorCode: 'IDEMPOTENCY_KEY_COLLISION',
+                message: 'Idempotency key already used for another wallet',
+              });
+            }
+            return this.toDto(retried[0] as LedgerRecord);
+          }
+        } catch (selectErr) {
+          if (selectErr instanceof ConflictException) throw selectErr;
+          throw new ConflictException({
+            errorCode: 'IDEMPOTENCY_KEY_COLLISION',
+            message: 'Idempotency key conflict occurred during transaction execution',
+          });
         }
+        throw new ConflictException({
+          errorCode: 'IDEMPOTENCY_KEY_COLLISION',
+          message: 'Idempotency key already used',
+        });
       }
       throw e;
     }

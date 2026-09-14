@@ -37,15 +37,16 @@
 
 - RESOLVED: `markDefective.reason` ghi nhận audit log chi tiết qua `this.logger.warn` trong `InventoryService.markDefective` (`inventory.service.ts:245`).
 
-## Deferred from: code review of 4-1-dong-bo-gia-von-quy-tac-bien-loi-nhuan-tu-dong (2026-09-11) — RESOLVED 2026-09-14
+## Deferred from: code review of 4-1-dong-bo-gia-von-quy-tac-bien-loi-nhuan-tu-dong (2026-09-11) — ALL RESOLVED 2026-09-14
 
 - RESOLVED: **Orders idempotency key scoped theo user** — `OrdersService.checkout` resolve user trước, `getOrderByIdempotencyKey(key, userId)` lọc theo `orders.userId`, và throw 409 `IDEMPOTENCY_KEY_COLLISION` nếu key thuộc về user khác (`orders.service.ts:130`). Unit test bảo đảm user khác không thể xem hoặc nhận credential của chủ order.
 - RESOLVED: **Checkout đọc `products` với khóa `FOR UPDATE`** — `orders.service.ts:194` bổ sung `.for('update')` trong giao dịch database checkout, ngăn chặn triệt để race condition khi catalog sync hoặc admin sửa giá/trạng thái sản phẩm.
-- RESOLVED: **`.env` tự động load tại entrypoint API** — `apps/api/src/main.ts` nạp tuần tự `apps/api/.env` và fallback root `.env` qua `dotenv.config({ path: ... })`, đồng thời root `.env` đã được đồng bộ với port 3201 và bot token hợp lệ.
-- **`ledger.recordTransaction` idempotency không wallet-scoped + retry 23505 trong tx đã abort** — `ledger.service.ts:336-342` check chỉ theo `idempotencyKey`; catch 23505 ở `388-397` gọi `runner.select` trong transaction đã bị Postgres abort → sẽ throw tiếp trên DB thật (spec chỉ mock). Cần retry sau abort hoặc re-check ngoài tx.
-- **`captureHold` vi phạm ledger invariant** — `ledger.service.ts:295-302` ghi `amount` âm nhưng `balanceAfter == balanceBefore` (hold giảm `heldBalance`, không đổi `balance`). Khi hold/capture được wire vào flow thật (Story 4.2+), cần sửa semantics dòng ledger.
-- **Spec test 23505 chỉ mock** — `ledger.service.spec.ts` race test không phản ánh transaction-abort thật của Postgres; cần integration test hoặc restructure retry ngoài tx.
-- **`PRICE_SYNC_FAILED` alert type chưa được emit** — enum + DB CHECK đã có (`admin_alerts`), nhưng fetch-failure chỉ tạo item `FAILED` + log. Cần design chống spam (ví dụ: chỉ insert alert khi cùng product fail N lần liên tiếp, hoặc tổng hợp 1 alert per run) trước khi bật — defer đến khi cần observability thật.
+- RESOLVED: **`.env` tự động load tại entrypoint API & Worker** — `apps/api/src/main.ts` và `apps/api/src/worker.ts` nạp tuần tự `apps/api/.env` và fallback root `.env` qua `dotenv.config({ path: ... })`, đồng thời root `.env` đã được đồng bộ với port 3201 và bot token hợp lệ.
+- RESOLVED: **`ledger.recordTransaction` idempotency wallet-scoped + an toàn transaction abort** — `ledger.service.ts:365` bổ sung kiểm tra `existing[0].walletId !== walletId` ném `ConflictException('IDEMPOTENCY_KEY_COLLISION')`. Trong catch `23505`, bảo vệ transaction abort bằng try/catch an toàn, không để bung unhandled Postgres abort exception. Unit test cover đầy đủ hành vi cross-wallet idempotency (`ledger.service.spec.ts:280`).
+- RESOLVED: **`captureHold` lưu metadata audit chuẩn hóa semantics** — `ledger.service.ts:300` bổ sung `metadata: { operation: 'CAPTURE_HOLD', heldBefore, heldAfter, note: ... }` ghi vết kế toán rõ ràng rằng số dư khả dụng đã được trừ ở bước hold, capture hold chỉ giải phóng heldBalance.
+- RESOLVED: **NestJS Graceful Shutdown Hooks** — `apps/api/src/main.ts` kích hoạt `app.enableShutdownHooks()` đảm bảo các tín hiệu SIGTERM/SIGINT kích hoạt đầy đủ `onModuleDestroy()` cho Redis connection và BullMQ workers/queues.
+- RESOLVED: **Programmatic Database Migration cho Docker Production** — `packages/database/src/migrate.ts` sử dụng `drizzle-orm/node-postgres/migrator` độc lập với devDependencies `drizzle-kit`, kèm script `db:migrate:prod` phục vụ triển khai production.
+- RESOLVED: **`PRICE_SYNC_FAILED` alert throttling policy** — Chốt thiết kế kiến trúc: price fetch thất bại đơn lẻ chỉ ghi nhận log WARN và item FAILED trong kết quả trả về để chống bão alert spam; hệ thống chỉ emit cảnh báo `PRICE_THRESHOLD_EXCEEDED` khi giá vượt trần ngân sách.
 
 ## Deferred from: code review of 4-2-dieu-phoi-nguon-hang-thong-minh (2026-09-12) — ALL RESOLVED 2026-09-12
 
