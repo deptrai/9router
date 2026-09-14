@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Optional,
   NotFoundException,
   BadRequestException,
   ConflictException,
@@ -20,9 +21,14 @@ import type {
   CreateSupplierSourceDto,
   UpdateSupplierSourceDto,
 } from '@repo/shared-types';
+import { TelegramBotAdapter } from './scraper/adapters/telegram-bot.adapter';
 
 @Injectable()
 export class SuppliersService {
+  constructor(
+    @Optional() private readonly telegramBotAdapter?: TelegramBotAdapter
+  ) {}
+
   async listSuppliers(opts?: { limit?: number; offset?: number; search?: string }, tx: DbOrTx = db): Promise<SupplierSourceDto[]> {
     const limit = Math.min(opts?.limit ?? 100, 500);
     const offset = opts?.offset ?? 0;
@@ -78,6 +84,10 @@ export class SuppliersService {
       markupFixedVnd: s.markupFixedVnd,
       isActive: s.isActive,
       linkedProductsCount: countMap.get(s.id) ?? 0,
+      lastSyncAt: s.lastSyncAt ? s.lastSyncAt.toISOString() : null,
+      lastSyncError: s.lastSyncError ?? null,
+      syncIntervalSec: s.syncIntervalSec ?? 3600,
+      consecutiveSyncFailures: s.consecutiveSyncFailures ?? 0,
       createdAt: s.createdAt.toISOString(),
       updatedAt: s.updatedAt.toISOString(),
     }));
@@ -113,6 +123,10 @@ export class SuppliersService {
       markupFixedVnd: supplier.markupFixedVnd,
       isActive: supplier.isActive,
       linkedProductsCount: Number(countRow?.count ?? 0),
+      lastSyncAt: supplier.lastSyncAt ? supplier.lastSyncAt.toISOString() : null,
+      lastSyncError: supplier.lastSyncError ?? null,
+      syncIntervalSec: supplier.syncIntervalSec ?? 3600,
+      consecutiveSyncFailures: supplier.consecutiveSyncFailures ?? 0,
       createdAt: supplier.createdAt.toISOString(),
       updatedAt: supplier.updatedAt.toISOString(),
     };
@@ -153,16 +167,60 @@ export class SuppliersService {
       });
     }
 
+    if (dto.syncIntervalSec !== undefined) {
+      if (!Number.isInteger(dto.syncIntervalSec) || dto.syncIntervalSec < 3600) {
+        throw new BadRequestException({
+          statusCode: 400,
+          errorCode: 'INVALID_SUPPLIER_PAYLOAD',
+          message: 'syncIntervalSec must be an integer >= 3600',
+        });
+      }
+    }
+
+    const supplierType = dto.type ?? 'CONFIG_POOL';
+    if (supplierType === 'TELEGRAM_BOT') {
+      if (!this.telegramBotAdapter?.validate) {
+        throw new BadRequestException({
+          statusCode: 400,
+          errorCode: 'INVALID_SUPPLIER_CONFIG',
+          message: 'TelegramBotAdapter validation is unavailable',
+        });
+      }
+      const configToValidate = {
+        ...(dto.configCredentials ?? {}),
+        ...(dto.syncIntervalSec !== undefined ? { syncIntervalSec: dto.syncIntervalSec } : {}),
+      };
+      const validation = this.telegramBotAdapter.validate(configToValidate);
+      if (!validation.ok) {
+        throw new BadRequestException({
+          statusCode: 400,
+          errorCode: 'INVALID_SUPPLIER_CONFIG',
+          message: validation.reason || 'Invalid TELEGRAM_BOT configuration',
+        });
+      }
+    }
+
+    const rawInterval = dto.syncIntervalSec ?? (dto.configCredentials as any)?.syncIntervalSec ?? 3600;
+    const syncIntervalSec = Number(rawInterval);
+    if (!Number.isInteger(syncIntervalSec) || syncIntervalSec < 3600) {
+      throw new BadRequestException({
+        statusCode: 400,
+        errorCode: 'INVALID_SUPPLIER_PAYLOAD',
+        message: 'syncIntervalSec must be an integer >= 3600',
+      });
+    }
+
     const [created] = await tx
       .insert(supplierSources)
       .values({
         name: dto.name.trim(),
-        type: dto.type ?? 'CONFIG_POOL',
+        type: supplierType,
         targetUrl: dto.targetUrl ?? null,
         configCredentials: dto.configCredentials ?? null,
         markupPercentage: markupPct,
         markupFixedVnd: markupFixed,
         isActive: dto.isActive ?? true,
+        syncIntervalSec,
       })
       .returning();
 
@@ -176,6 +234,10 @@ export class SuppliersService {
       markupFixedVnd: created.markupFixedVnd,
       isActive: created.isActive,
       linkedProductsCount: 0,
+      lastSyncAt: created.lastSyncAt ? created.lastSyncAt.toISOString() : null,
+      lastSyncError: created.lastSyncError ?? null,
+      syncIntervalSec: created.syncIntervalSec ?? 3600,
+      consecutiveSyncFailures: created.consecutiveSyncFailures ?? 0,
       createdAt: created.createdAt.toISOString(),
       updatedAt: created.updatedAt.toISOString(),
     };
@@ -202,6 +264,41 @@ export class SuppliersService {
         errorCode: 'INVALID_SUPPLIER_PAYLOAD',
         message: 'Supplier name cannot be empty',
       });
+    }
+
+    if (dto.syncIntervalSec !== undefined) {
+      if (!Number.isInteger(dto.syncIntervalSec) || dto.syncIntervalSec < 3600) {
+        throw new BadRequestException({
+          statusCode: 400,
+          errorCode: 'INVALID_SUPPLIER_PAYLOAD',
+          message: 'syncIntervalSec must be an integer >= 3600',
+        });
+      }
+    }
+
+    const targetType = dto.type !== undefined ? dto.type : existing.type;
+    if (targetType === 'TELEGRAM_BOT') {
+      const baseConfig =
+        dto.configCredentials !== undefined ? dto.configCredentials : existing.configCredentials;
+      if (!this.telegramBotAdapter?.validate) {
+        throw new BadRequestException({
+          statusCode: 400,
+          errorCode: 'INVALID_SUPPLIER_CONFIG',
+          message: 'TelegramBotAdapter validation is unavailable',
+        });
+      }
+      const configToValidate = {
+        ...(baseConfig ?? {}),
+        ...(dto.syncIntervalSec !== undefined ? { syncIntervalSec: dto.syncIntervalSec } : {}),
+      };
+      const validation = this.telegramBotAdapter.validate(configToValidate);
+      if (!validation.ok) {
+        throw new BadRequestException({
+          statusCode: 400,
+          errorCode: 'INVALID_SUPPLIER_CONFIG',
+          message: validation.reason || 'Invalid TELEGRAM_BOT configuration',
+        });
+      }
     }
 
     if (dto.markupPercentage !== undefined && !/^\d+(\.\d{1,2})?$/.test(dto.markupPercentage)) {
@@ -235,6 +332,20 @@ export class SuppliersService {
       }
     }
 
+    const rawUpdatedInterval = dto.syncIntervalSec !== undefined
+      ? dto.syncIntervalSec
+      : (dto.configCredentials as any)?.syncIntervalSec !== undefined
+        ? (dto.configCredentials as any)?.syncIntervalSec
+        : (existing.syncIntervalSec ?? 3600);
+    const syncIntervalSec = Number(rawUpdatedInterval);
+    if (!Number.isInteger(syncIntervalSec) || syncIntervalSec < 3600) {
+      throw new BadRequestException({
+        statusCode: 400,
+        errorCode: 'INVALID_SUPPLIER_PAYLOAD',
+        message: 'syncIntervalSec must be an integer >= 3600',
+      });
+    }
+
     const [updated] = await tx
       .update(supplierSources)
       .set({
@@ -248,6 +359,7 @@ export class SuppliersService {
         markupFixedVnd:
           dto.markupFixedVnd !== undefined ? dto.markupFixedVnd : existing.markupFixedVnd,
         isActive: dto.isActive !== undefined ? dto.isActive : existing.isActive,
+        syncIntervalSec,
         updatedAt: new Date(),
       })
       .where(eq(supplierSources.id, id))
@@ -268,6 +380,10 @@ export class SuppliersService {
       markupFixedVnd: updated.markupFixedVnd,
       isActive: updated.isActive,
       linkedProductsCount: Number(countRow?.count ?? 0),
+      lastSyncAt: updated.lastSyncAt ? updated.lastSyncAt.toISOString() : null,
+      lastSyncError: updated.lastSyncError ?? null,
+      syncIntervalSec: updated.syncIntervalSec ?? 3600,
+      consecutiveSyncFailures: updated.consecutiveSyncFailures ?? 0,
       createdAt: updated.createdAt.toISOString(),
       updatedAt: updated.updatedAt.toISOString(),
     };

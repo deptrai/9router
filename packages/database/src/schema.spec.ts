@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
+import { getTableConfig } from 'drizzle-orm/pg-core';
 import { users, wallets, ledgerTransactions, paymentTransactions, supplierSources, products, adminAlerts, supplierOrders } from './schema';
 
 test('Database schema exports required tables with constraints', () => {
@@ -22,6 +23,12 @@ test('Database schema exports required tables with constraints', () => {
   assert.ok('maxUpstreamCost' in products, 'products must have maxUpstreamCost column');
   assert.ok('costSyncedAt' in products, 'products must have costSyncedAt column');
   assert.ok('autoPricing' in products, 'products must have autoPricing column');
+  assert.ok('supplierProductId' in products, 'products must have supplierProductId column');
+  assert.ok('stock' in products, 'products must have stock column');
+  assert.ok('lastSyncAt' in supplierSources, 'supplierSources must have lastSyncAt column');
+  assert.ok('lastSyncError' in supplierSources, 'supplierSources must have lastSyncError column');
+  assert.ok('syncIntervalSec' in supplierSources, 'supplierSources must have syncIntervalSec column');
+  assert.ok('consecutiveSyncFailures' in supplierSources, 'supplierSources must have consecutiveSyncFailures column');
 });
 
 test('wallets table has non-negative balance check constraints', () => {
@@ -62,4 +69,24 @@ test('paymentTransactions table has required columns', () => {
   assert.ok('metadata' in paymentTransactions, 'must have metadata');
   assert.ok('createdAt' in paymentTransactions, 'must have createdAt');
   assert.ok('updatedAt' in paymentTransactions, 'must have updatedAt');
+});
+
+test('products table has supplier product unique index', () => {
+  const config = getTableConfig(products);
+  const indexNames = config.indexes.map((i: any) => i.config.name);
+  assert.ok(indexNames.includes('products_supplier_product_unique_idx'), 'must have products_supplier_product_unique_idx');
+  const uniqueIdx = config.indexes.find((i: any) => i.config.name === 'products_supplier_product_unique_idx');
+  assert.strictEqual(uniqueIdx?.config?.unique, true);
+});
+
+test('adminAlerts table check constraint exists', () => {
+  const config = getTableConfig(adminAlerts);
+  const checkNames = config.checks.map((c: any) => c.name);
+  assert.ok(checkNames.includes('admin_alerts_type_valid'), 'must have admin_alerts_type_valid check');
+});
+
+test('supplierSources table check constraints exist', () => {
+  const config = getTableConfig(supplierSources);
+  const checkNames = config.checks.map((c: any) => c.name);
+  assert.ok(checkNames.includes('supplier_sync_interval_valid'), 'must have supplier_sync_interval_valid check');
 });

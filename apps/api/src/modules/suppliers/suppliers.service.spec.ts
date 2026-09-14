@@ -195,3 +195,173 @@ test('[P1] SuppliersService: updateSupplier allows deactivation when no active p
   const result = await service.updateSupplier('sup-safe', { isActive: false }, mockDb);
   assert.strictEqual(result.isActive, false);
 });
+
+test('[P0] SuppliersService: createSupplier with type=TELEGRAM_BOT rejects invalid config with BadRequestException', async () => {
+  const mockAdapter: any = {
+    validate: (config: any) => {
+      if (!config?.botUsername) return { ok: false, reason: 'botUsername is required' };
+      return { ok: true };
+    },
+  };
+
+  const service = new SuppliersService(mockAdapter);
+
+  await assert.rejects(
+    async () =>
+      service.createSupplier({
+        name: 'Telegram Bot Supplier',
+        type: 'TELEGRAM_BOT',
+        configCredentials: {},
+      }),
+    (err: any) => {
+      assert(err instanceof BadRequestException);
+      const resp = err.getResponse();
+      assert.strictEqual(resp.errorCode, 'INVALID_SUPPLIER_CONFIG');
+      assert.strictEqual(resp.message, 'botUsername is required');
+      return true;
+    }
+  );
+});
+
+test('[P0] SuppliersService: createSupplier with type=TELEGRAM_BOT accepts valid config', async () => {
+  const mockAdapter: any = {
+    validate: (config: any) => ({ ok: true }),
+  };
+
+  const mockDb: any = {
+    insert: () => ({
+      values: (vals: any) => ({
+        returning: () =>
+          Promise.resolve([
+            {
+              id: 'sup-tg-1',
+              name: vals.name,
+              type: vals.type,
+              targetUrl: vals.targetUrl,
+              configCredentials: vals.configCredentials,
+              markupPercentage: vals.markupPercentage,
+              markupFixedVnd: vals.markupFixedVnd,
+              isActive: vals.isActive,
+              syncIntervalSec: vals.syncIntervalSec,
+              lastSyncAt: null,
+              lastSyncError: null,
+              consecutiveSyncFailures: 0,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+          ]),
+      }),
+    }),
+  };
+
+  const service = new SuppliersService(mockAdapter);
+  const result = await service.createSupplier(
+    {
+      name: 'Telegram Bot Supplier',
+      type: 'TELEGRAM_BOT',
+      configCredentials: {
+        botUsername: 'valid_bot',
+        vndPerCredit: 1000,
+        command: '/products',
+      },
+    },
+    mockDb
+  );
+
+  assert.strictEqual(result.id, 'sup-tg-1');
+  assert.strictEqual(result.type, 'TELEGRAM_BOT');
+  assert.strictEqual(result.syncIntervalSec, 3600);
+});
+
+test('[P0] SuppliersService: updateSupplier with type=TELEGRAM_BOT validates config', async () => {
+  const mockAdapter: any = {
+    validate: (config: any) => {
+      if (config?.syncIntervalSec && config.syncIntervalSec < 3600) {
+        return { ok: false, reason: 'syncIntervalSec must be >= 3600' };
+      }
+      return { ok: true };
+    },
+  };
+
+  const mockDb: any = {
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: () =>
+            Promise.resolve([
+              {
+                id: 'sup-tg-1',
+                name: 'TG Sup',
+                type: 'TELEGRAM_BOT',
+                configCredentials: { botUsername: 'my_bot' },
+                isActive: true,
+              },
+            ]),
+        }),
+      }),
+    }),
+  };
+
+  const service = new SuppliersService(mockAdapter);
+
+  await assert.rejects(
+    async () =>
+      service.updateSupplier(
+        'sup-tg-1',
+        {
+          configCredentials: { botUsername: 'my_bot', syncIntervalSec: 1800 },
+        },
+        mockDb
+      ),
+    (err: any) => {
+      assert(err instanceof BadRequestException);
+      const resp = err.getResponse();
+      assert.strictEqual(resp.errorCode, 'INVALID_SUPPLIER_CONFIG');
+      assert.strictEqual(resp.message, 'syncIntervalSec must be >= 3600');
+      return true;
+    }
+  );
+
+  // Reject top-level syncIntervalSec < 3600
+  await assert.rejects(
+    async () =>
+      service.updateSupplier(
+        'sup-tg-1',
+        {
+          syncIntervalSec: 1800,
+        },
+        mockDb
+      ),
+    (err: any) => {
+      assert(err instanceof BadRequestException);
+      const resp = err.getResponse();
+      assert.strictEqual(resp.errorCode, 'INVALID_SUPPLIER_PAYLOAD');
+      assert.ok(resp.message?.includes('syncIntervalSec must be an integer >= 3600'));
+      return true;
+    }
+  );
+});
+
+test('[P0] SuppliersService: createSupplier rejects root-level syncIntervalSec < 3600', async () => {
+  const mockAdapter: any = {
+    validate: () => ({ ok: true }),
+  };
+  const service = new SuppliersService(mockAdapter);
+
+  await assert.rejects(
+    async () =>
+      service.createSupplier({
+        name: 'Invalid Interval Supplier',
+        type: 'TELEGRAM_BOT',
+        syncIntervalSec: 1200,
+        configCredentials: { botUsername: 'bot', vndPerCredit: 1000, command: '/catalog' },
+      }),
+    (err: any) => {
+      assert(err instanceof BadRequestException);
+      const resp = err.getResponse();
+      assert.strictEqual(resp.errorCode, 'INVALID_SUPPLIER_PAYLOAD');
+      assert.ok(resp.message?.includes('syncIntervalSec must be an integer >= 3600'));
+      return true;
+    }
+  );
+});

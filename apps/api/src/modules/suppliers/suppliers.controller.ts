@@ -14,10 +14,13 @@ import {
 } from '@nestjs/common';
 import { AdminRoleGuard } from '../../common/guards/admin-role.guard';
 import { SuppliersService } from './suppliers.service';
+import { CatalogSyncQueueService } from './catalog-sync-queue.service';
 import type {
   SupplierSourceDto,
   CreateSupplierSourceDto,
   UpdateSupplierSourceDto,
+  SyncTriggerResponseDto,
+  GetSyncStatusResponseDto,
 } from '@repo/shared-types';
 
 @UseGuards(AdminRoleGuard)
@@ -26,6 +29,8 @@ export class SuppliersController {
   constructor(
     @Inject(SuppliersService)
     private readonly suppliersService: SuppliersService,
+    @Inject(CatalogSyncQueueService)
+    private readonly catalogSyncQueueService: CatalogSyncQueueService,
   ) {}
 
   @Get()
@@ -157,4 +162,52 @@ export class SuppliersController {
       message: 'Supplier successfully deactivated',
     };
   }
+
+  @Post(':id/sync')
+  async triggerSync(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<SyncTriggerResponseDto> {
+    const supplier = await this.suppliersService.getSupplierById(id);
+
+    if (supplier.type !== 'TELEGRAM_BOT') {
+      throw new BadRequestException({
+        statusCode: 400,
+        errorCode: 'INVALID_SUPPLIER_TYPE',
+        message: 'Catalog sync is only supported for TELEGRAM_BOT suppliers',
+      });
+    }
+
+    if (!supplier.isActive) {
+      throw new BadRequestException({
+        statusCode: 400,
+        errorCode: 'SUPPLIER_INACTIVE',
+        message: 'Cannot sync catalog for an inactive supplier',
+      });
+    }
+
+    return this.catalogSyncQueueService.enqueueSyncJob(
+      id,
+      supplier.syncIntervalSec ?? 3600,
+    );
+  }
+
+  @Get(':id/sync-status')
+  async getSyncStatus(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<GetSyncStatusResponseDto> {
+    const supplier = await this.suppliersService.getSupplierById(id);
+    const { isSyncing } = await this.catalogSyncQueueService.getSyncStatus(id);
+
+    return {
+      ok: true,
+      syncStatus: {
+        isSyncing,
+        lastSyncAt: supplier.lastSyncAt ?? null,
+        lastSyncError: supplier.lastSyncError ?? null,
+        consecutiveSyncFailures: supplier.consecutiveSyncFailures ?? 0,
+        syncIntervalSec: supplier.syncIntervalSec ?? 3600,
+      },
+    };
+  }
+
 }

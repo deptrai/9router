@@ -125,3 +125,213 @@ test('[P1] SuppliersController: deleteSupplier rejects when supplier has active 
     },
   );
 });
+
+test('[P0] SuppliersController: triggerSync rejects with 404 when supplier not found', async () => {
+  const mockService: any = {
+    getSupplierById: async (id: string) => {
+      throw new NotFoundException({
+        statusCode: 404,
+        errorCode: 'SUPPLIER_NOT_FOUND',
+        message: `Supplier ${id} not found`,
+      });
+    },
+  };
+
+  const controller = new SuppliersController(mockService, {} as any);
+
+  await assert.rejects(
+    async () => controller.triggerSync('550e8400-e29b-41d4-a716-446655440000'),
+    (err: any) => {
+      assert(err instanceof NotFoundException);
+      assert.strictEqual(err.getResponse()?.errorCode, 'SUPPLIER_NOT_FOUND');
+      return true;
+    },
+  );
+});
+
+test('[P0] SuppliersController: triggerSync rejects with 400 when supplier is not TELEGRAM_BOT', async () => {
+  const mockService: any = {
+    getSupplierById: async () => ({
+      ...mockSupplier,
+      id: 'sup-pool-1',
+      type: 'CONFIG_POOL',
+      isActive: true,
+    }),
+  };
+
+  const controller = new SuppliersController(mockService, {} as any);
+
+  await assert.rejects(
+    async () => controller.triggerSync('550e8400-e29b-41d4-a716-446655440000'),
+    (err: any) => {
+      assert(err instanceof BadRequestException);
+      assert.strictEqual(err.getResponse()?.errorCode, 'INVALID_SUPPLIER_TYPE');
+      return true;
+    },
+  );
+});
+
+test('[P0] SuppliersController: triggerSync rejects with 400 when supplier is inactive', async () => {
+  const mockService: any = {
+    getSupplierById: async () => ({
+      ...mockSupplier,
+      id: 'sup-tg-inactive',
+      type: 'TELEGRAM_BOT',
+      isActive: false,
+    }),
+  };
+
+  const controller = new SuppliersController(mockService, {} as any);
+
+  await assert.rejects(
+    async () => controller.triggerSync('550e8400-e29b-41d4-a716-446655440000'),
+    (err: any) => {
+      assert(err instanceof BadRequestException);
+      assert.strictEqual(err.getResponse()?.errorCode, 'SUPPLIER_INACTIVE');
+      return true;
+    },
+  );
+});
+
+test('[P0] SuppliersController: triggerSync propagates 409 ConflictException when debounced', async () => {
+  const mockService: any = {
+    getSupplierById: async () => ({
+      ...mockSupplier,
+      id: 'sup-tg-1',
+      type: 'TELEGRAM_BOT',
+      isActive: true,
+      syncIntervalSec: 1800,
+    }),
+  };
+
+  const mockQueue: any = {
+    enqueueSyncJob: async (id: string, interval: number) => {
+      throw new ConflictException({
+        statusCode: 409,
+        errorCode: 'SYNC_DEBOUNCED',
+        message: `Catalog sync is currently in progress or in debounce cooldown for supplier ${id}`,
+      });
+    },
+  };
+
+  const controller = new SuppliersController(mockService, mockQueue);
+
+  await assert.rejects(
+    async () => controller.triggerSync('550e8400-e29b-41d4-a716-446655440000'),
+    (err: any) => {
+      assert(err instanceof ConflictException);
+      assert.strictEqual(err.getResponse()?.errorCode, 'SYNC_DEBOUNCED');
+      return true;
+    },
+  );
+});
+
+test('[P0] SuppliersController: triggerSync enqueues job and returns { ok: true, jobId }', async () => {
+  let passedId = '';
+  let passedInterval = 0;
+
+  const mockService: any = {
+    getSupplierById: async () => ({
+      ...mockSupplier,
+      id: 'sup-tg-1',
+      type: 'TELEGRAM_BOT',
+      isActive: true,
+      syncIntervalSec: 1800,
+    }),
+  };
+
+  const mockQueue: any = {
+    enqueueSyncJob: async (id: string, interval: number) => {
+      passedId = id;
+      passedInterval = interval;
+      return { ok: true, jobId: `sync:${id}` };
+    },
+  };
+
+  const controller = new SuppliersController(mockService, mockQueue);
+  const result = await controller.triggerSync('550e8400-e29b-41d4-a716-446655440000');
+
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.jobId, 'sync:550e8400-e29b-41d4-a716-446655440000');
+  assert.strictEqual(passedId, '550e8400-e29b-41d4-a716-446655440000');
+  assert.strictEqual(passedInterval, 1800);
+});
+
+test('[P0] SuppliersController: getSyncStatus rejects with 404 when supplier not found', async () => {
+  const mockService: any = {
+    getSupplierById: async (id: string) => {
+      throw new NotFoundException({
+        statusCode: 404,
+        errorCode: 'SUPPLIER_NOT_FOUND',
+        message: `Supplier ${id} not found`,
+      });
+    },
+  };
+
+  const controller = new SuppliersController(mockService, {} as any);
+
+  await assert.rejects(
+    async () => controller.getSyncStatus('550e8400-e29b-41d4-a716-446655440000'),
+    (err: any) => {
+      assert(err instanceof NotFoundException);
+      assert.strictEqual(err.getResponse()?.errorCode, 'SUPPLIER_NOT_FOUND');
+      return true;
+    },
+  );
+});
+
+test('[P0] SuppliersController: getSyncStatus returns status with isSyncing true', async () => {
+  const mockService: any = {
+    getSupplierById: async () => ({
+      ...mockSupplier,
+      id: 'sup-tg-1',
+      type: 'TELEGRAM_BOT',
+      lastSyncAt: '2026-09-14T08:00:00.000Z',
+      lastSyncError: null,
+      consecutiveSyncFailures: 0,
+      syncIntervalSec: 3600,
+    }),
+  };
+
+  const mockQueue: any = {
+    getSyncStatus: async (id: string) => ({ isSyncing: true }),
+  };
+
+  const controller = new SuppliersController(mockService, mockQueue);
+  const result = await controller.getSyncStatus('550e8400-e29b-41d4-a716-446655440000');
+
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.syncStatus.isSyncing, true);
+  assert.strictEqual(result.syncStatus.lastSyncAt, '2026-09-14T08:00:00.000Z');
+  assert.strictEqual(result.syncStatus.lastSyncError, null);
+  assert.strictEqual(result.syncStatus.consecutiveSyncFailures, 0);
+  assert.strictEqual(result.syncStatus.syncIntervalSec, 3600);
+});
+
+test('[P0] SuppliersController: getSyncStatus returns status with isSyncing false', async () => {
+  const mockService: any = {
+    getSupplierById: async () => ({
+      ...mockSupplier,
+      id: 'sup-tg-2',
+      type: 'TELEGRAM_BOT',
+      lastSyncAt: null,
+      lastSyncError: 'ECONNREFUSED',
+      consecutiveSyncFailures: 2,
+      syncIntervalSec: 7200,
+    }),
+  };
+
+  const mockQueue: any = {
+    getSyncStatus: async (id: string) => ({ isSyncing: false }),
+  };
+
+  const controller = new SuppliersController(mockService, mockQueue);
+  const result = await controller.getSyncStatus('550e8400-e29b-41d4-a716-446655440000');
+
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.syncStatus.isSyncing, false);
+  assert.strictEqual(result.syncStatus.lastSyncAt, null);
+  assert.strictEqual(result.syncStatus.lastSyncError, 'ECONNREFUSED');
+  assert.strictEqual(result.syncStatus.consecutiveSyncFailures, 2);
+  assert.strictEqual(result.syncStatus.syncIntervalSec, 7200);
+});

@@ -32,6 +32,8 @@ export interface ProductDto {
   imageUrl?: string | null;
   isActive: boolean;
   sourcingMode: ProductSourcingMode;
+  supplierProductId?: string | null;
+  stock?: number | null;
   createdAt: string;
 }
 
@@ -251,6 +253,30 @@ export interface SourcingJobData {
   supplierSourceId: string;
 }
 
+export const CATALOG_SYNC_QUEUE_NAME = 'catalog-sync-queue';
+
+export interface CatalogSyncJobData {
+  supplierId: string;
+}
+
+export interface SyncStatusDto {
+  isSyncing: boolean;
+  lastSyncAt: string | null;
+  lastSyncError: string | null;
+  consecutiveSyncFailures: number;
+  syncIntervalSec: number;
+}
+
+export interface SyncTriggerResponseDto {
+  ok: boolean;
+  jobId: string;
+}
+
+export interface GetSyncStatusResponseDto {
+  ok: boolean;
+  syncStatus: SyncStatusDto;
+}
+
 export interface PriceSyncItemDto {
   productId: string;
   slug: string;
@@ -292,6 +318,8 @@ export interface AdminProductDto extends ProductDto {
   autoPricing: boolean;
   availableCount: number;
   soldCount: number;
+  supplierProductId?: string | null;
+  stock?: number | null;
 }
 
 export interface CreateProductDto {
@@ -322,6 +350,10 @@ export interface SupplierSourceDto {
   markupFixedVnd: string;
   isActive: boolean;
   linkedProductsCount?: number;
+  lastSyncAt?: string | null;
+  lastSyncError?: string | null;
+  syncIntervalSec?: number;
+  consecutiveSyncFailures?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -334,6 +366,7 @@ export interface CreateSupplierSourceDto {
   markupPercentage?: string;
   markupFixedVnd?: string;
   isActive?: boolean;
+  syncIntervalSec?: number;
 }
 
 export interface UpdateSupplierSourceDto extends Partial<CreateSupplierSourceDto> {}

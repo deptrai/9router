@@ -17,6 +17,7 @@ export interface ISupplierAdapter {
    * Adapter stateless khác có thể no-op trả `hint.credential`.
    */
   commit?(supplierId: string, hint: PurchaseResult, tx: DbTransaction): Promise<PurchaseResult>;
+  validate?(configCredentials: unknown): { ok: boolean; reason?: string };
 }
 
 /** Lỗi không retry — executor map sang refund + UnrecoverableError. */

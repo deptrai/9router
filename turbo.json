@@ -12,7 +12,9 @@
     "TELEGRAM_SESSION",
     "RELAY_AUTH_TOKEN",
     "RELAY_PORT",
-    "RELAY_POLL_MS"
+    "RELAY_POLL_MS",
+    "TELEGRAM_SCRAPER_RELAY_URL",
+    "TELEGRAM_SCRAPER_RELAY_TOKEN"
   ],
   "tasks": {
     "build": {

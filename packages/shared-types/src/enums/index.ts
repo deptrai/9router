@@ -58,6 +58,7 @@ export enum ProductStockStatus {
 export enum AdminAlertType {
   PRICE_THRESHOLD_EXCEEDED = 'PRICE_THRESHOLD_EXCEEDED',
   PRICE_SYNC_FAILED = 'PRICE_SYNC_FAILED',
+  CATALOG_SYNC_FAILED = 'CATALOG_SYNC_FAILED',
 }
 
 export enum PriceSyncAction {

@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, bigint, timestamp, check, index, numeric, boolean, jsonb, text } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, bigint, timestamp, check, index, uniqueIndex, integer, numeric, boolean, jsonb, text } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 export const users = pgTable('users', {
@@ -92,12 +92,17 @@ export const supplierSources = pgTable(
     markupPercentage: numeric('markup_percentage', { precision: 8, scale: 2 }).notNull().default('0.00'),
     markupFixedVnd: numeric('markup_fixed_vnd', { precision: 15, scale: 2 }).notNull().default('0.00'),
     isActive: boolean('is_active').notNull().default(true),
+    lastSyncAt: timestamp('last_sync_at', { withTimezone: true }),
+    lastSyncError: text('last_sync_error'),
+    syncIntervalSec: integer('sync_interval_sec').notNull().default(3600),
+    consecutiveSyncFailures: integer('consecutive_sync_failures').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     check('supplier_markup_non_negative', sql`${table.markupPercentage} >= 0`),
     check('supplier_markup_fixed_non_negative', sql`${table.markupFixedVnd} >= 0`),
+    check('supplier_sync_interval_valid', sql`${table.syncIntervalSec} >= 3600`),
   ]
 );
 
@@ -117,6 +122,8 @@ export const products = pgTable(
       onDelete: 'set null',
     }),
     supplierProductUrl: varchar('supplier_product_url', { length: 512 }),
+    supplierProductId: varchar('supplier_product_id', { length: 255 }),
+    stock: integer('stock'),
     upstreamCost: numeric('upstream_cost', { precision: 15, scale: 2 }),
     maxUpstreamCost: numeric('max_upstream_cost', { precision: 15, scale: 2 }),
     costSyncedAt: timestamp('cost_synced_at', { withTimezone: true }),
@@ -126,6 +133,7 @@ export const products = pgTable(
   },
   (table) => [
     index('products_supplier_source_id_idx').on(table.supplierSourceId),
+    uniqueIndex('products_supplier_product_unique_idx').on(table.supplierSourceId, table.supplierProductId),
     index('products_active_category_idx').on(table.isActive, table.category),
     check('products_price_non_negative', sql`${table.price} >= 0`),
     check('products_max_upstream_cost_valid', sql`${table.maxUpstreamCost} IS NULL OR ${table.maxUpstreamCost} > 0`),
@@ -150,7 +158,7 @@ export const adminAlerts = pgTable(
   (table) => [
     index('admin_alerts_type_idx').on(table.type),
     index('admin_alerts_created_at_idx').on(table.createdAt),
-    check('admin_alerts_type_valid', sql`${table.type} IN ('PRICE_THRESHOLD_EXCEEDED', 'PRICE_SYNC_FAILED')`),
+    check('admin_alerts_type_valid', sql`${table.type} IN ('PRICE_THRESHOLD_EXCEEDED', 'PRICE_SYNC_FAILED', 'CATALOG_SYNC_FAILED')`),
   ]
 );
 

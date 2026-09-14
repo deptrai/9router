@@ -183,6 +183,8 @@ export class ProductsService {
       maxUpstreamCost: product.maxUpstreamCost,
       costSyncedAt: product.costSyncedAt ? product.costSyncedAt.toISOString() : null,
       autoPricing: product.autoPricing,
+      supplierProductId: product.supplierProductId ?? null,
+      stock: product.stock ?? null,
       availableCount: availableMap.get(product.id) ?? 0,
       soldCount: soldMap.get(product.id) ?? 0,
       createdAt: product.createdAt.toISOString(),
@@ -239,6 +241,8 @@ export class ProductsService {
       maxUpstreamCost: product.maxUpstreamCost,
       costSyncedAt: product.costSyncedAt ? product.costSyncedAt.toISOString() : null,
       autoPricing: product.autoPricing,
+      supplierProductId: product.supplierProductId ?? null,
+      stock: product.stock ?? null,
       availableCount: Number(availRow?.count ?? 0),
       soldCount: Number(soldRow?.count ?? 0),
       createdAt: product.createdAt.toISOString(),
@@ -380,6 +384,8 @@ export class ProductsService {
       maxUpstreamCost: created.maxUpstreamCost,
       costSyncedAt: created.costSyncedAt ? created.costSyncedAt.toISOString() : null,
       autoPricing: created.autoPricing,
+      supplierProductId: created.supplierProductId ?? null,
+      stock: created.stock ?? null,
       availableCount: 0,
       soldCount: 0,
       createdAt: created.createdAt.toISOString(),
@@ -569,6 +575,8 @@ export class ProductsService {
       maxUpstreamCost: updated.maxUpstreamCost,
       costSyncedAt: updated.costSyncedAt ? updated.costSyncedAt.toISOString() : null,
       autoPricing: updated.autoPricing,
+      supplierProductId: updated.supplierProductId ?? null,
+      stock: updated.stock ?? null,
       availableCount: Number(availRow?.count ?? 0),
       soldCount: Number(soldRow?.count ?? 0),
       createdAt: updated.createdAt.toISOString(),
@@ -638,7 +646,12 @@ export class ProductsService {
     const supplierActive =
       typeof p.supplierSourceId === 'string' && activeSupplierIds.has(p.supplierSourceId);
 
-    const inStock = availableCount > 0 || (sourcesExternally && supplierActive);
+    // stock === 0 means upstream sold out — never report in-stock regardless
+    // of supplier status. stock === null means unknown (normal product).
+    const upstreamSoldOut = p.stock === 0;
+    const inStock =
+      !upstreamSoldOut &&
+      (availableCount > 0 || (sourcesExternally && supplierActive));
 
     return {
       id: p.id,

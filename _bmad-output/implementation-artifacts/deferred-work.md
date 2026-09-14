@@ -55,3 +55,15 @@
 - RESOLVED: Margin guard trong checkout — `canSource` giờ yêu cầu `upstreamCost <= price` và `upstreamCost <= maxUpstreamCost` (khi có); `upstreamCost === null` không chặn. Vi phạm → `OUT_OF_STOCK`, không charge. 2 tests cover cả 2 nhánh.
 - RESOLVED: In-flight guard — cùng user+product đã có order `PENDING|PAID|SOURCING` → `409 ORDER_IN_PROGRESS` trước khi debit (errorCode mới trong `CheckoutErrorDto` union + branch tiếng Việt trong `CheckoutModal`). Áp dụng mọi product, không chỉ EXTERNAL.
 - RESOLVED: Orders page tự refresh — refetch on window `focus` + poll 5s chỉ khi có order `SOURCING`, cleanup đầy đủ (cancelled flag + removeEventListener + clearInterval).
+
+## Deferred from: spec review of spec-6-2-backend-sync-engine-adapter-parser-queue (2026-09-13) — ALL RESOLVED 2026-09-14
+
+- RESOLVED: Implemented Spec C (`spec-6-2-catalog-sync-orchestration-queue-worker.md`): `CatalogSyncQueueService`, `CatalogSyncService`, `CatalogSyncWorker`, and admin sync endpoints (`POST /api/admin/suppliers/:id/sync`, `GET /api/admin/suppliers/:id/sync-status`).
+
+## Deferred from: code review of spec-6-2-catalog-sync-orchestration-queue-worker (2026-09-14)
+
+- **Numbered sub-lists after price orphaned** — `groupProductBlocks` in `catalog-parser.service.ts` fragments on `\d+\.` lines appearing after the price line; those fragments are silently dropped instead of appended to the parent block. Only affects trailing description text — the product still parses correctly. Edge case; spec test covers the common case.
+- **No reconciliation for removed upstream products** — `syncSupplierCatalog` only upserts items present in the latest scrape. Products upstream removed remain active with stale stock. Needs product-level decision: auto-deactivate, flag stale, or leave as-is.
+- **Unbounded Redis queue operations can hang HTTP** — `CatalogSyncQueueService` (and `SourcingQueueService`) use `maxRetriesPerRequest: null` with no timeout on `getJob`/`add`. If Redis hangs, the API request hangs indefinitely. Fix should apply to both services uniformly (e.g., `withTimeout` wrapper or request-level timeout middleware).
+- **Dual source of truth: `sync_interval_sec` column vs `configCredentials.syncIntervalSec`** — `SuppliersService` normalizes both into the column; `TelegramBotAdapter.validate` reads `configCredentials`; `CatalogSyncQueueService` reads the column. Currently consistent via service-layer normalization, but direct DB or config-only edits can drift.
+- **Overly broad `BLOCKED_BUTTON_KEYWORDS`** — keywords like `'mua'`, `'order'`, `'nạp'` in `TelegramBotAdapter` block any `interactionSteps` containing them, including navigation buttons ("Hướng dẫn mua hàng"). Spec-intended; admin can rename step text as workaround.

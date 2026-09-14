@@ -27,7 +27,8 @@ export async function generateUniqueSlug(
   tx: DbOrTx,
   currentProductId?: string,
 ): Promise<string> {
-  const baseSlug = slugify(title);
+  // Truncate to 250 chars to leave room for collision counter suffix (-N).
+  const baseSlug = slugify(title).slice(0, 250);
 
   // Query existing slugs matching baseSlug or prefixed variants only
   const existingRows = await tx
@@ -63,5 +64,8 @@ export async function generateUniqueSlug(
     counter++;
   }
 
-  return `${baseSlug}-${counter}`;
+  // Truncate baseSlug so that `${baseSlug}-${counter}` fits varchar(255).
+  const maxBase = 255 - String(counter).length - 1; // -1 for the '-'
+  const truncatedBase = baseSlug.length > maxBase ? baseSlug.slice(0, maxBase) : baseSlug;
+  return `${truncatedBase}-${counter}`;
 }
