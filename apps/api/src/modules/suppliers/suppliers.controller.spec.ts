@@ -244,7 +244,7 @@ test('[P0] SuppliersController: triggerSync enqueues job and returns { ok: true,
     enqueueSyncJob: async (id: string, interval: number) => {
       passedId = id;
       passedInterval = interval;
-      return { ok: true, jobId: `sync:${id}` };
+      return { ok: true, jobId: `sync-${id}` };
     },
   };
 
@@ -252,7 +252,7 @@ test('[P0] SuppliersController: triggerSync enqueues job and returns { ok: true,
   const result = await controller.triggerSync('550e8400-e29b-41d4-a716-446655440000');
 
   assert.strictEqual(result.ok, true);
-  assert.strictEqual(result.jobId, 'sync:550e8400-e29b-41d4-a716-446655440000');
+  assert.strictEqual(result.jobId, 'sync-550e8400-e29b-41d4-a716-446655440000');
   assert.strictEqual(passedId, '550e8400-e29b-41d4-a716-446655440000');
   assert.strictEqual(passedInterval, 1800);
 });

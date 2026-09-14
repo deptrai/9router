@@ -71,14 +71,14 @@ test('CatalogSyncQueueService.enqueueSyncJob() acquires lock and enqueues job on
   const res = await service.enqueueSyncJob('sup-123', 7200);
 
   assert.strictEqual(res.ok, true);
-  assert.strictEqual(res.jobId, 'sync:sup-123');
+  assert.strictEqual(res.jobId, 'sync-sup-123');
   assert.strictEqual(setKey, 'catalog-sync:debounce:sup-123');
   assert.strictEqual(setVal, '1');
   assert.strictEqual(setEx, 7200);
   assert.strictEqual(setNx, 'NX');
   assert.strictEqual(addedName, 'sync-supplier-catalog');
   assert.deepStrictEqual(addedData, { supplierId: 'sup-123' });
-  assert.strictEqual(addedOpts.jobId, 'sync:sup-123');
+  assert.strictEqual(addedOpts.jobId, 'sync-sup-123');
   // removeOnComplete keeps last 10 completed jobs so getJob() can find
   // them during debounce cooldown — prevents false zombie-lock detection.
   assert.deepStrictEqual(addedOpts.removeOnComplete, { count: 10 });
@@ -101,7 +101,7 @@ test('CatalogSyncQueueService.enqueueSyncJob() removes old completed or failed j
 
   const mockQueue = {
     getJob: async (jobId: string) => {
-      if (jobId === 'sync:sup-123') return mockExistingJob;
+      if (jobId === 'sync-sup-123') return mockExistingJob;
       return null;
     },
     add: async (_name: string, _data: any, opts: any) => ({ id: opts.jobId }),
@@ -216,7 +216,7 @@ test('CatalogSyncQueueService.isSyncing() and getSyncStatus() accurately reflect
   let queryState = 'waiting';
   const mockQueue = {
     getJob: async (id: string) => {
-      if (id === 'sync:active-sup') {
+      if (id === 'sync-active-sup') {
         return { getState: async () => queryState };
       }
       return null;

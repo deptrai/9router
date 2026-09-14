@@ -116,7 +116,7 @@ export class CatalogSyncQueueService implements OnModuleInit, OnModuleDestroy {
     supplierId: string,
     syncIntervalSec: number,
   ): Promise<{ ok: boolean; jobId: string }> {
-    const jobId = `sync:${supplierId}`;
+    const jobId = `sync-${supplierId}`;
     const debounceKey = `catalog-sync:debounce:${supplierId}`;
     const redis = this.redisService.getClient();
 
@@ -199,7 +199,7 @@ export class CatalogSyncQueueService implements OnModuleInit, OnModuleDestroy {
    */
   async isSyncing(supplierId: string): Promise<boolean> {
     if (!this.queue) return false;
-    const jobId = `sync:${supplierId}`;
+    const jobId = `sync-${supplierId}`;
     const job = await this.queue.getJob(jobId);
     if (!job) return false;
     const state = await job.getState();
