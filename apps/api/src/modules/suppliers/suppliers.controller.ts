@@ -92,7 +92,7 @@ export class SuppliersController {
       });
     }
 
-    if (body.configCredentials !== undefined && body.configCredentials !== null && typeof body.configCredentials !== 'object') {
+    if (body.configCredentials !== undefined && body.configCredentials !== null && (typeof body.configCredentials !== 'object' || Array.isArray(body.configCredentials))) {
       throw new BadRequestException({
         statusCode: 400,
         errorCode: 'INVALID_SUPPLIER_PAYLOAD',
@@ -181,7 +181,7 @@ export class SuppliersController {
       return { ok: false, error: 'TELEGRAM_SCRAPER_RELAY_TOKEN not configured' };
     }
 
-    const cleanUrl = relayUrl.replace(/\/+$/, '').replace(/\/relay$/, '');
+    const cleanUrl = relayUrl.replace(/\/+$/, '').replace(/\/relay\/?$/, '').replace(/\/+$/, '');
     const healthEndpoint = `${cleanUrl}/health`;
 
     try {
@@ -205,10 +205,10 @@ export class SuppliersController {
         };
       }
 
-      if (data?.ok === true) {
+      if (data?.ok === true || (response.ok && !data)) {
         return {
           ok: true,
-          status: data.status || 'healthy',
+          status: data?.status || 'healthy',
         };
       }
 

@@ -236,7 +236,13 @@ export function ProductFormModal({
               </label>
               <select
                 value={sourcingMode}
-                onChange={(e) => setSourcingMode(e.target.value as ProductSourcingMode)}
+                onChange={(e) => {
+                  const newMode = e.target.value as ProductSourcingMode;
+                  setSourcingMode(newMode);
+                  if (newMode === ProductSourcingMode.IN_HOUSE && !product?.supplierProductId) {
+                    setAutoPricing(false);
+                  }
+                }}
                 className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-amber-500"
               >
                 <option value={ProductSourcingMode.IN_HOUSE}>IN_HOUSE (Kho nội bộ)</option>

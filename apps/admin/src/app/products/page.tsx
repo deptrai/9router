@@ -82,7 +82,8 @@ export default function AdminProductsPage() {
       const matchSourcing =
         sourcingFilter === 'ALL' ||
         (sourcingFilter === 'TELEGRAM_SYNCED'
-          ? p.supplierSourceId != null && suppliersMap.get(p.supplierSourceId)?.type === 'TELEGRAM_BOT'
+          ? p.supplierProductId != null ||
+            (p.supplierSourceId != null && suppliersMap.get(p.supplierSourceId)?.type === 'TELEGRAM_BOT')
           : p.sourcingMode === sourcingFilter);
 
       return matchSearch && matchCat && matchSourcing;
@@ -253,8 +254,9 @@ export default function AdminProductsPage() {
               ) : (
                 paginatedProducts.map((p) => {
                   const isTelegramSupplier =
-                    p.supplierSourceId != null &&
-                    suppliersMap.get(p.supplierSourceId)?.type === 'TELEGRAM_BOT';
+                    p.supplierProductId != null ||
+                    (p.supplierSourceId != null &&
+                      suppliersMap.get(p.supplierSourceId)?.type === 'TELEGRAM_BOT');
                   const isNeedsReview = !p.isActive && isTelegramSupplier;
                   const isSoldOutAtSource = isTelegramSupplier && p.stock === 0;
 
@@ -315,7 +317,7 @@ export default function AdminProductsPage() {
                           (isTelegramSupplier ? (p.stock ?? 0) : p.availableCount) > 0 ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-500 bg-slate-800'
                         }`}
                       >
-                        {isTelegramSupplier ? (p.stock ?? 0) : p.availableCount}
+                        {isTelegramSupplier ? (p.stock === null ? '∞' : p.stock) : p.availableCount}
                       </span>
                       <span className="text-[10px] text-slate-500 ml-1">/ {p.soldCount} bán</span>
                     </td>

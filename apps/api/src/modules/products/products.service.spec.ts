@@ -392,6 +392,296 @@ test('updateProduct preserves explicit price when autoPricing unchanged', async 
   assert.strictEqual(result.price, '77777.00');
 });
 
+test('updateProduct recalculates price for IN_HOUSE product when supplier linked and autoPricing is true', async () => {
+  const mockTx: any = {
+    select: (fields?: any) => ({
+      from: (table: any) => {
+        const name = table?.[Symbol.for('drizzle:Name')] ?? '';
+        return {
+          where: () => {
+            if (name === 'products') {
+              return {
+                limit: () => Promise.resolve([{
+                  id: 'prod-inhouse',
+                  title: 'Telegram Synced Item',
+                  slug: 'telegram-synced-item',
+                  isActive: false,
+                  sourcingMode: 'IN_HOUSE',
+                  supplierSourceId: 'sup-tg',
+                  supplierProductId: 'sha256-hash-123',
+                  upstreamCost: '50000.00',
+                  autoPricing: true,
+                  price: '60000.00',
+                  createdAt: new Date(),
+                }]),
+              };
+            }
+            if (name === 'supplier_sources') {
+              return {
+                limit: () => Promise.resolve([{
+                  id: 'sup-tg',
+                  name: 'TG Bot Supplier',
+                  isActive: true,
+                  markupPercentage: '10.00',
+                  markupFixedVnd: '5000.00',
+                }]),
+              };
+            }
+            return Promise.resolve([{ count: 0 }]);
+          },
+        };
+      },
+    }),
+    update: () => ({
+      set: (vals: any) => ({
+        where: () => ({
+          returning: () => Promise.resolve([{
+            id: 'prod-inhouse',
+            title: vals.title ?? 'Telegram Synced Item',
+            slug: vals.slug ?? 'telegram-synced-item',
+            description: vals.description,
+            category: vals.category,
+            price: vals.price,
+            imageUrl: vals.imageUrl,
+            isActive: vals.isActive,
+            sourcingMode: vals.sourcingMode,
+            supplierSourceId: vals.supplierSourceId,
+            supplierProductUrl: vals.supplierProductUrl,
+            upstreamCost: vals.upstreamCost,
+            maxUpstreamCost: vals.maxUpstreamCost,
+            costSyncedAt: null,
+            autoPricing: vals.autoPricing,
+            createdAt: new Date(),
+          }]),
+        }),
+      }),
+    }),
+  };
+
+  const service = new ProductsService();
+  // Upstream cost updated: 100,000 * 1.10 + 5,000 = 115,000
+  const result = await service.updateProduct('prod-inhouse', { upstreamCost: '100000.00' } as any, mockTx);
+  assert.strictEqual(result.price, '115000.00');
+  assert.strictEqual(result.sourcingMode, 'IN_HOUSE');
+});
+
+test('updateProduct applies explicit manual price when autoPricing is set to false', async () => {
+  const mockTx: any = {
+    select: (fields?: any) => ({
+      from: (table: any) => {
+        const name = table?.[Symbol.for('drizzle:Name')] ?? '';
+        return {
+          where: () => {
+            if (name === 'products') {
+              return {
+                limit: () => Promise.resolve([{
+                  id: 'prod-inhouse-2',
+                  title: 'Item 2',
+                  slug: 'item-2',
+                  isActive: true,
+                  sourcingMode: 'IN_HOUSE',
+                  supplierSourceId: 'sup-tg',
+                  supplierProductId: 'sha256-hash-456',
+                  upstreamCost: '50000.00',
+                  autoPricing: true,
+                  price: '60000.00',
+                  createdAt: new Date(),
+                }]),
+              };
+            }
+            if (name === 'supplier_sources') {
+              return {
+                limit: () => Promise.resolve([{
+                  id: 'sup-tg',
+                  name: 'TG Bot Supplier',
+                  isActive: true,
+                  markupPercentage: '10.00',
+                  markupFixedVnd: '5000.00',
+                }]),
+              };
+            }
+            return Promise.resolve([{ count: 0 }]);
+          },
+        };
+      },
+    }),
+    update: () => ({
+      set: (vals: any) => ({
+        where: () => ({
+          returning: () => Promise.resolve([{
+            id: 'prod-inhouse-2',
+            title: vals.title,
+            slug: vals.slug,
+            price: vals.price,
+            isActive: vals.isActive,
+            sourcingMode: vals.sourcingMode,
+            supplierSourceId: vals.supplierSourceId,
+            autoPricing: vals.autoPricing,
+            createdAt: new Date(),
+          }]),
+        }),
+      }),
+    }),
+  };
+
+  const service = new ProductsService();
+  const result = await service.updateProduct('prod-inhouse-2', { autoPricing: false, price: '88888.00' } as any, mockTx);
+  assert.strictEqual(result.price, '88888.00');
+  assert.strictEqual(result.autoPricing, false);
+});
+
+test('updateProduct preserves supplierSourceId on Telegram-synced IN_HOUSE product when omitted in DTO', async () => {
+  let updatedSupplierId: any = undefined;
+  const mockTx: any = {
+    select: (fields?: any) => ({
+      from: (table: any) => {
+        const name = table?.[Symbol.for('drizzle:Name')] ?? '';
+        return {
+          where: () => {
+            if (name === 'products') {
+              return {
+                limit: () => Promise.resolve([{
+                  id: 'prod-synced',
+                  title: 'Old Title',
+                  slug: 'old-title',
+                  isActive: false,
+                  sourcingMode: 'IN_HOUSE',
+                  supplierSourceId: 'sup-persistent',
+                  supplierProductId: 'sha256-persistent-id',
+                  upstreamCost: '50000.00',
+                  autoPricing: true,
+                  price: '60000.00',
+                  createdAt: new Date(),
+                }]),
+              };
+            }
+            if (name === 'supplier_sources') {
+              return {
+                limit: () => Promise.resolve([{
+                  id: 'sup-persistent',
+                  name: 'Persistent Supplier',
+                  isActive: true,
+                  markupPercentage: '10.00',
+                  markupFixedVnd: '5000.00',
+                }]),
+              };
+            }
+            return Promise.resolve([{ count: 0 }]);
+          },
+        };
+      },
+    }),
+    update: () => ({
+      set: (vals: any) => {
+        updatedSupplierId = vals.supplierSourceId;
+        return {
+          where: () => ({
+            returning: () => Promise.resolve([{
+              id: 'prod-synced',
+              title: vals.title,
+              slug: vals.slug,
+              price: vals.price,
+              isActive: vals.isActive,
+              sourcingMode: vals.sourcingMode,
+              supplierSourceId: vals.supplierSourceId,
+              autoPricing: vals.autoPricing,
+              createdAt: new Date(),
+            }]),
+          }),
+        };
+      },
+    }),
+  };
+
+  const service = new ProductsService();
+  // Updating title with sourcingMode IN_HOUSE but without supplierSourceId
+  await service.updateProduct('prod-synced', { title: 'Updated Title', sourcingMode: ProductSourcingMode.IN_HOUSE } as any, mockTx);
+  assert.strictEqual(updatedSupplierId, 'sup-persistent');
+});
+
+test('updateProduct throws BadRequestException when non-existent supplierSourceId given for IN_HOUSE product', async () => {
+  const mockTx: any = {
+    select: (fields?: any) => ({
+      from: (table: any) => {
+        const name = table?.[Symbol.for('drizzle:Name')] ?? '';
+        return {
+          where: () => {
+            if (name === 'products') {
+              return {
+                limit: () => Promise.resolve([{
+                  id: 'prod-inhouse',
+                  title: 'In House Prod',
+                  slug: 'in-house-prod',
+                  isActive: false,
+                  sourcingMode: 'IN_HOUSE',
+                  supplierSourceId: null,
+                  supplierProductId: null,
+                  autoPricing: false,
+                  price: '50000.00',
+                  createdAt: new Date(),
+                }]),
+              };
+            }
+            if (name === 'supplier_sources') {
+              return {
+                limit: () => Promise.resolve([]), // supplier does not exist
+              };
+            }
+            return Promise.resolve([{ count: 0 }]);
+          },
+        };
+      },
+    }),
+  };
+
+  const service = new ProductsService();
+  await assert.rejects(
+    async () => service.updateProduct('prod-inhouse', { supplierSourceId: 'non-existent-id' } as any, mockTx),
+    (err: any) => {
+      assert.strictEqual(err.status ?? err.statusCode, 400);
+      assert.strictEqual(err.response?.errorCode ?? err.getResponse?.()?.errorCode, 'INVALID_PRODUCT_PAYLOAD');
+      assert.strictEqual(err.message, 'Referenced supplier source does not exist');
+      return true;
+    },
+  );
+});
+
+test('createProduct throws BadRequestException when non-existent supplierSourceId given for IN_HOUSE product', async () => {
+  const mockTx: any = {
+    select: (fields?: any) => ({
+      from: (table: any) => {
+        const name = table?.[Symbol.for('drizzle:Name')] ?? '';
+        if (name === 'supplier_sources') {
+          return {
+            where: () => ({
+              limit: () => Promise.resolve([]), // not found
+            }),
+          };
+        }
+        return {
+          where: () => Promise.resolve([]),
+        };
+      },
+    }),
+  };
+
+  const service = new ProductsService();
+  await assert.rejects(
+    async () => service.createProduct({
+      title: 'New In-House Item',
+      price: '50000.00',
+      sourcingMode: ProductSourcingMode.IN_HOUSE,
+      supplierSourceId: 'non-existent-supplier',
+    } as any, mockTx),
+    (err: any) => {
+      assert.strictEqual(err.status ?? err.statusCode, 400);
+      assert.strictEqual(err.response?.errorCode ?? err.getResponse?.()?.errorCode, 'INVALID_PRODUCT_PAYLOAD');
+      assert.strictEqual(err.message, 'Referenced supplier source does not exist');
+      return true;
+    },
+  );
+});
+
 test('deleteProduct soft-deactivates when hard=false', async () => {
   let softDeleted = false;
   const mockTx: any = {

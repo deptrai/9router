@@ -305,6 +305,23 @@ export class ProductsService {
       }
       supplierRecord = foundSup;
       supplierName = foundSup.name;
+    } else if (dto.supplierSourceId) {
+      // IN_HOUSE with supplierSourceId (e.g., Telegram-synced products):
+      // validate the referenced supplier exists to prevent orphaned FK.
+      const [foundSup] = await tx
+        .select()
+        .from(supplierSources)
+        .where(eq(supplierSources.id, dto.supplierSourceId))
+        .limit(1);
+      if (!foundSup) {
+        throw new BadRequestException({
+          statusCode: 400,
+          errorCode: 'INVALID_PRODUCT_PAYLOAD',
+          message: 'Referenced supplier source does not exist',
+        });
+      }
+      supplierRecord = foundSup;
+      supplierName = foundSup.name;
     }
 
     // 2. Slug handling
