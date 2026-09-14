@@ -116,9 +116,13 @@ export function validateRelayRequest(request: any): { ok: boolean; error?: strin
     const match = 'exact';
 
     const normalizedStepText = normalizeButtonText(step.text);
-    const stepBlocked = BLOCKED_BUTTON_KEYWORDS.find((kw) =>
-      normalizedStepText.includes(normalizeButtonText(kw))
-    );
+    // Block only when the step text starts with or exactly matches a payment
+    // keyword — avoids false positives on navigation text like
+    // "Hướng dẫn mua hàng" (Buying Guide) which merely contains "mua".
+    const stepBlocked = BLOCKED_BUTTON_KEYWORDS.find((kw) => {
+      const norm = normalizeButtonText(kw);
+      return normalizedStepText === norm || normalizedStepText.startsWith(norm);
+    });
     if (stepBlocked) {
       return { ok: false, error: `steps[${index}].text blocked payment keyword: "${stepBlocked}"` };
     }

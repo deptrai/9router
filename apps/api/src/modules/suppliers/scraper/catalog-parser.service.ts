@@ -67,8 +67,22 @@ export function groupProductBlocks(text: string): string[] {
       continue;
     }
     if (PRICE_RE.test(current)) {
+      // Current block already has a price — it's complete.
       blocks.push(current);
-      current = startsNumbered ? trimmed : null;
+      if (startsNumbered) {
+        // Could be a new product OR a numbered sub-list inside the
+        // previous product's description (e.g. "Hướng dẫn:\n1. Tải app").
+        // If this fragment contains no price, it can never form a product
+        // — append it to the last block rather than orphaning it.
+        if (!PRICE_RE.test(trimmed)) {
+          blocks[blocks.length - 1] += `\n${trimmed}`;
+          current = null;
+        } else {
+          current = trimmed;
+        }
+      } else {
+        current = null;
+      }
       continue;
     }
     current = `${current}\n${trimmed}`;

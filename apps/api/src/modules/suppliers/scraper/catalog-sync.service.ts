@@ -3,6 +3,9 @@ import {
   db,
   eq,
   and,
+  notInArray,
+  inArray,
+  isNotNull,
   supplierSources,
   products,
   adminAlerts,
@@ -156,6 +159,34 @@ export class CatalogSyncService {
               .set(updateData)
               .where(eq(products.id, existingProduct.id));
           }
+        }
+
+        // Reconciliation: mark products absent from this scrape as stock=0
+        // (upstream removed them). We set stock=0 rather than isActive=false
+        // so admin can see which products upstream discontinued vs manually
+        // deactivated.
+        const scrapedIds = uniqueProducts.map((p) => p.supplierProductId);
+        const removedRows = await tx
+          .select({ id: products.id })
+          .from(products)
+          .where(
+            and(
+              eq(products.supplierSourceId, supplier.id),
+              isNotNull(products.supplierProductId),
+              scrapedIds.length > 0
+                ? notInArray(products.supplierProductId, scrapedIds)
+                : undefined,
+            ),
+          );
+        if (removedRows.length > 0) {
+          const removedIds = removedRows.map((r) => r.id);
+          await tx
+            .update(products)
+            .set({ stock: 0, updatedAt: new Date() })
+            .where(inArray(products.id, removedIds));
+          this.logger.warn(
+            `Reconciliation: ${removedIds.length} products not in latest scrape for supplier ${supplier.id} — marked stock=0`,
+          );
         }
       });
 

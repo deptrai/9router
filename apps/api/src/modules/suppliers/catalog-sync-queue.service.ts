@@ -96,6 +96,26 @@ export class CatalogSyncQueueService implements OnModuleInit, OnModuleDestroy {
       });
     }
 
+    try {
+      return await this.withTimeout(this.doEnqueue(supplierId, syncIntervalSec));
+    } catch (err: any) {
+      if (err instanceof ConflictException || err instanceof ServiceUnavailableException) {
+        throw err;
+      }
+      this.logger.error(
+        `enqueueSyncJob failed for supplier ${supplierId}: ${err?.message || String(err)}`,
+      );
+      throw new ServiceUnavailableException({
+        errorCode: 'QUEUE_UNAVAILABLE',
+        message: 'Catalog sync queue timed out or is unavailable',
+      });
+    }
+  }
+
+  private async doEnqueue(
+    supplierId: string,
+    syncIntervalSec: number,
+  ): Promise<{ ok: boolean; jobId: string }> {
     const jobId = `sync:${supplierId}`;
     const debounceKey = `catalog-sync:debounce:${supplierId}`;
     const redis = this.redisService.getClient();
@@ -105,7 +125,7 @@ export class CatalogSyncQueueService implements OnModuleInit, OnModuleDestroy {
 
     if (!lockAcquired) {
       // 2. Cross-check BullMQ job to detect zombie lock
-      const existing = await this.queue.getJob(jobId);
+      const existing = await this.queue!.getJob(jobId);
       const state = existing ? await existing.getState() : null;
 
       if (!existing || state === 'failed') {
@@ -125,7 +145,7 @@ export class CatalogSyncQueueService implements OnModuleInit, OnModuleDestroy {
     }
 
     // 3. Remove completed or failed existing job with same jobId to avoid BullMQ dropping it
-    const existing = await this.queue.getJob(jobId);
+    const existing = await this.queue!.getJob(jobId);
     if (existing) {
       const state = await existing.getState();
       if (state === 'completed' || state === 'failed') {
@@ -137,7 +157,7 @@ export class CatalogSyncQueueService implements OnModuleInit, OnModuleDestroy {
     // NOTE: removeOnComplete keeps last 10 completed jobs so that getJob()
     // can still find the job during debounce cooldown — prevents false
     // zombie-lock detection that would bypass the cooldown entirely.
-    const job = await this.queue.add(
+    const job = await this.queue!.add(
       'sync-supplier-catalog',
       { supplierId },
       {
@@ -149,6 +169,30 @@ export class CatalogSyncQueueService implements OnModuleInit, OnModuleDestroy {
 
     return { ok: true, jobId: job.id ?? jobId };
   }
+
+  private async withTimeout<T>(p: Promise<T>): Promise<T> {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        p,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(
+                new Error(
+                  `catalog-sync enqueue timed out after ${this.enqueueTimeoutMs}ms`,
+                ),
+              ),
+            this.enqueueTimeoutMs,
+          );
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  private readonly enqueueTimeoutMs = 5000;
 
   /**
    * Check whether a sync job is currently active or waiting for the given supplier.

@@ -210,13 +210,21 @@ export class SuppliersService {
       });
     }
 
+    // Strip syncIntervalSec from configCredentials — the column is the
+    // single source of truth; keeping it in JSON would allow drift.
+    const configToStore = dto.configCredentials
+      ? Object.fromEntries(
+          Object.entries(dto.configCredentials).filter(([k]) => k !== 'syncIntervalSec'),
+        )
+      : null;
+
     const [created] = await tx
       .insert(supplierSources)
       .values({
         name: dto.name.trim(),
         type: supplierType,
         targetUrl: dto.targetUrl ?? null,
-        configCredentials: dto.configCredentials ?? null,
+        configCredentials: configToStore,
         markupPercentage: markupPct,
         markupFixedVnd: markupFixed,
         isActive: dto.isActive ?? true,
@@ -346,6 +354,13 @@ export class SuppliersService {
       });
     }
 
+    // Strip syncIntervalSec from configCredentials — the column is the
+    // single source of truth; keeping it in JSON would allow drift.
+    const stripSyncInterval = (cfg: any) =>
+      cfg
+        ? Object.fromEntries(Object.entries(cfg).filter(([k]) => k !== 'syncIntervalSec'))
+        : cfg;
+
     const [updated] = await tx
       .update(supplierSources)
       .set({
@@ -353,7 +368,9 @@ export class SuppliersService {
         type: dto.type !== undefined ? dto.type : existing.type,
         targetUrl: dto.targetUrl !== undefined ? dto.targetUrl : existing.targetUrl,
         configCredentials:
-          dto.configCredentials !== undefined ? dto.configCredentials : existing.configCredentials,
+          dto.configCredentials !== undefined
+            ? stripSyncInterval(dto.configCredentials)
+            : existing.configCredentials,
         markupPercentage:
           dto.markupPercentage !== undefined ? dto.markupPercentage : existing.markupPercentage,
         markupFixedVnd:

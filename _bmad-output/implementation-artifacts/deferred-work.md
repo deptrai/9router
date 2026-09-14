@@ -60,10 +60,12 @@
 
 - RESOLVED: Implemented Spec C (`spec-6-2-catalog-sync-orchestration-queue-worker.md`): `CatalogSyncQueueService`, `CatalogSyncService`, `CatalogSyncWorker`, and admin sync endpoints (`POST /api/admin/suppliers/:id/sync`, `GET /api/admin/suppliers/:id/sync-status`).
 
-## Deferred from: code review of spec-6-2-catalog-sync-orchestration-queue-worker (2026-09-14)
+## Resolved from: code review of spec-6-2-catalog-sync-orchestration-queue-worker (2026-09-14)
 
-- **Numbered sub-lists after price orphaned** — `groupProductBlocks` in `catalog-parser.service.ts` fragments on `\d+\.` lines appearing after the price line; those fragments are silently dropped instead of appended to the parent block. Only affects trailing description text — the product still parses correctly. Edge case; spec test covers the common case.
-- **No reconciliation for removed upstream products** — `syncSupplierCatalog` only upserts items present in the latest scrape. Products upstream removed remain active with stale stock. Needs product-level decision: auto-deactivate, flag stale, or leave as-is.
-- **Unbounded Redis queue operations can hang HTTP** — `CatalogSyncQueueService` (and `SourcingQueueService`) use `maxRetriesPerRequest: null` with no timeout on `getJob`/`add`. If Redis hangs, the API request hangs indefinitely. Fix should apply to both services uniformly (e.g., `withTimeout` wrapper or request-level timeout middleware).
-- **Dual source of truth: `sync_interval_sec` column vs `configCredentials.syncIntervalSec`** — `SuppliersService` normalizes both into the column; `TelegramBotAdapter.validate` reads `configCredentials`; `CatalogSyncQueueService` reads the column. Currently consistent via service-layer normalization, but direct DB or config-only edits can drift.
-- **Overly broad `BLOCKED_BUTTON_KEYWORDS`** — keywords like `'mua'`, `'order'`, `'nạp'` in `TelegramBotAdapter` block any `interactionSteps` containing them, including navigation buttons ("Hướng dẫn mua hàng"). Spec-intended; admin can rename step text as workaround.
+All 5 deferred items resolved in the same session:
+
+- ~~**Numbered sub-lists after price orphaned**~~ — FIXED: `groupProductBlocks` now appends price-less numbered fragments to the previous block instead of orphaning them. `catalog-parser.service.ts:70`
+- ~~**No reconciliation for removed upstream products**~~ — FIXED: `syncSupplierCatalog` now marks products absent from latest scrape as `stock=0` via `notInArray` on `supplierProductId`. `catalog-sync.service.ts:162`
+- ~~**Unbounded Redis queue operations can hang HTTP**~~ — FIXED: `enqueueSyncJob` wrapped in `withTimeout(5000ms)` following `SourcingQueueService` pattern; throws `ServiceUnavailableException` on timeout. `catalog-sync-queue.service.ts:88`
+- ~~**Dual source of truth: `sync_interval_sec` column vs `configCredentials.syncIntervalSec`**~~ — FIXED: `syncIntervalSec` stripped from `configCredentials` before persist on both create and update paths. Column is now the sole source of truth. `suppliers.service.ts:219`
+- ~~**Overly broad `BLOCKED_BUTTON_KEYWORDS`**~~ — FIXED: keyword check changed from `includes()` to `=== || startsWith()` — blocks exact matches and prefixes only, allowing navigation text like "Hướng dẫn mua hàng". `telegram-bot.adapter.ts:120`
