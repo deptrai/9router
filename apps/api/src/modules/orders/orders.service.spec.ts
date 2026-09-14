@@ -227,8 +227,8 @@ function makeService(overrides: {
   const mockTx = {
     select: (fields?: any) => ({
       from: () => ({
-        where: () => ({
-          limit: () =>
+        where: () => {
+          const resolver = () =>
             Promise.resolve(
               !fields
                 ? pr
@@ -241,8 +241,12 @@ function makeService(overrides: {
                       ? [inFlightOrder]
                       : []
                     : [],
-            ),
-        }),
+            );
+          return {
+            for: () => ({ limit: resolver }),
+            limit: resolver,
+          };
+        },
       }),
     }),
     insert: () => ({
@@ -312,6 +316,25 @@ test('checkout returns existing order for duplicate idempotencyKey', async () =>
     assert.strictEqual(res.order.id, 'order-uuid-1');
     assert.strictEqual(res.order.status, OrderStatus.FULFILLED);
     assert.strictEqual(sourcingCalls.length, 0, 'no self-heal for non-SOURCING order');
+  } finally {
+    cleanup();
+  }
+});
+
+test('checkout throws 409 IDEMPOTENCY_KEY_COLLISION when key was used by another user', async () => {
+  const anotherUsersOrder = { ...fulfilledOrderRecord, userId: 'different-user-uuid' };
+  const { service, cleanup } = makeService({ existingOrder: anotherUsersOrder });
+  try {
+    await assert.rejects(
+      () => service.checkout(telegramUser as any, 'prod-uuid-1', 'idem-key-1'),
+      (err: any) => {
+        assert.ok(err instanceof ConflictException);
+        assert.strictEqual(err.getStatus(), 409);
+        const resp = err.getResponse() as any;
+        assert.strictEqual(resp.errorCode, 'IDEMPOTENCY_KEY_COLLISION');
+        return true;
+      },
+    );
   } finally {
     cleanup();
   }

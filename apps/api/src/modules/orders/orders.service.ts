@@ -121,9 +121,18 @@ export class OrdersService {
     productId: string,
     idempotencyKey: string,
   ): Promise<CheckoutResponseDto> {
-    // Step 1: Idempotency — return existing order without touching locks/DB
+    // Step 1: Resolve user first (needed for user-scoped idempotency and lock key)
+    const userRecord = await this.usersService.upsertByTelegram(telegramUser);
+
+    // Step 2: Idempotency — return existing order if matching user, or 409 if key was used by another user
     const existing = await this.getOrderByIdempotencyKey(idempotencyKey);
     if (existing) {
+      if (existing.userId !== userRecord.id) {
+        throw new ConflictException({
+          errorCode: 'IDEMPOTENCY_KEY_COLLISION',
+          message: 'Idempotency key already used by another user',
+        });
+      }
       await this.ensureJobForSourcingOrder(existing);
       return {
         ok: true,
@@ -131,9 +140,6 @@ export class OrdersService {
         deliveredCredential: existing.deliveredCredential ?? undefined,
       };
     }
-
-    // Step 2: Resolve user outside lock (needed for lock key)
-    const userRecord = await this.usersService.upsertByTelegram(telegramUser);
 
     // Step 3: Acquire distributed locks
     let result: CheckoutResponseDto;
@@ -154,6 +160,12 @@ export class OrdersService {
           // with the same idempotencyKey finished while this request waited for the lock.
           const lockedExisting = await this.getOrderByIdempotencyKey(idempotencyKey);
           if (lockedExisting) {
+            if (lockedExisting.userId !== userRecord.id) {
+              throw new ConflictException({
+                errorCode: 'IDEMPOTENCY_KEY_COLLISION',
+                message: 'Idempotency key already used by another user',
+              });
+            }
             return {
               ok: true,
               order: lockedExisting,
@@ -169,7 +181,7 @@ export class OrdersService {
               tx,
             );
 
-            // b. Get product
+            // b. Get product with row lock to prevent concurrent price/catalog sync mutation
             const [product] = await tx
               .select()
               .from(products)
@@ -179,6 +191,7 @@ export class OrdersService {
                   eq(products.isActive, true),
                 ),
               )
+              .for('update')
               .limit(1);
 
             if (!product) {
@@ -388,7 +401,7 @@ export class OrdersService {
       // Unique constraint violation on idempotencyKey — another concurrent
       // request already committed this order. Return the existing one (200).
       if (e?.code === '23505') {
-        const existing = await this.getOrderByIdempotencyKey(idempotencyKey);
+        const existing = await this.getOrderByIdempotencyKey(idempotencyKey, userRecord.id);
         if (existing) {
           await this.ensureJobForSourcingOrder(existing);
           return {
@@ -408,7 +421,7 @@ export class OrdersService {
         // Lock lost AFTER the tx committed → return the committed order
         // instead of a misleading 409 (a blind retry with a new key would
         // double-charge the buyer).
-        const committed = await this.getOrderByIdempotencyKey(idempotencyKey);
+        const committed = await this.getOrderByIdempotencyKey(idempotencyKey, userRecord.id);
         if (committed) {
           await this.ensureJobForSourcingOrder(committed);
           return {
@@ -592,11 +605,15 @@ export class OrdersService {
     return row ? toOrderDto(row.order, row.productTitle ?? undefined) : null;
   }
 
-  async getOrderByIdempotencyKey(key: string): Promise<OrderDto | null> {
+  async getOrderByIdempotencyKey(key: string, userId?: string): Promise<OrderDto | null> {
+    const conditions = [eq(orders.idempotencyKey, key)];
+    if (userId) {
+      conditions.push(eq(orders.userId, userId));
+    }
     const [order] = await db
       .select()
       .from(orders)
-      .where(eq(orders.idempotencyKey, key))
+      .where(and(...conditions))
       .limit(1);
     return order ? toOrderDto(order) : null;
   }

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import {
   db,
   eq,
@@ -25,6 +25,7 @@ import { maskCredential } from './utils/credential-mask.util';
 
 @Injectable()
 export class InventoryService {
+  private readonly logger = new Logger(InventoryService.name);
   private async ensureTransaction<T>(fn: (tx: DbOrTx) => Promise<T>, runner: DbOrTx): Promise<T> {
     if (runner === db) {
       return (db as any).transaction(fn);
@@ -240,6 +241,9 @@ export class InventoryService {
     reason?: string,
     tx: DbOrTx = db,
   ): Promise<boolean> {
+    if (reason) {
+      this.logger.warn(`Marking inventory item ${inventoryId} as DEFECTIVE. Reason: ${reason}`);
+    }
     const [updated] = await tx
       .update(productInventory)
       .set({

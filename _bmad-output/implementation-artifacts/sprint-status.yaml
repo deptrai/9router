@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-09-10
-last_updated: 09-14-2026 17:58
+last_updated: 09-14-2026 18:23
 project: 9Router E-Commerce Platform
 project_key: 9R-ECOM
 tracking_system: file-system
@@ -133,19 +133,19 @@ action_items:
     action: "Scope Idempotency Key theo User trong OrdersService ngăn chặn rò rỉ credential
       khi user khác replay key"
     owner: "Amelia"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-6-retro-2026-09-14.md"
   - id: "epic-6-retro-item-8-bổ-sung-khóa-hàng-for-update-trong-giao"
     epic: 6
     action: "Bổ sung Khóa Hàng FOR UPDATE trong Giao dịch Checkout tại orders.service.ts
       ngăn race condition giá/tồn kho"
     owner: "Winston"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-6-retro-2026-09-14.md"
   - id: "epic-6-retro-item-9-tự-động-tải-biến-môi-trường-env-tại-entr"
     epic: 6
     action: "Tự động tải biến môi trường .env tại Entrypoint API apps/api/src/main.ts
       tránh lỗi thiếu biến khi pnpm dev"
     owner: "Luisphan"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-6-retro-2026-09-14.md"
