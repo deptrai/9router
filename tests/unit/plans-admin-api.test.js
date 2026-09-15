@@ -170,7 +170,11 @@ describe("/api/plans admin CRUD", () => {
   });
 
   it("dashboard plans page labels per-model limits as enforced", async () => {
-    const content = fs.readFileSync(path.resolve(repoRoot, "src/app/(dashboard)/dashboard/plans/page.js"), "utf8");
+    const pagePath = [
+      path.resolve(repoRoot, "apps/legacy/src/app/(dashboard)/dashboard/plans/page.js"),
+      path.resolve(repoRoot, "src/app/(dashboard)/dashboard/plans/page.js"),
+    ].find((p) => fs.existsSync(p));
+    const content = fs.readFileSync(pagePath, "utf8");
     expect(content).not.toContain("not enforced yet");
     expect(content).toContain("canonical model");
     expect(content).toContain("enforced");

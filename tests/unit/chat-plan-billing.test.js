@@ -186,7 +186,10 @@ describe("Model B admission — chat.js integration pattern", () => {
 
   it("chat.js source — checkPlanQuota imported and positioned AFTER checkKeyQuota, BEFORE handleChatCore", async () => {
     const fs = await import("node:fs");
-    const chatPath = path.resolve(repoRoot, "src/sse/handlers/chat.js");
+    const chatPath = [
+      path.resolve(repoRoot, "apps/legacy/src/sse/handlers/chat.js"),
+      path.resolve(repoRoot, "src/sse/handlers/chat.js"),
+    ].find((p) => fs.default.existsSync(p));
     const content = fs.default.readFileSync(chatPath, "utf8");
     expect(content).toContain("checkPlanQuota");
     expect(content).toContain("@/lib/quota/planQuota.js");

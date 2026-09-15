@@ -60,12 +60,12 @@ describe("GET /api/public/models", () => {
 
   it("does not require authentication", async () => {
     // Route must not call requireAdmin or getDashboardAuthSession
-    const src = await import("fs").then((fs) =>
-      fs.promises.readFile(
-        new URL("../../src/app/api/public/models/route.js", import.meta.url),
-        "utf8"
-      )
-    );
+    const fs = await import("fs");
+    const routePath = [
+      new URL("../../apps/legacy/src/app/api/public/models/route.js", import.meta.url),
+      new URL("../../src/app/api/public/models/route.js", import.meta.url),
+    ].find((p) => fs.existsSync(p));
+    const src = await fs.promises.readFile(routePath, "utf8");
     expect(src).not.toContain("requireAdmin");
     expect(src).not.toContain("getDashboardAuthSession");
   });

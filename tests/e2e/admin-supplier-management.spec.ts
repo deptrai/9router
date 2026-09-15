@@ -76,7 +76,7 @@ test.describe('Admin Supplier Management E2E Tests', () => {
   test('[P0] Filters supplier list by search keyword', async ({ page }) => {
     await page.goto(`${ADMIN_URL}/suppliers`);
 
-    const searchInput = page.getByPlaceholder(/Tìm theo tên/i);
+    const searchInput = page.getByPlaceholder(/Tìm kiếm nhà cung cấp/i);
     await searchInput.fill('Config Pool');
 
     await expect(page.getByText('Main Config Pool Supplier')).toBeVisible();
@@ -113,20 +113,19 @@ test.describe('Admin Supplier Management E2E Tests', () => {
     // Click "Thêm nhà cung cấp" button
     await page.getByRole('button', { name: /Thêm nhà cung cấp/i }).click();
 
-    // Verify modal is visible
-    const modal = page.getByRole('dialog');
-    await expect(modal).toBeVisible();
+    // Verify modal header is visible
+    await expect(page.getByText('Thêm nhà cung cấp mới')).toBeVisible();
 
-    // Fill form fields
-    await modal.getByLabel(/Tên nhà cung cấp/i).fill('New API Partner');
-    await modal.getByLabel(/Biên lợi nhuận %/i).fill('18.5');
-    await modal.getByLabel(/Phí cố định/i).fill('4000');
+    // Fill form fields via placeholder
+    await page.getByPlaceholder(/Kho sỉ Digital Pro/i).fill('New API Partner');
+    await page.getByPlaceholder('10.00').fill('18.5');
+    await page.getByPlaceholder('5000.00').fill('4000');
 
     // Submit form
-    await modal.getByRole('button', { name: /Lưu nhà cung cấp|Tạo mới/i }).click();
+    await page.getByRole('button', { name: /Lưu nhà cung cấp/i }).click();
 
-    // Modal should close on success
-    await expect(modal).not.toBeVisible();
+    // Modal header should close on success
+    await expect(page.getByText('Thêm nhà cung cấp mới')).not.toBeVisible();
   });
 
   test('[P0] Toggles supplier active/inactive state', async ({ page }) => {
@@ -150,15 +149,19 @@ test.describe('Admin Supplier Management E2E Tests', () => {
 
     await page.goto(`${ADMIN_URL}/suppliers`);
 
-    // Find active toggle button for first supplier
-    const activeToggle = page.locator('button[title*="Kích hoạt"], button[title*="Ngừng"]').first();
+    // Find active toggle button for first supplier (text 'Bật')
+    const patchPromise = page.waitForRequest(
+      (req) => req.url().includes('/api/admin/suppliers/sup-1') && req.method() === 'PATCH',
+    );
+    const activeToggle = page.getByRole('button', { name: 'Bật' }).first();
     await activeToggle.click();
+    await patchPromise;
 
     expect(patchedStatus).toBe(false);
   });
 
   test('[P1] Triggers manual catalog sync and shows success feedback', async ({ page }) => {
-    await page.route('**/api/admin/suppliers/sup-1/sync', async (route) => {
+    await page.route('**/api/admin/suppliers/*/sync', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -172,11 +175,11 @@ test.describe('Admin Supplier Management E2E Tests', () => {
 
     await page.goto(`${ADMIN_URL}/suppliers`);
 
-    // Click sync icon button
-    const syncButton = page.locator('button[title*="Đồng bộ"]').first();
+    // Click sync icon button (title="Kích hoạt đồng bộ ngay")
+    const syncButton = page.locator('button[title="Kích hoạt đồng bộ ngay"]').first();
     await syncButton.click();
 
-    // Verify feedback message or toast
+    // Verify feedback toast is displayed
     await expect(page.getByText(/Đã kích hoạt đồng bộ/i)).toBeVisible();
   });
 });

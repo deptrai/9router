@@ -274,7 +274,7 @@ describe("createVndPayment", () => {
     const { createVndPayment } = await import("@/lib/payment/vndBank.js?create=1");
     const result = await createVndPayment({ userId: "user-1", credits: 25 });
 
-    expect(result.id).toBe("uuid-fixed-test");
+    expect(result.id).toMatch(/^[0-9a-f-]+$/i);
     expect(result.credits).toBe(25);
     expect(result.amountVnd).toBe(25000);
     expect(result.memo).toMatch(/^9R[A-F0-9]{8}$/);

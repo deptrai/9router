@@ -137,18 +137,22 @@ describe("/api/settings/database route — role guard (CRITICAL)", () => {
 describe("admin-only route files — requireAdmin import present", () => {
   it("providers route GET imports requireAdmin and uses it", async () => {
     // Source inspection: just verify the guard call exists in the route files
-    const providersContent = fs.readFileSync(
-      path.join(new URL("../../", import.meta.url).pathname, "src/app/api/providers/route.js"),
-      "utf8"
-    );
+    const rootPath = new URL("../../", import.meta.url).pathname;
+    const filePath = [
+      path.join(rootPath, "apps/legacy/src/app/api/providers/route.js"),
+      path.join(rootPath, "src/app/api/providers/route.js"),
+    ].find((p) => fs.existsSync(p));
+    const providersContent = fs.readFileSync(filePath, "utf8");
     expect(providersContent).toContain("requireAdmin");
   });
 
   it("settings route imports requireAdmin", async () => {
-    const settingsContent = fs.readFileSync(
-      path.join(new URL("../../", import.meta.url).pathname, "src/app/api/settings/route.js"),
-      "utf8"
-    );
+    const rootPath = new URL("../../", import.meta.url).pathname;
+    const filePath = [
+      path.join(rootPath, "apps/legacy/src/app/api/settings/route.js"),
+      path.join(rootPath, "src/app/api/settings/route.js"),
+    ].find((p) => fs.existsSync(p));
+    const settingsContent = fs.readFileSync(filePath, "utf8");
     expect(settingsContent).toContain("requireAdmin");
   });
 });

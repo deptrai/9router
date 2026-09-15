@@ -5,7 +5,7 @@ import { test, expect, Page } from '@playwright/test';
  * Covers VietQR and Crypto (Bitcart) payment flows
  */
 
-const MINI_APP_URL = process.env.MINI_APP_URL || 'http://localhost:3000';
+const MINI_APP_URL = process.env.MINI_APP_URL || 'http://localhost:3005';
 
 async function mockTelegramWebApp(page: Page) {
   await page.addInitScript(() => {
@@ -48,11 +48,10 @@ const mockVietQrResponse = {
     status: 'PENDING',
     amount: 100000,
     currency: 'VND',
-    accountNo: '9876543210',
-    accountName: 'CONG TY 9ROUTER',
+    bankAccount: '9876543210',
     bankName: 'MB Bank',
-    memo: 'TOPUP123456',
-    qrPayload: 'https://img.vietqr.io/image/MB-9876543210-compact.png?amount=100000&addInfo=TOPUP123456',
+    transferContent: 'TOPUP123456',
+    qrImageUrl: 'https://img.vietqr.io/image/MB-9876543210-compact.png?amount=100000&addInfo=TOPUP123456',
     expiresAt: new Date(Date.now() + 900000).toISOString(),
     createdAt: new Date().toISOString(),
   },
@@ -66,11 +65,13 @@ const mockCryptoResponse = {
     status: 'PENDING',
     amount: 200000,
     currency: 'VND',
-    coin: 'USDT',
-    network: 'TRON',
-    payAmount: '7.85',
-    address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
-    qrPayload: 'data:image/svg+xml;utf8,<svg></svg>',
+    metadata: {
+      cryptoCurrency: 'USDT',
+      network: 'TRON',
+      cryptoAmount: '7.85',
+      payAddress: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+      paymentUrl: 'https://bitcart.example.com/i/123',
+    },
     expiresAt: new Date(Date.now() + 1800000).toISOString(),
     createdAt: new Date().toISOString(),
   },
@@ -94,7 +95,7 @@ test.describe('Mini App Topup Flow E2E Tests', () => {
     await page.goto(`${MINI_APP_URL}/topup`);
 
     // Verify header and navigation
-    await expect(page.getByRole('heading', { name: 'Nạp tiền vào ví' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Nạp tiền' })).toBeVisible();
 
     // Verify preset amounts
     await expect(page.getByRole('button', { name: '50.000đ' })).toBeVisible();
@@ -103,12 +104,12 @@ test.describe('Mini App Topup Flow E2E Tests', () => {
     await expect(page.getByRole('button', { name: '500.000đ' })).toBeVisible();
 
     // Verify tabs
-    await expect(page.getByRole('button', { name: /Chuyển khoản VietQR/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Tiền mã hóa/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'VietQR' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Crypto' })).toBeVisible();
   });
 
   test('[P0] Creates VietQR payment request on preset selection and displays transfer instructions', async ({ page }) => {
-    await page.route('**/api/payments/vietqr', async (route) => {
+    await page.route('**/api/payments/topup/vietqr', async (route) => {
       await route.fulfill({
         status: 201,
         contentType: 'application/json',
@@ -122,14 +123,14 @@ test.describe('Mini App Topup Flow E2E Tests', () => {
     await page.getByRole('button', { name: '100.000đ' }).click();
 
     // Click submit button
-    const submitButton = page.getByRole('button', { name: /Tạo mã VietQR/i });
+    const submitButton = page.getByRole('button', { name: 'Tạo mã QR' });
     await expect(submitButton).toBeEnabled();
     await submitButton.click();
 
     // Verify VietQR details displayed
-    await expect(page.getByText('Quét mã để thanh toán')).toBeVisible();
+    await expect(page.getByText('Quét mã QR để chuyển khoản')).toBeVisible();
     await expect(page.getByText('9876543210')).toBeVisible();
-    await expect(page.getByText('CONG TY 9ROUTER')).toBeVisible();
+    await expect(page.getByText('MB Bank')).toBeVisible();
     await expect(page.getByText('TOPUP123456')).toBeVisible();
   });
 
@@ -137,20 +138,18 @@ test.describe('Mini App Topup Flow E2E Tests', () => {
     await page.goto(`${MINI_APP_URL}/topup`);
 
     // Enter amount less than 10.000đ
-    const input = page.getByPlaceholder('Nhập số tiền khác');
+    const input = page.getByPlaceholder('VD: 150.000');
     await input.fill('5000');
 
-    // Submit button should be disabled for amount < 10.000đ
-    const submitButton = page.getByRole('button', { name: /Tạo mã VietQR/i });
-    await expect(submitButton).toBeDisabled();
+    // Click submit button - should trigger minimum validation error
+    const submitButton = page.getByRole('button', { name: 'Tạo mã QR' });
+    await submitButton.click();
 
-    // Enter valid amount >= 10.000đ
-    await input.fill('25000');
-    await expect(submitButton).toBeEnabled();
+    await expect(page.getByText(/Số tiền tối thiểu là 10.000/i)).toBeVisible();
   });
 
   test('[P0] Switches to Crypto tab and creates USDT TRON payment invoice', async ({ page }) => {
-    await page.route('**/api/payments/crypto', async (route) => {
+    await page.route('**/api/payments/topup/bitcart', async (route) => {
       await route.fulfill({
         status: 201,
         contentType: 'application/json',
@@ -161,31 +160,31 @@ test.describe('Mini App Topup Flow E2E Tests', () => {
     await page.goto(`${MINI_APP_URL}/topup`);
 
     // Switch to Crypto tab
-    await page.getByRole('button', { name: /Tiền mã hóa/i }).click();
+    await page.getByRole('button', { name: 'Crypto' }).click();
 
     // Verify crypto selector visible
-    await expect(page.getByText('Chọn loại tiền')).toBeVisible();
-    await expect(page.getByText('Chọn mạng')).toBeVisible();
+    await expect(page.getByText('Chọn coin')).toBeVisible();
+    await expect(page.getByText('Chọn network')).toBeVisible();
 
     // Select preset amount
     await page.getByRole('button', { name: '200.000đ' }).click();
 
     // Click submit button
-    const submitCryptoBtn = page.getByRole('button', { name: /Tạo hóa đơn Crypto/i });
+    const submitCryptoBtn = page.getByRole('button', { name: 'Tạo hóa đơn Crypto' });
     await expect(submitCryptoBtn).toBeEnabled();
     await submitCryptoBtn.click();
 
     // Verify crypto invoice details displayed
-    await expect(page.getByText('Địa chỉ ví nhận')).toBeVisible();
+    await expect(page.getByText('Chuyển crypto để nạp tiền')).toBeVisible();
     await expect(page.getByText('TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t')).toBeVisible();
-    await expect(page.getByText('7.85 USDT')).toBeVisible();
+    await expect(page.getByText('7.85')).toBeVisible();
   });
 
   test('[P0] Automatically detects wallet balance increase and displays success confirmation', async ({ page }) => {
     let pollCount = 0;
     await page.route('**/api/wallets/me', async (route) => {
       pollCount++;
-      if (pollCount > 2) {
+      if (pollCount > 1) {
         // Updated balance after payment credited
         await route.fulfill({
           status: 200,
@@ -208,7 +207,7 @@ test.describe('Mini App Topup Flow E2E Tests', () => {
       }
     });
 
-    await page.route('**/api/payments/vietqr', async (route) => {
+    await page.route('**/api/payments/topup/vietqr', async (route) => {
       await route.fulfill({
         status: 201,
         contentType: 'application/json',
@@ -218,10 +217,9 @@ test.describe('Mini App Topup Flow E2E Tests', () => {
 
     await page.goto(`${MINI_APP_URL}/topup`);
     await page.getByRole('button', { name: '100.000đ' }).click();
-    await page.getByRole('button', { name: /Tạo mã VietQR/i }).click();
+    await page.getByRole('button', { name: 'Tạo mã QR' }).click();
 
-    // Await success modal to appear on credited balance
-    await expect(page.getByText('Nạp tiền thành công!')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByRole('button', { name: 'Về trang chủ' })).toBeVisible();
+    // Await success message to appear on credited balance
+    await expect(page.getByText(/Đã nhận 100.000/i)).toBeVisible({ timeout: 10000 });
   });
 });

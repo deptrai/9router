@@ -37,7 +37,7 @@ vi.mock("@/lib/auth/dashboardSession", () => ({
   },
 }));
 
-const { proxy, __test__ } = await import("../../src/dashboardGuard.js");
+const { proxy, __test__ } = await import("@/dashboardGuard.js");
 
 function request(pathname, headers = {}) {
   const normalizedHeaders = new Headers(headers);

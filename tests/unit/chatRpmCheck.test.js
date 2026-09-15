@@ -1,10 +1,15 @@
 // Story 2.12 E.2: chat.js RPM admission check — unit tests via logic pattern
 // (mirrors style of chatCreditCheck.test.js)
 import { describe, it, expect } from "vitest";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const chatPath = [
+  path.resolve(repoRoot, "apps/legacy/src/sse/handlers/chat.js"),
+  path.resolve(repoRoot, "src/sse/handlers/chat.js"),
+].find((p) => fs.existsSync(p));
 
 describe("RPM admission — chat.js integration pattern", () => {
   it("!rpmResult.allowed → calls unavailableResponse(429, msg, retryAfter, human)", () => {
@@ -66,20 +71,16 @@ describe("RPM admission — chat.js integration pattern", () => {
 });
 
 describe("chat.js source — checkRpmLimit import and placement", () => {
-  it("chat.js imports checkRpmLimit from @/lib/quota/rpmLimit.js", async () => {
-    const fs = await import("node:fs");
-    const chatPath = path.resolve(repoRoot, "src/sse/handlers/chat.js");
-    const content = fs.default.readFileSync(chatPath, "utf8");
+  it("chat.js imports checkRpmLimit from @/lib/quota/rpmLimit.js", () => {
+    const content = fs.readFileSync(chatPath, "utf8");
     expect(content).toContain("checkRpmLimit");
     expect(content).toContain("@/lib/quota/rpmLimit.js");
     expect(content).toContain("rpmResult.allowed");
     expect(content).toContain("HTTP_STATUS.RATE_LIMITED");
   });
 
-  it("RPM check appears BEFORE combo branch in chat.js source", async () => {
-    const fs = await import("node:fs");
-    const chatPath = path.resolve(repoRoot, "src/sse/handlers/chat.js");
-    const content = fs.default.readFileSync(chatPath, "utf8");
+  it("RPM check appears BEFORE combo branch in chat.js source", () => {
+    const content = fs.readFileSync(chatPath, "utf8");
     const rpmPos = content.indexOf("checkRpmLimit(apiKey)");
     const comboPos = content.indexOf("getComboModels(modelStr)");
     expect(rpmPos).toBeGreaterThan(0);
@@ -87,10 +88,8 @@ describe("chat.js source — checkRpmLimit import and placement", () => {
     expect(rpmPos).toBeLessThan(comboPos);
   });
 
-  it("RPM check appears AFTER handleBypassRequest in chat.js source", async () => {
-    const fs = await import("node:fs");
-    const chatPath = path.resolve(repoRoot, "src/sse/handlers/chat.js");
-    const content = fs.default.readFileSync(chatPath, "utf8");
+  it("RPM check appears AFTER handleBypassRequest in chat.js source", () => {
+    const content = fs.readFileSync(chatPath, "utf8");
     const bypassPos = content.indexOf("handleBypassRequest");
     const rpmPos = content.indexOf("checkRpmLimit");
     expect(bypassPos).toBeLessThan(rpmPos);

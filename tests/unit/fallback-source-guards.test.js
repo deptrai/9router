@@ -18,7 +18,11 @@ const handlerFiles = [
 describe("fallback source guards", () => {
   it("all SSE all-locked branches normalize stale upstream status codes", () => {
     for (const relativePath of handlerFiles) {
-      const content = fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
+      const filePath = [
+        path.join(repoRoot, "apps/legacy", relativePath),
+        path.join(repoRoot, relativePath),
+      ].find((p) => fs.existsSync(p));
+      const content = fs.readFileSync(filePath, "utf8");
 
       expect(content, `${relativePath} imports normalizeUnavailableStatus`).toContain("normalizeUnavailableStatus");
       expect(content, `${relativePath} normalizes lastErrorCode before unavailableResponse`).toContain(

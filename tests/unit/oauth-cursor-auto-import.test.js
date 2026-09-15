@@ -44,7 +44,7 @@ function writeCursorDb(dbPath, rows) {
 
 async function loadGET() {
   vi.resetModules();
-  const mod = await import("../../src/app/api/oauth/cursor/auto-import/route.js");
+  const mod = await import("@/app/api/oauth/cursor/auto-import/route.js");
   return mod.GET;
 }
 

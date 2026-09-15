@@ -17,6 +17,13 @@ beforeEach(() => {
   delete process.env.ADMIN_EMAIL;
   delete global._dbAdapter;
   vi.resetModules();
+  vi.doMock("next/headers", () => ({
+    cookies: vi.fn(() => Promise.resolve({
+      set: mockCookieSet,
+      get: vi.fn(),
+      delete: vi.fn(),
+    })),
+  }));
 });
 
 afterEach(() => {

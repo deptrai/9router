@@ -1,8 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { resolve } from "path";
 
-const root = resolve(__dirname, "../../src");
+const root = [
+  resolve(__dirname, "../../apps/legacy/src"),
+  resolve(__dirname, "../../src"),
+].find((p) => existsSync(p));
 
 function read(rel) {
   return readFileSync(resolve(root, rel), "utf8");

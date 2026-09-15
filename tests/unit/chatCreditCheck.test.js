@@ -109,7 +109,10 @@ describe("credit admission — chat.js integration pattern", () => {
 describe("chat.js source — checkCredits import", () => {
   it("chat.js imports checkCredits from @/lib/billing/checkCredits.js", async () => {
     const fs = await import("node:fs");
-    const chatPath = path.resolve(repoRoot, "src/sse/handlers/chat.js");
+    const chatPath = [
+      path.resolve(repoRoot, "apps/legacy/src/sse/handlers/chat.js"),
+      path.resolve(repoRoot, "src/sse/handlers/chat.js"),
+    ].find((p) => fs.default.existsSync(p));
     const content = fs.default.readFileSync(chatPath, "utf8");
 
     expect(content).toContain("checkCredits");

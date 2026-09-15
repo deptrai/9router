@@ -12,9 +12,17 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { createRequire } from "module";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
-const manager = require("../../src/mitm/manager.js");
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const managerPath = [
+  path.resolve(__dirname, "../../apps/legacy/src/mitm/manager.js"),
+  path.resolve(__dirname, "../../src/mitm/manager.js"),
+].find((p) => fs.existsSync(p));
+const manager = require(managerPath);
 const crypto = require("crypto");
 
 // Fake settings store wired via initDbHooks — mô phỏng DB free-form JSON.
