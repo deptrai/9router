@@ -142,11 +142,11 @@ describe("getUsageStats — userId filter (AC1)", () => {
     const { getUsageStats } = await import("@/lib/db/repos/usageRepo.js");
 
     const stats = await getUsageStats("24h", userA.id);
-    for (const akKey of Object.keys(stats.byApiKey)) {
-      if (akKey !== "local-no-key") {
-        const entry = stats.byApiKey[akKey];
-        expect(entry.apiKey).toBe(keyA.key);
-      }
+    const userAEntries = Object.entries(stats.byApiKey)
+      .filter(([akKey]) => akKey !== "local-no-key")
+      .map(([, entry]) => entry);
+    for (const entry of userAEntries) {
+      expect(entry.apiKey).toBe(keyA.key);
     }
     const hasKeyB = Object.values(stats.byApiKey).some(e => e.apiKey === keyB.key);
     expect(hasKeyB).toBe(false);

@@ -66,11 +66,8 @@ function expectCompatibleConnection(connection, node, { apiType } = {}) {
     prefix: node.prefix,
     baseUrl: node.baseUrl,
     nodeName: node.name,
+    ...(apiType !== undefined ? { apiType } : {}),
   });
-
-  if (apiType !== undefined) {
-    expect(connection.providerSpecificData.apiType).toBe(apiType);
-  }
 }
 
 describe("compatible provider connections API", () => {
