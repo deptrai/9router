@@ -159,10 +159,14 @@ test.describe('Epic 4 Retro: Admin Ops Dashboard E2E Tests', () => {
     });
 
     await page.goto(`${ADMIN_URL}/ops`);
-    await page.getByRole('button', { name: 'Retry' }).first().click();
 
-    // Wait for the retry API call to complete
-    await page.waitForResponse((resp) => resp.url().includes('/api/admin/ops/jobs/') && resp.request().method() === 'POST');
+    // Register the response waiter BEFORE clicking — the mocked retry resolves
+    // almost instantly, so listening after click() races past the event.
+    const retryResponse = page.waitForResponse(
+      (resp) => resp.url().includes('/api/admin/ops/failed-jobs/') && resp.url().endsWith('/retry') && resp.request().method() === 'POST'
+    );
+    await page.getByRole('button', { name: 'Retry' }).first().click();
+    await retryResponse;
     expect(retriedJobId).toBe('job-to-retry-1234');
     await expect(page.getByText('Đã đưa job', { exact: false })).toBeVisible();
   });
@@ -217,10 +221,10 @@ test.describe('Epic 4 Retro: Admin Ops Dashboard E2E Tests', () => {
       });
     });
 
+    // Register the waiter BEFORE navigation — the mocked 503 resolves instantly.
+    const opsResponse = page.waitForResponse((resp) => resp.url().includes('/api/admin/ops/'));
     await page.goto(`${ADMIN_URL}/ops`);
-
-    // Toast error should appear — wait for the API response to confirm
-    await page.waitForResponse((resp) => resp.url().includes('/api/admin/ops/'));
+    await opsResponse;
     await expect(page.getByRole('heading', { name: 'Giám sát Vận hành' })).toBeVisible();
   });
 });

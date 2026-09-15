@@ -73,12 +73,11 @@ test.describe('Story 5.3: Admin Order Management E2E Tests', () => {
     // Verify Heading
     await expect(page.getByRole('heading', { name: 'Giám sát Đơn hàng & Đối soát' })).toBeVisible();
 
-    // Verify KPI Cards via grid container
-    const kpiGrid = page.getByRole('region').or(page.locator('[data-testid="kpi-grid"]')).or(page.locator('section').filter({ hasText: 'Tổng đơn hàng' }));
-    await expect(kpiGrid.getByText('Tổng đơn hàng')).toBeVisible();
-    await expect(kpiGrid.getByText('Chờ mua ngoài')).toBeVisible();
-    await expect(kpiGrid.getByText('Hoàn tất')).toBeVisible();
-    await expect(kpiGrid.getByText('Đã hoàn tiền')).toBeVisible();
+    // Verify KPI Cards — labels render directly (no region/testid wrapper)
+    await expect(page.getByText('Tổng đơn hàng', { exact: true })).toBeVisible();
+    await expect(page.getByText('Chờ mua ngoài', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('Hoàn tất', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('Đã hoàn tiền', { exact: true }).first()).toBeVisible();
 
     // Verify Filter Buttons
     await expect(page.getByRole('button', { name: 'Chờ mua ngoài' })).toBeVisible();
@@ -192,8 +191,8 @@ test.describe('Story 5.3: Admin Order Management E2E Tests', () => {
     await expect(detailBtn).toBeVisible();
     await detailBtn.click();
 
-    // Verify modal elements inside modal overlay
-    const modal = page.getByRole('dialog').or(page.locator('[data-testid="order-modal"]')).or(page.locator('[role="dialog"]'));
+    // Verify modal elements — modal overlay is a fixed full-screen container
+    const modal = page.locator('div.fixed.inset-0.z-50');
     await expect(modal.getByRole('heading', { name: 'Chi tiết Đơn hàng' })).toBeVisible();
     await expect(modal.getByText('@alice_crypto')).toBeVisible();
     await expect(modal.getByText('u***r@openai.com')).toBeVisible();
@@ -208,13 +207,15 @@ test.describe('Story 5.3: Admin Order Management E2E Tests', () => {
     await expect(reasonTextarea).toBeVisible();
     await reasonTextarea.fill('Customer key activation failed');
 
-    // Submit refund
+    // Submit refund — register the waiter BEFORE clicking since the mocked
+    // response resolves almost instantly.
+    const refundResponse = page.waitForResponse(
+      (resp) => resp.url().includes('/api/admin/orders/') && resp.url().endsWith('/refund') && resp.request().method() === 'POST'
+    );
     const confirmRefundBtn = modal.getByRole('button', { name: 'Xác nhận hoàn tiền' });
     await expect(confirmRefundBtn).toBeVisible();
     await confirmRefundBtn.click();
-
-    // Wait for the refund API call to complete
-    await page.waitForResponse((resp) => resp.url().includes('/api/admin/orders/') && resp.request().method() === 'POST');
+    await refundResponse;
     expect(refundCalled).toBe(true);
   });
 });

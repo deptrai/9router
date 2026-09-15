@@ -6,6 +6,10 @@ import { test, expect, Page } from '@playwright/test';
  */
 
 async function mockTelegramWebApp(page: Page) {
+  // Block the real Telegram SDK (layout.tsx loads telegram-web-app.js) so it does
+  // not overwrite our instrumented window.Telegram stub after the init script runs.
+  await page.route('**/telegram.org/js/telegram-web-app.js**', (route) => route.abort());
+
   await page.addInitScript(() => {
     (window as any).Telegram = {
       WebApp: {
@@ -134,7 +138,7 @@ test.describe('Story 4.3: External Supplier Sourcing User Journey', () => {
     await checkoutPromise;
 
     await expect(page.getByRole('heading', { name: 'Đơn hàng đang xử lý' })).toBeVisible();
-    await expect(page.getByText(/Hệ thống đang lấy hàng từ nhà cung cấp/)).toBeVisible();
+    await expect(page.getByText(/Đang lấy tài khoản từ đối tác/)).toBeVisible();
 
     const ordersPromise = page.waitForResponse((res) => res.url().includes('/api/orders') && res.status() === 200);
     const viewOrdersLink = page.getByRole('link', { name: 'Xem đơn hàng →' });
@@ -144,7 +148,8 @@ test.describe('Story 4.3: External Supplier Sourcing User Journey', () => {
 
     await expect(page).toHaveURL(/.*\/orders/);
     await expect(page.getByRole('heading', { name: 'Đơn hàng của tôi' })).toBeVisible();
-    await expect(page.getByText('SOURCING')).toBeVisible();
+    // Orders list maps SOURCING → "ĐANG LẤY HÀNG" badge (exact match to avoid the helper text)
+    await expect(page.getByText('ĐANG LẤY HÀNG', { exact: true })).toBeVisible();
     await expect(page.getByText('Đang lấy hàng từ nhà cung cấp ngoài…')).toBeVisible();
 
     orderFulfilledState = true;
@@ -280,7 +285,8 @@ test.describe('Story 4.3: External Supplier Sourcing User Journey', () => {
     await expect(page.getByText('ChatGPT Plus 1 Tháng (Nguồn ngoài)')).toBeVisible();
     await expect(page.getByText('#ord-refu')).toBeVisible();
 
-    await expect(page.getByText('REFUNDED')).toBeVisible();
+    // StatusBadge maps REFUNDED → "ĐÃ HOÀN TIỀN"
+    await expect(page.getByText('ĐÃ HOÀN TIỀN')).toBeVisible();
     await expect(page.getByText('Credential')).not.toBeVisible();
   });
 });

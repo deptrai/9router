@@ -198,17 +198,31 @@ test.describe('Story 5.2: Admin Inventory API Tests', () => {
     expect(colonItem.maskedCredential).toContain(':****');
   });
 
-  test('[P0] GET /api/admin/inventory/items/:id/decrypt returns plaintext credential with valid admin auth', async ({ request }) => {
-    // Create a dedicated inventory item for this test
-    const createRes = await request.post(`${API_URL}/api/admin/inventory/items`, {
+  // Helper: there is no single-item POST endpoint — items are created via
+  // POST /api/admin/inventory/products/:productId/batch. This ingests one
+  // credential then reads the newest item id back from the product listing.
+  async function createInventoryItem(request: any, productId: string, credential: string): Promise<string> {
+    const batchRes = await request.post(`${API_URL}/api/admin/inventory/products/${productId}/batch`, {
       headers: { 'x-admin-key': TEST_ADMIN_KEY },
-      data: {
-        productId: 'test-product',
-        credential: 'decrypt-test-credential@example.com',
-      },
+      data: { credentials: [credential] },
     });
-    const createBody = await createRes.json();
-    const itemId = createBody.item.id;
+    expect([200, 201]).toContain(batchRes.status());
+
+    const listRes = await request.get(`${API_URL}/api/admin/inventory/products/${productId}`, {
+      headers: { 'x-admin-key': TEST_ADMIN_KEY },
+    });
+    const listBody = await listRes.json();
+    const item = (listBody.items || []).find((i: any) =>
+      i.maskedCredential && credential.includes(i.maskedCredential.replace(/\*+/g, '').split('@')[0])
+    ) || listBody.items?.[listBody.items.length - 1];
+    return item?.id;
+  }
+
+  test('[P0] GET /api/admin/inventory/items/:id/decrypt returns plaintext credential with valid admin auth', async ({ request }) => {
+    // Create a dedicated inventory item via batch import
+    const credential = `decrypt-test-${Date.now()}@example.com`;
+    const itemId = await createInventoryItem(request, targetProductId, credential);
+    expect(itemId, 'Failed to create inventory item via batch import').toBeTruthy();
 
     const res = await request.get(`${API_URL}/api/admin/inventory/items/${itemId}/decrypt`, {
       headers: { 'x-admin-key': TEST_ADMIN_KEY },
@@ -225,15 +239,8 @@ test.describe('Story 5.2: Admin Inventory API Tests', () => {
   // --- 4. Status Toggle & Atomic Deletion Guard ---
 
   test('[P0] PATCH /api/admin/inventory/items/:id/status updates status to DEFECTIVE', async ({ request }) => {
-    const createRes = await request.post(`${API_URL}/api/admin/inventory/items`, {
-      headers: { 'x-admin-key': TEST_ADMIN_KEY },
-      data: {
-        productId: targetProductId,
-        credential: `patch-status-${Date.now()}@example.com`,
-      },
-    });
-    const createBody = await createRes.json();
-    const itemId = createBody.item.id;
+    const itemId = await createInventoryItem(request, targetProductId, `patch-status-${Date.now()}@example.com`);
+    expect(itemId, 'Failed to create inventory item via batch import').toBeTruthy();
 
     const res = await request.patch(`${API_URL}/api/admin/inventory/items/${itemId}/status`, {
       headers: { 'x-admin-key': TEST_ADMIN_KEY },
@@ -247,15 +254,8 @@ test.describe('Story 5.2: Admin Inventory API Tests', () => {
   });
 
   test('[P0] DELETE /api/admin/inventory/items/:id deletes DEFECTIVE or AVAILABLE item', async ({ request }) => {
-    const createRes = await request.post(`${API_URL}/api/admin/inventory/items`, {
-      headers: { 'x-admin-key': TEST_ADMIN_KEY },
-      data: {
-        productId: targetProductId,
-        credential: `delete-item-${Date.now()}@example.com`,
-      },
-    });
-    const createBody = await createRes.json();
-    const itemId = createBody.item.id;
+    const itemId = await createInventoryItem(request, targetProductId, `delete-item-${Date.now()}@example.com`);
+    expect(itemId, 'Failed to create inventory item via batch import').toBeTruthy();
 
     const res = await request.delete(`${API_URL}/api/admin/inventory/items/${itemId}`, {
       headers: { 'x-admin-key': TEST_ADMIN_KEY },

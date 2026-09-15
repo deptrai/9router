@@ -75,12 +75,12 @@ test.describe('Story 5.4: Admin Finance Dashboard E2E Tests', () => {
     await expect(page.getByRole('heading', { name: 'Báo cáo Tài chính & Đối soát' })).toBeVisible();
     await expect(page.getByText('✓ Đã đối soát chính xác')).toBeVisible();
 
-    const grid = page.getByRole('region').or(page.locator('[data-testid="finance-summary"]')).or(page.locator('section').filter({ hasText: 'Tổng nạp' }));
-    await expect(grid.getByText('Tổng nạp')).toBeVisible();
-    await expect(grid.getByText('Tổng mua')).toBeVisible();
-    await expect(grid.getByText('Tổng hoàn')).toBeVisible();
-    await expect(grid.getByText('Ví khách')).toBeVisible();
-    await expect(grid.getByText('Độ lệch')).toBeVisible();
+    // KPI cards render their labels directly (no dedicated region/testid wrapper)
+    await expect(page.getByText('Tổng nạp', { exact: true })).toBeVisible();
+    await expect(page.getByText('Tổng mua', { exact: true })).toBeVisible();
+    await expect(page.getByText('Tổng hoàn', { exact: true })).toBeVisible();
+    await expect(page.getByText('Ví khách', { exact: true })).toBeVisible();
+    await expect(page.getByText('Độ lệch', { exact: true })).toBeVisible();
 
     await expect(page.getByText('1.000.000 ₫')).toBeVisible();
     await expect(page.getByText('400.000 ₫')).toBeVisible();
@@ -109,9 +109,12 @@ test.describe('Story 5.4: Admin Finance Dashboard E2E Tests', () => {
       });
     });
 
+    // Register the waiter BEFORE clicking — the mocked response resolves instantly.
+    const weeklyResponse = page.waitForResponse(
+      (resp) => resp.url().includes('/api/admin/finance/') && resp.url().includes('granularity=weekly')
+    );
     await page.getByRole('button', { name: 'Tuần' }).click();
-    // Wait for the weekly granularity API call to complete
-    await page.waitForResponse((resp) => resp.url().includes('/api/admin/finance/') && resp.url().includes('granularity=weekly'));
+    await weeklyResponse;
     expect(granularityRequested).toBe('weekly');
   });
 

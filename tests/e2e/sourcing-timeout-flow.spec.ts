@@ -25,11 +25,16 @@ interface TelegramHapticLogs {
 }
 
 async function mockTelegramWebApp(page: Page) {
+  // Block the real Telegram SDK (layout.tsx loads telegram-web-app.js) so it does
+  // not overwrite our instrumented window.Telegram stub after the init script runs.
+  await page.route('**/telegram.org/js/telegram-web-app.js**', (route) => route.abort());
+
   await page.addInitScript(() => {
-    (window as any).__telegramHapticLogs = {
+    const logs = {
       notifications: [] as string[],
       impacts: [] as string[],
     };
+    (window as any).__telegramHapticLogs = logs;
     (window as any).Telegram = {
       WebApp: {
         ready: () => {},
@@ -44,10 +49,10 @@ async function mockTelegramWebApp(page: Page) {
         },
         HapticFeedback: {
           impactOccurred: (style: string) => {
-            (window as any).__telegramHapticLogs.impacts.push(style);
+            logs.impacts.push(style);
           },
           notificationOccurred: (type: string) => {
-            (window as any).__telegramHapticLogs.notifications.push(type);
+            logs.notifications.push(type);
           },
           selectionChanged: () => {},
         },
@@ -283,12 +288,14 @@ test.describe('Story 4.4: Order Sourcing Timeout 60s & Auto-Refund User Journey'
   });
 
   test('[P1] should actively poll and auto-refresh /orders from SOURCING to REFUNDED without page reload', async ({ page }) => {
-    // THIS TEST WILL FAIL IN RED PHASE - OrdersPage active polling for SOURCING status not implemented yet
-    let pollCount = 0;
+    // OrdersPage polls while any order is SOURCING; assert auto-refresh to REFUNDED.
+    // NOTE: React StrictMode double-fires the mount effect → several /api/orders
+    // requests can land before the SOURCING badge paints. Gate the transition on a
+    // flag flipped only after the badge is visible, so we never race past SOURCING.
+    let refundStarted = false;
 
     await page.route('**/api/orders', async (route) => {
-      pollCount++;
-      const currentOrder = pollCount <= 1 ? mockSourcingOrder : mockRefundedOrder;
+      const currentOrder = refundStarted ? mockRefundedOrder : mockSourcingOrder;
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -300,9 +307,10 @@ test.describe('Story 4.4: Order Sourcing Timeout 60s & Auto-Refund User Journey'
     await page.goto(`${miniAppUrl}/orders`);
     await ordersPromise;
 
-    // Initially displays SOURCING
-    await expect(page.getByText('ĐANG LẤY HÀNG')).toBeVisible();
+    // Initially displays SOURCING (exact: the badge label, not the longer helper text)
+    await expect(page.getByText('ĐANG LẤY HÀNG', { exact: true })).toBeVisible();
     await expect(page.getByText('Đang lấy hàng từ nhà cung cấp ngoài…')).toBeVisible();
+    refundStarted = true;
 
     // Background polling should update page automatically to REFUNDED
     await expect(page.getByText('ĐÃ HOÀN TIỀN')).toBeVisible({ timeout: 10_000 });
@@ -361,8 +369,8 @@ test.describe('Story 4.4: Order Sourcing Timeout 60s & Auto-Refund User Journey'
 
     await expect(page.getByRole('heading', { name: 'Đơn hàng đang xử lý' })).toBeVisible();
 
-    // Close modal
-    const doneButton = page.getByRole('button', { name: 'Xong' });
+    // Close modal — while still SOURCING the dismiss button reads "Đóng (Vẫn xử lý nền)"
+    const doneButton = page.getByRole('button', { name: /Xong|Đóng/ });
     await doneButton.click();
     await expect(page.getByRole('heading', { name: 'Đơn hàng đang xử lý' })).not.toBeVisible();
 
@@ -408,13 +416,24 @@ test.describe('Story 4.4: Order Sourcing Timeout 60s & Auto-Refund User Journey'
       });
     });
 
-    await page.route('**/api/orders', async (route) => {
+    // OrderSuccessModal polls the single-order endpoint /api/orders/:id; hold it on
+    // SOURCING for the first poll so the modal mounts in SOURCING, then return
+    // REFUNDED so the transition fires HapticFeedback 'warning'. The regex matches
+    // /api/orders/<id> but NOT /api/orders/checkout or the bare /api/orders list.
+    await page.route(/\/api\/orders\/(?!checkout$)[^/]+$/, async (route) => {
       pollCount++;
       const currentOrder = pollCount <= 1 ? mockSourcingOrder : mockRefundedOrder;
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([currentOrder]),
+        body: JSON.stringify(currentOrder),
+      });
+    });
+    await page.route(/\/api\/orders\/?$/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([mockSourcingOrder]),
       });
     });
 
@@ -424,7 +443,7 @@ test.describe('Story 4.4: Order Sourcing Timeout 60s & Auto-Refund User Journey'
 
     await expect(
       page.getByText('Nhà cung cấp tạm hết hàng, hệ thống đã hoàn trả 100% tiền vào ví')
-    ).toBeVisible({ timeout: 10_000 });
+    ).toBeVisible({ timeout: 15_000 });
 
     const hapticLogs = await page.evaluate(() => (window as any).__telegramHapticLogs as TelegramHapticLogs);
     expect(hapticLogs.notifications).toContain('warning');

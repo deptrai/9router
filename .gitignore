@@ -90,6 +90,8 @@ gitbook/README.md
 /playwright/.auth/
 /blob-report/
 /.playwright-mcp/
+tests/test-results/
+tests/playwright-report/
 
 # Monorepo / Turborepo
 .turbo/

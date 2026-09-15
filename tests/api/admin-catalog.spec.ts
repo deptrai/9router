@@ -87,10 +87,16 @@ test.describe('Admin Catalog & Supplier API Tests', () => {
   // --- Product Catalog Management ---
 
   test('[P0] POST /api/admin/products creates product with auto-pricing calculation', async ({ request }) => {
-    // Create a dedicated supplier for this test — no shared state dependency
+    // Create a dedicated supplier for this test — no shared state dependency.
+    // markup 15% + 5000 VND → upstreamCost 100000 → retail 100000*1.15 + 5000 = 120000.
     const supplierRes = await request.post(`${API_URL}/api/admin/suppliers`, {
       headers: { 'x-admin-key': TEST_ADMIN_KEY },
-      data: { name: 'Product Test Supplier', configCredentials: { apiKey: 'test-key' } },
+      data: {
+        name: `Product Test Supplier ${Date.now()}`,
+        markupPercentage: '15.00',
+        markupFixedVnd: '5000.00',
+        isActive: true,
+      },
     });
     const supplierBody = await supplierRes.json();
     const supplierId = supplierBody.supplier.id;
