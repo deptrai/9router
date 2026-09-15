@@ -45,7 +45,7 @@ describe("getBalanceByBucket", () => {
 
   it("sums amounts per bucket correctly", async () => {
     const user = await seedUser("bal@example.com");
-    const future = new Date(1750000000000 + 86400000).toISOString();
+    const future = "2099-01-01T00:00:00.000Z";
     await addTxn(user.id, { type: "topup", bucket: "standard", amount: 10, refId: "r1" });
     await addTxn(user.id, { type: "topup", bucket: "bonus", amount: 2, multiplier: 1.15, expiresAt: future, refId: "r2" });
     await addTxn(user.id, { type: "topup", bucket: "resource", amount: 5, refId: "r3" });
@@ -59,7 +59,7 @@ describe("getBalanceByBucket", () => {
 
   it("excludes expired bonus rows", async () => {
     const user = await seedUser("expired@example.com");
-    const past = new Date(Date.now() - 1000).toISOString();
+    const past = "2020-01-01T00:00:00.000Z";
     await addTxn(user.id, { type: "topup", bucket: "bonus", amount: 5, expiresAt: past, refId: "r1" });
     await addTxn(user.id, { type: "topup", bucket: "standard", amount: 3, refId: "r2" });
 
@@ -83,7 +83,7 @@ describe("getBalanceByBucket", () => {
 describe("deductFromPriorityBuckets — priority order", () => {
   it("deducts resource before bonus before standard", async () => {
     const user = await seedUser("priority@example.com");
-    const future = new Date(1750000000000 + 86400000).toISOString();
+    const future = "2099-01-01T00:00:00.000Z";
     await addTxn(user.id, { type: "topup", bucket: "standard", amount: 10, refId: "s" });
     await addTxn(user.id, { type: "topup", bucket: "bonus", amount: 5, multiplier: 1.0, expiresAt: future, refId: "b" });
     await addTxn(user.id, { type: "topup", bucket: "resource", amount: 3, refId: "r" });
@@ -101,7 +101,7 @@ describe("deductFromPriorityBuckets — priority order", () => {
 
   it("falls through to bonus when resource exhausted", async () => {
     const user = await seedUser("fallthrough@example.com");
-    const future = new Date(1750000000000 + 86400000).toISOString();
+    const future = "2099-01-01T00:00:00.000Z";
     await addTxn(user.id, { type: "topup", bucket: "standard", amount: 10, refId: "s" });
     await addTxn(user.id, { type: "topup", bucket: "bonus", amount: 5, multiplier: 1.0, expiresAt: future, refId: "b" });
     await addTxn(user.id, { type: "topup", bucket: "resource", amount: 2, refId: "r" });
@@ -119,7 +119,7 @@ describe("deductFromPriorityBuckets — priority order", () => {
 
   it("falls through to standard when resource and bonus exhausted", async () => {
     const user = await seedUser("fallstd@example.com");
-    const future = new Date(1750000000000 + 86400000).toISOString();
+    const future = "2099-01-01T00:00:00.000Z";
     await addTxn(user.id, { type: "topup", bucket: "resource", amount: 1, refId: "r" });
     await addTxn(user.id, { type: "topup", bucket: "bonus", amount: 1, multiplier: 1.0, expiresAt: future, refId: "b" });
     await addTxn(user.id, { type: "topup", bucket: "standard", amount: 10, refId: "s" });
@@ -141,7 +141,7 @@ describe("deductFromPriorityBuckets — priority order", () => {
 describe("deductFromPriorityBuckets — multiplier", () => {
   it("applies multiplier when deducting from bonus bucket", async () => {
     const user = await seedUser("mult@example.com");
-    const future = new Date(1750000000000 + 86400000).toISOString();
+    const future = "2099-01-01T00:00:00.000Z";
     await addTxn(user.id, { type: "topup", bucket: "bonus", amount: 10, multiplier: 1.15, expiresAt: future, refId: "b" });
 
     const { deductFromPriorityBuckets } = await import("@/lib/db/repos/creditLedgerRepo.js");
@@ -163,7 +163,7 @@ describe("deductFromPriorityBuckets — multiplier", () => {
 
   it("uses multiplier=1 when no bonus credit history found", async () => {
     const user = await seedUser("nomult@example.com");
-    const future = new Date(1750000000000 + 86400000).toISOString();
+    const future = "2099-01-01T00:00:00.000Z";
     // Write bonus row directly without multiplier stored in DB (edge case)
     const { getAdapter } = await import("@/lib/db/driver.js");
     const db = await getAdapter();
@@ -197,7 +197,7 @@ describe("deductFromPriorityBuckets — multiplier", () => {
 describe("deductFromPriorityBuckets — expired bonus excluded", () => {
   it("skips expired bonus and falls through to standard", async () => {
     const user = await seedUser("expskip@example.com");
-    const past = new Date(Date.now() - 1000).toISOString();
+    const past = "2020-01-01T00:00:00.000Z";
     await addTxn(user.id, { type: "topup", bucket: "bonus", amount: 10, expiresAt: past, refId: "b" });
     await addTxn(user.id, { type: "topup", bucket: "standard", amount: 10, refId: "s" });
 
@@ -246,7 +246,7 @@ describe("standard-only user backward compat (AC5)", () => {
 
   it("does NOT over-draw bonus when multiplier > 1 and cost > avail/multiplier (P1 regression)", async () => {
     const user = await seedUser("overdraw@example.com");
-    const future = new Date(1750000000000 + 86400000).toISOString();
+    const future = "2099-01-01T00:00:00.000Z";
     // bonus=1 credit, multiplier=2, standard=10 → bonus can cover at most 0.5 cost units
     await addTxn(user.id, { type: "topup", bucket: "bonus", amount: 1, multiplier: 2, expiresAt: future, refId: "b" });
     await addTxn(user.id, { type: "topup", bucket: "standard", amount: 10, refId: "s" });

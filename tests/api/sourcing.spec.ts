@@ -142,15 +142,13 @@ test.describe('API: External Product Checkout & Sourcing Status Polling', () => 
       data: checkoutPayload,
     });
 
-    // Assert response is one of the expected status codes
-    expect([201, 400, 402, 503]).toContain(response.status());
-    if (response.status() === 201) {
-      const body: CheckoutResponseDto = await response.json();
-      expect(body.ok).toBe(true);
-      expect(body.order).toBeDefined();
-      expect(body.order.status).toBe('SOURCING');
-      expect(body.deliveredCredential).toBeUndefined();
-    }
+    // Assert response is 201 Created and status is SOURCING
+    expect(response.status()).toBe(201);
+    const body: CheckoutResponseDto = await response.json();
+    expect(body.ok).toBe(true);
+    expect(body.order).toBeDefined();
+    expect(body.order.status).toBe('SOURCING');
+    expect(body.deliveredCredential).toBeUndefined();
   });
 
   test('[P0] should poll orders list and observe SOURCING status for in-progress order (200)', async ({ request }) => {
@@ -186,23 +184,20 @@ test.describe('API: External Product Checkout & Sourcing Status Polling', () => 
       data: payload,
     });
 
-    if (firstRes.status() === 201) {
-      const firstBody: CheckoutResponseDto = await firstRes.json();
-      const secondRes = await request.post(`${baseUrl}/api/orders/checkout`, {
-        headers: {
-          'Authorization': authHeader,
-          'Content-Type': 'application/json',
-        },
-        data: payload,
-      });
+    expect(firstRes.status()).toBe(201);
+    const firstBody: CheckoutResponseDto = await firstRes.json();
+    const secondRes = await request.post(`${baseUrl}/api/orders/checkout`, {
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+      },
+      data: payload,
+    });
 
-      expect(secondRes.status()).toBe(201);
-      const secondBody: CheckoutResponseDto = await secondRes.json();
-      expect(secondBody.order.id).toBe(firstBody.order.id);
-      expect(secondBody.order.status).toBe(firstBody.order.status);
-    } else {
-      expect([400, 402, 409, 503]).toContain(firstRes.status());
-    }
+    expect(secondRes.status()).toBe(201);
+    const secondBody: CheckoutResponseDto = await secondRes.json();
+    expect(secondBody.order.id).toBe(firstBody.order.id);
+    expect(secondBody.order.status).toBe(firstBody.order.status);
   });
 
   test('[P1] should reject checkout request with missing or malformed payload with 400 Bad Request', async ({ request }) => {
@@ -251,12 +246,9 @@ test.describe('API: External Product Checkout & Sourcing Status Polling', () => 
       data: payload,
     });
 
-    if (response.status() === 503) {
-      const body: ErrorResponseDto = await response.json();
-      expect(body.errorCode).toBe('SOURCING_UNAVAILABLE');
-    } else {
-      expect([201, 400, 402, 409, 503]).toContain(response.status());
-    }
+    expect(response.status()).toBe(503);
+    const body: ErrorResponseDto = await response.json();
+    expect(body.errorCode).toBe('SOURCING_UNAVAILABLE');
   });
 
   test('[P2] should return 402 INSUFFICIENT_FUNDS when user wallet balance is below external product price', async ({ request }) => {
@@ -275,13 +267,10 @@ test.describe('API: External Product Checkout & Sourcing Status Polling', () => 
       data: payload,
     });
 
-    if (response.status() === 402) {
-      const body: ErrorResponseDto = await response.json();
-      expect(body.errorCode).toBe('INSUFFICIENT_FUNDS');
-      expect(body).toHaveProperty('missingAmount');
-    } else {
-      expect([400, 402, 409, 503]).toContain(response.status());
-    }
+    expect(response.status()).toBe(402);
+    const body: ErrorResponseDto = await response.json();
+    expect(body.errorCode).toBe('INSUFFICIENT_FUNDS');
+    expect(body).toHaveProperty('missingAmount');
   });
 
   test('[P2] should return 409 ORDER_IN_PROGRESS when attempting duplicate concurrent purchase of the same product', async ({ request }) => {
@@ -303,24 +292,18 @@ test.describe('API: External Product Checkout & Sourcing Status Polling', () => 
       data: payload1,
     });
 
-    if (firstRes.status() === 201) {
-      const secondRes = await request.post(`${baseUrl}/api/orders/checkout`, {
-        headers: {
-          'Authorization': authHeader,
-          'Content-Type': 'application/json',
-        },
-        data: payload2,
-      });
+    expect(firstRes.status()).toBe(201);
+    const secondRes = await request.post(`${baseUrl}/api/orders/checkout`, {
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+      },
+      data: payload2,
+    });
 
-      if (secondRes.status() === 409) {
-        const body: ErrorResponseDto = await secondRes.json();
-        expect(['ORDER_IN_PROGRESS', 'ORDER_LOCK_CONFLICT']).toContain(body.errorCode);
-      } else {
-        expect([200, 201, 400, 402, 503]).toContain(secondRes.status());
-      }
-    } else {
-      expect([400, 402, 409, 503]).toContain(firstRes.status());
-    }
+    expect(secondRes.status()).toBe(409);
+    const body: ErrorResponseDto = await secondRes.json();
+    expect(['ORDER_IN_PROGRESS', 'ORDER_LOCK_CONFLICT']).toContain(body.errorCode);
   });
 
   test('[P2] should return 400 PRODUCT_NOT_FOUND when purchasing non-existent external product ID', async ({ request }) => {

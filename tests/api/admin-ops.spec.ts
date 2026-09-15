@@ -61,9 +61,7 @@ test.describe('Epic 4 Retro: Admin Ops Monitoring API Tests', () => {
       // Assert non-empty values, not just types
       expect(s.supplierName).toBeTruthy();
       expect(s.successCount + s.failCount).toBeGreaterThanOrEqual(0);
-      if (s.avgLatencyMs !== null) {
-        expect(s.avgLatencyMs).toBeGreaterThanOrEqual(0);
-      }
+      expect(s.avgLatencyMs === null || s.avgLatencyMs >= 0).toBe(true);
       expect(s.timeoutCount).toBeGreaterThanOrEqual(0);
     }
   });
@@ -104,26 +102,19 @@ test.describe('Epic 4 Retro: Admin Ops Monitoring API Tests', () => {
       headers: { 'x-admin-key': TEST_ADMIN_KEY },
     });
 
-    // 200 when queue is up; 503 when Redis is down — both are valid
-    expect([200, 503]).toContain(res.status());
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(Array.isArray(body.jobs)).toBe(true);
 
-    if (res.status() === 200) {
-      const body = await res.json();
-      expect(body.ok).toBe(true);
-      expect(Array.isArray(body.jobs)).toBe(true);
-
-      for (const job of body.jobs) {
-        expect(typeof job.jobId).toBe('string');
-        expect(typeof job.orderId).toBe('string');
-        expect(typeof job.failedReason).toBe('string');
-        expect(typeof job.attemptsMade).toBe('number');
-        expect(typeof job.failedAt).toBe('string');
-        // ISO 8601 check
-        expect(() => new Date(job.failedAt)).not.toThrow();
-      }
-    } else {
-      const body = await res.json();
-      expect(body.errorCode).toBe('SOURCING_UNAVAILABLE');
+    for (const job of body.jobs) {
+      expect(typeof job.jobId).toBe('string');
+      expect(typeof job.orderId).toBe('string');
+      expect(typeof job.failedReason).toBe('string');
+      expect(typeof job.attemptsMade).toBe('number');
+      expect(typeof job.failedAt).toBe('string');
+      // ISO 8601 check
+      expect(Number.isNaN(Date.parse(job.failedAt))).toBe(false);
     }
   });
 
@@ -131,11 +122,9 @@ test.describe('Epic 4 Retro: Admin Ops Monitoring API Tests', () => {
     const res = await request.get(`${API_URL}/api/admin/ops/failed-jobs?limit=5`, {
       headers: { 'x-admin-key': TEST_ADMIN_KEY },
     });
-    expect([200, 503]).toContain(res.status());
-    if (res.status() === 200) {
-      const { jobs } = await res.json();
-      expect(jobs.length).toBeLessThanOrEqual(5);
-    }
+    expect(res.status()).toBe(200);
+    const { jobs } = await res.json();
+    expect(jobs.length).toBeLessThanOrEqual(5);
   });
 
   // ── Retry ─────────────────────────────────────────────────────────────────
@@ -146,12 +135,9 @@ test.describe('Epic 4 Retro: Admin Ops Monitoring API Tests', () => {
       { headers: { 'x-admin-key': TEST_ADMIN_KEY } },
     );
 
-    // 404 when queue reachable, 503 when queue down
-    expect([404, 503]).toContain(res.status());
-    if (res.status() === 404) {
-      const body = await res.json();
-      expect(body.errorCode).toBe('JOB_NOT_FOUND');
-    }
+    expect(res.status()).toBe(404);
+    const body = await res.json();
+    expect(body.errorCode).toBe('JOB_NOT_FOUND');
   });
 
   test('[P1] POST /api/admin/ops/failed-jobs/:jobId/retry returns 400 for empty jobId', async ({ request }) => {
@@ -160,10 +146,8 @@ test.describe('Epic 4 Retro: Admin Ops Monitoring API Tests', () => {
       `${API_URL}/api/admin/ops/failed-jobs/%20/retry`,
       { headers: { 'x-admin-key': TEST_ADMIN_KEY } },
     );
-    expect([400, 503]).toContain(res.status());
-    if (res.status() === 400) {
-      const body = await res.json();
-      expect(body.errorCode).toBe('INVALID_JOB_ID');
-    }
+    expect(res.status()).toBe(400);
+    const body = await res.json();
+    expect(body.errorCode).toBe('INVALID_JOB_ID');
   });
 });

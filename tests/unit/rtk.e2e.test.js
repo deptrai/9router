@@ -40,6 +40,19 @@ function logOffset() {
   return fs.statSync(LOG_FILE).size;
 }
 
+async function waitForLogMatch(offset, predicate, maxAttempts = 20) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const { text } = readLogSince(offset);
+    const matches = [...text.matchAll(/\[RTK\] saved (\d+)B \/ (\d+)B \([\d.]+%\) via \[([\w,-]+)\] hits=(\d+)/g)];
+    const found = matches.find(predicate);
+    if (found) return { text, matches, found };
+    await new Promise(r => setImmediate(r));
+  }
+  const { text } = readLogSince(offset);
+  const matches = [...text.matchAll(/\[RTK\] saved (\d+)B \/ (\d+)B \([\d.]+%\) via \[([\w,-]+)\] hits=(\d+)/g)];
+  return { text, matches, found: matches.find(predicate) };
+}
+
 async function sendChat(body) {
   return fetch(`${BASE}/v1/chat/completions`, {
     method: "POST",
@@ -95,12 +108,8 @@ maybe("RTK end-to-end", () => {
     expect([200, 400, 401, 402, 500]).toContain(res.status);
 
     expect(LOG_FILE, 'LOG_FILE env var not set — cannot verify RTK log output').toBeTruthy();
-    // Wait for log flush — poll for the RTK line to appear
-    await new Promise(r => setTimeout(r, 200));
-    const { text } = readLogSince(offset);
-    const matches = [...text.matchAll(/\[RTK\] saved (\d+)B \/ (\d+)B \([\d.]+%\) via \[([\w,-]+)\] hits=(\d+)/g)];
-    // Find the log line that corresponds to OUR request (total ≥ diff.length and contains git-diff)
-    const mine = matches.find(m => Number(m[2]) >= diff.length && m[3].includes("git-diff"));
+    // Poll for the RTK line to appear
+    const { matches, found: mine } = await waitForLogMatch(offset, m => Number(m[2]) >= diff.length && m[3].includes("git-diff"));
     expect(mine, `no matching [RTK] line for our request (diff=${diff.length}B) in ${matches.length} log entries`).toBeTruthy();
     expect(Number(mine[1])).toBeGreaterThan(500);
     expect(mine[3]).toContain("git-diff");
@@ -128,11 +137,8 @@ maybe("RTK end-to-end", () => {
     expect([200, 400, 401, 402, 500]).toContain(res.status);
 
     expect(LOG_FILE, 'LOG_FILE env var not set — cannot verify RTK log output').toBeTruthy();
-    // Wait for log flush — poll for the RTK line to appear
-    await new Promise(r => setTimeout(r, 200));
-    const { text } = readLogSince(offset);
-    const matches = [...text.matchAll(/\[RTK\] saved (\d+)B \/ (\d+)B \([\d.]+%\) via \[([\w,-]+)\] hits=(\d+)/g)];
-    const mine = matches.find(m => Number(m[2]) >= grepOut.length && m[3].includes("grep"));
+    // Poll for the RTK line to appear
+    const { found: mine } = await waitForLogMatch(offset, m => Number(m[2]) >= grepOut.length && m[3].includes("grep"));
     expect(mine, `no matching [RTK] line for grep payload`).toBeTruthy();
   });
 });

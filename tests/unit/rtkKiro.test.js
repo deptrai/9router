@@ -283,9 +283,7 @@ describe("Kiro format RTK support", () => {
     for (const body of malformedBodies) {
       const stats = compressMessages(body, true);
       // Malformed bodies may return null (caught by try-catch) or empty stats
-      if (stats !== null) {
-        expect(stats.hits.length).toBe(0);
-      }
+      expect(stats === null || stats?.hits?.length === 0).toBe(true);
     }
   });
 });

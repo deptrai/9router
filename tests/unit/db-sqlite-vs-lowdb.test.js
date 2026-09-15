@@ -121,7 +121,9 @@ describe("DB SQLite layer — public API parity", () => {
 
   it("proxyPools: CRUD with sort by updatedAt desc", async () => {
     const p1 = await sqliteDb.createProxyPool({ name: "p1", proxyUrl: "http://a", type: "http" });
-    await new Promise((r) => setTimeout(r, 10));
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const db = await getAdapter();
+    db.run("UPDATE proxyPools SET updatedAt = '2026-01-01T00:00:00.000Z' WHERE id = ?", [p1.id]);
     const p2 = await sqliteDb.createProxyPool({ name: "p2", proxyUrl: "http://b", type: "http" });
     const list = await sqliteDb.getProxyPools();
     expect(list[0].id).toBe(p2.id); // newest first
@@ -220,10 +222,13 @@ describe("DB SQLite layer — public API parity", () => {
       request: { method: "POST" }, response: { status: 200 },
     });
 
-    // Wait for buffer flush
-    await new Promise((r) => setTimeout(r, 200));
+    // Poll for buffer flush completion
+    let got = null;
+    for (let i = 0; i < 20 && !got; i++) {
+      got = await sqliteDb.getRequestDetailById("d1");
+      if (!got) await new Promise((r) => setImmediate(r));
+    }
 
-    const got = await sqliteDb.getRequestDetailById("d1");
     expect(got).toBeDefined();
     expect(got.id).toBe("d1");
 

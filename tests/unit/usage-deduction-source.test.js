@@ -167,16 +167,13 @@ describe("logUsage — forwards billingSource to deduction (streaming path, AC#3
     const { logUsage } = await import("open-sse/utils/usageTracking.js");
 
     logUsage("anthropic", { prompt_tokens: 1000, completion_tokens: 500 }, "claude-sonnet-4-6", "conn-1", key.key, "plan");
-    // Poll until async logUsage flush completes
+    // Yield event loop to allow async logUsage microtasks to execute
+    for (let i = 0; i < 5; i++) {
+      await new Promise((r) => setImmediate(r));
+    }
     const { getAdapter } = await import("@/lib/db/driver.js");
     const db = await getAdapter();
-    const deadline = Date.now() + 3000;
-    let ledgerRows;
-    while (Date.now() < deadline) {
-      ledgerRows = db.all(`SELECT * FROM creditTransactions WHERE userId = ? AND type = 'usage_deduction'`, [user.id]);
-      if (ledgerRows.length === 0) break;
-      await new Promise((r) => setTimeout(r, 10));
-    }
+    const ledgerRows = db.all(`SELECT * FROM creditTransactions WHERE userId = ? AND type = 'usage_deduction'`, [user.id]);
     expect(ledgerRows.length).toBe(0);
   });
 
@@ -185,11 +182,16 @@ describe("logUsage — forwards billingSource to deduction (streaming path, AC#3
     const { logUsage } = await import("open-sse/utils/usageTracking.js");
 
     logUsage("anthropic", { prompt_tokens: 1000, completion_tokens: 500 }, "claude-sonnet-4-6", "conn-1", key.key, "credit");
-    await new Promise((r) => setTimeout(r, 50));
 
     const { getAdapter } = await import("@/lib/db/driver.js");
     const db = await getAdapter();
-    const ledgerRows = db.all(`SELECT * FROM creditTransactions WHERE userId = ? AND type = 'usage_deduction'`, [user.id]);
+    let ledgerRows = [];
+    for (let i = 0; i < 30; i++) {
+      ledgerRows = db.all(`SELECT * FROM creditTransactions WHERE userId = ? AND type = 'usage_deduction'`, [user.id]);
+      if (ledgerRows.length > 0) break;
+      await new Promise((r) => setImmediate(r));
+    }
+
     expect(ledgerRows.length).toBe(1);
     expect(ledgerRows[0].amount).toBeLessThan(0);
   });

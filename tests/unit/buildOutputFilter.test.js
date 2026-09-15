@@ -163,13 +163,9 @@ describe("PR #1175 - false positive risks", () => {
       "2026-05-16 10:00:15 INFO Connection restored"
     ].join("\n");
     const filter = autoDetectFilter(input);
-    // Document actual behavior — may detect as buildOutput
-    console.log("[generic-error-log] detected:", filter?.filterName || "null");
-    // Whatever the detection, the filter should NOT corrupt the data
-    if (filter === buildOutput) {
-      const out = buildOutput(input);
-      expect(out).toContain("ERROR: Database connection timeout");
-    }
+    expect(filter).toBe(buildOutput);
+    const out = buildOutput(input);
+    expect(out).toContain("ERROR: Database connection timeout");
   });
 
   it("generic 'Compiling templates' (non-build context) triggers buildOutput", () => {
@@ -180,12 +176,8 @@ describe("PR #1175 - false positive risks", () => {
       "[INFO] Application ready"
     ].join("\n");
     const filter = autoDetectFilter(input);
-    console.log("[compiling-templates] detected:", filter?.filterName || "null");
-    if (filter === buildOutput) {
-      const out = buildOutput(input);
-      // Should at least preserve structure (count compiling)
-      expect(out).toContain("Compiled");
-    }
+    const out = buildOutput(input);
+    expect(out).toContain("Compiling templates");
   });
 
   it("plain text with no patterns falls through (no false positive)", () => {

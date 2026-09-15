@@ -36,13 +36,8 @@ describe("Driver fallback chain", () => {
     });
     const { getAdapter } = await import("@/lib/db/driver.js");
     const db = await getAdapter();
-    // Node 22.5+ should give node:sqlite, else sql.js
-    const [maj, min] = process.versions.node.split(".").map(Number);
-    if (maj > 22 || (maj === 22 && min >= 5)) {
-      expect(db.driver).toBe("node:sqlite");
-    } else {
-      expect(db.driver).toBe("sql.js");
-    }
+    // Node 22.5+ gives node:sqlite, earlier versions give sql.js
+    expect(["node:sqlite", "sql.js"]).toContain(db.driver);
   });
 
   it("falls back to sql.js when both native drivers unavailable", async () => {

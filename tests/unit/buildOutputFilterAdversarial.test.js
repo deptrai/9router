@@ -109,13 +109,10 @@ describe("PR #1175 - adversarial: user code containing build strings", () => {
       "when complete."
     ].join("\n");
     const filter = autoDetectFilter(input);
-    console.log("[file-content-build-success] detected:", filter?.filterName || "null");
-    // Document behavior — buildOutput should preserve non-pattern lines as fallback
-    if (filter === buildOutput) {
-      const out = buildOutput(input);
-      // BUILD SUCCESS preserved
-      expect(out).toContain("BUILD SUCCESS");
-    }
+    expect(filter).toBe(buildOutput);
+    const out = buildOutput(input);
+    // BUILD SUCCESS preserved
+    expect(out).toContain("BUILD SUCCESS");
   });
 
   it("real cargo error spanning multiple lines preserves context", () => {

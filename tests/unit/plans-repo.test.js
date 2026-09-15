@@ -71,9 +71,10 @@ describe("plansRepo", () => {
   it("updatePlan changes fields and updates updatedAt", async () => {
     const { createPlan, updatePlan, getPlanById } = await import("@/lib/db/repos/plansRepo.js");
     const plan = await createPlan({ name: "mutable", rpm: 10 });
-    const before = plan.updatedAt;
-    // Small delay to ensure updatedAt changes (deterministic, not arbitrary)
-    await new Promise(r => setTimeout(r, 10));
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const db = await getAdapter();
+    db.run("UPDATE plans SET updatedAt = '2026-01-01T00:00:00.000Z' WHERE id = ?", [plan.id]);
+    const before = "2026-01-01T00:00:00.000Z";
     const updated = await updatePlan(plan.id, { rpm: 25, displayName: "Mutable Pro" });
     expect(updated.rpm).toBe(25);
     expect(updated.displayName).toBe("Mutable Pro");

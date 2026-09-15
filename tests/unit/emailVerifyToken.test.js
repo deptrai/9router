@@ -104,7 +104,7 @@ describe("peekEmailVerifyToken + removeEmailVerifyToken (update-before-remove)",
 
     const token = await createEmailVerifyToken("u", "e@e.com");
     const kv = makeKv("emailVerify");
-    await kv.set(token, { userId: "u", email: "e@e.com", expiresAt: Date.now() - 1000 });
+    await kv.set(token, { userId: "u", email: "e@e.com", expiresAt: 1000 });
 
     expect(await peekEmailVerifyToken(token)).toBeNull();
     expect(await kv.get(token, null)).toBeNull();

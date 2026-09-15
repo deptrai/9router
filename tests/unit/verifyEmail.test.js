@@ -95,7 +95,7 @@ describe("GET /api/auth/verify-email", () => {
     const token = await createEmailVerifyToken(user.id, user.email);
     // Override with past expiresAt
     const kv = makeKv("emailVerify");
-    await kv.set(token, { userId: user.id, email: user.email, expiresAt: Date.now() - 1000 });
+    await kv.set(token, { userId: user.id, email: user.email, expiresAt: 1000 });
 
     const { GET } = await import("@/app/api/auth/verify-email/route.js");
     const res = await GET(makeRequest(token));
