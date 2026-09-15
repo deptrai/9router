@@ -142,14 +142,14 @@ test.describe('API: External Product Checkout & Sourcing Status Polling', () => 
       data: checkoutPayload,
     });
 
+    // Assert response is one of the expected status codes
+    expect([201, 400, 402, 503]).toContain(response.status());
     if (response.status() === 201) {
       const body: CheckoutResponseDto = await response.json();
       expect(body.ok).toBe(true);
       expect(body.order).toBeDefined();
       expect(body.order.status).toBe('SOURCING');
       expect(body.deliveredCredential).toBeUndefined();
-    } else {
-      expect([201, 400, 402, 503]).toContain(response.status());
     }
   });
 

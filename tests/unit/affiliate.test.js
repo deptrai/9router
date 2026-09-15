@@ -22,10 +22,20 @@ vi.mock("@/lib/telegram/botClient.js", () => ({
 }));
 
 let tempDir;
-const origDataDir = process.env.DATA_DIR;
+const savedEnv = {};
+const ENV_KEYS = [
+  "DATA_DIR",
+  "TELEGRAM_BOT_TOKEN",
+  "TELEGRAM_WEBHOOK_SECRET",
+  "BASE_URL",
+  "NEXT_PUBLIC_TELEGRAM_BOT_USERNAME",
+  "AFFILIATE_COMMISSION_PERCENT",
+  "AFFILIATE_STORE_COMMISSION_PERCENT"
+];
 
 beforeEach(() => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-aff-"));
+  ENV_KEYS.forEach(k => { savedEnv[k] = process.env[k]; });
   process.env.DATA_DIR = tempDir;
   process.env.TELEGRAM_BOT_TOKEN = "test-bot-token";
   process.env.TELEGRAM_WEBHOOK_SECRET = "test-secret";
@@ -41,8 +51,10 @@ afterEach(() => {
   try { global._dbAdapter?.instance?.close?.(); } catch {}
   delete global._dbAdapter;
   if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
-  if (origDataDir === undefined) delete process.env.DATA_DIR;
-  else process.env.DATA_DIR = origDataDir;
+  ENV_KEYS.forEach(k => {
+    if (savedEnv[k] === undefined) delete process.env[k];
+    else process.env[k] = savedEnv[k];
+  });
   vi.restoreAllMocks();
 });
 

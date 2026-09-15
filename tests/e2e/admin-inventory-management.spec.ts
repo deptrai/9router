@@ -199,8 +199,8 @@ test.describe('Story 5.2: Admin Inventory Management E2E Tests', () => {
     await expect(submitBtn).toBeEnabled();
     await submitBtn.click();
 
-    // Wait for submission
-    await page.waitForTimeout(500);
+    // Wait for the batch submission API call to complete
+    await page.waitForResponse((resp) => resp.url().includes('/api/admin/inventory/'));
     expect(batchSubmitted).toBe(true);
   });
 });

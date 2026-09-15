@@ -78,16 +78,29 @@ describe("POST /api/users/me/plan/purchase", () => {
     expect(ledger).toHaveLength(1);
   });
 
-  it("maps validation, missing plan, insufficient credits, and admin", async () => {
+  it("returns 400 for empty idempotency key", async () => {
     const { plan } = await seed({ credits: 1, priceCredits: 10 });
     const { POST } = await import("@/app/api/users/me/plan/purchase/route.js");
-
     expect((await POST(req({ planId: plan.id, idempotencyKey: "" }))).status).toBe(400);
+  });
+
+  it("returns 404 for missing plan", async () => {
+    await seed({ credits: 1, priceCredits: 10 });
+    const { POST } = await import("@/app/api/users/me/plan/purchase/route.js");
     expect((await POST(req({ planId: "missing", idempotencyKey: "missing" }))).status).toBe(404);
+  });
+
+  it("returns 402 for insufficient credits", async () => {
+    const { plan } = await seed({ credits: 1, priceCredits: 10 });
+    const { POST } = await import("@/app/api/users/me/plan/purchase/route.js");
     const poor = await POST(req({ planId: plan.id, idempotencyKey: "poor" }));
     expect(poor.status).toBe(402);
     expect(await poor.json()).toMatchObject({ error: "Insufficient credits", requiredCredits: 10, creditsBalance: 1, topupHref: "/dashboard/credits" });
+  });
 
+  it("returns 403 for admin role", async () => {
+    const { plan } = await seed({ credits: 1, priceCredits: 10 });
+    const { POST } = await import("@/app/api/users/me/plan/purchase/route.js");
     mockSession = { role: "admin", userId: "admin" };
     expect((await POST(req({ planId: plan.id, idempotencyKey: "admin" }))).status).toBe(403);
   });

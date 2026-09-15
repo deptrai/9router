@@ -380,11 +380,15 @@ describe("getEarliestModelLockUntil", () => {
 
 describe("buildModelLockUpdate", () => {
   it("builds correct key for named model", () => {
+    const fixedNow = 1750000000000;
+    vi.useFakeTimers();
+    vi.setSystemTime(fixedNow);
     const update = buildModelLockUpdate("kiro/auto", 8000);
     expect(Object.keys(update)[0]).toBe("modelLock_kiro/auto");
     const expiry = new Date(Object.values(update)[0]).getTime();
-    expect(expiry).toBeGreaterThan(Date.now() + 7000);
-    expect(expiry).toBeLessThan(Date.now() + 9000);
+    expect(expiry).toBeGreaterThan(fixedNow + 7000);
+    expect(expiry).toBeLessThan(fixedNow + 9000);
+    vi.useRealTimers();
   });
 
   it("builds __all key when model is null", () => {

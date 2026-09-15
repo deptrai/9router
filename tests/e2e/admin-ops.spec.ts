@@ -161,7 +161,8 @@ test.describe('Epic 4 Retro: Admin Ops Dashboard E2E Tests', () => {
     await page.goto(`${ADMIN_URL}/ops`);
     await page.getByRole('button', { name: 'Retry' }).first().click();
 
-    await page.waitForTimeout(500);
+    // Wait for the retry API call to complete
+    await page.waitForResponse((resp) => resp.url().includes('/api/admin/ops/jobs/') && resp.request().method() === 'POST');
     expect(retriedJobId).toBe('job-to-retry-1234');
     await expect(page.getByText('Đã đưa job', { exact: false })).toBeVisible();
   });
@@ -218,8 +219,8 @@ test.describe('Epic 4 Retro: Admin Ops Dashboard E2E Tests', () => {
 
     await page.goto(`${ADMIN_URL}/ops`);
 
-    // Toast error should appear
-    await page.waitForTimeout(500);
+    // Toast error should appear — wait for the API response to confirm
+    await page.waitForResponse((resp) => resp.url().includes('/api/admin/ops/'));
     await expect(page.getByRole('heading', { name: 'Giám sát Vận hành' })).toBeVisible();
   });
 });

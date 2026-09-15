@@ -20,7 +20,6 @@ const TEST_ADMIN_KEY = 'super-secret-admin-key-that-is-at-least-32-chars-long!';
 test.describe('Story 5.2: Admin Inventory API Tests', () => {
   let targetProductId: string;
   let externalProductId: string;
-  let createdItemId: string;
 
   test.beforeAll(async ({ request }) => {
     // 1. Create a test IN_HOUSE product
@@ -188,26 +187,30 @@ test.describe('Story 5.2: Admin Inventory API Tests', () => {
     expect(body.items.length).toBeGreaterThanOrEqual(4);
     expect(body.total).toBeGreaterThanOrEqual(4);
 
-    // Verify deterministic masking applied
+    // Verify deterministic masking applied — assert items exist first
     const emailItem = body.items.find((i: any) => i.maskedCredential.includes('@'));
-    if (emailItem) {
-      expect(emailItem.maskedCredential).toContain('***');
-      expect(emailItem.maskedCredential.endsWith('@example.com')).toBe(true);
-    }
+    expect(emailItem, 'No email-format credential found in items').toBeDefined();
+    expect(emailItem.maskedCredential).toContain('***');
+    expect(emailItem.maskedCredential.endsWith('@example.com')).toBe(true);
 
     const colonItem = body.items.find((i: any) => i.maskedCredential.includes(':'));
-    if (colonItem) {
-      expect(colonItem.maskedCredential).toContain(':****');
-    }
-
-    // Save one item ID for subsequent tests
-    createdItemId = body.items[0].id;
+    expect(colonItem, 'No colon-format credential found in items').toBeDefined();
+    expect(colonItem.maskedCredential).toContain(':****');
   });
 
   test('[P0] GET /api/admin/inventory/items/:id/decrypt returns plaintext credential with valid admin auth', async ({ request }) => {
-    expect(createdItemId).toBeDefined();
+    // Create a dedicated inventory item for this test
+    const createRes = await request.post(`${API_URL}/api/admin/inventory/items`, {
+      headers: { 'x-admin-key': TEST_ADMIN_KEY },
+      data: {
+        productId: 'test-product',
+        credential: 'decrypt-test-credential@example.com',
+      },
+    });
+    const createBody = await createRes.json();
+    const itemId = createBody.item.id;
 
-    const res = await request.get(`${API_URL}/api/admin/inventory/items/${createdItemId}/decrypt`, {
+    const res = await request.get(`${API_URL}/api/admin/inventory/items/${itemId}/decrypt`, {
       headers: { 'x-admin-key': TEST_ADMIN_KEY },
     });
 
@@ -222,9 +225,17 @@ test.describe('Story 5.2: Admin Inventory API Tests', () => {
   // --- 4. Status Toggle & Atomic Deletion Guard ---
 
   test('[P0] PATCH /api/admin/inventory/items/:id/status updates status to DEFECTIVE', async ({ request }) => {
-    expect(createdItemId).toBeDefined();
+    const createRes = await request.post(`${API_URL}/api/admin/inventory/items`, {
+      headers: { 'x-admin-key': TEST_ADMIN_KEY },
+      data: {
+        productId: targetProductId,
+        credential: `patch-status-${Date.now()}@example.com`,
+      },
+    });
+    const createBody = await createRes.json();
+    const itemId = createBody.item.id;
 
-    const res = await request.patch(`${API_URL}/api/admin/inventory/items/${createdItemId}/status`, {
+    const res = await request.patch(`${API_URL}/api/admin/inventory/items/${itemId}/status`, {
       headers: { 'x-admin-key': TEST_ADMIN_KEY },
       data: { status: 'DEFECTIVE' },
     });
@@ -236,9 +247,17 @@ test.describe('Story 5.2: Admin Inventory API Tests', () => {
   });
 
   test('[P0] DELETE /api/admin/inventory/items/:id deletes DEFECTIVE or AVAILABLE item', async ({ request }) => {
-    expect(createdItemId).toBeDefined();
+    const createRes = await request.post(`${API_URL}/api/admin/inventory/items`, {
+      headers: { 'x-admin-key': TEST_ADMIN_KEY },
+      data: {
+        productId: targetProductId,
+        credential: `delete-item-${Date.now()}@example.com`,
+      },
+    });
+    const createBody = await createRes.json();
+    const itemId = createBody.item.id;
 
-    const res = await request.delete(`${API_URL}/api/admin/inventory/items/${createdItemId}`, {
+    const res = await request.delete(`${API_URL}/api/admin/inventory/items/${itemId}`, {
       headers: { 'x-admin-key': TEST_ADMIN_KEY },
     });
 

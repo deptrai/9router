@@ -7,6 +7,10 @@ describe("xai/oauth service", () => {
     vi.stubGlobal("fetch", vi.fn());
   });
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("validates discovered endpoints are https x.ai URLs", async () => {
     const { validateOAuthEndpoint } = await import("../../src/lib/oauth/services/xai.js");
 

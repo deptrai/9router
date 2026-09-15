@@ -124,7 +124,7 @@ maybe("RTK multi-provider E2E", () => {
       expect(res.status).toBeGreaterThanOrEqual(200);
       expect(res.status).toBeLessThan(600);
 
-      if (!LOG_FILE) return;
+      expect(LOG_FILE, 'LOG_FILE env var not set — cannot verify RTK log output').toBeTruthy();
       const hit = await waitForRtkLine({ minBytes: diff.length, filterName: "git-diff" });
       expect(hit, `[RTK] git-diff log line not found for ${route.name}`).toBeTruthy();
       expect(hit.saved).toBeGreaterThan(500);

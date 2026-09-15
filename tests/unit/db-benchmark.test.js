@@ -76,6 +76,7 @@ describe.skip("DB Benchmark — SQLite vs Lowdb", () => {
 
     const speedup = (lowdbTime / sqliteTime).toFixed(2);
     console.log(`  → SQLite is ${speedup}x faster`);
+    expect(Number(speedup)).toBeGreaterThan(0);
   }, 60000);
 
   it(`READ ${N_QUERIES} filtered queries`, async () => {
@@ -96,6 +97,7 @@ describe.skip("DB Benchmark — SQLite vs Lowdb", () => {
 
     const speedup = (lowdbTime / sqliteTime).toFixed(2);
     console.log(`  → SQLite is ${speedup}x faster`);
+    expect(Number(speedup)).toBeGreaterThan(0);
   }, 60000);
 
   it(`READ ${N_QUERIES} by id (point lookup)`, async () => {
@@ -147,6 +149,7 @@ describe.skip("DB Benchmark — SQLite vs Lowdb", () => {
 
     const speedup = (lowdbTime / sqliteTime).toFixed(2);
     console.log(`  → SQLite is ${speedup}x faster`);
+    expect(Number(speedup)).toBeGreaterThan(0);
   }, 120000);
 
   it(`getUsageStats(24h) repeat 50x`, async () => {

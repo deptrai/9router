@@ -75,7 +75,7 @@ test.describe('Story 5.4: Admin Finance Dashboard E2E Tests', () => {
     await expect(page.getByRole('heading', { name: 'Báo cáo Tài chính & Đối soát' })).toBeVisible();
     await expect(page.getByText('✓ Đã đối soát chính xác')).toBeVisible();
 
-    const grid = page.locator('.grid');
+    const grid = page.getByRole('region').or(page.locator('[data-testid="finance-summary"]')).or(page.locator('section').filter({ hasText: 'Tổng nạp' }));
     await expect(grid.getByText('Tổng nạp')).toBeVisible();
     await expect(grid.getByText('Tổng mua')).toBeVisible();
     await expect(grid.getByText('Tổng hoàn')).toBeVisible();
@@ -86,7 +86,7 @@ test.describe('Story 5.4: Admin Finance Dashboard E2E Tests', () => {
     await expect(page.getByText('400.000 ₫')).toBeVisible();
     await expect(page.getByText('700.000 ₫')).toBeVisible();
 
-    await expect(page.locator('svg.w-full')).toBeVisible();
+    await expect(page.locator('svg[class*="w-full"]')).toBeVisible();
 
     let granularityRequested = '';
     await page.route('**/api/admin/finance/revenue?granularity=weekly', async (route) => {
@@ -110,7 +110,8 @@ test.describe('Story 5.4: Admin Finance Dashboard E2E Tests', () => {
     });
 
     await page.getByRole('button', { name: 'Tuần' }).click();
-    await page.waitForTimeout(300);
+    // Wait for the weekly granularity API call to complete
+    await page.waitForResponse((resp) => resp.url().includes('/api/admin/finance/') && resp.url().includes('granularity=weekly'));
     expect(granularityRequested).toBe('weekly');
   });
 

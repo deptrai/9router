@@ -17,8 +17,12 @@ import { join } from "path";
 // AC3 infra-error test dùng vi.doMock (not hoisted) — xem describe AC3 bên dưới.
 
 let tmpDir;
+let savedDataDir;
+let savedStoreEncKey;
 
 beforeEach(async () => {
+  savedDataDir = process.env.DATA_DIR;
+  savedStoreEncKey = process.env.STORE_ENC_KEY;
   tmpDir = mkdtempSync(join(tmpdir(), "9router-ent-routing-"));
   process.env.DATA_DIR = tmpDir;
   process.env.STORE_ENC_KEY = "test-enc-key-32bytes-placeholder!";
@@ -30,7 +34,11 @@ beforeEach(async () => {
 
 afterEach(() => {
   delete global._dbAdapter;
-  rmSync(tmpDir, { recursive: true, force: true });
+  if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
+  if (savedDataDir === undefined) delete process.env.DATA_DIR;
+  else process.env.DATA_DIR = savedDataDir;
+  if (savedStoreEncKey === undefined) delete process.env.STORE_ENC_KEY;
+  else process.env.STORE_ENC_KEY = savedStoreEncKey;
   vi.clearAllMocks();
   vi.restoreAllMocks();
 });
@@ -273,8 +281,10 @@ describe("P4 — resolveActiveEntitlement picks newest entitlement", () => {
   it("entitlement owned_only mới ghi đè prefer_owned cũ cùng (userId, provider)", async () => {
     const owned = await insertConnection({ ownerUserId: "user-A" });
     // cũ: prefer_owned
-    await insertEntitlement({ userId: "user-A", routePolicy: "prefer_owned" });
-    await new Promise((r) => setTimeout(r, 5)); // đảm bảo createdAt khác nhau
+    const oldEnt = await insertEntitlement({ userId: "user-A", routePolicy: "prefer_owned" });
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const db = await getAdapter();
+    db.run("UPDATE entitlements SET createdAt = '2026-01-01T00:00:00.000Z' WHERE id = ?", [oldEnt.id]);
     // mới: owned_only
     await insertEntitlement({ userId: "user-A", routePolicy: "owned_only" });
 
@@ -289,8 +299,10 @@ describe("P4 — resolveActiveEntitlement picks newest entitlement", () => {
 
   it("owned_only mới + không có owned → block (chứng minh policy mới áp, không phải prefer_owned cũ)", async () => {
     await insertConnection({ ownerUserId: null }); // có shared
-    await insertEntitlement({ userId: "user-A", routePolicy: "prefer_owned" });
-    await new Promise((r) => setTimeout(r, 5));
+    const oldEnt = await insertEntitlement({ userId: "user-A", routePolicy: "prefer_owned" });
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const db = await getAdapter();
+    db.run("UPDATE entitlements SET createdAt = '2026-01-01T00:00:00.000Z' WHERE id = ?", [oldEnt.id]);
     await insertEntitlement({ userId: "user-A", routePolicy: "owned_only" });
 
     const creds = await callGetProviderCredentials("anthropic", { userId: "user-A" });

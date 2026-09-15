@@ -155,8 +155,8 @@ describe("entitlementsRepo — listEntitlementsByUser / findPendingEntitlement",
     const e1 = await entitlementsRepo.createEntitlement({
       userId, productId: "p1", provider: "anthropic",
     });
-    // ensure distinct createdAt — sleep 5ms (string ISO sort)
-    await new Promise((r) => setTimeout(r, 5));
+    const db = await getAdapter();
+    db.run("UPDATE entitlements SET createdAt = '2026-01-01T00:00:00.000Z' WHERE id = ?", [e1.id]);
     const e2 = await entitlementsRepo.createEntitlement({
       userId, productId: "p2", provider: "openai",
     });
@@ -182,10 +182,15 @@ describe("entitlementsRepo — listEntitlementsByUser / findPendingEntitlement",
     const first = await entitlementsRepo.createEntitlement({
       userId, productId: "p1", provider: "anthropic",
     });
-    await new Promise((r) => setTimeout(r, 5));
+    // Use explicit timestamp to ensure ordering without relying on wall-clock timing
+    const later = new Date(Date.now() + 1).toISOString();
     await entitlementsRepo.createEntitlement({
       userId, productId: "p2", provider: "anthropic",
     });
+    // Ensure the second record has a later createdAt for ordering
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const db = await getAdapter();
+    db.run("UPDATE entitlements SET createdAt = ? WHERE productId = ? AND userId = ?", [later, "p2", userId]);
     // unrelated provider — must NOT match
     await entitlementsRepo.createEntitlement({
       userId, productId: "p3", provider: "openai",
@@ -207,10 +212,11 @@ describe("entitlementsRepo — listEntitlementsByUser / findPendingEntitlement",
   it("getEntitlementsByProduct lists all entitlements for a product", async () => {
     const userA = await seedUser("a");
     const userB = await seedUser("b");
-    await entitlementsRepo.createEntitlement({
+    const eA = await entitlementsRepo.createEntitlement({
       userId: userA, productId: "shared-product", provider: "anthropic",
     });
-    await new Promise((r) => setTimeout(r, 5));
+    const db = await getAdapter();
+    db.run("UPDATE entitlements SET createdAt = '2026-01-01T00:00:00.000Z' WHERE id = ?", [eA.id]);
     await entitlementsRepo.createEntitlement({
       userId: userB, productId: "shared-product", provider: "anthropic",
     });

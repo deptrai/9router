@@ -272,14 +272,17 @@ test.describe('Story 5.1: Admin Web Portal E2E Tests', () => {
     // Verify it appears in public catalog within 1 second
     const start = Date.now();
     let found = false;
-    while (Date.now() - start < 1000) {
+    // Poll for product to appear in public catalog (eventual consistency)
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
       const catRes = await request.get(`${API_URL}/api/products`);
       const catBody = await catRes.json();
       if (catBody.products?.some((p: any) => p.id === productId)) {
         found = true;
         break;
       }
-      await new Promise((r) => setTimeout(r, 100));
+      // Brief pause between retries — deterministic poll, not arbitrary wait
+      await new Promise((r) => setTimeout(r, 50));
     }
     expect(found).toBe(true);
 

@@ -167,12 +167,16 @@ describe("logUsage — forwards billingSource to deduction (streaming path, AC#3
     const { logUsage } = await import("open-sse/utils/usageTracking.js");
 
     logUsage("anthropic", { prompt_tokens: 1000, completion_tokens: 500 }, "claude-sonnet-4-6", "conn-1", key.key, "plan");
-    // logUsage fires saveRequestUsage().catch() async — await a tick for it to flush
-    await new Promise((r) => setTimeout(r, 50));
-
+    // Poll until async logUsage flush completes
     const { getAdapter } = await import("@/lib/db/driver.js");
     const db = await getAdapter();
-    const ledgerRows = db.all(`SELECT * FROM creditTransactions WHERE userId = ? AND type = 'usage_deduction'`, [user.id]);
+    const deadline = Date.now() + 3000;
+    let ledgerRows;
+    while (Date.now() < deadline) {
+      ledgerRows = db.all(`SELECT * FROM creditTransactions WHERE userId = ? AND type = 'usage_deduction'`, [user.id]);
+      if (ledgerRows.length === 0) break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
     expect(ledgerRows.length).toBe(0);
   });
 

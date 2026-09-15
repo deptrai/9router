@@ -31,7 +31,7 @@ describe("window.js — 1m type (AC#1)", () => {
     expect(r.reset).toBe(true);
   });
 
-  it("5h window still works correctly (regression)", () => {
+  it("5h window resets after duration elapses and preserves state within window", () => {
     const now = Date.now();
     expect(duration("5h")).toBe(5 * 3600 * 1000);
     const r1 = resolveWindow(null, "5h", now);
@@ -40,7 +40,7 @@ describe("window.js — 1m type (AC#1)", () => {
     expect(r2.reset).toBe(false);
   });
 
-  it("weekly window still works correctly (regression)", () => {
+  it("weekly window resets after duration elapses and preserves state within window", () => {
     const now = Date.now();
     expect(duration("weekly")).toBe(7 * 24 * 3600 * 1000);
     const r = resolveWindow({ startedAt: new Date(now - 1000).toISOString() }, "weekly", now);

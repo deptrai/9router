@@ -1,6 +1,17 @@
 // Story 2.33 — orderStatusSync extended tests (coverage gaps)
 // Covers: forward_failed path, buyer-no-telegramId graceful skip, notifyBuyer null-user fail-safe
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+/** Poll until fn() returns a truthy value or timeout expires. */
+async function waitFor(fn, timeoutMs = 3000, intervalMs = 10) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const result = await fn();
+    if (result) return result;
+    await new Promise(r => setTimeout(r, intervalMs));
+  }
+  return null;
+}
 import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -156,8 +167,8 @@ describe("P1 — forward_failed / sendMessage throws post-commit", () => {
       delivery: { type: "text", payload: "code-XYZ" },
     });
 
-    // Give async notification time to settle
-    await new Promise(r => setTimeout(r, 50));
+    // Poll until async notification settles
+    await waitFor(() => result.ok && result.forwarded);
 
     expect(result.ok).toBe(true);
     expect(result.forwarded).toBe(true);
@@ -180,7 +191,10 @@ describe("P1 — forward_failed / sendMessage throws post-commit", () => {
       delivery: { type: "text", payload: "code-ABC" },
     });
 
-    await new Promise(r => setTimeout(r, 50));
+    await waitFor(async () => {
+      const d = await listDeliveriesByOrder(order.id);
+      return d.some(x => x.status === "forwarded");
+    });
 
     const deliveries = await listDeliveriesByOrder(order.id);
     expect(deliveries.some(d => d.status === "forwarded")).toBe(true);
@@ -205,7 +219,7 @@ describe("P1 — forward_failed / sendMessage throws post-commit", () => {
       delivery: { type: "text", payload: "code-DEF" },
     });
 
-    await new Promise(r => setTimeout(r, 50));
+    await waitFor(() => result.ok && result.forwarded);
 
     expect(result.ok).toBe(true);
     expect(result.forwarded).toBe(true);
@@ -229,7 +243,7 @@ describe("P2 — buyer has no telegramId", () => {
       delivery: { type: "text", payload: "code-notg" },
     });
 
-    await new Promise(r => setTimeout(r, 50));
+    await waitFor(() => result.ok && result.forwarded);
 
     expect(result.ok).toBe(true);
     expect(result.forwarded).toBe(true);
@@ -258,7 +272,7 @@ describe("P2 — buyer has no telegramId", () => {
       status: "failed",
     });
 
-    await new Promise(r => setTimeout(r, 50));
+    await waitFor(() => result.ok && result.internalStatus === "failed");
 
     expect(result.ok).toBe(true);
     expect(result.internalStatus).toBe("failed");

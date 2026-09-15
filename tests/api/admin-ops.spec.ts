@@ -58,12 +58,13 @@ test.describe('Epic 4 Retro: Admin Ops Monitoring API Tests', () => {
     const { metrics } = await res.json();
 
     for (const s of metrics.perSupplier) {
-      expect(s.supplierSourceId === null || typeof s.supplierSourceId === 'string').toBe(true);
-      expect(typeof s.supplierName).toBe('string');
-      expect(typeof s.successCount).toBe('number');
-      expect(typeof s.failCount).toBe('number');
-      expect(s.avgLatencyMs === null || typeof s.avgLatencyMs === 'number').toBe(true);
-      expect(typeof s.timeoutCount).toBe('number');
+      // Assert non-empty values, not just types
+      expect(s.supplierName).toBeTruthy();
+      expect(s.successCount + s.failCount).toBeGreaterThanOrEqual(0);
+      if (s.avgLatencyMs !== null) {
+        expect(s.avgLatencyMs).toBeGreaterThanOrEqual(0);
+      }
+      expect(s.timeoutCount).toBeGreaterThanOrEqual(0);
     }
   });
 

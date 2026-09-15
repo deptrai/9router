@@ -38,7 +38,7 @@ async function addTxn(userId, opts) {
 describe("reconcileUserBalance", () => {
   it("syncs cache down to effective balance after bonus expires", async () => {
     const user = await seedUser("recon@example.com");
-    const past = new Date(Date.now() - 1000).toISOString();
+    const past = new Date(1750000000000 - 1000).toISOString();
     // standard 10 (no expiry) + bonus 5 (already expired)
     await addTxn(user.id, { type: "topup", bucket: "standard", amount: 10, refId: "s" });
     await addTxn(user.id, { type: "topup", bucket: "bonus", amount: 5, expiresAt: past, refId: "b" });
@@ -75,7 +75,7 @@ describe("reconcileUserBalance", () => {
 describe("runExpirySweep", () => {
   it("reconciles users whose credit expired in the window", async () => {
     const user = await seedUser("sweep@example.com");
-    const past = new Date(Date.now() - 1000).toISOString();
+    const past = new Date(1750000000000 - 1000).toISOString();
     await addTxn(user.id, { type: "topup", bucket: "standard", amount: 8, refId: "s" });
     await addTxn(user.id, { type: "topup", bucket: "bonus", amount: 4, expiresAt: past, refId: "b" });
 
@@ -111,7 +111,7 @@ describe("runExpirySweep", () => {
 
   it("second sweep with no new expiry is a no-op on balance", async () => {
     const user = await seedUser("twice@example.com");
-    const past = new Date(Date.now() - 1000).toISOString();
+    const past = new Date(1750000000000 - 1000).toISOString();
     await addTxn(user.id, { type: "topup", bucket: "standard", amount: 5, refId: "s" });
     await addTxn(user.id, { type: "topup", bucket: "bonus", amount: 2, expiresAt: past, refId: "b" });
 
@@ -131,7 +131,7 @@ describe("runExpirySweep", () => {
 describe("AC5 — expired credit excluded from balance/deduction", () => {
   it("getBalanceByBucket excludes expired bonus", async () => {
     const user = await seedUser("ac5bal@example.com");
-    const past = new Date(Date.now() - 1000).toISOString();
+    const past = new Date(1750000000000 - 1000).toISOString();
     await addTxn(user.id, { type: "topup", bucket: "bonus", amount: 9, expiresAt: past, refId: "b" });
 
     const { getBalanceByBucket } = await import("@/lib/db/repos/creditLedgerRepo.js");
@@ -141,7 +141,7 @@ describe("AC5 — expired credit excluded from balance/deduction", () => {
 
   it("deductFromPriorityBuckets skips expired bonus, draws from standard", async () => {
     const user = await seedUser("ac5ded@example.com");
-    const past = new Date(Date.now() - 1000).toISOString();
+    const past = new Date(1750000000000 - 1000).toISOString();
     await addTxn(user.id, { type: "topup", bucket: "bonus", amount: 9, expiresAt: past, refId: "b" });
     await addTxn(user.id, { type: "topup", bucket: "standard", amount: 9, refId: "s" });
 

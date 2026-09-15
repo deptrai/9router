@@ -8,6 +8,22 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
+// Fixed retry-after timestamp for deterministic assertions (replaces magic literal)
+const RETRY_AFTER_TS = "2026-06-09T00:00:00.000Z";
+
+/**
+ * Resolve billing source from plan quota and credit state.
+ * Extracted to reduce nesting in test bodies.
+ */
+function resolveBillingSource(pq, creditResult) {
+  if (pq.source === "plan" && pq.allowed) return "plan";
+  if (pq.source === "plan" && pq.exhausted) {
+    if (pq.allowCreditOverflow && creditResult.allowed) return "overflow";
+    return null; // blocked
+  }
+  return null;
+}
+
 describe("Model B admission — chat.js integration pattern", () => {
   it("plan within quota → billingSource=plan, no credit gate", () => {
     const pq = { source: "plan", allowed: true, planName: "pro", allowCreditOverflow: false };
@@ -27,7 +43,7 @@ describe("Model B admission — chat.js integration pattern", () => {
   });
 
   it("plan exhausted + overflow OFF → 429 quota exhausted message", () => {
-    const pq = { source: "plan", allowed: false, exhausted: true, window: "5h", planName: "pro", allowCreditOverflow: false, retryAfter: "2026-06-09T00:00:00.000Z", retryAfterHuman: "reset after 1h" };
+    const pq = { source: "plan", allowed: false, exhausted: true, window: "5h", planName: "pro", allowCreditOverflow: false, retryAfter: RETRY_AFTER_TS, retryAfterHuman: "reset after 1h" };
     const HTTP_STATUS = { RATE_LIMITED: 429 };
 
     let calledWith = null;
@@ -57,26 +73,16 @@ describe("Model B admission — chat.js integration pattern", () => {
     expect(calledWith.status).toBe(429);
     expect(calledWith.msg).toContain("[plan pro] quota exhausted (5h)");
     expect(calledWith.msg).toContain("enable credit overflow to continue");
-    expect(calledWith.retryAfter).toBe("2026-06-09T00:00:00.000Z");
+    expect(calledWith.retryAfter).toBe(RETRY_AFTER_TS);
     expect(billingSource).toBeUndefined();
   });
 
   it("plan exhausted + overflow ON → checkCredits gate + billingSource=overflow", () => {
-    const pq = { source: "plan", allowed: false, exhausted: true, window: "5h", planName: "pro", allowCreditOverflow: true, retryAfter: "2026-06-09T00:00:00.000Z", retryAfterHuman: "reset after 1h" };
+    const pq = { source: "plan", allowed: false, exhausted: true, window: "5h", planName: "pro", allowCreditOverflow: true, retryAfter: RETRY_AFTER_TS, retryAfterHuman: "reset after 1h" };
     const creditResult = { allowed: true };
 
-    let billingSource;
-    let blocked = false;
-    if (pq.source === "plan" && pq.allowed) {
-      billingSource = "plan";
-    } else if (pq.source === "plan" && pq.exhausted) {
-      if (pq.allowCreditOverflow) {
-        if (!creditResult.allowed) { blocked = true; }
-        else billingSource = "overflow";
-      } else {
-        blocked = true;
-      }
-    }
+    const billingSource = resolveBillingSource(pq, creditResult);
+    const blocked = billingSource === null;
 
     expect(billingSource).toBe("overflow");
     expect(blocked).toBe(false);
@@ -86,25 +92,15 @@ describe("Model B admission — chat.js integration pattern", () => {
     const pq = { source: "plan", allowed: false, exhausted: true, scope: "model", model: "gpt-4o", window: "weekly", planName: "pro", allowCreditOverflow: true };
     const creditResult = { allowed: true };
 
-    let billingSource;
-    let blocked = false;
-    if (pq.source === "plan" && pq.allowed) {
-      billingSource = "plan";
-    } else if (pq.source === "plan" && pq.exhausted) {
-      if (pq.allowCreditOverflow) {
-        if (!creditResult.allowed) blocked = true;
-        else billingSource = "overflow";
-      } else {
-        blocked = true;
-      }
-    }
+    const billingSource = resolveBillingSource(pq, creditResult);
+    const blocked = billingSource === null;
 
     expect(blocked).toBe(false);
     expect(billingSource).toBe("overflow");
   });
 
   it("per-model exhausted + overflow OFF → 429 includes quota window", () => {
-    const pq = { source: "plan", allowed: false, exhausted: true, scope: "model", model: "gpt-4o", window: "5h", planName: "pro", allowCreditOverflow: false, retryAfter: "2026-06-09T00:00:00.000Z", retryAfterHuman: "reset after 1h" };
+    const pq = { source: "plan", allowed: false, exhausted: true, scope: "model", model: "gpt-4o", window: "5h", planName: "pro", allowCreditOverflow: false, retryAfter: RETRY_AFTER_TS, retryAfterHuman: "reset after 1h" };
     const HTTP_STATUS = { RATE_LIMITED: 429 };
 
     let calledWith = null;

@@ -64,6 +64,8 @@ describe("Story N.2 — DevinExecutor", () => {
 
   afterEach(() => {
     proxyAwareFetch.mockReset();
+    delete process.env.DEVIN_POLL_INTERVAL_MS;
+    delete process.env.DEVIN_SESSION_TIMEOUT_MS;
   });
 
   it("200 finished — stream:false → JSON body", async () => {

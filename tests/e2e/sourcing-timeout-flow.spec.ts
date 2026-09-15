@@ -367,8 +367,9 @@ test.describe('Story 4.4: Order Sourcing Timeout 60s & Auto-Refund User Journey'
     await expect(page.getByRole('heading', { name: 'Đơn hàng đang xử lý' })).not.toBeVisible();
 
     const countAfterClose = ordersPollCount;
-    // Wait longer than polling interval (2.5s) to verify no further requests
-    await page.waitForTimeout(3500);
+    // Wait for a fixed interval longer than polling interval (2.5s) to verify no further requests
+    // Using waitForTimeout here is intentional — we're testing that polling STOPPED
+    await page.waitForTimeout(3000);
 
     // Polling count should not have increased after close
     expect(ordersPollCount).toBeLessThanOrEqual(countAfterClose + 1);

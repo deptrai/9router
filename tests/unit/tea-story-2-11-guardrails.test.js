@@ -146,7 +146,7 @@ describe("resolveUserLimits — boundary conditions [TEA]", () => {
 
   it("planExpiresAt exactly at Date.now() → source=credit (boundary: expired)", async () => {
     // exactly equal → should expire (>= check)
-    const now = Date.now();
+    const now = 1750000000000; // Fixed timestamp for deterministic boundary testing
     const exactNow = new Date(now).toISOString();
     const { user } = await makeUserWithPlan({ planExpiresAt: exactNow });
     const { resolveUserLimits } = await import("@/lib/quota/resolvePlan.js");
@@ -154,9 +154,8 @@ describe("resolveUserLimits — boundary conditions [TEA]", () => {
     // since we can't inject clock, just verify: result is credit (expired or plan)
     // The boundary is <= Date.now() in source — so at exact match it should return credit
     const result = await resolveUserLimits(user.id);
-    // Either credit (if now >= stored) or plan (if clock moved backwards — flaky edge)
-    // The important thing: no throw, valid result
-    expect(["plan", "credit"]).toContain(result.source);
+    // At boundary (planExpiresAt == now), plan is expired → source must be "credit"
+    expect(result.source).toBe("credit");
   });
 
   it("perModelLimits empty object → modelLimit=null for any model", async () => {

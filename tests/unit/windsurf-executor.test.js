@@ -77,6 +77,7 @@ describe("Story N.2 — WindsurfExecutor", () => {
 
   afterEach(() => {
     global.fetch = originalFetch;
+    delete process.env.WINDSURF_API_KEY;
   });
 
   it("200 stream:true → SSE chunks with content", async () => {

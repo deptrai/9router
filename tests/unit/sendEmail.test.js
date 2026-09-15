@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const originalEnv = { ...process.env };
+const originalFetch = global.fetch;
 
 beforeEach(() => {
   vi.resetModules();
@@ -12,7 +13,12 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // Restore all env vars, including ones added during tests
+  Object.keys(process.env).forEach(k => {
+    if (!(k in originalEnv)) delete process.env[k];
+  });
   Object.keys(originalEnv).forEach(k => { process.env[k] = originalEnv[k]; });
+  global.fetch = originalFetch;
   vi.restoreAllMocks();
 });
 

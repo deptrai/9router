@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 let tempDir;
 const saved = {};
-const KEYS = ["DATA_DIR","CRYPTO_PAYMENT_PROVIDER","NOWPAYMENTS_API_KEY","BITCART_BASE_URL","BITCART_API_KEY","BITCART_STORE_ID"];
+const KEYS = ["DATA_DIR","CRYPTO_PAYMENT_PROVIDER","NOWPAYMENTS_API_KEY","BITCART_BASE_URL","BITCART_API_KEY","BITCART_STORE_ID","BITCART_WEBHOOK_SECRET"];
 
 beforeEach(() => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-prov-"));

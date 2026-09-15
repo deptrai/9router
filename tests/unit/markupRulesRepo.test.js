@@ -9,8 +9,11 @@ import { tmpdir } from "os";
 import { join } from "path";
 
 let tmpDir, repo, getAdapter;
+let savedDataDir, savedStoreEncKey;
 
 beforeEach(async () => {
+  savedDataDir = process.env.DATA_DIR;
+  savedStoreEncKey = process.env.STORE_ENC_KEY;
   tmpDir = mkdtempSync(join(tmpdir(), "9router-markuprules-"));
   process.env.DATA_DIR = tmpDir;
   process.env.STORE_ENC_KEY = "0".repeat(64);
@@ -24,7 +27,11 @@ beforeEach(async () => {
 afterEach(() => {
   try { global._dbAdapter?.instance?.close?.(); } catch {}
   delete global._dbAdapter;
-  rmSync(tmpDir, { recursive: true, force: true });
+  if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
+  if (savedDataDir === undefined) delete process.env.DATA_DIR;
+  else process.env.DATA_DIR = savedDataDir;
+  if (savedStoreEncKey === undefined) delete process.env.STORE_ENC_KEY;
+  else process.env.STORE_ENC_KEY = savedStoreEncKey;
 });
 
 describe("createMarkupRule — validate + enum (AC1/AC4)", () => {

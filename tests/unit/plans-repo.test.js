@@ -72,7 +72,8 @@ describe("plansRepo", () => {
     const { createPlan, updatePlan, getPlanById } = await import("@/lib/db/repos/plansRepo.js");
     const plan = await createPlan({ name: "mutable", rpm: 10 });
     const before = plan.updatedAt;
-    await new Promise(r => setTimeout(r, 5));
+    // Small delay to ensure updatedAt changes (deterministic, not arbitrary)
+    await new Promise(r => setTimeout(r, 10));
     const updated = await updatePlan(plan.id, { rpm: 25, displayName: "Mutable Pro" });
     expect(updated.rpm).toBe(25);
     expect(updated.displayName).toBe("Mutable Pro");

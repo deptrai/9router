@@ -51,7 +51,7 @@ describe("passwordResetToken", () => {
 
     const token = await createPasswordResetToken("user-2", "exp@example.com");
     const kv = makeKv("passwordReset");
-    await kv.set(token, { userId: "user-2", email: "exp@example.com", expiresAt: Date.now() - 1000 });
+    await kv.set(token, { userId: "user-2", email: "exp@example.com", expiresAt: 1750000000000 - 1000 });
 
     expect(await consumePasswordResetToken(token)).toBeNull();
   });

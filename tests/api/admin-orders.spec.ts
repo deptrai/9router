@@ -72,7 +72,7 @@ test.describe('Story 5.3: Admin Orders API Tests', () => {
   // --- 2. Order Detail & Parameter Validation ---
 
   test('[P0] GET /api/admin/orders/:id returns comprehensive order details', async ({ request }) => {
-    test.skip(!sampleOrderId, 'No existing order found to test detail');
+    expect(sampleOrderId, 'No existing order found to test detail — seed test data first').toBeTruthy();
 
     const res = await request.get(`${API_URL}/api/admin/orders/${sampleOrderId}`, {
       headers: { 'x-admin-key': TEST_ADMIN_KEY },
@@ -130,7 +130,7 @@ test.describe('Story 5.3: Admin Orders API Tests', () => {
       (o: any) => o.status === 'FULFILLED' || o.status === 'PAID' || o.status === 'SOURCING',
     );
 
-    test.skip(!refundableOrder, 'No refundable order available in test database');
+    expect(refundableOrder, 'No refundable order available in test database — seed test data first').toBeTruthy();
 
     // 2. Perform manual refund
     const refundRes = await request.post(`${API_URL}/api/admin/orders/${refundableOrder.id}/refund`, {

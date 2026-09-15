@@ -124,20 +124,39 @@ describe("/api/plans admin CRUD", () => {
     expect((await POST(req({ name: "unique-plan" }))).status).toBeGreaterThanOrEqual(400);
   });
 
-  it("PATCH updates, DELETE soft-disables, PATCH reactivates", async () => {
+  it("PATCH updates plan fields", async () => {
     mockAdmin();
-    const { createPlan, getPlanById } = await import("@/lib/db/repos/plansRepo.js");
-    const plan = await createPlan({ name: "editable", rpm: 1 });
+    const { createPlan } = await import("@/lib/db/repos/plansRepo.js");
+    const plan = await createPlan({ name: "editable-patch", rpm: 1 });
     const route = await import("@/app/api/plans/[id]/route.js");
 
     const patched = await route.PATCH(req({ rpm: 20, quotaWeekly: 0 }), { params: { id: plan.id } });
     expect(patched.status).toBe(200);
     expect((await patched.json()).plan.rpm).toBe(20);
+  });
+
+  it("DELETE soft-disables plan", async () => {
+    mockAdmin();
+    const { createPlan, getPlanById } = await import("@/lib/db/repos/plansRepo.js");
+    const plan = await createPlan({ name: "editable-delete", rpm: 1 });
+    const route = await import("@/app/api/plans/[id]/route.js");
 
     const deleted = await route.DELETE(req(), { params: { id: plan.id } });
     expect(deleted.status).toBe(200);
     expect((await getPlanById(plan.id)).isActive).toBe(false);
+  });
 
+  it("PATCH reactivates soft-disabled plan", async () => {
+    mockAdmin();
+    const { createPlan, getPlanById } = await import("@/lib/db/repos/plansRepo.js");
+    const plan = await createPlan({ name: "editable-reactivate", rpm: 1 });
+    const route = await import("@/app/api/plans/[id]/route.js");
+
+    // First disable it
+    await route.DELETE(req(), { params: { id: plan.id } });
+    expect((await getPlanById(plan.id)).isActive).toBe(false);
+
+    // Then reactivate
     const reactivated = await route.PATCH(req({ isActive: true }), { params: { id: plan.id } });
     expect(reactivated.status).toBe(200);
     expect((await getPlanById(plan.id)).isActive).toBe(true);

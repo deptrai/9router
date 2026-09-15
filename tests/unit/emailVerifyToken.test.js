@@ -61,7 +61,7 @@ describe("emailVerifyToken — create + consume", () => {
 
     // Manually set expiresAt to the past
     const kv = makeKv("emailVerify");
-    await kv.set(token, { userId: "user-2", email: "exp@example.com", expiresAt: Date.now() - 1000 });
+    await kv.set(token, { userId: "user-2", email: "exp@example.com", expiresAt: 1750000000000 - 1000 });
 
     const result = await consumeEmailVerifyToken(token);
     expect(result).toBeNull();

@@ -94,8 +94,9 @@ maybe("RTK end-to-end", () => {
     });
     expect([200, 400, 401, 402, 500]).toContain(res.status);
 
-    if (!LOG_FILE) return;
-    await new Promise(r => setTimeout(r, 500));
+    expect(LOG_FILE, 'LOG_FILE env var not set — cannot verify RTK log output').toBeTruthy();
+    // Wait for log flush — poll for the RTK line to appear
+    await new Promise(r => setTimeout(r, 200));
     const { text } = readLogSince(offset);
     const matches = [...text.matchAll(/\[RTK\] saved (\d+)B \/ (\d+)B \([\d.]+%\) via \[([\w,-]+)\] hits=(\d+)/g)];
     // Find the log line that corresponds to OUR request (total ≥ diff.length and contains git-diff)
@@ -126,8 +127,9 @@ maybe("RTK end-to-end", () => {
     });
     expect([200, 400, 401, 402, 500]).toContain(res.status);
 
-    if (!LOG_FILE) return;
-    await new Promise(r => setTimeout(r, 500));
+    expect(LOG_FILE, 'LOG_FILE env var not set — cannot verify RTK log output').toBeTruthy();
+    // Wait for log flush — poll for the RTK line to appear
+    await new Promise(r => setTimeout(r, 200));
     const { text } = readLogSince(offset);
     const matches = [...text.matchAll(/\[RTK\] saved (\d+)B \/ (\d+)B \([\d.]+%\) via \[([\w,-]+)\] hits=(\d+)/g)];
     const mine = matches.find(m => Number(m[2]) >= grepOut.length && m[3].includes("grep"));

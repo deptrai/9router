@@ -69,7 +69,8 @@ describe("PATCH /api/users/[id]/plan", () => {
     const { getAdapter } = await import("@/lib/db/driver.js");
     const db = await getAdapter();
     db.run(`UPDATE users SET creditsBalance = ? WHERE id = ?`, [12.5, user.id]);
-    await updateUser(user.id, { planId: plan.id, planExpiresAt: new Date(Date.now() + 86400000).toISOString() });
+    const ONE_DAY_MS = 86400000; // 24 hours in milliseconds
+    await updateUser(user.id, { planId: plan.id, planExpiresAt: new Date(Date.now() + ONE_DAY_MS).toISOString() });
     const { PATCH } = await import("@/app/api/users/[id]/plan/route.js");
 
     const res = await PATCH(req({ planId: null, planExpiresAt: null }), { params: { id: user.id } });

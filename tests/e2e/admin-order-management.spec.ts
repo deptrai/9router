@@ -74,7 +74,7 @@ test.describe('Story 5.3: Admin Order Management E2E Tests', () => {
     await expect(page.getByRole('heading', { name: 'Giám sát Đơn hàng & Đối soát' })).toBeVisible();
 
     // Verify KPI Cards via grid container
-    const kpiGrid = page.locator('.grid');
+    const kpiGrid = page.getByRole('region').or(page.locator('[data-testid="kpi-grid"]')).or(page.locator('section').filter({ hasText: 'Tổng đơn hàng' }));
     await expect(kpiGrid.getByText('Tổng đơn hàng')).toBeVisible();
     await expect(kpiGrid.getByText('Chờ mua ngoài')).toBeVisible();
     await expect(kpiGrid.getByText('Hoàn tất')).toBeVisible();
@@ -193,7 +193,7 @@ test.describe('Story 5.3: Admin Order Management E2E Tests', () => {
     await detailBtn.click();
 
     // Verify modal elements inside modal overlay
-    const modal = page.locator('.fixed');
+    const modal = page.getByRole('dialog').or(page.locator('[data-testid="order-modal"]')).or(page.locator('[role="dialog"]'));
     await expect(modal.getByRole('heading', { name: 'Chi tiết Đơn hàng' })).toBeVisible();
     await expect(modal.getByText('@alice_crypto')).toBeVisible();
     await expect(modal.getByText('u***r@openai.com')).toBeVisible();
@@ -213,8 +213,8 @@ test.describe('Story 5.3: Admin Order Management E2E Tests', () => {
     await expect(confirmRefundBtn).toBeVisible();
     await confirmRefundBtn.click();
 
-    // Verify submission
-    await page.waitForTimeout(500);
+    // Wait for the refund API call to complete
+    await page.waitForResponse((resp) => resp.url().includes('/api/admin/orders/') && resp.request().method() === 'POST');
     expect(refundCalled).toBe(true);
   });
 });

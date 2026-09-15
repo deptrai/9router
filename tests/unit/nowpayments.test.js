@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createHmac } from "crypto";
 
 let getPayCurrencyCode, createInvoice, verifyIpnSignature;
+const originalFetch = global.fetch;
 
 beforeEach(async () => {
   vi.resetModules();
@@ -13,6 +14,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  global.fetch = originalFetch;
   vi.restoreAllMocks();
   delete process.env.NOWPAYMENTS_API_KEY;
   delete process.env.NOWPAYMENTS_IPN_SECRET;
@@ -118,8 +120,6 @@ describe("createInvoice", () => {
     expect(body.pay_currency).toBe("usdttrc20");
     expect(body.price_amount).toBe(10);
     expect(body.ipn_callback_url).toBe("http://test.local/api/webhooks/crypto");
-
-    delete global.fetch;
   });
 
   it("throws on NOWPayments non-2xx", async () => {
@@ -133,7 +133,5 @@ describe("createInvoice", () => {
     await expect(
       createInvoice({ amount: 10, coin: "USDT", network: "tron", orderId: "o1", baseUrl: "http://x" })
     ).rejects.toThrow("NOWPayments API error 400");
-
-    delete global.fetch;
   });
 });

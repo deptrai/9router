@@ -8,11 +8,13 @@ import { test, expect } from '@playwright/test';
  */
 test.describe('Story 3.4: Orders & Immediate Credential Handover', () => {
   test.beforeEach(async ({ page }) => {
+    // Intercept API calls before navigation (network-first pattern)
+    await page.route('**/api/**', (route) => route.continue());
     await page.goto('http://localhost:3000');
     await page.waitForLoadState('networkidle');
   });
 
-  test('Bottom navigation toggles between Store and Orders tabs', async ({ page }) => {
+  test('[P1] Bottom navigation toggles between Store and Orders tabs', async ({ page }) => {
     // 1. Verify BottomNav presence
     const storeTab = page.locator('a[href="/"]');
     const ordersTab = page.locator('a[href="/orders"]');

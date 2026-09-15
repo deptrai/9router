@@ -282,10 +282,8 @@ describe("DefaultExecutor.buildHeaders() — anthropic-compatible stripping", ()
     );
 
     const betaVal = headers["anthropic-beta"] || headers["Anthropic-Beta"] || "";
-    // If any beta value remains it should not be empty and should not have the stripped value
-    if (betaVal) {
-      expect(betaVal).not.toContain("claude-code-20250219");
-    }
+    // If any beta value remains it should not have the stripped value
+    expect(betaVal).not.toContain("claude-code-20250219");
   });
 
   it("does NOT strip headers when baseUrl is api.anthropic.com", () => {
@@ -323,7 +321,10 @@ describe("DefaultExecutor.buildHeaders() — anthropic-compatible stripping", ()
 // ─── proxyFetch anthropicFetch routing ────────────────────────────────────────
 
 describe("proxyAwareFetch — api.anthropic.com routing", () => {
+  const originalFetch = globalThis.fetch;
+
   afterEach(() => {
+    globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
   });
 

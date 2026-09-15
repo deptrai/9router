@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { createSupplierPayload } from '../support/admin-data-factory.js';
 
 /**
  * Story 5.1: Admin Product Catalog & Supplier Management API Test Suite
@@ -52,17 +53,12 @@ test.describe('Admin Catalog & Supplier API Tests', () => {
   test('[P0] POST /api/admin/suppliers creates new supplier with valid config credentials', async ({ request }) => {
     const res = await request.post(`${API_URL}/api/admin/suppliers`, {
       headers: { 'x-admin-key': TEST_ADMIN_KEY },
-      data: {
+      data: createSupplierPayload({
         name: 'API Automation Supplier',
-        type: 'CONFIG_POOL',
         targetUrl: 'https://automation-supplier.test',
         markupPercentage: '15.00',
         markupFixedVnd: '5000.00',
-        configCredentials: {
-          credentialPool: ['key-1', 'key-2'],
-        },
-        isActive: true,
-      },
+      }),
     });
 
     expect(res.status()).toBe(201);
@@ -91,7 +87,13 @@ test.describe('Admin Catalog & Supplier API Tests', () => {
   // --- Product Catalog Management ---
 
   test('[P0] POST /api/admin/products creates product with auto-pricing calculation', async ({ request }) => {
-    expect(createdSupplierId).toBeTruthy();
+    // Create a dedicated supplier for this test — no shared state dependency
+    const supplierRes = await request.post(`${API_URL}/api/admin/suppliers`, {
+      headers: { 'x-admin-key': TEST_ADMIN_KEY },
+      data: { name: 'Product Test Supplier', configCredentials: { apiKey: 'test-key' } },
+    });
+    const supplierBody = await supplierRes.json();
+    const supplierId = supplierBody.supplier.id;
 
     const res = await request.post(`${API_URL}/api/admin/products`, {
       headers: { 'x-admin-key': TEST_ADMIN_KEY },
@@ -100,7 +102,7 @@ test.describe('Admin Catalog & Supplier API Tests', () => {
         price: '10000.00',
         category: 'Test',
         sourcingMode: 'EXTERNAL',
-        supplierSourceId: createdSupplierId,
+        supplierSourceId: supplierId,
         upstreamCost: '100000.00',
         autoPricing: true,
         isActive: true,
@@ -118,9 +120,27 @@ test.describe('Admin Catalog & Supplier API Tests', () => {
   });
 
   test('[P1] DELETE /api/admin/suppliers rejects deactivation when active product is linked', async ({ request }) => {
-    expect(createdSupplierId).toBeTruthy();
+    // Create dedicated supplier and linked product for isolation
+    const supRes = await request.post(`${API_URL}/api/admin/suppliers`, {
+      headers: { 'x-admin-key': TEST_ADMIN_KEY },
+      data: createSupplierPayload({ name: `Linked Supplier ${Date.now()}` }),
+    });
+    const supBody = await supRes.json();
+    const linkedSupplierId = supBody.supplier.id;
 
-    const res = await request.delete(`${API_URL}/api/admin/suppliers/${createdSupplierId}`, {
+    await request.post(`${API_URL}/api/admin/products`, {
+      headers: { 'x-admin-key': TEST_ADMIN_KEY },
+      data: {
+        title: `Linked Product ${Date.now()}`,
+        price: '10000.00',
+        category: 'Test',
+        sourcingMode: 'EXTERNAL',
+        supplierSourceId: linkedSupplierId,
+        isActive: true,
+      },
+    });
+
+    const res = await request.delete(`${API_URL}/api/admin/suppliers/${linkedSupplierId}`, {
       headers: { 'x-admin-key': TEST_ADMIN_KEY },
     });
 
