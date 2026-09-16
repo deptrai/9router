@@ -9,7 +9,7 @@ Status: done
 
 ## Story
 
-**As a** 9Router user và admin,
+**As a** Mmomarket user và admin,
 **I want** credit có hạn dùng được quản lý đúng (standard gia hạn khi nạp, bonus hết hạn 14 ngày, credit hết hạn được dọn dẹp và không còn dùng được),
 **so that** balance hiển thị chính xác phần credit còn hiệu lực, và bonus credit không tồn tại vô thời hạn (đúng cam kết tài chính).
 
@@ -198,7 +198,7 @@ Edge: lần chạy đầu (`lastSweepAt=null`) dùng cửa sổ lookback an toà
 
 Test deps tại `tests/node_modules`. Chạy:
 ```
-NODE_PATH=/Users/luisphan/Documents/9router/tests/node_modules \
+NODE_PATH=/Users/luisphan/Documents/mmomarket/tests/node_modules \
 npx vitest run --config tests/vitest.config.js tests/unit/creditExpirySweep.test.js
 ```
 Setup pattern: temp DATA_DIR, `delete global._dbAdapter`, `vi.resetModules()` (giống creditBucketPriority.test.js). Để test expiry, set `expiresAt` quá khứ qua direct insert hoặc recordCreditTxn với expiresAt cũ.

@@ -92,7 +92,7 @@ export default function PublicStorePage() {
             <div className="size-8 rounded bg-gradient-to-br from-[#f97815] to-orange-700 flex items-center justify-center text-white">
               <span className="material-symbols-outlined text-[20px]">hub</span>
             </div>
-            <span className="text-white text-xl font-bold tracking-tight">9Router</span>
+            <span className="text-white text-xl font-bold tracking-tight">Mmomarket</span>
           </button>
 
           <div className="flex items-center gap-4">
@@ -132,7 +132,7 @@ export default function PublicStorePage() {
       {/* Hero */}
       <div className="max-w-6xl mx-auto px-6 pt-16 pb-10 text-center">
         <h1 className="text-4xl md:text-5xl font-bold mb-4 bg-gradient-to-r from-[#f97815] to-orange-300 bg-clip-text text-transparent">
-          Cửa hàng AI 9Router
+          Cửa hàng AI Mmomarket
         </h1>
         <p className="text-gray-400 text-lg max-w-xl mx-auto">
           Tài khoản, API key và dịch vụ AI được kiểm duyệt. Mua ngay, nhận tức thì.

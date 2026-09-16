@@ -24,7 +24,7 @@ Status: done
 Đây là **story nền của Epic I (Telegram Store)** — story đầu tiên, nên nó dựng:
 1. **Telegram bot infrastructure** (chưa tồn tại — không có telegraf/node-telegram-bot-api trong dự án)
 2. **`products` table** (catalog — chưa có schema)
-3. **`/start` command** → link/create user 9router theo `telegramId`
+3. **`/start` command** → link/create user mmomarket theo `telegramId`
 4. **`/products` command** → list product active
 
 Các story sau (2.26 checkout, 2.27 fulfillment, 2.28 admin, 2.29 self-connect) build trên nền này.
@@ -59,8 +59,8 @@ KHÔNG làm (để story sau):
 
 **AC1 — `/start` user linking**
 - WHEN user nhắn `/start` trong private chat
-- AND `telegramId` chưa link với user 9router
-- THEN hệ thống tạo HOẶC liên kết user 9router theo flow an toàn (auto-create placeholder user theo pattern story 2.22, hoặc link nếu telegramId đã có user)
+- AND `telegramId` chưa link với user mmomarket
+- THEN hệ thống tạo HOẶC liên kết user mmomarket theo flow an toàn (auto-create placeholder user theo pattern story 2.22, hoặc link nếu telegramId đã có user)
 - AND bot trả menu chính gồm `/products`, `/wallet`, `/orders`, `/api`, `/support`
 
 **AC2 — `/products` catalog listing**
@@ -83,7 +83,7 @@ KHÔNG làm (để story sau):
 **AC5 — Products schema (FR40, FR50)**
 - WHEN schema sync chạy
 - THEN `products` table tồn tại với: `id, kind, name, description, priceCredits, deliveryMode, targetType, targetId, stock, isActive, createdAt, updatedAt`
-- AND `kind` ∈ {plan, credential, account, service, api_package}; `deliveryMode` ∈ {instant, admin_fulfill, user_self_connect}; `targetType` ∈ {9router_plan, ...}
+- AND `kind` ∈ {plan, credential, account, service, api_package}; `deliveryMode` ∈ {instant, admin_fulfill, user_self_connect}; `targetType` ∈ {mmomarket_plan, ...}
 
 **AC6 — Tests**
 - WHEN dev hoàn tất: tests cover `/start` link/create logic, `/products` listing (active filter), webhook secret verify (reject sai token), productsRepo CRUD, error fallback
@@ -206,8 +206,8 @@ products: {
     description: "TEXT",
     priceCredits: "REAL NOT NULL",
     deliveryMode: "TEXT NOT NULL",    // instant|admin_fulfill|user_self_connect
-    targetType: "TEXT",               // 9router_plan|... (null cho non-plan)
-    targetId: "TEXT",                 // planId nếu targetType=9router_plan
+    targetType: "TEXT",               // mmomarket_plan|... (null cho non-plan)
+    targetId: "TEXT",                 // planId nếu targetType=mmomarket_plan
     stock: "INTEGER",                 // null = unlimited
     isActive: "INTEGER DEFAULT 1",
     createdAt: "TEXT NOT NULL",
@@ -237,7 +237,7 @@ Test deps tại `tests/node_modules`. Mock `fetch` (Telegram API) + `TELEGRAM_BO
 
 - [Epics] `_bmad-output/planning-artifacts/epics.md` — Epic I (FR38–FR50), stories 2.25–2.29, NFR7-10, Additional Requirements (reuse credit ledger / plan purchase / user repo; order state machine; inventory lock; webhook idempotency)
 - [Story 2.22] `docs/stories/2-22-telegram-google-login.md` — telegramAuth, getUserByTelegramId, createUser placeholder pattern, TELEGRAM_BOT_TOKEN
-- [Story 2.18] `docs/stories/2-18-plan-purchase-flow.md` — purchasePlanForUser (story 2.26 sẽ reuse cho 9router_plan product)
+- [Story 2.18] `docs/stories/2-18-plan-purchase-flow.md` — purchasePlanForUser (story 2.26 sẽ reuse cho mmomarket_plan product)
 - [Source] `src/lib/auth/telegramAuth.js` — HMAC verify (login widget — KHÁC bot webhook secret)
 - [Source] `src/lib/db/repos/usersRepo.js:128` — getUserByTelegramId
 - [Source] `src/lib/plans/planPurchase.js:89` — purchasePlanForUser (cho 2.26)

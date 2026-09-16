@@ -11,7 +11,7 @@ Status: done
 
 ## Story
 
-As a **admin vận hành 9Router bán gói subscription (free/pro/max)**,
+As a **admin vận hành Mmomarket bán gói subscription (free/pro/max)**,
 I want **giới hạn số request/phút (RPM) theo gói của user, đếm gộp mọi API key của user, enforce ngay tại điểm vào `handleChat` TRƯỚC khi combo expansion/fallback chạy**,
 so that **mỗi client request tính đúng 1 RPM (dù combo thử N model), user vượt RPM của gói bị chặn `429 + Retry-After` tức thì, và sửa RPM của plan thì áp ngay cho mọi user trên gói đó**.
 

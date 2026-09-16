@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * seed.js — Seed dữ liệu test cho 9Router SaaS
+ * seed.js — Seed dữ liệu test cho Mmomarket SaaS
  *
  * Usage:
  *   node scripts/seed.js           # seed tất cả
@@ -54,7 +54,7 @@ loadEnvFile(path.join(projectRoot, ".env.local"));
 
 // ─── Setup DATA_DIR ──────────────────────────────────────────────────────────
 if (!process.env.DATA_DIR) {
-  process.env.DATA_DIR = path.join(process.env.HOME || "~", ".9router");
+  process.env.DATA_DIR = path.join(process.env.HOME || "~", ".mmomarket");
 }
 
 // ─── Load DB adapter ─────────────────────────────────────────────────────────
@@ -143,7 +143,7 @@ const MACHINE_ID = "seed-machine-01";
 const seedUsers = [
   {
     id: uuidv4(),
-    email: "user1@9router.dev",
+    email: "user1@mmomarket.dev",
     displayName: "User One (verified, $10 credit)",
     isEmailVerified: 1,
     isActive: 1,
@@ -153,7 +153,7 @@ const seedUsers = [
   },
   {
     id: uuidv4(),
-    email: "user2@9router.dev",
+    email: "user2@mmomarket.dev",
     displayName: "User Two (unverified, $5 credit)",
     isEmailVerified: 0,
     isActive: 1,
@@ -163,7 +163,7 @@ const seedUsers = [
   },
   {
     id: uuidv4(),
-    email: "user3@9router.dev",
+    email: "user3@mmomarket.dev",
     displayName: "User Three (no credit)",
     isEmailVerified: 1,
     isActive: 1,
@@ -209,9 +209,9 @@ for (const u of seedUsers) {
 
 // Assign planId to demo users (user1=pro, user2=free, user3=free)
 const planAssignments = [
-  { email: "user1@9router.dev", planName: "pro" },
-  { email: "user2@9router.dev", planName: "free" },
-  { email: "user3@9router.dev", planName: "free" },
+  { email: "user1@mmomarket.dev", planName: "pro" },
+  { email: "user2@mmomarket.dev", planName: "free" },
+  { email: "user3@mmomarket.dev", planName: "free" },
 ];
 for (const { email, planName } of planAssignments) {
   const plan = db.prepare("SELECT id FROM plans WHERE name = ?").get(planName);
@@ -284,9 +284,9 @@ console.log(`
 Password cho tất cả users: ${DEFAULT_PASSWORD}
 
 Users:
-  user1@9router.dev  — verified, $10 credit
-  user2@9router.dev  — unverified (dùng để test email verify flow)
-  user3@9router.dev  — verified, $0 (dùng để test credit check → 429)
+  user1@mmomarket.dev  — verified, $10 credit
+  user2@mmomarket.dev  — unverified (dùng để test email verify flow)
+  user3@mmomarket.dev  — verified, $0 (dùng để test credit check → 429)
 
 Dùng lệnh sau để xem data hiện có:
   node scripts/seed.js --show

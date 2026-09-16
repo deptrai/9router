@@ -16,13 +16,13 @@ Status: ready-for-dev
 
 ## Story
 
-As a **user của 9Router**,
-I want **mua gói Claude theo thời gian (ngày/tuần/tháng) từ viber.vn qua 9Router store**,
-so that **tôi dùng Claude không giới hạn model choice trong quota ngày/tuần, trả bằng credit 9Router, nhận key tự động và dùng ngay qua proxy**.
+As a **user của Mmomarket**,
+I want **mua gói Claude theo thời gian (ngày/tuần/tháng) từ viber.vn qua Mmomarket store**,
+so that **tôi dùng Claude không giới hạn model choice trong quota ngày/tuần, trả bằng credit Mmomarket, nhận key tự động và dùng ngay qua proxy**.
 
 ## Bối cảnh và quyết định architecture
 
-> **Story này tích hợp viber.vn như một plan proxy provider.** viber.vn bán gói Claude dạng account có quota ngày/tuần (250$/day, 500$/day...). 9Router mua gói thay user (dùng JWT viber của 9Router), nhận `sk-vibervn-...` key + base URL, lưu vào DB, và proxy request Claude của user sang viber. Khác với v98store (pay-as-you-go), viber là plan-based với quota cứng.
+> **Story này tích hợp viber.vn như một plan proxy provider.** viber.vn bán gói Claude dạng account có quota ngày/tuần (250$/day, 500$/day...). Mmomarket mua gói thay user (dùng JWT viber của Mmomarket), nhận `sk-vibervn-...` key + base URL, lưu vào DB, và proxy request Claude của user sang viber. Khác với v98store (pay-as-you-go), viber là plan-based với quota cứng.
 
 ### Research findings (verified 2026-06-15 — live browser session)
 
@@ -63,10 +63,10 @@ POST /api/auth/refresh                → refresh JWT
 
 ### Quyết định architecture
 
-- **QĐ1 — viber plan = entitlement + connection**: Khi user mua gói viber qua 9Router → 9Router gọi viber `POST /api-packages/{id}/purchase` → nhận `sk-vibervn-...` → tạo `connection` (provider=viber, apiKey encrypted, baseUrl=https://fallback.viber.vn) → tạo `entitlement` gắn userId + connectionId. Routing engine (2.29b) tự động dùng entitlement này khi user request Claude.
-- **QĐ2 — viber JWT của 9Router là service account**: 9Router có 1 viber account (epsilonai đã login). JWT lưu trong env (`VIBER_JWT`, `VIBER_REFRESH_TOKEN`). Auto-refresh khi hết hạn (POST /api/auth/refresh). KHÔNG phải mỗi user có viber account riêng.
+- **QĐ1 — viber plan = entitlement + connection**: Khi user mua gói viber qua Mmomarket → Mmomarket gọi viber `POST /api-packages/{id}/purchase` → nhận `sk-vibervn-...` → tạo `connection` (provider=viber, apiKey encrypted, baseUrl=https://fallback.viber.vn) → tạo `entitlement` gắn userId + connectionId. Routing engine (2.29b) tự động dùng entitlement này khi user request Claude.
+- **QĐ2 — viber JWT của Mmomarket là service account**: Mmomarket có 1 viber account (epsilonai đã login). JWT lưu trong env (`VIBER_JWT`, `VIBER_REFRESH_TOKEN`). Auto-refresh khi hết hạn (POST /api/auth/refresh). KHÔNG phải mỗi user có viber account riêng.
 - **QĐ3 — Catalog sync định kỳ**: `GET /api-packages` → upsert vào `viberPackages` table local (name, price_vnd, stock_count, in_stock, viberPackageId). Sync mỗi 15 phút hoặc on-demand. Tương tự `runDuePolls` pattern của 2.30.
-- **QĐ4 — Pricing: VND → credit 9Router**: Admin config tỷ lệ VND→credit (vd 1 VND = X credit hoặc admin set giá riêng). Mặc định: map 1:1 với giá VND của viber + markup admin. Lưu trong `viberPackages.priceCredits`.
+- **QĐ4 — Pricing: VND → credit Mmomarket**: Admin config tỷ lệ VND→credit (vd 1 VND = X credit hoặc admin set giá riêng). Mặc định: map 1:1 với giá VND của viber + markup admin. Lưu trong `viberPackages.priceCredits`.
 - **QĐ5 — Expiry tracking**: Viber không trả `expiresAt` trực tiếp trong purchase response. Tính từ `purchased_at` + duration (ngày/tuần/tháng parse từ package name). Lưu vào `entitlements.expiresAt` (REUSE 2.29a — xem T1). Entitlement routing (2.29b) check expiry.
 - **QĐ6 — Không sửa storeCheckout.js**: Viber plan mua qua flow riêng (viberCheckout), không phải credential FIFO. Checkout viber = gọi API viber + tạo entitlement, không phải reserve credential từ kho.
 - **QĐ7 — Fallback khi viber hết stock**: Nếu `POST /purchase` trả lỗi (out of stock) sau khi user đã trừ credit → rollback credit (reverseTxn) + notify user. Idempotent: không charge nếu purchase thất bại.
@@ -81,12 +81,12 @@ POST /api/auth/refresh                → refresh JWT
 **And** `stock_count`, `in_stock`, `price_vnd` được cập nhật
 **And** gói hết hàng (`in_stock=false`) vẫn hiển thị nhưng không thể mua
 
-### AC2 — User mua gói viber qua 9Router (Telegram store hoặc web)
-**Given** user có đủ credit 9Router (quy đổi từ priceCredits của gói)
+### AC2 — User mua gói viber qua Mmomarket (Telegram store hoặc web)
+**Given** user có đủ credit Mmomarket (quy đổi từ priceCredits của gói)
 **When** user chọn mua gói viber (qua Telegram bot `/products` hoặc web store)
 **Then** trong 1 transaction:
   - Trừ credit user (`recordCreditTxn` type=`store_purchase`)
-  - Gọi `POST /api-packages/{viberPackageId}/purchase` với viber JWT của 9Router
+  - Gọi `POST /api-packages/{viberPackageId}/purchase` với viber JWT của Mmomarket
   - Nhận `api_key` + `base_url` từ viber
   - Tạo `connection` (apiKey encrypted, baseUrl, provider=viber)
   - Tạo `entitlement` (userId, connectionId, expiresAt)
@@ -111,16 +111,16 @@ POST /api/auth/refresh                → refresh JWT
 
 ### AC5 — viber JWT auto-refresh
 **Given** `VIBER_JWT` hết hạn
-**When** 9Router cần gọi viber API (purchase hoặc sync)
+**When** Mmomarket cần gọi viber API (purchase hoặc sync)
 **Then** tự động `POST /api/auth/refresh` với refresh token
 **And** lưu JWT mới vào config
 **And** retry request gốc với JWT mới
 **And** nếu refresh thất bại → alert admin, KHÔNG crash service
 
 ### AC6 — Trang public `/plans`
-**Given** visitor truy cập `9router.xyz/plans`
+**Given** visitor truy cập `mmomarket.xyz/plans`
 **When** trang load
-**Then** hiển thị các gói Claude viber: tên, giá (VND + credit 9Router), quota ngày/tuần, stock
+**Then** hiển thị các gói Claude viber: tên, giá (VND + credit Mmomarket), quota ngày/tuần, stock
 **And** gói hết hàng hiển thị "Hết hàng" disabled
 **And** CTA "Mua ngay" → Telegram bot hoặc web checkout
 **And** section giải thích: "Claude plan = dùng Claude không lo token, quota reset theo ngày/tuần"
@@ -194,7 +194,7 @@ POST /api/auth/refresh                → refresh JWT
   - [ ] Cards gói: tên, quota ngày/tuần, giá VND, giá credit, stock badge
   - [ ] Hết hàng = card mờ + "Hết hàng"
   - [ ] Section "Cách dùng": proxy endpoint, setup Cursor/Claude Code với key
-  - [ ] CTA "Mua qua Telegram" → `t.me/9routerbot?start=buy_viber_{packageId}`
+  - [ ] CTA "Mua qua Telegram" → `t.me/mmomarketbot?start=buy_viber_{packageId}`
 
 - [ ] **T8 — Tests** (AC1–AC9)
   - [ ] `tests/unit/viberClient.test.js` (NEW): mock fetch; syncPackages upsert; purchasePackage success/fail; JWT refresh; balance

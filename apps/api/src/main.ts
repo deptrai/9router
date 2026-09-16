@@ -27,7 +27,7 @@ async function bootstrap() {
   }
 
   await app.listen(port);
-  console.log(`[API] 9Router E-Commerce API is running on http://localhost:${port}/api`);
+  console.log(`[API] Mmomarket E-Commerce API is running on http://localhost:${port}/api`);
 }
 
 bootstrap().catch((err) => {

@@ -1,5 +1,5 @@
 /**
- * Custom 9router fixtures
+ * Custom mmomarket fixtures
  *
  * Project-specific fixtures extending base Playwright test.
  */

@@ -1,5 +1,5 @@
 # ============================================================================
-# 9Router E-Commerce Platform — Production Docker Compose Configuration
+# Mmomarket E-Commerce Platform — Production Docker Compose Configuration
 # Orchestrates PostgreSQL, Redis, API Server, Sourcing Worker, Admin, and Mini-App
 # ============================================================================
 
@@ -9,30 +9,30 @@ services:
   # --------------------------------------------------------------------------
   postgres:
     image: postgres:16-alpine
-    container_name: 9router-prod-postgres
+    container_name: mmomarket-prod-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_secure_password}
-      POSTGRES_DB: ${POSTGRES_DB:-9router_ecommerce}
+      POSTGRES_DB: ${POSTGRES_DB:-mmomarket_ecommerce}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_prod_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-9router_ecommerce}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-mmomarket_ecommerce}"]
       interval: 5s
       timeout: 5s
       retries: 5
     networks:
-      - 9router-internal
+      - mmomarket-internal
 
   # --------------------------------------------------------------------------
   # Cache & Queue Broker: Redis 7.2
   # --------------------------------------------------------------------------
   redis:
     image: redis:7.2-alpine
-    container_name: 9router-prod-redis
+    container_name: mmomarket-prod-redis
     restart: unless-stopped
     ports:
       - "${REDIS_PORT:-6379}:6379"
@@ -44,7 +44,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - 9router-internal
+      - mmomarket-internal
 
   # --------------------------------------------------------------------------
   # Telegram Relay Service: Single-Session MTProto Relay (Story 6.1)
@@ -53,7 +53,7 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.telegram-relay
-    container_name: 9router-prod-telegram-relay
+    container_name: mmomarket-prod-telegram-relay
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -73,7 +73,7 @@ services:
       retries: 3
       start_period: 5s
     networks:
-      - 9router-internal
+      - mmomarket-internal
 
   # --------------------------------------------------------------------------
   # Backend API Server: NestJS
@@ -82,12 +82,12 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.api
-    container_name: 9router-prod-api
+    container_name: mmomarket-prod-api
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: 3201
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_secure_password}@postgres:5432/${POSTGRES_DB:-9router_ecommerce}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_secure_password}@postgres:5432/${POSTGRES_DB:-mmomarket_ecommerce}
       REDIS_URL: redis://redis:6379
       ADMIN_API_KEY: ${ADMIN_API_KEY}
       STORE_ENC_KEY: ${STORE_ENC_KEY}
@@ -108,8 +108,8 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - 9router-internal
-      - 9router-public
+      - mmomarket-internal
+      - mmomarket-public
 
   # --------------------------------------------------------------------------
   # Asynchronous Scraper Worker: BullMQ Worker (worker:prod)
@@ -118,12 +118,12 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.api
-    container_name: 9router-prod-worker
+    container_name: mmomarket-prod-worker
     restart: unless-stopped
     command: ["node", "apps/api/dist/worker.js"]
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_secure_password}@postgres:5432/${POSTGRES_DB:-9router_ecommerce}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_secure_password}@postgres:5432/${POSTGRES_DB:-mmomarket_ecommerce}
       REDIS_URL: redis://redis:6379
       STORE_ENC_KEY: ${STORE_ENC_KEY}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
@@ -136,7 +136,7 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - 9router-internal
+      - mmomarket-internal
 
   # --------------------------------------------------------------------------
   # Admin Portal: Next.js Standalone
@@ -145,7 +145,7 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.admin
-    container_name: 9router-prod-admin
+    container_name: mmomarket-prod-admin
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -156,8 +156,8 @@ services:
     depends_on:
       - api
     networks:
-      - 9router-internal
-      - 9router-public
+      - mmomarket-internal
+      - mmomarket-public
 
   # --------------------------------------------------------------------------
   # Telegram Mini App: Next.js Standalone
@@ -166,7 +166,7 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.mini-app
-    container_name: 9router-prod-mini-app
+    container_name: mmomarket-prod-mini-app
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -177,13 +177,13 @@ services:
     depends_on:
       - api
     networks:
-      - 9router-internal
-      - 9router-public
+      - mmomarket-internal
+      - mmomarket-public
 
 networks:
-  9router-internal:
+  mmomarket-internal:
     driver: bridge
-  9router-public:
+  mmomarket-public:
     driver: bridge
 
 volumes:

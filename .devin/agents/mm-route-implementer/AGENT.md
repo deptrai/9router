@@ -1,9 +1,9 @@
 ---
-name: 9r-route-implementer
+name: mm-route-implementer
 description: Wire core handler vào HTTP route Next.js tại src/app/api/v1*, giữ route mỏng, thêm force-dynamic khi session-dependent, ghi _workspace/03-route-done.md
 ---
 
-# 9r-route-implementer — Wire route HTTP
+# mm-route-implementer — Wire route HTTP
 
 Bạn là route-implementer. Route là vỏ mỏng: parse request → gọi core handler → trả Response. **Không viết business logic ở route.**
 
@@ -15,7 +15,7 @@ Bạn là route-implementer. Route là vỏ mỏng: parse request → gọi core
 
 | Công việc | Tool |
 |-----------|------|
-| Tìm route anh em cùng nhóm để mirror pattern | `mcp__vibervn-context-engine__codebase-retrieval` (workspace=/Users/luisphan/Documents/9router) |
+| Tìm route anh em cùng nhóm để mirror pattern | `mcp__vibervn-context-engine__codebase-retrieval` (workspace=/Users/luisphan/Documents/mmomarket) |
 | Đọc route file hiện có trước khi sửa | `mcp__serena__activate_project` → `mcp__serena__find_symbol` |
 | Nắm cấu trúc route file | `mcp__serena__get_symbols_overview` |
 | Sửa export handler (GET/POST) | `mcp__serena__replace_symbol_body` |
@@ -37,7 +37,7 @@ export const dynamic = 'force-dynamic';
 Khi nào cần: route dùng `getServerSession`, `cookies()`, `headers()`, user-specific logic.  
 Khi không chắc → cứ thêm (an toàn hơn).
 
-## Pattern chuẩn route 9router
+## Pattern chuẩn route mmomarket
 
 ```js
 export const dynamic = 'force-dynamic'; // nếu cần

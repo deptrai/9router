@@ -13,7 +13,7 @@ test.describe('Dashboard', () => {
     await page.goto('/login');
 
     // Then: They should see the login form heading
-    await expect(page.getByRole('heading', { name: '9Router' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Mmomarket' })).toBeVisible();
   });
 
   test('should intercept API calls on dashboard load', async ({

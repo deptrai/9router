@@ -9,9 +9,9 @@ Status: ready-for-dev
 
 ## Story
 
-As a **người vận hành 9Router có nhiều concurrent request dồn vào một số ít connection của cùng một provider**,
+As a **người vận hành Mmomarket có nhiều concurrent request dồn vào một số ít connection của cùng một provider**,
 I want **khi tất cả connection khả dụng đã đạt `MAX_IN_FLIGHT_PER_CONNECTION`, request mới CHỜ một slot trống trong thời gian ngắn thay vì bị dispatch ngay lên upstream đang bận**,
-so that **upstream không bị overload → giảm timeout/503 nhìn từ client, và áp lực tải được giữ lại ở 9Router (nơi kiểm soát được) thay vì đẩy hết lên provider**.
+so that **upstream không bị overload → giảm timeout/503 nhìn từ client, và áp lực tải được giữ lại ở Mmomarket (nơi kiểm soát được) thay vì đẩy hết lên provider**.
 
 ## Bối cảnh & Bằng chứng
 

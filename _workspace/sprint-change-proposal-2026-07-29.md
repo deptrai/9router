@@ -16,7 +16,7 @@ Mục tiêu mới: thu gọn toàn bộ thành một wizard trên web, chỉ c�
 1. Login MTProto session qua relay.
 2. Tự động chat với supplier bot, khám phá menu / danh mục / sản phẩm.
 3. Trích xuất tên, giá (VND), tồn kho, mô tả.
-4. Tạo supplier source + products trong 9Router, tự động gộp product group theo tên.
+4. Tạo supplier source + products trong Mmomarket, tự động gộp product group theo tên.
 5. Tạo default markup rule.
 6. Tự động publish all variants → sản phẩm xuất hiện trên `@router_chainlensbot`.
 
@@ -98,7 +98,7 @@ so that the system auto-login, discovers catalog, creates products, and publishe
 - **Scope classification: Moderate** — cần thêm story, UI, API, parser.
 - **Route to:**
   - PM/Architect: duyệt PRD/story `2-38.3`.
-  - Developer agent (Amelia / `bmad-quick-dev` hoặc `9r-core-implementer` + `9r-route-implementer`): implement.
+  - Developer agent (Amelia / `bmad-quick-dev` hoặc `mm-core-implementer` + `mm-route-implementer`): implement.
   - Test architect (Murat / `bmad-tea`): test plan vì liên quan relay thật + nhiều parser.
 
 ## 6. Success Criteria

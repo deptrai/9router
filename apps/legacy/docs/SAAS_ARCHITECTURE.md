@@ -1,9 +1,9 @@
-# Kiến trúc SaaS cho 9Router — Phân tích & Roadmap
+# Kiến trúc SaaS cho Mmomarket — Phân tích & Roadmap
 
 > ⚠️ **SUPERSEDED (2026-06-06)**: Tài liệu này là phân tích/roadmap đời đầu, **không còn là nguồn kiến trúc chính thức**.
 > - **Architecture canonical**: `docs/ARCHITECTURE_SAAS_MULTITENANT.md` (ADR Winston — schema, billing, multi-tenant).
 > - **Roadmap/phasing**: `docs/SAAS_ROADMAP.md` + `docs/PRD_SAAS_MVP.md`.
-> - Giữ lại file này chỉ để tham khảo phần "Mô hình TrollLLM" + "9Router hiện có gì". Khi xung đột, theo file canonical.
+> - Giữ lại file này chỉ để tham khảo phần "Mô hình TrollLLM" + "Mmomarket hiện có gì". Khi xung đột, theo file canonical.
 
 ## 1. Mô hình TrollLLM (tham khảo)
 
@@ -17,7 +17,7 @@
 - API endpoint tương thích OpenAI SDK
 - Nhiều model: Claude Opus/Sonnet/Haiku, GPT-5.5, Gemini
 
-## 2. 9Router hiện tại đã có gì?
+## 2. Mmomarket hiện tại đã có gì?
 
 | Feature | Trạng thái | Ghi chú |
 |---------|-----------|---------|
@@ -34,7 +34,7 @@
 
 ### 3.1 Multi-tenant (CRITICAL — phải làm đầu tiên)
 
-Hiện tại 9Router là **single-tenant** (1 admin quản lý tất cả). Để thành SaaS cần:
+Hiện tại Mmomarket là **single-tenant** (1 admin quản lý tất cả). Để thành SaaS cần:
 
 - **User registration + authentication**: Mỗi user có account riêng
 - **User-owned API keys**: Mỗi user tự tạo/quản lý key của mình
@@ -72,7 +72,7 @@ Hiện có quota (token-based, 5h + weekly). Cần mở rộng:
 
 **Approach đơn giản nhất:**
 - Tạo route `/signup`, `/login` riêng cho end-users
-- Dùng JWT auth (đã có pattern trong 9router)
+- Dùng JWT auth (đã có pattern trong mmomarket)
 - User dashboard tách khỏi admin dashboard
 
 ### 3.4 Per-request Cost Calculation
@@ -118,7 +118,7 @@ Hiện có quota (token-based, 5h + weekly). Cần mở rộng:
 
 ## 5. Kết luận
 
-9Router đã có **~60-70%** infrastructure cần thiết cho SaaS:
+Mmomarket đã có **~60-70%** infrastructure cần thiết cho SaaS:
 - API proxy + multi-provider ✅
 - Token tracking ✅
 - Quota enforcement ✅

@@ -13,7 +13,7 @@ Status: review
 
 ## Story
 
-**As a** 9Router user quản lý nhiều API key (production, dev, agent, test),
+**As a** Mmomarket user quản lý nhiều API key (production, dev, agent, test),
 **I want** đặt giới hạn chi tiêu (credit limit, USD) cho từng key,
 **so that** một key bị lạm dụng/runaway agent không thể đốt hết toàn bộ credit balance của tôi — chỉ tiêu tối đa trong hạn mức của key đó.
 
@@ -171,7 +171,7 @@ Route `/api/keys` POST/PUT: `creditLimit` nhận `null | number >= 0`. Reject:
 
 Test deps tại `tests/node_modules`. Chạy:
 ```
-NODE_PATH=/Users/luisphan/Documents/9router/tests/node_modules \
+NODE_PATH=/Users/luisphan/Documents/mmomarket/tests/node_modules \
 npx vitest run --config tests/vitest.config.js tests/unit/perKeyCreditLimit.test.js
 ```
 Setup: temp DATA_DIR, `delete global._dbAdapter`, `vi.resetModules()`. Seed: createUser → createApiKey với creditLimit → insert usageHistory rows với cost → gọi checkCredits.

@@ -59,7 +59,7 @@ export default function AdminHomePage() {
               <Zap className="w-3.5 h-3.5" />
               <span>Epic 5: Admin Operational Console</span>
             </div>
-            <h1 className="text-2xl font-bold text-slate-100">Bảng điều khiển Quản trị 9Router</h1>
+            <h1 className="text-2xl font-bold text-slate-100">Bảng điều khiển Quản trị Mmomarket</h1>
             <p className="text-xs text-slate-400 mt-1">
               Quản trị danh mục, định giá biên lợi nhuận tự động và điều phối chuỗi cung ứng đa nguồn
             </p>

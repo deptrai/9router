@@ -630,7 +630,7 @@ function buildToolChoiceDirective(forced) {
 /**
  * Build Kiro payload from OpenAI format
  *
- * Three 9router-specific behaviours implemented here:
+ * Three mmomarket-specific behaviours implemented here:
  *
  * 1. `-agentic` model suffix. Synthetic variant — same upstream model, but we
  *    inject a chunked-write system prompt to keep large file writes under

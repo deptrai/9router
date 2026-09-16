@@ -45,7 +45,7 @@ export async function POST(request) {
 
     const result = await sendEmail({
       to: user.email,
-      subject: "Xác minh email 9Router",
+      subject: "Xác minh email Mmomarket",
       html: `<p>Chào ${safeName},</p>
 <p>Click vào link dưới đây để xác minh địa chỉ email của bạn:</p>
 <p><a href="${link}">${link}</a></p>

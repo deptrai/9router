@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * bench-latency.js — So sánh tốc độ 9Router local và production
+ * bench-latency.js — So sánh tốc độ Mmomarket local và production
  *
  * Usage:
  *   node scripts/bench-latency.js \
@@ -58,7 +58,7 @@ Options:
   --prod-url        Base URL production
   --local-key       API key local, hoặc LOCAL_API_KEY
   --prod-key        API key production, hoặc PROD_API_KEY
-  --model           Model gửi lên 9Router, hoặc BENCH_MODEL
+  --model           Model gửi lên Mmomarket, hoặc BENCH_MODEL
   --runs            Số lượt đo chính, mặc định ${DEFAULT_RUNS}
   --warmup          Số lượt warmup mỗi target, mặc định ${DEFAULT_WARMUP}
   --prompt          Prompt benchmark, mặc định prompt ngắn
@@ -338,7 +338,7 @@ async function main() {
     messages: [{ role: "user", content: prompt }]
   };
 
-  console.log("9Router latency benchmark");
+  console.log("Mmomarket latency benchmark");
   console.log(`Local: ${localEndpoint}`);
   console.log(`Prod : ${prodEndpoint}`);
   console.log(`Model: ${model}`);

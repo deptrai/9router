@@ -6,7 +6,7 @@ Status: done
 
 ## Story
 
-As a **người dùng 9Router chạy agent dạng tool-loop (fast-context, agentic search) qua model `kr/*`**,
+As a **người dùng Mmomarket chạy agent dạng tool-loop (fast-context, agentic search) qua model `kr/*`**,
 I want **proxy tôn trọng `tool_choice` khi client ép gọi một tool cụ thể hoặc bắt buộc gọi tool**,
 so that **model dừng vòng lặp và gọi đúng tool (vd `answer`) thay vì lặp `restricted_exec` tới "Max turns reached" rồi trả 0 files/ERR**.
 

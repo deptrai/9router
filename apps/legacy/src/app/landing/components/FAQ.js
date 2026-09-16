@@ -3,12 +3,12 @@ import { useState } from "react";
 
 const FAQ_ITEMS = [
   {
-    q: "What is 9Router?",
-    a: "9Router is a unified AI gateway that lets you access all major AI providers (Anthropic, OpenAI, Google, xAI, and more) through a single OpenAI-compatible endpoint. Manage API keys, monitor usage, and switch models without changing your code.",
+    q: "What is Mmomarket?",
+    a: "Mmomarket is a unified AI gateway that lets you access all major AI providers (Anthropic, OpenAI, Google, xAI, and more) through a single OpenAI-compatible endpoint. Manage API keys, monitor usage, and switch models without changing your code.",
   },
   {
     q: "Which AI models are supported?",
-    a: "9Router supports 50+ models across Anthropic (Claude), OpenAI (GPT, o-series), Google (Gemini), xAI (Grok), and others. View the full list on our Models page.",
+    a: "Mmomarket supports 50+ models across Anthropic (Claude), OpenAI (GPT, o-series), Google (Gemini), xAI (Grok), and others. View the full list on our Models page.",
   },
   {
     q: "How does credit-based pricing work?",
@@ -16,11 +16,11 @@ const FAQ_ITEMS = [
   },
   {
     q: "Is the API compatible with my existing code?",
-    a: "Yes. 9Router exposes a fully OpenAI-compatible endpoint at /v1/chat/completions and an Anthropic-compatible endpoint at /api/v1beta/messages. Most existing SDKs and tools work with zero changes — just swap the base URL.",
+    a: "Yes. Mmomarket exposes a fully OpenAI-compatible endpoint at /v1/chat/completions and an Anthropic-compatible endpoint at /api/v1beta/messages. Most existing SDKs and tools work with zero changes — just swap the base URL.",
   },
   {
     q: "How do I get started?",
-    a: "Register for a free account, get your API key from the dashboard, and point your existing OpenAI or Anthropic SDK to 9Router's endpoint. The free plan includes generous token quotas to get started.",
+    a: "Register for a free account, get your API key from the dashboard, and point your existing OpenAI or Anthropic SDK to Mmomarket's endpoint. The free plan includes generous token quotas to get started.",
   },
   {
     q: "What happens when I run out of credits?",
@@ -57,7 +57,7 @@ export default function FAQ() {
       <div className="max-w-3xl mx-auto">
         <div className="text-center mb-14">
           <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">Frequently asked questions</h2>
-          <p className="text-gray-400">Everything you need to know about 9Router.</p>
+          <p className="text-gray-400">Everything you need to know about Mmomarket.</p>
         </div>
         <div className="rounded-2xl border border-[#3a2f27] bg-[#1a1410] px-6">
           {FAQ_ITEMS.map((item, i) => (

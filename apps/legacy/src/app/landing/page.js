@@ -50,7 +50,7 @@ export default function LandingPage() {
             <div className="max-w-4xl mx-auto text-center relative z-10">
               <h2 className="text-4xl md:text-5xl font-black mb-6">Ready to simplify your AI infrastructure?</h2>
               <p className="text-xl text-gray-400 mb-10 max-w-2xl mx-auto">
-                Join developers who are streamlining their AI integrations with 9Router.
+                Join developers who are streamlining their AI integrations with Mmomarket.
               </p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                 <button
@@ -60,7 +60,7 @@ export default function LandingPage() {
                   Start Free
                 </button>
                 <a
-                  href="https://discord.gg/9router"
+                  href="https://discord.gg/mmomarket"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-full sm:w-auto h-14 px-10 rounded-lg border border-[#3a2f27] hover:border-[#f97815] text-white text-lg font-bold transition-all flex items-center justify-center gap-2"

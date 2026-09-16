@@ -10,7 +10,7 @@ const originalDataDir = process.env.DATA_DIR;
 let mockSession = null;
 
 beforeEach(() => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-usersMe-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "mmomarket-usersMe-"));
   process.env.DATA_DIR = tempDir;
   process.env.JWT_SECRET = "test-secret-for-me";
   delete global._dbAdapter;

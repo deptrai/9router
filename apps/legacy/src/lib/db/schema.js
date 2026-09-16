@@ -283,8 +283,8 @@ export const TABLES = {
       description: "TEXT",
       priceCredits: "REAL NOT NULL",
       deliveryMode: "TEXT NOT NULL",    // instant|admin_fulfill|user_self_connect
-      targetType: "TEXT",               // 9router_plan|... (null cho non-plan)
-      targetId: "TEXT",                 // planId nếu targetType=9router_plan
+      targetType: "TEXT",               // mmomarket_plan|... (null cho non-plan)
+      targetId: "TEXT",                 // planId nếu targetType=mmomarket_plan
       stock: "INTEGER",                 // null = unlimited
       isActive: "INTEGER DEFAULT 1",
       // Story 2.30: external supplier source fields (backward-compat — all nullable except source DEFAULT 'local')

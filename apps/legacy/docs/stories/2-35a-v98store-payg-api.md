@@ -17,13 +17,13 @@ Status: ready-for-dev
 
 ## Story
 
-As a **user của 9Router**,
-I want **gọi 500+ AI models (OpenAI, Claude, Gemini, Grok...) qua 1 API key 9Router duy nhất với mức giá pay-as-you-go**,
-so that **tôi không cần mua key riêng từng provider, chỉ nạp credit vào 9Router và dùng ngay — giống OpenRouter nhưng rẻ hơn**.
+As a **user của Mmomarket**,
+I want **gọi 500+ AI models (OpenAI, Claude, Gemini, Grok...) qua 1 API key Mmomarket duy nhất với mức giá pay-as-you-go**,
+so that **tôi không cần mua key riêng từng provider, chỉ nạp credit vào Mmomarket và dùng ngay — giống OpenRouter nhưng rẻ hơn**.
 
 ## Bối cảnh và quyết định architecture
 
-> **Story này thêm v98store làm provider pay-as-you-go vào 9Router.** Không phải reseller key inventory (đã bỏ trong story cũ 2.35). Model: 9Router giữ 1 master key v98store, proxy tất cả user qua đó, track balance per-user trong DB 9Router. User nạp credit → 9Router track v98store balance riêng cho từng user (theo topup ratio admin config). Khi user gọi model v98store → route sang master key → deduct cost.
+> **Story này thêm v98store làm provider pay-as-you-go vào Mmomarket.** Không phải reseller key inventory (đã bỏ trong story cũ 2.35). Model: Mmomarket giữ 1 master key v98store, proxy tất cả user qua đó, track balance per-user trong DB Mmomarket. User nạp credit → Mmomarket track v98store balance riêng cho từng user (theo topup ratio admin config). Khi user gọi model v98store → route sang master key → deduct cost.
 
 ### Research findings (verified 2026-06-15)
 
@@ -48,8 +48,8 @@ so that **tôi không cần mua key riêng từng provider, chỉ nạp credit v
 
 ### Quyết định architecture
 
-- **QĐ1 — Pool key (1 master key)**: 9Router dùng 1 master key v98store (`V98STORE_MASTER_KEY` env). Tất cả user proxy qua đó. 9Router tự track v98store balance per-user. Đơn giản nhất vì v98store không có reseller API.
-- **QĐ2 — v98store balance là ledger riêng**: Thêm `txnType='v98_credit'` vào `creditTransactions`. Khi user nạp credit 9Router và chọn topup v98store: ghi txn v98_credit với amount = topup_amount × ratio. Balance v98store của user = sum(v98_credit txn). Tách hoàn toàn với 9Router credit thường.
+- **QĐ1 — Pool key (1 master key)**: Mmomarket dùng 1 master key v98store (`V98STORE_MASTER_KEY` env). Tất cả user proxy qua đó. Mmomarket tự track v98store balance per-user. Đơn giản nhất vì v98store không có reseller API.
+- **QĐ2 — v98store balance là ledger riêng**: Thêm `txnType='v98_credit'` vào `creditTransactions`. Khi user nạp credit Mmomarket và chọn topup v98store: ghi txn v98_credit với amount = topup_amount × ratio. Balance v98store của user = sum(v98_credit txn). Tách hoàn toàn với Mmomarket credit thường.
 - **QĐ3 — Topup ratio admin-configurable**: `adminConfig` (hoặc env) `V98STORE_TOPUP_RATIO` (default 0.7). User nạp $10 → $7 vào v98 balance, $3 margin admin. Margin ghi vào ledger `type='margin_v98'` để audit.
 - **QĐ4 — v98store provider trong routing**: Thêm provider `v98store` vào `open-sse/providers/v98store.js`. Model routing: nếu model tồn tại trong v98store model list → route sang v98store provider. Priority: user chọn explicit hoặc auto-route.
 - **QĐ5 — Model list cache**: `GET /v1/models` với master key → cache trong DB/memory (TTL 1h). Expose qua `/api/v98store/models` để frontend dùng. Public page `/models` đọc từ cache này.
@@ -66,29 +66,29 @@ so that **tôi không cần mua key riêng từng provider, chỉ nạp credit v
 **And** ratio hiển thị rõ: "User nạp $10 → $7 vào v98, $3 margin"
 
 ### AC2 — User topup v98store balance
-**Given** user có credit 9Router
+**Given** user có credit Mmomarket
 **When** user chọn "Nạp v98store balance" với amount $X
 **Then** ghi `creditTransactions` type=`v98_credit` amount=X×ratio cho user
 **And** ghi `creditTransactions` type=`margin_v98` amount=X×(1-ratio) cho admin
 **And** user thấy v98store balance cập nhật trong dashboard
 
-### AC3 — User gọi model v98store qua 9Router
+### AC3 — User gọi model v98store qua Mmomarket
 **Given** user có v98store balance > 0 và gọi `/v1/chat/completions` với model v98store (vd `gpt-4o`, `claude-opus-4-8`)
-**When** request tới 9Router
-**Then** 9Router check v98 balance → đủ → route sang `https://v98store.com/v1` với master key
+**When** request tới Mmomarket
+**Then** Mmomarket check v98 balance → đủ → route sang `https://v98store.com/v1` với master key
 **And** stream response về user bình thường (OpenAI-compatible)
 **And** sau stream: deduct cost từ v98 balance theo model pricing
 **And** nếu balance ≤ 0 → trả 402 với message "Insufficient v98store balance"
 
 ### AC4 — Model list sync + cache
 **Given** `V98STORE_MASTER_KEY` configured
-**When** 9Router gọi `GET https://v98store.com/v1/models`
+**When** Mmomarket gọi `GET https://v98store.com/v1/models`
 **Then** cache model list trong DB (TTL 1h)
 **And** `/api/v98store/models` trả danh sách models với pricing info
 **And** model list tự refresh khi TTL hết hoặc admin trigger manual refresh
 
 ### AC5 — Trang public `/models`
-**Given** visitor truy cập `9router.xyz/models` (không cần login)
+**Given** visitor truy cập `mmomarket.xyz/models` (không cần login)
 **When** trang load
 **Then** hiển thị bảng 500+ models: tên model, provider, input price/1M, output price/1M
 **And** có search + filter theo provider (OpenAI, Claude, Gemini, Grok, Other)
@@ -110,7 +110,7 @@ so that **tôi không cần mua key riêng từng provider, chỉ nạp credit v
 **When** chạy full test suite
 **Then** routing hiện có (kiro, openai direct, plan quota) không thay đổi
 **And** storeCheckout, entitlement, external-store sync không bị ảnh hưởng
-**And** user không có v98 balance vẫn dùng 9Router bình thường (chỉ không dùng được model v98store)
+**And** user không có v98 balance vẫn dùng Mmomarket bình thường (chỉ không dùng được model v98store)
 
 ### AC8 — v98store upstream 429/throttle + error handling (FR81a)
 **Given** user có balance > 0 và gọi model v98store
@@ -156,7 +156,7 @@ so that **tôi không cần mua key riêng từng provider, chỉ nạp credit v
   - [ ] Fetch model list từ `/api/v98store/models`
   - [ ] Table: Model name, Provider badge, Input $/1M, Output $/1M, Type (chat/image/tts/embed)
   - [ ] Search input (client-side filter), Provider filter tabs
-  - [ ] Hero section: "9Router API — 500+ Models · Pay as you go"
+  - [ ] Hero section: "Mmomarket API — 500+ Models · Pay as you go"
   - [ ] Setup section: code snippet đổi base URL (Claude Code, OpenAI SDK, Cursor)
   - [ ] CTA: "Bắt đầu" → `/dashboard` (login redirect)
   - [ ] Responsive, dark mode support (match landing page style)
@@ -166,7 +166,7 @@ so that **tôi không cần mua key riêng từng provider, chỉ nạp credit v
   - [ ] Hiển thị balance USD
   - [ ] Form topup (input amount, submit)
   - [ ] Transaction history (topup + usage)
-  - [ ] Endpoint config box: base URL + API key (9Router key của user, không phải master key)
+  - [ ] Endpoint config box: base URL + API key (Mmomarket key của user, không phải master key)
 
 - [ ] **T8 — Schema** (QĐ2)
   - [ ] `v98storeModels` table trong `schema.js`: `id, modelId, provider, name, inputPrice, outputPrice, isActive, cachedAt`
@@ -186,7 +186,7 @@ so that **tôi không cần mua key riêng từng provider, chỉ nạp credit v
 - **KHÔNG log master key** — `V98STORE_MASTER_KEY` chỉ trong env, không bao giờ return trong API response hay log
 - **Fail-soft balance check**: nếu v98store API hiccup khi check balance → cho qua + deduct sau (hoặc block tùy config). Mặc định: block với thông báo rõ ràng hơn là cho qua mà không deduct
 - **Model pricing**: v98store pricing = base $2/1M × ratio. Cần fetch chính xác per-model ratio. Nếu chưa có pricing cho model → dùng default ratio=1 (conservative)
-- **v98store có thể down**: wrap mọi call trong try/catch, trả 503 rõ ràng, không crash 9Router
+- **v98store có thể down**: wrap mọi call trong try/catch, trả 503 rõ ràng, không crash Mmomarket
 - **`storeCheckout.js` KHÔNG sửa** — v98store không phải store inventory
 
 ### Response shape v98store (cần probe khi impl)

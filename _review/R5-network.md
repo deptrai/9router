@@ -181,12 +181,12 @@ Phạm vi đã đọc: `src/lib/network/` (4 file), `src/lib/tunnel/` (14 file �
 
 ### [P2-4] Tunnel worker URL hardcode fallback `abc-tunnel.us` trong config
 - **File:** `src/lib/tunnel/cloudflare/config.js:9`
-- **Vấn đề:** `WORKER_URL` fallback là `https://abc-tunnel.us`. Đây là external service ngoài tầm kiểm soát của 9router. Nếu domain bị expire hoặc takeover, tunnel registration bị compromise.
+- **Vấn đề:** `WORKER_URL` fallback là `https://abc-tunnel.us`. Đây là external service ngoài tầm kiểm soát của mmomarket. Nếu domain bị expire hoặc takeover, tunnel registration bị compromise.
 - **Đề xuất:** Document rõ dependency này, xem xét thêm verification response từ worker trước khi trust.
 
 ### [P2-5] Jina-reader SSRF qua URL encode: `encodeURIComponent` không đủ
 - **File:** `open-sse/handlers/fetch/index.js:154`
-- **Vấn đề:** `const target = \`https://r.jina.ai/${encodeURIComponent(url)}\`` — với provider jina, URL user-supplied được encode rồi nhúng vào Jina's URL. Jina sẽ fetch URL đó. Đây là SSRF gián tiếp (Jina làm proxy). Dù Jina có thể có filter riêng, 9router không kiểm soát điều đó. Phụ thuộc vào Jina để bảo vệ SSRF là không đủ.
+- **Vấn đề:** `const target = \`https://r.jina.ai/${encodeURIComponent(url)}\`` — với provider jina, URL user-supplied được encode rồi nhúng vào Jina's URL. Jina sẽ fetch URL đó. Đây là SSRF gián tiếp (Jina làm proxy). Dù Jina có thể có filter riêng, mmomarket không kiểm soát điều đó. Phụ thuộc vào Jina để bảo vệ SSRF là không đủ.
 - **Đề xuất:** Áp dụng cùng `blockPrivateUrl()` check từ P0-1 cho tất cả providers.
 
 ---

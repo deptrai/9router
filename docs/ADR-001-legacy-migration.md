@@ -1,9 +1,9 @@
 # ADR 001: Chiến lược di trú ứng dụng Legacy sang Turborepo Monorepo
 
 ## Bối cảnh
-Trước Story 1.1, dự án 9Router là ứng dụng monolithic Next.js App Router đơn lẻ đặt tại thư mục gốc (`src/`), kết hợp các API route AI Proxy (`/v1/*`) và prototype Telegram Mini App e-commerce chạy trên SQLite đồng bộ.
+Trước Story 1.1, dự án Mmomarket là ứng dụng monolithic Next.js App Router đơn lẻ đặt tại thư mục gốc (`src/`), kết hợp các API route AI Proxy (`/v1/*`) và prototype Telegram Mini App e-commerce chạy trên SQLite đồng bộ.
 
-Theo kiến trúc mục tiêu (ARCHITECTURE-SPINE.md) và PRD 9Router E-Commerce, nền tảng chuyển đổi sang:
+Theo kiến trúc mục tiêu (ARCHITECTURE-SPINE.md) và PRD Mmomarket E-Commerce, nền tảng chuyển đổi sang:
 - Turborepo Monorepo
 - Next.js 16 App Router cho Telegram Mini App (`apps/mini-app`)
 - Next.js 16 App Router cho Admin Portal (`apps/admin`)

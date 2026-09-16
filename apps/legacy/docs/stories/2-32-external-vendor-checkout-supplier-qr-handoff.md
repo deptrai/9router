@@ -42,7 +42,7 @@ Hai sự thật về codebase định hình toàn bộ scope story này. Dev PH�
 
 - **Capability detection** — adapter khai báo có hỗ trợ vendor-order-creation không (`supportsVendorOrder()`); mặc định tất cả adapter hiện tại = `false`.
 - **Payment-mode gate (CỐT LÕI của story)** — đảm bảo KHÔNG BAO GIỜ đưa QR wholesale gốc của supplier cho user (vì giá đó = supplierPrice, store mất margin + lộ giá gốc). Đây là requirement an toàn business chính của epic AC3/AC4.
-- **`proxy_checkout` path** — user trả credit 9router (= retailPrice qua `priceCredits`, đã set bởi 2.31 markup), reuse `storeCheckout` HOÀN TOÀN không sửa; order chuyển `admin_fulfill` flow (admin/sync đặt đơn upstream). Đây là path KHẢ THI ngay hôm nay.
+- **`proxy_checkout` path** — user trả credit mmomarket (= retailPrice qua `priceCredits`, đã set bởi 2.31 markup), reuse `storeCheckout` HOÀN TOÀN không sửa; order chuyển `admin_fulfill` flow (admin/sync đặt đơn upstream). Đây là path KHẢ THI ngay hôm nay.
 - **`supplierOrders` tracking table** — ghi supplier-side order state để 2.33 (status sync) + 2.34 (reconciliation) build tiếp.
 - **`vendor_commission` path** — chỉ stub + reject rõ ràng ("supplier chưa hỗ trợ vendor invoice"), interface sẵn sàng cho khi có supplier thật (story riêng kích hoạt).
 
@@ -63,7 +63,7 @@ Hai sự thật về codebase định hình toàn bộ scope story này. Dev PH�
 ### Quyết định architecture (chốt cho story này)
 
 - **QĐ1 — Enum `PAYMENT_MODES`** (E8 enum tập trung, `src/lib/store/constants.js` mới hoặc trong repo): `["proxy_checkout", "vendor_commission", "separate_fee", "disabled"]`.
-  - `proxy_checkout` — user trả credit 9router (= retailPrice), store đặt đơn upstream qua admin/sync. **Path khả thi MVP.**
+  - `proxy_checkout` — user trả credit mmomarket (= retailPrice), store đặt đơn upstream qua admin/sync. **Path khả thi MVP.**
   - `vendor_commission` — supplier tạo invoice/QR với retail/commission amount. **Stub MVP** — reject "supplier chưa hỗ trợ" tới khi adapter `supportsVendorOrder()=true`.
   - `separate_fee` — user trả QR wholesale gốc của supplier cho phần gốc + trả riêng phần margin cho store (qua credit). **Stub MVP** (cần QR gốc từ supplier — không có capability). Reject rõ ràng.
   - `disabled` — admin tắt bán external product này. Checkout reject `PRODUCT_DISABLED`.
@@ -105,7 +105,7 @@ Hai sự thật về codebase định hình toàn bộ scope story này. Dev PH�
   - Idempotency: reuse pattern `storeCheckout` (`store:${orderId}`); `supplierOrders` insert idempotent theo `orderId` (UNIQUE-guard hoặc recheck trong txn).
 
 - **QĐ6 — TUYỆT ĐỐI KHÔNG đưa raw wholesale QR cho user** (epic AC3/AC4 — requirement an toàn chính):
-  - Nếu một path nào đó nhận được QR từ supplier mà amount = supplierPrice (wholesale) → KHÔNG hiển thị cho user. Chỉ hiển thị QR khi amount đã xác nhận = retailPrice (hoặc commission-adjusted). Vì MVP không có supplier tạo invoice retail → vendor_commission luôn reject → không có QR nào được hiển thị cho user trong MVP. `proxy_checkout` user trả credit 9router (không QR supplier).
+  - Nếu một path nào đó nhận được QR từ supplier mà amount = supplierPrice (wholesale) → KHÔNG hiển thị cho user. Chỉ hiển thị QR khi amount đã xác nhận = retailPrice (hoặc commission-adjusted). Vì MVP không có supplier tạo invoice retail → vendor_commission luôn reject → không có QR nào được hiển thị cho user trong MVP. `proxy_checkout` user trả credit mmomarket (không QR supplier).
   - Guard này phải có TEST: giả lập supplier trả QR wholesale → assert hệ thống KHÔNG forward cho user, order chuyển mode khác hoặc block.
 
 - **QĐ7 — Idempotency (epic AC5 — Telegram callback/supplier-order-create retry)**:

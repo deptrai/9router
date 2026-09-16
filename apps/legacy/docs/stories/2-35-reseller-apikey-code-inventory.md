@@ -18,7 +18,7 @@ Status: ready-for-dev
 
 ## Story
 
-As an **admin vận hành 9Router store**,
+As an **admin vận hành Mmomarket store**,
 I want **nhập kho và bán API key reseller (v98store, format `sk-...`, OpenAI+Anthropic compatible) cùng gift-code/account reseller (viber.vn) qua Telegram store sẵn có**,
 so that **buyer mua bằng credit, nhận key/code + hướng dẫn setup tự động (instant) hoặc qua admin (admin_fulfill); inventory key v98store được giữ sạch bằng verify-on-restock + health-sweep ngoài luồng, và key chết được xử lý bằng refund safety-net — KHÔNG probe balance trên hot path checkout**.
 
@@ -188,7 +188,7 @@ so that **buyer mua bằng credit, nhận key/code + hướng dẫn setup tự �
 
 ### Rủi ro phải nêu (ngoài kỹ thuật)
 
-- **ToS/pháp lý**: bán lại API key Anthropic/OpenAI từ reseller bên thứ ba có thể vi phạm ToS upstream — key bị revoke phía Anthropic/OpenAI bất cứ lúc nào, ngoài tầm kiểm soát 9Router. Sweep balance-check KHÔNG phát hiện được key bị ToS-ban (balance còn nhưng key vô hiệu) — đây chính là lý do PHẢI có refund safety-net (AC7/QĐ7) chứ không chỉ dựa balance gate.
+- **ToS/pháp lý**: bán lại API key Anthropic/OpenAI từ reseller bên thứ ba có thể vi phạm ToS upstream — key bị revoke phía Anthropic/OpenAI bất cứ lúc nào, ngoài tầm kiểm soát Mmomarket. Sweep balance-check KHÔNG phát hiện được key bị ToS-ban (balance còn nhưng key vô hiệu) — đây chính là lý do PHẢI có refund safety-net (AC7/QĐ7) chứ không chỉ dựa balance gate.
 - **Key chết giữa chừng**: 3 lớp (restock + sweep + refund) giảm rủi ro nhưng key vẫn có thể chết sau khi giao (buyer đang dùng). Sweep interval là trade-off vận hành: ngắn hơn = ít key chết bán ra hơn nhưng nhiều API call hơn. Refund là lưới cuối.
 - **viber.vn**: đừng commit marketing/catalog public trước khi tự xác nhận nguồn hàng thật (lấy mẫu, test). Plan để khung sẵn, không khẳng định nó hoạt động.
 

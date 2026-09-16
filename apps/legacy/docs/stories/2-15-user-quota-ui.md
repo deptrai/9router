@@ -11,7 +11,7 @@ Status: done
 
 ## Story
 
-As a **user của 9Router có gói subscription (free/pro/max) hoặc dùng credit pay-as-you-go**,
+As a **user của Mmomarket có gói subscription (free/pro/max) hoặc dùng credit pay-as-you-go**,
 I want **một trang dashboard xem được giới hạn gói của mình (quota token 5h/weekly đã dùng/còn lại, RPM), số dư credit, lịch sử giao dịch credit (ledger), và bật/tắt `allowCreditOverflow`**,
 so that **tôi tự theo dõi được hạn mức + chi tiêu, hiểu vì sao bị chặn khi hết quota, và chủ động quyết định có cho phép tràn sang credit khi gói cạn hay không — không cần hỏi admin**.
 

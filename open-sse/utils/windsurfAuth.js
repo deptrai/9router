@@ -2,7 +2,7 @@
  * Windsurf auth utility — JWT fetch, cache, rate limit check, request building.
  *
  * Ported from deepgrep/src/core.mjs and deepgrep/src/extract-key.mjs
- * for 9router WindsurfExecutor integration.
+ * for mmomarket WindsurfExecutor integration.
  */
 
 import { gzipSync } from "node:zlib";

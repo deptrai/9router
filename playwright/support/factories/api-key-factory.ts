@@ -1,7 +1,7 @@
 /**
  * API Key Factory
  *
- * Generates test API keys for 9router provider testing.
+ * Generates test API keys for mmomarket provider testing.
  */
 import { randomUUID } from 'crypto';
 

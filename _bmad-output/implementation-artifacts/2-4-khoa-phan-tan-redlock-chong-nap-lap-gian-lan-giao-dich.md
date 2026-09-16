@@ -4,9 +4,9 @@ story_id: 2.4
 epic: 2
 baseline_commit: ce28f76c
 context:
-  - _bmad-output/planning-artifacts/prds/prd-9router-ecommerce-2026-09-09/prd.md
-  - _bmad-output/planning-artifacts/prds/prd-9router-ecommerce-2026-09-09/addendum.md
-  - _bmad-output/planning-artifacts/architecture/architecture-9router-ecommerce-2026-09-09/ARCHITECTURE-SPINE.md
+  - _bmad-output/planning-artifacts/prds/prd-mmomarket-ecommerce-2026-09-09/prd.md
+  - _bmad-output/planning-artifacts/prds/prd-mmomarket-ecommerce-2026-09-09/addendum.md
+  - _bmad-output/planning-artifacts/architecture/architecture-mmomarket-ecommerce-2026-09-09/ARCHITECTURE-SPINE.md
   - _bmad-output/planning-artifacts/epics.md
   - _bmad-output/implementation-artifacts/2-2-khop-lenh-webhook-vietqr-cong-tien-vi-tuc-thoi.md
   - _bmad-output/implementation-artifacts/2-3-tao-hoa-don-nap-tien-tu-dong-qua-bitcart-crypto.md
@@ -263,9 +263,9 @@ Tương tự cho `POST /api/payments/bitcart/webhook` với `lock:payment:{invoi
 ### References
 
 - [Source: _bmad-output/planning-artifacts/epics.md#Story-2.4] — AC gốc.
-- [Source: _bmad-output/planning-artifacts/prds/prd-9router-ecommerce-2026-09-09/prd.md#FR-9] — Distributed locking requirement.
-- [Source: _bmad-output/planning-artifacts/architecture/architecture-9router-ecommerce-2026-09-09/ARCHITECTURE-SPINE.md#AD-4] — Redis Redlock pattern.
-- [Source: _bmad-output/planning-artifacts/architecture/architecture-9router-ecommerce-2026-09-09/ARCHITECTURE-SPINE.md#AD-6] — Idempotency webhook guard.
+- [Source: _bmad-output/planning-artifacts/prds/prd-mmomarket-ecommerce-2026-09-09/prd.md#FR-9] — Distributed locking requirement.
+- [Source: _bmad-output/planning-artifacts/architecture/architecture-mmomarket-ecommerce-2026-09-09/ARCHITECTURE-SPINE.md#AD-4] — Redis Redlock pattern.
+- [Source: _bmad-output/planning-artifacts/architecture/architecture-mmomarket-ecommerce-2026-09-09/ARCHITECTURE-SPINE.md#AD-6] — Idempotency webhook guard.
 - [Source: apps/api/src/modules/payments/payments.service.ts] — Current webhook logic.
 - [Source: apps/api/src/modules/ledger/ledger.service.ts] — Row-level locking pattern.
 - [Source: packages/database/src/schema.ts] — Unique constraints.

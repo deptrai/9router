@@ -7,7 +7,7 @@ import { resolveAdminFlag } from "@/lib/auth/adminEmail";
 import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
 import { getUserByEmail } from "@/lib/db/index.js";
 
-const RESET_HINT = "Forgot password? Reset to default via 9Router CLI → Settings → Reset Password to Default.";
+const RESET_HINT = "Forgot password? Reset to default via Mmomarket CLI → Settings → Reset Password to Default.";
 
 function isTunnelRequest(request, settings) {
   const host = (request.headers.get("host") || "").split(":")[0].toLowerCase();

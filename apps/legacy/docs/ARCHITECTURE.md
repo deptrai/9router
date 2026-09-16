@@ -1,10 +1,10 @@
-# Kiến trúc 9Router
+# Kiến trúc Mmomarket
 
 _Cập nhật lần cuối: 2026-06-16_
 
 ## Tóm tắt điều hành (Executive Summary)
 
-9Router là một cổng định tuyến AI cục bộ (local AI routing gateway) và dashboard được xây dựng trên Next.js.
+Mmomarket là một cổng định tuyến AI cục bộ (local AI routing gateway) và dashboard được xây dựng trên Next.js.
 Hệ thống cung cấp một endpoint tương thích OpenAI (OpenAI-compatible endpoint) duy nhất (`/v1/*`) và định tuyến traffic qua nhiều upstream provider với khả năng dịch định dạng (translation), fallback, làm mới token (token refresh), và theo dõi usage.
 
 Năng lực cốt lõi:
@@ -53,7 +53,7 @@ flowchart LR
         BROWSER[Browser Dashboard]
     end
 
-    subgraph Router[9Router Local Process]
+    subgraph Router[Mmomarket Local Process]
         API[V1 Compatibility API\n/v1/*]
         DASH[Dashboard + Management API\n/api/*]
         CORE[SSE + Translation Core\nopen-sse + src/sse]
@@ -387,7 +387,7 @@ Mọi preset đều đóng đuôi bằng `cx/gpt-5.5` (large-context) để áp 
 
 ### Kiro per-model context ceilings
 
-Kiro chạy trên AWS CodeWhisperer (`https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse`). Upstream áp một trần **content-length theo từng model** (không phải trần token), trả lỗi HTTP 400 `CONTENT_LENGTH_EXCEEDS_THRESHOLD` khi vượt. Lỗi này phát từ AWS, không có trong source 9router.
+Kiro chạy trên AWS CodeWhisperer (`https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse`). Upstream áp một trần **content-length theo từng model** (không phải trần token), trả lỗi HTTP 400 `CONTENT_LENGTH_EXCEEDS_THRESHOLD` khi vượt. Lỗi này phát từ AWS, không có trong source mmomarket.
 
 Trần thực đo trên production (đơn vị ước lượng `bytes/4`):
 
@@ -505,8 +505,8 @@ creditTransactions          id, userId, type, amount, refId, idempotencyKey, ...
 Các file lưu trữ vật lý:
 
 - main DB: `${DATA_DIR}/data.sqlite` (SQLite, better-sqlite3)
-- request log lines: `~/.9router/log.txt`
-- legacy state (one-time import): `~/.9router/db.json`
+- request log lines: `~/.mmomarket/log.txt`
+- legacy state (one-time import): `~/.mmomarket/db.json`
 
 ## Deployment Topology
 
@@ -517,7 +517,7 @@ flowchart LR
         Browser[Dashboard Browser]
     end
 
-    subgraph ContainerOrProcess[9Router Runtime]
+    subgraph ContainerOrProcess[Mmomarket Runtime]
         Next[Next.js Server\nPORT=20128]
         Core[SSE Core + Executors]
         MainDB[(db.json)]
@@ -693,7 +693,7 @@ Auth system (`src/sse/services/auth.js`) track số request đang chạy trên m
 
 In-Flight Semaphore (mục trên) chỉ là **soft limit**: khi tất cả connections của một provider đã đạt `MAX_IN_FLIGHT_PER_CONNECTION`, `getProviderCredentials` không fail — nó **degrade xuống least-loaded** và dispatch request lên connection đang bận. Dưới tải concurrent cao (N request cùng tới `vuz`/`kiro`/`viber`), tất cả N request đều được dispatch dù connection đã quá tải → upstream overload → timeout → 503.
 
-**Quyết định**: thêm một **bounded in-memory wait queue per (provider) selection** đứng *trước* bước degrade. Khi không còn slot idle, request **chờ** một lease được release thay vì dispatch ngay. Đây là backpressure: chuyển áp lực từ upstream (nơi ta không kiểm soát được, biểu hiện bằng 503/timeout) về phía 9Router (nơi ta kiểm soát được, biểu hiện bằng chờ có giới hạn hoặc 503 fail-fast rõ ràng).
+**Quyết định**: thêm một **bounded in-memory wait queue per (provider) selection** đứng *trước* bước degrade. Khi không còn slot idle, request **chờ** một lease được release thay vì dispatch ngay. Đây là backpressure: chuyển áp lực từ upstream (nơi ta không kiểm soát được, biểu hiện bằng 503/timeout) về phía Mmomarket (nơi ta kiểm soát được, biểu hiện bằng chờ có giới hạn hoặc 503 fail-fast rõ ràng).
 
 Lựa chọn đã cân nhắc:
 - **A. Giữ nguyên degrade (hiện tại)** — đơn giản nhưng đẩy overload lên upstream. ❌ chính là bug đang sửa.
@@ -872,7 +872,7 @@ Environment variables đang được code sử dụng:
 
 ## Ghi chú kiến trúc đã biết (Known Architectural Notes)
 
-1. SQLite DB được lưu tại `${DATA_DIR}/data.sqlite`. `DATA_DIR` default là `~/.9router`.
+1. SQLite DB được lưu tại `${DATA_DIR}/data.sqlite`. `DATA_DIR` default là `~/.mmomarket`.
 2. `/api/v1/route.js` trả về static model list và không phải nguồn models chính được `/v1/models` sử dụng.
 3. Request logger ghi full headers/body khi bật; cần xem log directory là dữ liệu nhạy cảm.
 4. Cloud behavior phụ thuộc vào `NEXT_PUBLIC_BASE_URL` chính xác và cloud endpoint có thể truy cập được.
@@ -882,8 +882,8 @@ Environment variables đang được code sử dụng:
 
 ## Checklist xác minh vận hành (Operational Verification Checklist)
 
-- Build from source: `cd /root/dev/9router && npm run build`
-- Build Docker image: `cd /root/dev/9router && docker build -t 9router .`
+- Build from source: `cd /root/dev/mmomarket && npm run build`
+- Build Docker image: `cd /root/dev/mmomarket && docker build -t mmomarket .`
 - Start service và verify:
 - `GET /api/settings`
 - `GET /api/v1/models`

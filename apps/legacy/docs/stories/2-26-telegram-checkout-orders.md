@@ -45,7 +45,7 @@ KHÔNG làm (để story sau):
 - `/orders` history UI đầy đủ (chỉ cần message xác nhận có mã đơn; list repo có sẵn cho sau).
 - Self-connect entitlement (2.29).
 - Refund/cancel flow qua bot (state machine hỗ trợ `refunded`/`cancelled` nhưng chưa expose command).
-- `9router_plan` activation (plan product → reuse `purchasePlanForUser` ở story sau; 2.26 chỉ trừ credit + tạo order).
+- `mmomarket_plan` activation (plan product → reuse `purchasePlanForUser` ở story sau; 2.26 chỉ trừ credit + tạo order).
 
 ## Acceptance Criteria
 
@@ -154,7 +154,7 @@ adapter.transaction(() => {
 
 ### Regression / scope guard
 
-- KHÔNG đụng plan activation / `purchasePlanForUser` — `9router_plan` product chỉ trừ credit + tạo order ở 2.26; entitlement grant là story sau.
+- KHÔNG đụng plan activation / `purchasePlanForUser` — `mmomarket_plan` product chỉ trừ credit + tạo order ở 2.26; entitlement grant là story sau.
 - KHÔNG đụng credit billing pipeline (2.4) — chỉ thêm txn type `store_purchase` qua API có sẵn.
 - Telegram login (2.22) + catalog (2.25) không đổi; chỉ thay stub `buy:` callback.
 - `admin_fulfill` orders dừng ở `paid` — fulfillment thực là 2.27.
@@ -167,7 +167,7 @@ Test pattern giống `storeCheckout.test.js` (đã viết): `fs.mkdtempSync` tem
 
 - [Epics] `_bmad-output/planning-artifacts/epics.md` — Epic I (FR38–FR50), story 2.26 checkout, NFR7 (idempotency/anti-replay), NFR10 (reuse credit ledger)
 - [Story 2.25] `docs/stories/2-25-telegram-user-linking-product-catalog.md` — products catalog, bot infra, `buy:` callback stub được thay
-- [Story 2.18] `docs/stories/2-18-plan-purchase-flow.md` — `purchasePlanForUser` (story sau reuse cho 9router_plan product)
+- [Story 2.18] `docs/stories/2-18-plan-purchase-flow.md` — `purchasePlanForUser` (story sau reuse cho mmomarket_plan product)
 - [Story 2.4] `docs/stories/2-4-credit-billing.md` — credit ledger, `recordCreditTxn`, immutable txn model
 - [Source] `src/lib/store/storeCheckout.js` — atomic checkout helper
 - [Source] `src/lib/db/repos/ordersRepo.js` — orders state machine + repo

@@ -34,7 +34,7 @@ const origBotToken = process.env.TELEGRAM_BOT_TOKEN;
 const origWebhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
 
 beforeEach(() => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-tgstore-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "mmomarket-tgstore-"));
   process.env.DATA_DIR = tempDir;
   process.env.TELEGRAM_BOT_TOKEN = "test-bot-token";
   process.env.TELEGRAM_WEBHOOK_SECRET = "test-secret";

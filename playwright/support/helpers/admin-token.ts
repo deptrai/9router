@@ -16,7 +16,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { SignJWT } from 'jose';
 
-const APP_NAME = '9router';
+const APP_NAME = 'mmomarket';
 
 function dataDir(): string {
   const configured = process.env.DATA_DIR;

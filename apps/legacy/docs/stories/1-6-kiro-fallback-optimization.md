@@ -9,7 +9,7 @@ Status: done
 
 ## Story
 
-As a **người dùng các model `kr/*` (đặc biệt `kiro/auto`, `claude-opus/sonnet-thinking-agentic`) trên 9Router có nhiều Kiro account**,
+As a **người dùng các model `kr/*` (đặc biệt `kiro/auto`, `claude-opus/sonnet-thinking-agentic`) trên Mmomarket có nhiều Kiro account**,
 I want **proxy fail-fast khi một account bị 429 và xoay ngay sang account khoẻ khác, với cooldown backoff đúng với thời gian phục hồi thật của Kiro**,
 so that **tỉ lệ request lỗi 429 nhìn từ client giảm mạnh, không bị "thrashing" (unlock quá sớm rồi 429 lại), và không lãng phí ~4s retry vô ích trên account đã hết quota**.
 
@@ -41,7 +41,7 @@ Trace `src/sse/handlers/chat.js:195–275`: vòng `while(true)` gọi `getProvid
 `getProviderCredentials` (`src/sse/services/auth.js`) chọn theo `fill-first` (account priority cao nhất, đã sort) hoặc `round-robin` (theo `lastUsedAt`). Cả hai **không** ưu tiên tránh account vừa 429 — chỉ loại account đang còn `modelLock` active. Khi lock vừa hết hạn (cooldown ngắn), account vừa lỗi vẫn dễ bị chọn lại.
 
 ### Phát hiện 6 — Multi-process: in-memory state KHÔNG an toàn
-9Router chạy multi-process (xác nhận từ chủ dự án). Mọi cache/circuit-breaker dạng `Map` in-memory sẽ không sync giữa các process → không được dùng làm nguồn sự thật. `modelLock_*` trong DB (`providerConnections`) đã là cơ chế cross-process đúng đắn; cache in-memory chỉ được phép dùng làm lớp giảm tải đọc với TTL rất ngắn, DB vẫn là source of truth.
+Mmomarket chạy multi-process (xác nhận từ chủ dự án). Mọi cache/circuit-breaker dạng `Map` in-memory sẽ không sync giữa các process → không được dùng làm nguồn sự thật. `modelLock_*` trong DB (`providerConnections`) đã là cơ chế cross-process đúng đắn; cache in-memory chỉ được phép dùng làm lớp giảm tải đọc với TTL rất ngắn, DB vẫn là source of truth.
 
 ### Đã xác minh không gây quota leak (cho Patch E)
 `checkKeyQuota(apiKey, model)` (`src/lib/quota/keyQuota.js:41,91`) được gọi ở `chat.js:162` **sau khi resolve canonical model**; quota đếm theo canonical model (có `normalizeModelName` để khớp cross-provider dash/dot). Fallback cùng canonical model → quota tính chung (không leak); fallback sang model khác (vd `kiro/auto`→`codex/gpt-5.5`) → tính vào quota model đó, đúng kỳ vọng.

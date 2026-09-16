@@ -83,7 +83,7 @@ Thứ tự event upstream là nondeterministic → giải thích Symptom D (nond
 - [Source: open-sse/translator/request/openai-to-kiro.js#buildKiroPayload] — max_tokens hardcode
 - [Source: open-sse/executors/kiro.js#transformEventStreamToSSE] — usage emission logic
 - [Source: open-sse/handlers/chatCore/sseToJsonHandler.js#parseSSEToOpenAIResponse] — gom usage từ chunks
-- [Source: 9ROUTER_BUG_REPORT (fast-context-mcp)] — Symptom A/B/D
+- [Source: MMOMARKET_BUG_REPORT (fast-context-mcp)] — Symptom A/B/D
 - [Source: docs/stories/1-2-kiro-toolcall-token-count.md] — fix totalContentLength cho tool_use
 
 ## Dev Agent Record

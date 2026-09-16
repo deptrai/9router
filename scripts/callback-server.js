@@ -1,7 +1,7 @@
 /**
  * Callback Capture Server
  *
- * Chạy song song với 9router dev server để bắt callback redirect từ Kiro portal
+ * Chạy song song với mmomarket dev server để bắt callback redirect từ Kiro portal
  * và Azure AD. Khi portal redirect về http://localhost:3128, server này hiển thị
  * URL đầy đủ để user copy-paste vào modal.
  *
@@ -93,7 +93,7 @@ function portalCallbackPage(fullUrl, params) {
     "Portal Callback Received",
     `<h1>✅ Portal Callback Received</h1>
     <p>Copy the full URL below and paste it into the "Paste the callback URL"
-    field in the 9Router Enterprise SSO modal, then click <strong>Continue</strong>.</p>
+    field in the Mmomarket Enterprise SSO modal, then click <strong>Continue</strong>.</p>
     <div class="url-box">${escapeHtml(fullUrl)}</div>
     <dl class="params">${rows}</dl>
     <p style="margin-top:20px">
@@ -101,7 +101,7 @@ function portalCallbackPage(fullUrl, params) {
         Copy URL
       </button>
       <a class="btn btn-secondary" href="http://localhost:20128" target="_blank">
-        Back to 9Router
+        Back to Mmomarket
       </a>
     </p>
     <div class="footer">Callback Capture Server — port ${PORT}</div>`
@@ -116,7 +116,7 @@ function azureCallbackPage(fullUrl, params) {
     "Azure AD Callback Received",
     `<h1>✅ Azure AD Callback Received</h1>
     <p>Copy the full URL below and paste it into the "Paste the final callback URL"
-    field in the 9Router Enterprise SSO modal, then click <strong>Complete Login</strong>.</p>
+    field in the Mmomarket Enterprise SSO modal, then click <strong>Complete Login</strong>.</p>
     <div class="url-box">${escapeHtml(fullUrl)}</div>
     <dl class="params">${rows}</dl>
     <p style="margin-top:20px">
@@ -124,7 +124,7 @@ function azureCallbackPage(fullUrl, params) {
         Copy URL
       </button>
       <a class="btn btn-secondary" href="http://localhost:20128" target="_blank">
-        Back to 9Router
+        Back to Mmomarket
       </a>
     </p>
     <div class="footer">Callback Capture Server — port ${PORT}</div>`
@@ -134,13 +134,13 @@ function azureCallbackPage(fullUrl, params) {
 function indexPage() {
   return htmlPage(
     "Callback Capture Server",
-    `<h1>9Router Callback Capture Server</h1>
+    `<h1>Mmomarket Callback Capture Server</h1>
     <p>This server captures callback redirects from the Kiro portal and Azure AD
     during the Enterprise SSO flow. No action needed here — the redirects arrive
     automatically.</p>
     <p style="margin-top:20px">
       <a class="btn" href="http://localhost:20128" target="_blank">
-        Open 9Router
+        Open Mmomarket
       </a>
     </p>
     <div class="footer">Callback Capture Server — port ${PORT}</div>`
@@ -176,6 +176,6 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`\n  9Router Callback Capture Server`);
+  console.log(`\n  Mmomarket Callback Capture Server`);
   console.log(`  Listening on http://localhost:${PORT}\n`);
 });

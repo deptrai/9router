@@ -27,7 +27,7 @@ evidence:
   STATIC copy of landing:** `200`, body byte-identical to `/landing` (`shasum` match), `ETag: "sx6hcbuxutuq8"`
   identical to `/landing`, `cache-control: s-maxage=31536000`, `x-nextjs-cache: HIT`. A force-dynamic redirect has no
   ETag and no s-maxage — so production is NOT running the dynamic `/` that the current build produces.
-- Ruled out: separate backend (only the 9router app is bound to `router.chainlens.net`; `frontend`→`chainlens.net`,
+- Ruled out: separate backend (only the mmomarket app is bound to `router.chainlens.net`; `frontend`→`chainlens.net`,
   `api`→`api.chainlens.net`); `x-powered-by` difference is a red herring (Next omits it on route handlers in the
   standalone server locally too); CDN (DigitalOcean IP, no Cloudflare/Via/Age headers).
 
@@ -72,7 +72,7 @@ production build environment (an env var present at build, a different lockfile/
 route table prints `ƒ /` or `○ /`. That single line is decisive and is the next thing to obtain.
 
 ### Diagnostic steps (need host/dashboard access)
-1. **Read the latest production build log** (Dokploy UI → 9router → Deployments → latest → Logs). Find the
+1. **Read the latest production build log** (Dokploy UI → mmomarket → Deployments → latest → Logs). Find the
    `Route (app)` table. If it shows `○ /` → the production build itself prerenders `/` (build-env issue, pursue #2
    below). If it shows `ƒ /` → the built artifact is dynamic but something at runtime serves a cached static copy
    (pursue full-route cache on the mounted `/app/data` volume or an intermediary).
@@ -139,14 +139,14 @@ origin that serves cached page responses (and possibly an older container for so
 `cache-control: s-maxage=31536000`, independent of the app. Notable unexplained signal: on production `/` carries
 `x-powered-by: Next.js` while `/api/health` does NOT — on the local standalone server NEITHER does. This asymmetry
 hints `/`/page routes and `/api/*` may be served by different layers/instances on production. Not confirmed: only the
-9router app is bound to `router.chainlens.net` per Dokploy domain config (frontend→chainlens.net,
-api→api.chainlens.net), and `/`'s body is byte-identical to 9router's own `/landing`.
+mmomarket app is bound to `router.chainlens.net` per Dokploy domain config (frontend→chainlens.net,
+api→api.chainlens.net), and `/`'s body is byte-identical to mmomarket's own `/landing`.
 
 ### Decisive evidence still needed (all require host / Dokploy-UI access I don't have)
-1. **Production build log Route table** (Dokploy UI → 9router → latest deploy → Logs): does it print `ƒ /` or `○ /`?
+1. **Production build log Route table** (Dokploy UI → mmomarket → latest deploy → Logs): does it print `ƒ /` or `○ /`?
    If `○ /`, the production build itself prerenders `/` despite force-dynamic + 16.2.7 (would be a build-env mystery).
    If `ƒ /`, the artifact is dynamic and an intermediary is serving a cached/old response.
-2. **`curl` the origin container directly** (bypassing Traefik): `docker exec` into the 9router container and
+2. **`curl` the origin container directly** (bypassing Traefik): `docker exec` into the mmomarket container and
    `curl -i localhost:20128/` — if that returns `307`, the divergence is in Traefik/edge; if `200` static, it's in
    the container's own Next cache.
 3. **Inspect `/app/.next/server/app/` in the running container** for `index.html` (= `/` prerendered) and check
@@ -168,8 +168,8 @@ api→api.chainlens.net), and `/`'s body is byte-identical to 9router's own `/la
 ## Case Info
 - **Slug:** prod-root-middleware-bypass
 - **Date:** 2026-06-23
-- **App:** 9router, Next.js 16.2.7, App Router, `output: "standalone"`
-- **Deploy:** Dokploy (Docker, image `decolua/9router:latest`), DigitalOcean IP 167.172.66.16, no Cloudflare
+- **App:** mmomarket, Next.js 16.2.7, App Router, `output: "standalone"`
+- **Deploy:** Dokploy (Docker, image `decolua/mmomarket:latest`), DigitalOcean IP 167.172.66.16, no Cloudflare
 - **Status:** Concluded — root cause Confirmed
 
 ## Problem Statement

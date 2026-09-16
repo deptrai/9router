@@ -19,7 +19,7 @@ Status: done
 
 ## Story
 
-**As a** người dùng đã đăng ký 9Router SaaS,
+**As a** người dùng đã đăng ký Mmomarket SaaS,
 **I want** xác minh địa chỉ email của mình qua một link gửi tới hộp thư,
 **so that** hệ thống biết email là thật — làm điều kiện (gate) cho các tính năng MVP-2 như **gift code (Epic F)** và **payment/topup (Epic D)**.
 
@@ -107,7 +107,7 @@ Status: done
 ### Lớp BE — API
 
 - [x] **Task 4 — Hook gửi email khi register (fail-soft)** (AC3)
-  - [x] Sửa `src/app/api/auth/register/route.js`: sau `setDashboardAuthCookie`, trong `try/catch` riêng → `const token = await createEmailVerifyToken(user.id, user.email); await sendEmail({ to:user.email, subject:"Xác minh email 9Router", html: <link ${baseUrl}/verify-email?token=${token}> })`
+  - [x] Sửa `src/app/api/auth/register/route.js`: sau `setDashboardAuthCookie`, trong `try/catch` riêng → `const token = await createEmailVerifyToken(user.id, user.email); await sendEmail({ to:user.email, subject:"Xác minh email Mmomarket", html: <link ${baseUrl}/verify-email?token=${token}> })`
   - [x] `baseUrl = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:20128"`
   - [x] Lỗi gửi mail KHÔNG đổi response đăng ký (vẫn `{ success:true }`)
   - [x] Test bổ sung trong `authRegister.test.js` (hoặc mới): register vẫn 200/success khi `sendEmail` skip/throw (mock)
@@ -150,7 +150,7 @@ Status: done
 - **Không thêm dependency**: dùng `fetch` (global, Node 20+) + `crypto` (built-in). KHÔNG cài `resend` SDK.
 - **`updateUser` merge-undefined**: đã filter undefined (bài học 2.1) — gọi `updateUser(userId, { isEmailVerified: true })` an toàn, không ghi đè field khác.
 - **Guard paths**: chỉ thêm `/api/auth/verify-email` vào `PUBLIC_API_PATHS`. `/api/auth/send-verification` KHÔNG public (handler tự check session+role như `users/me`).
-- **Resend `from`**: phải là sender đã verify domain trên Resend; để cấu hình qua `EMAIL_FROM` (vd `9Router <noreply@yourdomain.com>`). Trong dev/test để trống → skip.
+- **Resend `from`**: phải là sender đã verify domain trên Resend; để cấu hình qua `EMAIL_FROM` (vd `Mmomarket <noreply@yourdomain.com>`). Trong dev/test để trống → skip.
 
 ### Điều PHẢI bảo toàn (regression)
 - Luồng đăng ký/đăng nhập story 2.2 — KHÔNG đổi behavior; chỉ THÊM bước gửi mail fail-soft sau khi tạo user.
@@ -170,7 +170,7 @@ Status: done
 
 ### Môi trường test (QUAN TRỌNG)
 - Project root `node_modules` RỖNG. Test deps ở `/tmp/node_modules`, chạy từ thư mục `tests/`.
-- Lệnh: `cd /Users/luisphan/Documents/9router/tests && npm test -- unit/<file>.test.js`. vitest@4, alias `@/`→`src/`.
+- Lệnh: `cd /Users/luisphan/Documents/mmomarket/tests && npm test -- unit/<file>.test.js`. vitest@4, alias `@/`→`src/`.
 - Mock `global.fetch` cho `sendEmail` test. Test DB pattern: `process.env.DATA_DIR=tempDir`, `delete global._dbAdapter`, `vi.resetModules()` (xem `usersRepo.test.js`, `saas-schema.test.js`).
 
 ### References

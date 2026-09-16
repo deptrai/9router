@@ -7,7 +7,7 @@ export default function EndpointHighlights() {
       snippet: `import OpenAI from "openai";
 
 const client = new OpenAI({
-  baseURL: "https://9router.com/v1",
+  baseURL: "https://mmomarket.org/v1",
   apiKey: process.env.ROUTER_API_KEY,
 });
 
@@ -23,7 +23,7 @@ const res = await client.chat.completions.create({
       snippet: `import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic({
-  baseURL: "https://9router.com/api/v1beta",
+  baseURL: "https://mmomarket.org/api/v1beta",
   apiKey: process.env.ROUTER_API_KEY,
 });
 
@@ -40,7 +40,7 @@ const res = await client.messages.create({
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-14">
           <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">Two APIs, every model</h2>
-          <p className="text-gray-400 text-lg">Use the API format you already know. 9Router handles the rest.</p>
+          <p className="text-gray-400 text-lg">Use the API format you already know. Mmomarket handles the rest.</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

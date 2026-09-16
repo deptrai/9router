@@ -26,7 +26,7 @@ async function loadRoute() {
 }
 
 function makeRequest(body) {
-  return new Request("https://9router.local/api/models/test", {
+  return new Request("https://mmomarket.local/api/models/test", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

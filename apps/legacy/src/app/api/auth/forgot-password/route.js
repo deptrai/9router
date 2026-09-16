@@ -52,7 +52,7 @@ export async function POST(request) {
         const resetUrl = `${baseUrl}/reset-password?token=${token}`;
         await sendEmail({
           to: user.email,
-          subject: "Đặt lại mật khẩu 9Router",
+          subject: "Đặt lại mật khẩu Mmomarket",
           html: `<p>Chào ${display},</p>
 <p>Bạn đã yêu cầu đặt lại mật khẩu. Click vào link bên dưới:</p>
 <p><a href="${resetUrl}">${resetUrl}</a></p>

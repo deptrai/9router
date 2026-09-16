@@ -23,7 +23,7 @@ let savedStoreEncKey;
 beforeEach(async () => {
   savedDataDir = process.env.DATA_DIR;
   savedStoreEncKey = process.env.STORE_ENC_KEY;
-  tmpDir = mkdtempSync(join(tmpdir(), "9router-ent-routing-"));
+  tmpDir = mkdtempSync(join(tmpdir(), "mmomarket-ent-routing-"));
   process.env.DATA_DIR = tmpDir;
   process.env.STORE_ENC_KEY = "test-enc-key-32bytes-placeholder!";
   delete global._dbAdapter;

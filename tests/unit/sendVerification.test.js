@@ -10,7 +10,7 @@ const originalDataDir = process.env.DATA_DIR;
 let mockSession = null;
 
 beforeEach(() => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-sendVerif-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "mmomarket-sendVerif-"));
   process.env.DATA_DIR = tempDir;
   delete global._dbAdapter;
   vi.resetModules();

@@ -1,6 +1,6 @@
 # Solución de problemas
 
-Problemas comunes y soluciones al usar 9Router.
+Problemas comunes y soluciones al usar Mmomarket.
 
 ---
 
@@ -78,7 +78,7 @@ Problemas comunes y soluciones al usar 9Router.
 **Soluciones:**
 
 1. **Refresh automático (por defecto):**
-   9Router refresca automáticamente los tokens. Espera 30 segundos y reintenta.
+   Mmomarket refresca automáticamente los tokens. Espera 30 segundos y reintenta.
 
 2. **Reconexión manual:**
    ```
@@ -135,15 +135,15 @@ Problemas comunes y soluciones al usar 9Router.
 **Problema:** "ECONNREFUSED" o "Cannot connect to localhost:20128".
 
 **Causas:**
-- 9Router no está ejecutándose
+- Mmomarket no está ejecutándose
 - Puerto 20128 bloqueado
 - Firewall bloqueando la conexión
 
 **Soluciones:**
 
-1. **Inicia 9Router:**
+1. **Inicia Mmomarket:**
    ```bash
-   9router
+   mmomarket
    ```
    El dashboard debe abrir en http://localhost:3000
 
@@ -164,7 +164,7 @@ Problemas comunes y soluciones al usar 9Router.
 4. **Usa el endpoint en la nube:**
    Si localhost no funciona (ej. Cursor IDE):
    ```
-   Endpoint: https://9router.com/v1
+   Endpoint: https://mmomarket.org/v1
    ```
 
 ---
@@ -175,15 +175,15 @@ Problemas comunes y soluciones al usar 9Router.
 
 **Causas:**
 - Puerto 3000 ya en uso
-- 9Router crasheó
+- Mmomarket crasheó
 - Problemas de caché del navegador
 
 **Soluciones:**
 
-1. **Verifica si 9Router está ejecutándose:**
+1. **Verifica si Mmomarket está ejecutándose:**
    ```bash
    # Verifica el proceso
-   ps aux | grep 9router
+   ps aux | grep mmomarket
    
    # Verifica el puerto 3000
    lsof -i :3000
@@ -199,13 +199,13 @@ Problemas comunes y soluciones al usar 9Router.
    taskkill /PID <PID> /F
    ```
 
-3. **Reinicia 9Router:**
+3. **Reinicia Mmomarket:**
    ```bash
    # Detener
-   pkill -f 9router
+   pkill -f mmomarket
    
    # Iniciar
-   9router
+   mmomarket
    ```
 
 4. **Limpia la caché del navegador:**
@@ -320,8 +320,8 @@ Problemas comunes y soluciones al usar 9Router.
 
 2. **Verifica el formato de la key:**
    ```
-   Correcto: 9r_xxxxxxxxxxxxxxxxxxxxxxxx
-   Incorrecto: Falta el prefijo 9r_
+   Correcto: mm_xxxxxxxxxxxxxxxxxxxxxxxx
+   Incorrecto: Falta el prefijo mm_
    ```
 
 3. **Verifica la key en la configuración del CLI:**
@@ -333,18 +333,18 @@ Problemas comunes y soluciones al usar 9Router.
    Settings → API Key
    
    # Variable de entorno
-   export OPENAI_API_KEY="9r_your_key"
+   export OPENAI_API_KEY="mm_your_key"
    ```
 
 4. **Prueba la API key:**
    ```bash
    curl http://localhost:20128/v1/models \
-     -H "Authorization: Bearer 9r_your_key"
+     -H "Authorization: Bearer mm_your_key"
    ```
 
 ---
 
 ## ¿Necesitas más ayuda?
 
-- **Documentación:** [9router.com/docs](https://9router.com/docs)
+- **Documentación:** [mmomarket.org/docs](https://mmomarket.org/docs)
 - **FAQ:** [faq.md](faq.md)

@@ -1171,7 +1171,7 @@ export default function APIPageClient({ machineId }) {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <p className="font-medium">Kiro auto-compact history</p>
-              <Tooltip text="When enabled, 9router may shorten older Kiro history before upstream dispatch if the provider payload is too large. Explicit client compact requests still work separately." />
+              <Tooltip text="When enabled, mmomarket may shorten older Kiro history before upstream dispatch if the provider payload is too large. Explicit client compact requests still work separately." />
             </div>
             <p className="text-sm text-text-muted">
               Keeps long Kiro sessions moving when the provider payload is too large
@@ -1186,7 +1186,7 @@ export default function APIPageClient({ machineId }) {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <p className="font-medium">Buffered fallback (combo)</p>
-              <Tooltip text="When a combo provider returns 200 then cuts the stream mid-response (e.g. vuz), 9router buffers the whole answer server-side and transparently retries the next combo model (vuz → viber) so the client never sees a truncated reply. Trade-off: the client loses real-time streaming — it waits (with a keepalive heartbeat) until the full answer is buffered. Leave OFF unless mid-stream cut-offs are a problem." />
+              <Tooltip text="When a combo provider returns 200 then cuts the stream mid-response (e.g. vuz), mmomarket buffers the whole answer server-side and transparently retries the next combo model (vuz → viber) so the client never sees a truncated reply. Trade-off: the client loses real-time streaming — it waits (with a keepalive heartbeat) until the full answer is buffered. Leave OFF unless mid-stream cut-offs are a problem." />
             </div>
             <p className="text-sm text-text-muted">
               Auto-retry next combo model on mid-stream cut-off — costs real-time streaming
@@ -1501,7 +1501,7 @@ export default function APIPageClient({ machineId }) {
                   Cloudflare Tunnel
                 </p>
                 <p className="text-sm text-text-muted">
-                  Expose your local 9Router to the internet. No port forwarding, no static IP needed. Share endpoint URL with your team or use it in Cursor, Cline, and other AI tools from anywhere.
+                  Expose your local Mmomarket to the internet. No port forwarding, no static IP needed. Share endpoint URL with your team or use it in Cursor, Cline, and other AI tools from anywhere.
                 </p>
               </div>
             </div>

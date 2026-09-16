@@ -1,5 +1,5 @@
 export const metadata = {
-  title: "9Router Store",
+  title: "Mmomarket Store",
   description: "Telegram Mini App store",
 };
 

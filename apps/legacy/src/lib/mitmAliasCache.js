@@ -20,8 +20,8 @@ function resolveDataDir() {
     } catch {}
   }
   return process.platform === "win32"
-    ? path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "9router")
-    : path.join(os.homedir(), ".9router");
+    ? path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "mmomarket")
+    : path.join(os.homedir(), ".mmomarket");
 }
 
 const DATA_DIR = resolveDataDir();

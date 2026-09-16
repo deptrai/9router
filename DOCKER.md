@@ -1,6 +1,6 @@
 # Docker
 
-Run 9Router in a container.
+Run Mmomarket in a container.
 
 ---
 
@@ -9,10 +9,10 @@ Run 9Router in a container.
 ```bash
 docker run -d \
   -p 20128:20128 \
-  -v "$HOME/.9router:/app/data" \
+  -v "$HOME/.mmomarket:/app/data" \
   -e DATA_DIR=/app/data \
-  --name 9router \
-  decolua/9router:latest
+  --name mmomarket \
+  decolua/mmomarket:latest
 ```
 
 App listens on port `20128`. Open: http://localhost:20128
@@ -20,16 +20,16 @@ App listens on port `20128`. Open: http://localhost:20128
 ## Manage container
 
 ```bash
-docker logs -f 9router        # view logs
-docker stop 9router           # stop
-docker start 9router          # start again
-docker rm -f 9router          # remove
+docker logs -f mmomarket        # view logs
+docker stop mmomarket           # stop
+docker start mmomarket          # start again
+docker rm -f mmomarket          # remove
 ```
 
 ## Data persistence
 
 ```bash
--v "$HOME/.9router:/app/data" \
+-v "$HOME/.mmomarket:/app/data" \
 -e DATA_DIR=/app/data
 ```
 
@@ -48,20 +48,20 @@ $DATA_DIR/
 ```bash
 docker run -d \
   -p 20128:20128 \
-  -v "$HOME/.9router:/app/data" \
+  -v "$HOME/.mmomarket:/app/data" \
   -e DATA_DIR=/app/data \
   -e PORT=20128 \
   -e HOSTNAME=0.0.0.0 \
   -e DEBUG=true \
-  --name 9router \
-  decolua/9router:latest
+  --name mmomarket \
+  decolua/mmomarket:latest
 ```
 
 ## Update to latest
 
 ```bash
-docker pull decolua/9router:latest
-docker rm -f 9router
+docker pull decolua/mmomarket:latest
+docker rm -f mmomarket
 # re-run the quick start command
 ```
 
@@ -70,10 +70,10 @@ docker rm -f 9router
 ## Build image locally (dev)
 
 ```bash
-docker build -t 9router .
+docker build -t mmomarket .
 
 docker run --rm -p 20128:20128 \
-  -v "$HOME/.9router:/app/data" \
+  -v "$HOME/.mmomarket:/app/data" \
   -e DATA_DIR=/app/data \
-  9router
+  mmomarket
 ```

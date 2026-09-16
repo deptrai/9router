@@ -1,5 +1,5 @@
 /**
- * export-registered-bots.mjs — xuất danh sách botUsername đã đăng ký trong 9router.
+ * export-registered-bots.mjs — xuất danh sách botUsername đã đăng ký trong mmomarket.
  *
  * Bot supplier lưu trong supplierSources (adapterType='telegram_bot_scraper'),
  * botUsername nằm trong cột authEnc (AES-256-GCM bằng STORE_ENC_KEY).
@@ -10,7 +10,7 @@
  *
  * Chạy:
  *   STORE_ENC_KEY=... node scripts/tg-bot-finder/export-registered-bots.mjs --out registered.json
- *   # DB mặc định: $DATA_DIR/db/data.sqlite hoặc ~/.9router/db/data.sqlite
+ *   # DB mặc định: $DATA_DIR/db/data.sqlite hoặc ~/.mmomarket/db/data.sqlite
  *   # override:  --db /path/to/data.sqlite
  */
 import fs from "node:fs";
@@ -22,7 +22,7 @@ import { createDecipheriv } from "node:crypto";
 // --- inline secretBox.decrypt (mirror src/lib/crypto/secretBox.js) ---
 function loadKey() {
   const raw = process.env.STORE_ENC_KEY;
-  if (!raw) throw new Error("STORE_ENC_KEY is required — set cùng giá trị 9router đang dùng");
+  if (!raw) throw new Error("STORE_ENC_KEY is required — set cùng giá trị mmomarket đang dùng");
   const buf = raw.length === 64 ? Buffer.from(raw, "hex") : Buffer.from(raw, "base64");
   if (buf.length !== 32) throw new Error("STORE_ENC_KEY phải 32 bytes (hex 64 / base64 44 ký tự)");
   return buf;
@@ -38,7 +38,7 @@ function decrypt(blob) {
 function defaultDbPath() {
   const dataDir = process.env.DATA_DIR
     ? process.env.DATA_DIR.split(/[\r\n]/)[0].trim()
-    : path.join(os.homedir(), ".9router");
+    : path.join(os.homedir(), ".mmomarket");
   return path.join(dataDir, "db", "data.sqlite");
 }
 
@@ -56,7 +56,7 @@ function main() {
   const dbPath = arg("--db", defaultDbPath());
 
   if (!fs.existsSync(dbPath)) {
-    throw new Error(`Không thấy DB tại ${dbPath} — truyền --db <path> tới data.sqlite của 9router`);
+    throw new Error(`Không thấy DB tại ${dbPath} — truyền --db <path> tới data.sqlite của mmomarket`);
   }
 
   const db = new DatabaseSync(dbPath, { readOnly: true });

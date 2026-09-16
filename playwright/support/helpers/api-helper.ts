@@ -1,7 +1,7 @@
 /**
  * API Helper
  *
- * Common API testing utilities for 9router.
+ * Common API testing utilities for mmomarket.
  */
 import { APIRequestContext, expect } from '@playwright/test';
 

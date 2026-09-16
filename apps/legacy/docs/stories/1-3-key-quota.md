@@ -4,7 +4,7 @@ Status: done (code-reviewed, approved)
 
 ## Story
 
-As a **chủ deployment 9Router chia sẻ key cho nhiều người/tool**,
+As a **chủ deployment Mmomarket chia sẻ key cho nhiều người/tool**,
 I want **mỗi API key bị giới hạn token theo từng model và tổng, theo window 5h và weekly kiểu Claude Code, cấu hình + theo dõi được trên dashboard**,
 so that **không ai xài quá hạn mức được cấp, và khi vượt thì biết khi nào reset**.
 

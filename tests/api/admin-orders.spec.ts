@@ -23,7 +23,7 @@ test.describe('Story 5.3: Admin Orders API Tests', () => {
   // FULFILLED/PAID/SOURCING order and there is no admin credit/topup endpoint to
   // produce one via the public API. Uses DATABASE_URL from apps/api/.env.
   function seedRefundableOrder(): string {
-    const dbUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5433/9router_ecommerce';
+    const dbUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5433/mmomarket_ecommerce';
     const tgId = Math.floor(100000000 + Math.random() * 900000000);
     // Single-line SQL — psql -c rejects embedded newlines.
     const sql =

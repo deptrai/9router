@@ -9,10 +9,10 @@ Format: `[R?-P?-?] <vấn đề> — <lựa chọn + khuyến nghị>`
 **Vấn đề:** Tất cả 19 route file đều trả `Access-Control-Allow-Origin: *` + `Access-Control-Allow-Headers: *` kể cả chat/completions, messages, responses — endpoint tốn credit. Bất kỳ trang web nào cũng có thể gọi cross-origin từ browser user đã đăng nhập.
 
 **Lựa chọn:**
-- A. Giữ nguyên `*` — hợp lý nếu 9router là public API intended để nhúng vào bất kỳ client nào (giống OpenAI API). Tiếp tục dựa vào API key để kiểm soát truy cập.
+- A. Giữ nguyên `*` — hợp lý nếu mmomarket là public API intended để nhúng vào bất kỳ client nào (giống OpenAI API). Tiếp tục dựa vào API key để kiểm soát truy cập.
 - B. Giới hạn origin về `ALLOWED_ORIGINS` env cho các endpoint tốn credit (chat, tts, images); giữ `*` cho `/v1/models` (public catalog). Cần update tất cả 15+ route file.
 
-**Khuyến nghị:** Nếu 9router là private instance (internal tool / self-hosted), chọn B. Nếu là public SaaS API như OpenAI, giữ A. KHÔNG tự đổi vì có thể phá client hiện tại.
+**Khuyến nghị:** Nếu mmomarket là private instance (internal tool / self-hosted), chọn B. Nếu là public SaaS API như OpenAI, giữ A. KHÔNG tự đổi vì có thể phá client hiện tại.
 
 ---
 

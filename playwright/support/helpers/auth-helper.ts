@@ -1,7 +1,7 @@
 /**
  * Auth Helper
  *
- * Utilities for authenticating test users against 9router.
+ * Utilities for authenticating test users against mmomarket.
  */
 import { APIRequestContext } from '@playwright/test';
 

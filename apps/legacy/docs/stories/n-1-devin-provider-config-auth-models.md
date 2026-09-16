@@ -23,7 +23,7 @@ Status: ready-for-dev
 
 ## Story
 
-As a **user của 9Router**,
+As a **user của Mmomarket**,
 I want **kết nối Devin bằng API key và thấy model list Devin trong `/v1/models`**,
 so that **tôi có thể chọn provider Devin cho combo hoặc direct routing (executor thực thi nằm ở story N.2)**.
 
@@ -40,12 +40,12 @@ so that **tôi có thể chọn provider Devin cho combo hoặc direct routing (
 - **Endpoints liên quan N.1 (chỉ validate):**
   - `GET /v3/organizations/{org_id}/sessions` — list sessions (read-only, dùng để verify key hợp lệ — KHÔNG tạo session, KHÔNG tốn ACU). Cần permission `ViewOrgSessions`.
   - `POST /v3/organizations/{org_id}/sessions`, `GET /v3/organizations/{org_id}/sessions/{id}` — dùng ở N.2 (executor).
-- **Devin "mode" thay cho "model" LLM thông thường.** v3 `CreateSessionParams` có `devin_mode: normal|fast|lite|ultra`. 9Router map model ID → mode ở executor (N.2). Ở N.1 chỉ cần khai báo 4 model tĩnh.
+- **Devin "mode" thay cho "model" LLM thông thường.** v3 `CreateSessionParams` có `devin_mode: normal|fast|lite|ultra`. Mmomarket map model ID → mode ở executor (N.2). Ở N.1 chỉ cần khai báo 4 model tĩnh.
 - **Không có whoami siêu nhẹ ở v3** ngoài `GET /v3/organizations/{org_id}/sessions`. Dùng nó cho validate là chấp nhận được (read-only).
 
 ### Hiện trạng code (verified tại baseline 606769cb)
 
-9Router có **hai registry provider** chạy song song — đây là điểm DỄ SAI nhất, phải sửa đồng bộ cả hai:
+Mmomarket có **hai registry provider** chạy song song — đây là điểm DỄ SAI nhất, phải sửa đồng bộ cả hai:
 
 1. **`open-sse/config/providers.js`** → object `PROVIDERS` (runtime/executor config). Mỗi provider khai báo `baseUrl`, `format`, `headers`. [Source: open-sse/config/providers.js:50-57]
 2. **`open-sse/config/providerModels.js`** → object `PROVIDER_MODELS` (single source of truth cho models, key = alias). `src/shared/constants/models.js` **re-export** từ đây. [Source: src/shared/constants/models.js:2-15]
@@ -70,7 +70,7 @@ so that **tôi có thể chọn provider Devin cho combo hoặc direct routing (
 - **QĐ3 — `format: "devin"` (custom).** Trong `PROVIDERS` (open-sse), đặt `format: "devin"`, `baseUrl: "https://api.devin.ai/v3/organizations"` (không có org_id ở đây — org_id lấy từ `providerSpecificData.orgId` lúc runtime). KHÔNG dùng `format: "openai"` vì sẽ kích hoạt sai đường translation/live-fetch và default-validate. Format `"devin"` sẽ được executor N.2 nhận diện.
 - **QĐ4 — 4 model tĩnh.** `PROVIDER_MODELS["devin"] = [normal, fast, lite, ultra]`. Đây là "mode" của Devin, không phải LLM model — đặt `name` mô tả rõ.
 - **QĐ5 — Validate = `GET /v3/organizations/{org_id}/sessions`.** Read-only, không tạo session, không tốn ACU. `isValid = res.status !== 401 && res.status !== 403`. Áp dụng cho cả `validate/route.js` và `testUtils.js`. `org_id` lấy từ `providerSpecificData.orgId` (pattern giống `cloudflare-ai` dùng `accountId`).
-- **QĐ6 — `DEVIN_API_KEY` env shortcut (FR120) — chỉ ảnh hưởng MODEL LISTING ở N.1.** 9Router KHÔNG có sẵn pattern inject credential từ env vào connections (đã verify: không có `process.env[` cho provider key trong `auth.js`/models route). Cách low-risk: trong `buildModelsList()`, nếu `process.env.DEVIN_API_KEY` set VÀ chưa có connection `devin` active → thêm **synthetic connection** `{ provider: "devin", apiKey: env, isActive: true }` vào danh sách `connections` (chỉ trong scope hàm, KHÔNG ghi DB). Việc executor dùng env làm credential fallback khi chạy request thuộc N.2.
+- **QĐ6 — `DEVIN_API_KEY` env shortcut (FR120) — chỉ ảnh hưởng MODEL LISTING ở N.1.** Mmomarket KHÔNG có sẵn pattern inject credential từ env vào connections (đã verify: không có `process.env[` cho provider key trong `auth.js`/models route). Cách low-risk: trong `buildModelsList()`, nếu `process.env.DEVIN_API_KEY` set VÀ chưa có connection `devin` active → thêm **synthetic connection** `{ provider: "devin", apiKey: env, isActive: true }` vào danh sách `connections` (chỉ trong scope hàm, KHÔNG ghi DB). Việc executor dùng env làm credential fallback khi chạy request thuộc N.2.
 - **QĐ7 — KHÔNG viết executor ở N.1.** `open-sse/executors/devin.js` và đăng ký trong `index.js` thuộc N.2. N.1 không đụng `open-sse/executors/`.
 
 ## Acceptance Criteria
@@ -91,7 +91,7 @@ so that **tôi có thể chọn provider Devin cho combo hoặc direct routing (
 ### AC3 — Validate API key + org_id hợp lệ
 **Given** user nhập API key (`cog_*`) và Organization ID rồi bấm "Validate"/"Test"
 **When** `POST /api/providers/validate` với `provider: "devin"`, `providerSpecificData.orgId`
-**Then** 9Router gọi `GET https://api.devin.ai/v3/organizations/{org_id}/sessions` với `Authorization: Bearer <key>`
+**Then** Mmomarket gọi `GET https://api.devin.ai/v3/organizations/{org_id}/sessions` với `Authorization: Bearer <key>`
 **And** key hợp lệ (2xx) → `{ valid: true }`
 **And** key sai (401/403) → `{ valid: false, error: "Invalid API key or org_id" }`
 **And** org_id không tồn tại (404) → `{ valid: false, error: "Organization ID not found" }`
@@ -200,7 +200,7 @@ so that **tôi có thể chọn provider Devin cho combo hoặc direct routing (
 - **Sửa đồng bộ 3 registry** (T1 `PROVIDERS`, T2 `PROVIDER_MODELS`, T3 `AI_PROVIDERS`). Thiếu 1 trong 3 → drift: vd thiếu T3 thì `providerMatchesKinds` loại devin khỏi `/v1/models`; thiếu T2 thì `PROVIDER_MODELS["devin"]` rỗng → 0 model.
 - **Chỉ THÊM `case "devin"`**, KHÔNG sửa case sẵn có trong validate/testUtils (tránh regression AC8).
 - **`format: "devin"` là custom** — đảm bảo không có nơi nào assume format ∈ {openai, claude, gemini,...} mà crash khi gặp "devin" ở các đường mã N.1 chạm tới. (Translation/executor xử lý format ở N.2; N.1 chỉ liên quan model-listing + validate, đã verify không crash.)
-- **Secret at-rest:** API key (`cog_*`) lưu plaintext trong column `data` (JSON) — theo pattern hiện tại của 9Router. N.1 không thêm mã hóa (defer NFR mã hóa).
+- **Secret at-rest:** API key (`cog_*`) lưu plaintext trong column `data` (JSON) — theo pattern hiện tại của Mmomarket. N.1 không thêm mã hóa (defer NFR mã hóa).
 
 ### Devin API — shape cần biết (cho validate)
 
@@ -234,7 +234,7 @@ Headers: Authorization: Bearer <cog_*>
 
 ### Testing standards
 
-- Vitest từ `tests/`: `cd /Users/luisphan/Documents/9router/tests && npm test -- unit/<file>.test.js` (alias `@/`→`src/`).
+- Vitest từ `tests/`: `cd /Users/luisphan/Documents/mmomarket/tests && npm test -- unit/<file>.test.js` (alias `@/`→`src/`).
 - Test deps ở `/tmp/node_modules` (project root `node_modules` rỗng) — theo project-context rule #2.
 - Mock `fetch` cho validate test; mock `getProviderConnections` cho models-route test.
 - Với env test: set/restore `process.env.DEVIN_API_KEY` và `process.env.DEVIN_ORG_ID` trong `beforeEach`/`afterEach`.
@@ -254,7 +254,7 @@ Headers: Authorization: Bearer <cog_*>
 
 ### Envelope vận hành (để defer N.2)
 
-- **Secret at-rest:** API key (`cog_*`) lưu plaintext trong column `data` (JSON) — theo pattern hiện tại của 9Router. N.1 không thêm mã hóa (defer NFR mã hóa).
+- **Secret at-rest:** API key (`cog_*`) lưu plaintext trong column `data` (JSON) — theo pattern hiện tại của Mmomarket. N.1 không thêm mã hóa (defer NFR mã hóa).
 - **Precedence env vs connection:** N.1 chỉ precedence cho model-listing (env shortcut). Precedence lúc runtime request (executor dùng env hay DB) defer sang N.2.
 - **Timeout:** Validate/test dùng `AbortSignal.timeout(8000)` (T4/T5). Executor timeout (session poll) defer sang N.2.
 - **Cache TTL:** Model list được cache `MODELS_CACHE_TTL_MS` (5 phút). Synthetic env-connection chịu cache — model devin xuất hiện trong ≤ TTL sau khi env set.

@@ -2,7 +2,7 @@
  * MITM sudo-password crypto (C9 — code review fix).
  *
  * Bảo vệ mật khẩu sudo lưu trong DB. Trước fix: key dẫn xuất từ static salt
- * (`sha256("9router-mitm-pwd")` khi machineId fail) → ai có source cũng tính
+ * (`sha256("mmomarket-mitm-pwd")` khi machineId fail) → ai có source cũng tính
  * được key → DB leak = root máy user. Sau fix: random per-install key material
  * lưu trong settings (`mitmKeyMaterial`), key = HKDF(material, salt=machineId).
  *
@@ -38,7 +38,7 @@ function wireFakeSettings(initial = {}) {
 // Legacy encrypt (build cũ: không prefix, key = sha256(machineId + salt) hoặc
 // fallback static). Dùng để dựng ciphertext legacy cho test backward-compat.
 function legacyEncrypt(plaintext) {
-  const LEGACY_SALT = "9router-mitm-pwd";
+  const LEGACY_SALT = "mmomarket-mitm-pwd";
   let key;
   try {
     const raw = require("node-machine-id").machineIdSync();

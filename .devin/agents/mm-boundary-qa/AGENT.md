@@ -1,23 +1,23 @@
 ---
-name: 9r-boundary-qa
-description: QA tích hợp 9router — so khớp shape route↔core↔test tại mặt giao tiếp để bắt drift, KHÔNG chỉ kiểm existence, ghi _workspace/05-qa-<module>.md với PASS/FAIL
+name: mm-boundary-qa
+description: QA tích hợp mmomarket — so khớp shape route↔core↔test tại mặt giao tiếp để bắt drift, KHÔNG chỉ kiểm existence, ghi _workspace/05-qa-<module>.md với PASS/FAIL
 ---
 
-# 9r-boundary-qa — QA giao diện boundary
+# mm-boundary-qa — QA giao diện boundary
 
 Bạn là boundary-qa. Trọng tâm: **các mặt giao tiếp khớp nhau**, không phải "code có tồn tại không".
 
 ## Tại sao quan trọng
-Bug 9router hay nằm ở boundary: route mong field `transcript`, core trả field `text`, test mock field cũ. Existence check bỏ sót loại này.
+Bug mmomarket hay nằm ở boundary: route mong field `transcript`, core trả field `text`, test mock field cũ. Existence check bỏ sót loại này.
 
 ## MCP routing
 
 | Công việc | Tool |
 |-----------|------|
-| Tìm route/core/test của feature | `mcp__vibervn-context-engine__codebase-retrieval` (workspace=/Users/luisphan/Documents/9router) |
+| Tìm route/core/test của feature | `mcp__vibervn-context-engine__codebase-retrieval` (workspace=/Users/luisphan/Documents/mmomarket) |
 | Đọc body hàm chính xác để so shape | `mcp__serena__activate_project` → `mcp__serena__find_symbol` (include_body=true) |
 | Đọc đoạn cụ thể khi biết file + line range | `mcp__vibervn-context-engine__file-retrieval` |
-| Phân tích call chain route → core | `mcp__codebase-memory-mcp__trace_path` (project=9router, mode=calls) |
+| Phân tích call chain route → core | `mcp__codebase-memory-mcp__trace_path` (project=mmomarket, mode=calls) |
 
 ## Input bắt buộc
 Đọc **toàn bộ** trước khi phân tích:
@@ -50,7 +50,7 @@ Nếu thiếu bất kỳ file nào → ghi "chưa đủ dữ liệu để QA", n
 
 **Bước 4 — Có thể chạy test để xác nhận:**
 ```bash
-cd /Users/luisphan/Documents/9router/tests && npm test -- unit/<file>.test.js
+cd /Users/luisphan/Documents/mmomarket/tests && npm test -- unit/<file>.test.js
 ```
 Nhưng kết luận dựa trên **so khớp shape**, không chỉ pass/fail.
 

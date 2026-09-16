@@ -19,13 +19,13 @@ Status: done
 
 **As a** buyer trong Telegram shop,
 **I want** nhận credential/account/service status ngay sau khi mua (hoặc thấy đơn chờ admin xử lý),
-**so that** tôi mua được các sản phẩm ngoài package 9router trong cùng một shop, và dữ liệu nhạy cảm không bị lộ.
+**so that** tôi mua được các sản phẩm ngoài package mmomarket trong cùng một shop, và dữ liệu nhạy cảm không bị lộ.
 
 ## Bối cảnh và quyết định architecture
 
 Story 2.26 đã dựng **checkout thật**: `buy:` → `buyc:` confirm → `storeCheckout()` trừ credit nguyên tử trong một `db.transaction()`, tạo `orders` + `orderItems` (snapshot product fields), giảm `stock` oversell-safe, và với `deliveryMode="instant"` thì transition order `paid → fulfilled`. **Nhưng 2.26 chưa giao payload thật** — instant chỉ đổi status, không có credential nào được reserve hay gửi cho buyer. `deliveryMode` mới chỉ có `instant` (xử lý) và ngầm định các mode khác giữ `paid`.
 
-Story 2.27 lấp khoảng trống đó cho **sản phẩm không phải package 9router** (kind = `credential`, `account`, `service`, `api_package`):
+Story 2.27 lấp khoảng trống đó cho **sản phẩm không phải package mmomarket** (kind = `credential`, `account`, `service`, `api_package`):
 
 1. Thêm bảng **`inventoryItems`** — kho credential/payload rời, mỗi item gắn với một `productId`, có `status` (`available | reserved | delivered | void`).
 2. Trong cùng transaction của `storeCheckout`, với product `deliveryMode="instant"` **có inventory**: reserve đúng **một** item khả dụng (lock oversell-safe bằng `WHERE status='available'` conditional update), gắn vào order, transition `fulfilled`, rồi **giao payload qua private chat** của buyer sau khi commit.
@@ -47,7 +47,7 @@ Story 2.27 lấp khoảng trống đó cho **sản phẩm không phải package 
 ### Quyết định architecture
 
 **QĐ1 — Inventory là nguồn stock cho instant credential, KHÔNG double-count với `products.stock`.**
-Product `deliveryMode="instant"` mà `kind ∈ {credential,account,api_package}` (giao một payload rời) → số lượng bán = số `inventoryItems.status='available'`. Với các product này, **bỏ qua** decrement `products.stock` và thay bằng reserve inventory; nếu không reserve được item nào → `CheckoutError("NO_INVENTORY")`, **không trừ credit** (txn rollback). Product `instant` *không* gắn inventory (ví dụ package 9router entitlement ở story sau) giữ nguyên đường `products.stock` của 2.26. Phân biệt bằng: product có **≥1 inventoryItem từng tồn tại** (hoặc cờ rõ ràng — xem AC). Để tránh nhập nhằng, dùng quy tắc: **nếu product có bất kỳ inventoryItem nào → inventory là nguồn chân lý cho instant**; nếu không → fallback `products.stock` như 2.26.
+Product `deliveryMode="instant"` mà `kind ∈ {credential,account,api_package}` (giao một payload rời) → số lượng bán = số `inventoryItems.status='available'`. Với các product này, **bỏ qua** decrement `products.stock` và thay bằng reserve inventory; nếu không reserve được item nào → `CheckoutError("NO_INVENTORY")`, **không trừ credit** (txn rollback). Product `instant` *không* gắn inventory (ví dụ package mmomarket entitlement ở story sau) giữ nguyên đường `products.stock` của 2.26. Phân biệt bằng: product có **≥1 inventoryItem từng tồn tại** (hoặc cờ rõ ràng — xem AC). Để tránh nhập nhằng, dùng quy tắc: **nếu product có bất kỳ inventoryItem nào → inventory là nguồn chân lý cho instant**; nếu không → fallback `products.stock` như 2.26.
 
 **QĐ2 — Reserve nguyên tử trong cùng transaction checkout.**
 Reserve = conditional UPDATE `... SET status='reserved', orderId=?, reservedAt=? WHERE id=(SELECT id FROM inventoryItems WHERE productId=? AND status='available' ORDER BY createdAt LIMIT 1) AND status='available'`. Vì SQLite WAL + transaction đồng bộ của adapter, hai buyer đồng thời không thể reserve cùng item (`changes===0` ở người thua → `NO_INVENTORY`). KHÔNG bán cùng credential 2 lần (epic constraint dòng 188).
@@ -157,7 +157,7 @@ Gửi Telegram là I/O mạng, không được nằm trong `db.transaction()` (g
 
 - 2026-06-12: Story implemented (2.27). Schema v9 + productCredentials table. secretBox AES-256-GCM encryption at rest. credentialsRepo with encrypted add/list/deliver/revoke + getDecryptedPayload. storeCheckout returns deliveredCredentialIds. router.js: credential delivery after commit, /orders handler, cmd:orders callback. 34 tests pass. Status → review.
 
-- **Phạm vi 2.27 KHÔNG gồm**: admin UI quản lý inventory/orders (đó là 2.28), `user_self_connect` flow đầy đủ, entitlement schema package 9router (2.29a/b), external supplier sync (story sau). Chỉ làm: inventory table + reserve + instant credential delivery + admin_fulfill pending state + mã hóa.
+- **Phạm vi 2.27 KHÔNG gồm**: admin UI quản lý inventory/orders (đó là 2.28), `user_self_connect` flow đầy đủ, entitlement schema package mmomarket (2.29a/b), external supplier sync (story sau). Chỉ làm: inventory table + reserve + instant credential delivery + admin_fulfill pending state + mã hóa.
 - **Giữ txn ngắn**: tuyệt đối không `await sendMessage` bên trong `adapter.transaction()`. Reserve trong txn, deliver sau commit.
 - **NO_INVENTORY vs OUT_OF_STOCK**: dùng `NO_INVENTORY` cho product inventory-backed; `OUT_OF_STOCK` (2.26) cho product `products.stock`-backed. Đừng trộn.
 - **Fail-safe delivery**: thà order `fulfilled` + item `reserved` (chưa `delivered`) còn hơn refund tự động rồi credential đã lộ. Admin/retry xử lý ở 2.28.

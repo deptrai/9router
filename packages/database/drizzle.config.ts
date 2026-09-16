@@ -7,6 +7,6 @@ export default defineConfig({
   dbCredentials: {
     url:
       process.env.DATABASE_URL ||
-      'postgresql://postgres:postgres@localhost:5433/9router_ecommerce',
+      'postgresql://postgres:postgres@localhost:5433/mmomarket_ecommerce',
   },
 });

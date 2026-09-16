@@ -29,7 +29,7 @@ function seedUser(email) {
 
 beforeEach(() => {
   const Database = require("better-sqlite3");
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-mig018-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "mmomarket-mig018-"));
   rawDb = new Database(path.join(tempDir, "test.sqlite"));
   adapter = makeAdapter(rawDb);
   // users table WITHOUT isAdmin (pre-migration state)

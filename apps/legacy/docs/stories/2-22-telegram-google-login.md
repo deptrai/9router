@@ -13,7 +13,7 @@ Status: review
 
 ## Story
 
-**As a** 9Router user hoặc người mới muốn đăng ký,
+**As a** Mmomarket user hoặc người mới muốn đăng ký,
 **I want** đăng nhập/đăng ký bằng Google hoặc Telegram bên cạnh email/password,
 **so that** tôi có thể truy cập nhanh hơn mà không cần nhớ mật khẩu, và liên kết nhiều phương thức đăng nhập vào cùng một tài khoản.
 

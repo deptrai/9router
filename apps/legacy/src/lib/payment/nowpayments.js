@@ -55,7 +55,7 @@ export async function createInvoice({ amount, coin, network, orderId, baseUrl, s
       price_currency: "usd",
       pay_currency: payCurrency,
       order_id: orderId,
-      order_description: `9Router credit topup $${amount}`,
+      order_description: `Mmomarket credit topup $${amount}`,
       ipn_callback_url: `${callbackBase}/api/webhooks/crypto`,
       success_url: `${callbackBase}/dashboard/credits?payment=success`,
       cancel_url: `${callbackBase}/dashboard/credits?payment=cancelled`,

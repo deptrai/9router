@@ -7,7 +7,7 @@
 //                              (empty upstream response)", ...}}
 //   data: [DONE]
 //
-// When 9router forwards a 200 whose stream only ever emits a role delta and then
+// When mmomarket forwards a 200 whose stream only ever emits a role delta and then
 // an error, the client (Claude Code) sees a stream that errors mid-flight and
 // stops. Worse, by the time the error surfaces the upstream was already counted
 // as "success" (HTTP 200), so combo / account fallback never got a chance to try

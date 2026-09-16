@@ -1,6 +1,6 @@
 # トラブルシューティング
 
-9Router利用時の一般的な問題と解決策。
+Mmomarket利用時の一般的な問題と解決策。
 
 ---
 
@@ -78,7 +78,7 @@
 **解決策:**
 
 1. **自動更新(デフォルト):**
-   9Routerは自動的にトークンを更新します。30秒待ってから再試行。
+   Mmomarketは自動的にトークンを更新します。30秒待ってから再試行。
 
 2. **手動で再接続:**
    ```
@@ -135,15 +135,15 @@
 **問題:** 「ECONNREFUSED」または「Cannot connect to localhost:20128」。
 
 **原因:**
-- 9Routerが起動していない
+- Mmomarketが起動していない
 - ポート20128がブロックされている
 - ファイアウォールが接続をブロック
 
 **解決策:**
 
-1. **9Routerを起動:**
+1. **Mmomarketを起動:**
    ```bash
-   9router
+   mmomarket
    ```
    ダッシュボードがhttp://localhost:3000で開くはず
 
@@ -164,7 +164,7 @@
 4. **クラウドエンドポイントを使用:**
    localhostが動作しない場合(例: Cursor IDE):
    ```
-   Endpoint: https://9router.com/v1
+   Endpoint: https://mmomarket.org/v1
    ```
 
 ---
@@ -175,15 +175,15 @@
 
 **原因:**
 - ポート3000がすでに使用中
-- 9Routerがクラッシュした
+- Mmomarketがクラッシュした
 - ブラウザキャッシュの問題
 
 **解決策:**
 
-1. **9Routerが実行中か確認:**
+1. **Mmomarketが実行中か確認:**
    ```bash
    # プロセスを確認
-   ps aux | grep 9router
+   ps aux | grep mmomarket
    
    # ポート3000を確認
    lsof -i :3000
@@ -199,13 +199,13 @@
    taskkill /PID <PID> /F
    ```
 
-3. **9Routerを再起動:**
+3. **Mmomarketを再起動:**
    ```bash
    # 停止
-   pkill -f 9router
+   pkill -f mmomarket
    
    # 起動
-   9router
+   mmomarket
    ```
 
 4. **ブラウザキャッシュをクリア:**
@@ -320,8 +320,8 @@
 
 2. **キー形式を確認:**
    ```
-   正しい: 9r_xxxxxxxxxxxxxxxxxxxxxxxx
-   誤り: 9r_プレフィックスがない
+   正しい: mm_xxxxxxxxxxxxxxxxxxxxxxxx
+   誤り: mm_プレフィックスがない
    ```
 
 3. **CLI設定でキーを確認:**
@@ -333,18 +333,18 @@
    Settings → API Key
    
    # 環境変数
-   export OPENAI_API_KEY="9r_your_key"
+   export OPENAI_API_KEY="mm_your_key"
    ```
 
 4. **APIキーをテスト:**
    ```bash
    curl http://localhost:20128/v1/models \
-     -H "Authorization: Bearer 9r_your_key"
+     -H "Authorization: Bearer mm_your_key"
    ```
 
 ---
 
 ## さらにヘルプが必要?
 
-- **ドキュメント:** [9router.com/docs](https://9router.com/docs)
+- **ドキュメント:** [mmomarket.org/docs](https://mmomarket.org/docs)
 - **FAQ:** [faq.md](faq.md)

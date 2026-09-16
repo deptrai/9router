@@ -6,7 +6,7 @@ Status: done
 
 ## Story
 
-As a **người dùng theo dõi usage/quota trong dashboard 9Router**,
+As a **người dùng theo dõi usage/quota trong dashboard Mmomarket**,
 I want **`completion_tokens` được tính đúng khi model `kr/*` trả về tool_call**,
 so that **usage analytics và quota tracking không bị sai lệch về 0 cho các request agentic (vốn chủ yếu là tool_call)**.
 

@@ -1,14 +1,14 @@
 ---
-project_name: '9router'
+project_name: 'mmomarket'
 user_name: 'Vonic'
 date: '2026-06-11'
 sections_completed: ['technology_stack', 'critical_rules', 'architecture_map', 'agent_routing']
 existing_patterns_found: 9
 ---
 
-# Project Context for AI Agents — 9router
+# Project Context for AI Agents — mmomarket
 
-_File này chứa rule và pattern bắt buộc mà AI agent phải tuân theo khi implement code trong 9router. Tập trung vào các chi tiết không hiển nhiên (unobvious) mà agent dễ bỏ sót. Code identifiers, command, path giữ nguyên tiếng Anh; diễn giải bằng tiếng Việt._
+_File này chứa rule và pattern bắt buộc mà AI agent phải tuân theo khi implement code trong mmomarket. Tập trung vào các chi tiết không hiển nhiên (unobvious) mà agent dễ bỏ sót. Code identifiers, command, path giữ nguyên tiếng Anh; diễn giải bằng tiếng Việt._
 
 ---
 
@@ -29,7 +29,7 @@ _File này chứa rule và pattern bắt buộc mà AI agent phải tuân theo k
 3. **db: better-sqlite3 là optional.** Không assume `better-sqlite3` luôn cài được. Luôn giữ đường fallback `sql.js`. Đừng đưa `better-sqlite3` vào `dependencies` bắt buộc.
 4. **OpenAI-compatible surface là hợp đồng (contract).** Endpoint `/v1/*` phải giữ tương thích OpenAI cho CLI/tools (Claude Code, Codex, Cursor, Cline...). Thay đổi request/response shape ở đây là breaking — cần fallback và translation tương ứng.
 5. **Fallback nhiều tầng.** Có fallback cấp combo (chuỗi nhiều model) và cấp account (nhiều account mỗi provider). Khi sửa routing, cân nhắc cả hai tầng. Tham chiếu `docs/FALLBACK_LOGIC_IMPROVEMENT.md`, `docs/ARCHITECTURE_THROTTLING.md`.
-6. **429 khi bench chat thường từ UPSTREAM provider** (vd `kiro/auto` cooldown), không phải từ 9Router. Để đo router+network overhead, so sánh latency `/v1/models` thay vì chat. Bench: `npm run bench:latency --` (base URL KHÔNG kèm `/v1`).
+6. **429 khi bench chat thường từ UPSTREAM provider** (vd `kiro/auto` cooldown), không phải từ Mmomarket. Để đo router+network overhead, so sánh latency `/v1/models` thay vì chat. Bench: `npm run bench:latency --` (base URL KHÔNG kèm `/v1`).
 7. **SaaS multi-tenant đang triển khai.** Epics/story dùng chữ cái (A–H), story đánh số `2.N`. Sprint state ở `_bmad-output/implementation-artifacts/sprint-status.yaml`; story files ở `docs/stories`. Trạng thái story: backlog → ready-for-dev → in-progress → review → done.
 8. **Output BMAD ra `_bmad-output/`**, KHÔNG ghi vào `_bmad/` (installer-managed, ghi đè mỗi lần install). planning-artifacts / implementation-artifacts / test-artifacts đều dưới `_bmad-output/`.
 9. **Customize BMAD qua `_bmad/custom/`** (`config.toml` = team/committed, `config.user.toml` = personal/gitignored). Không sửa `_bmad/config.toml` (sẽ bị ghi đè).

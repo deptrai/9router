@@ -12,7 +12,7 @@ const execAsync = promisify(exec);
 // Whitelist of env keys this endpoint is allowed to write into the host's
 // ~/.claude/settings.json. The POST body is attacker-controllable if the
 // dashboard guard is ever bypassed (or in requireLogin=false local mode), so we
-// refuse to write arbitrary env — only the Anthropic/9router integration keys
+// refuse to write arbitrary env — only the Anthropic/mmomarket integration keys
 // the feature actually manages. Mirrors RESET_ENV_KEYS (the keys DELETE clears).
 const ALLOWED_ENV_KEYS = new Set([
   "ANTHROPIC_BASE_URL",
@@ -78,12 +78,12 @@ export async function GET() {
     }
 
     const settings = await readSettings();
-    const has9Router = !!(settings?.env?.ANTHROPIC_BASE_URL);
+    const hasMmomarket = !!(settings?.env?.ANTHROPIC_BASE_URL);
 
     return NextResponse.json({
       installed: true,
       settings: settings,
-      has9Router: has9Router,
+      hasMmomarket: hasMmomarket,
       settingsPath: getClaudeSettingsPath(),
     });
   } catch (error) {

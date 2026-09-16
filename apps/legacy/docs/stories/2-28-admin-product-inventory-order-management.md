@@ -90,7 +90,7 @@ Admin gọi `PATCH /api/store/admin/orders/[id]` với `{ action: "fulfill", not
 **Given** admin gọi `POST /api/store/admin/products` với fields hợp lệ (`name`, `kind`, `priceCredits`, `deliveryMode`, `targetType?`, `targetId?`, `stock?`, `isActive?`)
 **Then** product được tạo, trả `201` với product object (không có inventory/payload)
 **And** `kind` phải thuộc `PRODUCT_KINDS`; `deliveryMode` thuộc `DELIVERY_MODES`; `priceCredits` > 0
-**And** `targetType="9router_plan"` yêu cầu `targetId` trỏ tới plan tồn tại (validate trước insert).
+**And** `targetType="mmomarket_plan"` yêu cầu `targetId` trỏ tới plan tồn tại (validate trước insert).
 
 **Given** admin gọi `PATCH /api/store/admin/products/[id]`
 **Then** các field được update; `isActive=false` ẩn product khỏi public catalog ngay lập tức
@@ -199,7 +199,7 @@ Admin gọi `PATCH /api/store/admin/orders/[id]` với `{ action: "fulfill", not
   - [x] `setFulfilledAt(adapter, orderId, ts)`: set `fulfilledAt` khi admin fulfill (nếu cột chưa có trong schema, thêm vào T1).
 
 - [x] **T7 — Admin API routes** (AC1, AC2, AC3, AC4, AC5, AC9)
-  - [x] `src/app/api/store/admin/products/route.js` — GET (listAllProducts), POST (createProduct + validate targetId nếu targetType=9router_plan).
+  - [x] `src/app/api/store/admin/products/route.js` — GET (listAllProducts), POST (createProduct + validate targetId nếu targetType=mmomarket_plan).
   - [x] `src/app/api/store/admin/products/[id]/route.js` — GET (getProductById), PATCH (updateProduct), DELETE (guard hasOrders → 409 hoặc xoá).
   - [x] `src/app/api/store/admin/products/[id]/credentials/route.js` — GET (listCredentials với status filter), POST (bulkAddCredentials, max 500), DELETE (revoke by ids).
   - [x] `src/app/api/store/admin/orders/route.js` — GET (listAllOrders với filter + pagination).

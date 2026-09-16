@@ -193,7 +193,7 @@ describe("dashboard guard local-only access", () => {
   it("allows local-only route with valid CLI token", async () => {
     const response = await proxy(request("/api/mcp/filesystem/sse", {
       host: "router.example.com",
-      "x-9r-cli-token": "cli-token",
+      "x-mm-cli-token": "cli-token",
     }));
 
     expect(response).toBe(mocks.nextResponse);

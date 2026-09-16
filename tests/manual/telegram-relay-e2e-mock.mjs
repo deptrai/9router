@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../../");
 
-const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-e2e-2038-"));
+const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "mmomarket-e2e-2038-"));
 process.env.DATA_DIR = tempDir;
 process.env.STORE_ENC_KEY = "1".repeat(64);
 

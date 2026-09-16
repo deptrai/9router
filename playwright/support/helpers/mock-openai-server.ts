@@ -73,7 +73,7 @@ export function startMockOpenAIServer(opts: MockOpenAIServerOptions = {}): Promi
         const statusCode = opts.status ?? 200;
         const isStream = body.stream === true;
 
-        // CORS headers — mirror what 9router sets on /v1/* responses
+        // CORS headers — mirror what mmomarket sets on /v1/* responses
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
         res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');

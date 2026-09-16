@@ -17,7 +17,7 @@ Status: done
 
 ## Story
 
-As a **người dùng 9Router**,
+As a **người dùng Mmomarket**,
 I want **nạp tiền bằng chuyển khoản ngân hàng VND (quét QR) và được tự động cộng credits khi tiền về**,
 so that **tôi có thể mua sản phẩm/dịch vụ mà không cần crypto**.
 

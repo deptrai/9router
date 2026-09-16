@@ -132,7 +132,7 @@ test.describe('API: POST /v1/chat/completions — mock provider smoke test', () 
     expect(usage).toBeTruthy();
     expect(typeof usage!.total_tokens).toBe('number');
 
-    // CORS — 9router must forward the mock's CORS header (or set its own)
+    // CORS — mmomarket must forward the mock's CORS header (or set its own)
     const corsHeader = res.headers()['access-control-allow-origin'];
     expect(corsHeader).toBe('*');
   });

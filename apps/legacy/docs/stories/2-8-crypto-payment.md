@@ -19,7 +19,7 @@ Status: done
 
 ## Story
 
-**As a** user của 9Router SaaS (đã verify email),
+**As a** user của Mmomarket SaaS (đã verify email),
 **I want** nạp credit bằng stablecoin crypto (USDT/USDC trên nhiều chain),
 **so that** tôi có thể self-service topup mà không cần admin can thiệp thủ công — phục vụ global users không có thẻ ngân hàng VN.
 
@@ -179,7 +179,7 @@ Status: done
 
 ### Môi trường test (QUAN TRỌNG)
 - Project root `node_modules` RỖNG. Test deps ở `/tmp/node_modules`, chạy từ `tests/`.
-- Lệnh: `cd /Users/luisphan/Documents/9router/tests && npm test -- unit/<file>.test.js`. vitest@4, alias `@/`→`src/`.
+- Lệnh: `cd /Users/luisphan/Documents/mmomarket/tests && npm test -- unit/<file>.test.js`. vitest@4, alias `@/`→`src/`.
 - Mock `global.fetch` cho NOWPayments client test. Mock signature cho webhook test. Test DB pattern: `process.env.DATA_DIR=tempDir`, `delete global._dbAdapter`, `vi.resetModules()` (xem `usersRepo.test.js`, `saas-schema.test.js`).
 
 ### Scope guard — KHÔNG làm ở story này
@@ -200,7 +200,7 @@ Status: done
 - NOWPayments fee: 0.5% per transaction; non-custodial-ish (semi-custodial — verify terms).
 - NOWPayments IPN signature: HMAC-SHA512, sorted JSON. Confirm exact header name (`x-nowpayments-sig`) trong docs khi implement.
 - Stablecoin codes có thể đổi theo network availability — gọi `GET /v1/currencies` của NOWPayments để verify codes runtime nếu cần.
-- Confirmation thresholds: gateway tự xử lý confirm → 9router chỉ cần đọc status `finished`. Không cần tự đếm block.
+- Confirmation thresholds: gateway tự xử lý confirm → mmomarket chỉ cần đọc status `finished`. Không cần tự đếm block.
 
 ---
 
@@ -237,7 +237,7 @@ Status: done
 - `createPayment` không validate field NOT NULL → NOT NULL constraint bắt; API validate; nhất quán `createUser`.
 - `|| null` đổi `""`→null trên field chuỗi → vô hại (txHash/payAddress không bao giờ là `""` hợp lệ).
 - Giả định adapter sync (thiếu await) → verified an toàn (usersRepo dùng y hệt; adapter normalize sync).
-- Lost update đa tiến trình → 9router single-process (Next.js); JS single-thread + sync txn an toàn.
+- Lost update đa tiến trình → mmomarket single-process (Next.js); JS single-thread + sync txn an toàn.
 - Null return mơ hồ (no-op vs not-found) → ergonomics nhỏ, nhất quán `usersRepo`.
 
 ### Review Findings — Tasks 2–7 (2026-06-07, round 2)

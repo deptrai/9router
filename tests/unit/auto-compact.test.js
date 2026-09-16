@@ -78,7 +78,7 @@ describe("auto-compact — Kiro payload", () => {
 
     expect(result.applied).toBe(true);
     expect(result.disabled).not.toBe(true);
-    expect(body.conversationState.currentMessage.userInputMessage.content).toContain("[9router auto-compact]");
+    expect(body.conversationState.currentMessage.userInputMessage.content).toContain("[mmomarket auto-compact]");
   });
 
   it("shortens old Kiro history and annotates the current message", () => {
@@ -109,7 +109,7 @@ describe("auto-compact — Kiro payload", () => {
     expect(result.afterTokens).toBeLessThanOrEqual(5_000);
     expect(result.omittedCount).toBeGreaterThan(0);
     expect(body.conversationState.history.length).toBeLessThan(history.length);
-    expect(body.conversationState.currentMessage.userInputMessage.content).toContain("[9router auto-compact]");
+    expect(body.conversationState.currentMessage.userInputMessage.content).toContain("[mmomarket auto-compact]");
   });
 
   it("pins URLs and file paths from omitted Kiro history into the compact notice", () => {

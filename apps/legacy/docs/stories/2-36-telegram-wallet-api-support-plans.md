@@ -19,7 +19,7 @@ Status: review
 
 ## Story
 
-As a **người dùng Telegram của 9Router**,
+As a **người dùng Telegram của Mmomarket**,
 I want **xem số dư ví, quản lý API key, xem thông tin hỗ trợ, và mua gói cước trực tiếp qua bot**,
 so that **tôi có thể tự phục vụ hoàn toàn qua Telegram mà không cần vào web dashboard**.
 
@@ -48,7 +48,7 @@ Các handler mới (`handleWallet`, `handleApi`, `handleSupport`) theo đúng pa
 
 **QĐ6 — `/support` đọc `TELEGRAM_SUPPORT_USERNAME` và `FAQ_URL` từ env (runtime).** Fallback graceful nếu chưa set.
 
-**QĐ7 — Plan products: tạo bằng seed script, KHÔNG hardcode trong router.** Script idempotent tạo rows vào `products` với `kind: "plan"`, `targetType: "9router_plan"`, `targetId: <planId>`, `deliveryMode: "instant"`, `stock: null`.
+**QĐ7 — Plan products: tạo bằng seed script, KHÔNG hardcode trong router.** Script idempotent tạo rows vào `products` với `kind: "plan"`, `targetType: "mmomarket_plan"`, `targetId: <planId>`, `deliveryMode: "instant"`, `stock: null`.
 
 **QĐ8 — Plan checkout hook trong `storeCheckout.js`:** sau khi order commit, nếu `product.kind === "plan"` → gọi `purchasePlanForUser({ userId, planId: product.targetId, idempotencyKey })`. Attach result vào return object.
 
@@ -115,7 +115,7 @@ Các handler mới (`handleWallet`, `handleApi`, `handleSupport`) theo đúng pa
 
 ### AC7 — Plan products hiện trong /products
 
-**Given** admin đã seed plan products (`kind: "plan"`, `targetType: "9router_plan"`, `targetId: <planId>`)
+**Given** admin đã seed plan products (`kind: "plan"`, `targetType: "mmomarket_plan"`, `targetId: <planId>`)
 **When** user gọi `/products`
 **Then** plan products hiển thị cùng sản phẩm khác, có nút "Mua ngay", stock "Không giới hạn"
 

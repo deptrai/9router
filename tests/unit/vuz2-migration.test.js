@@ -43,7 +43,7 @@ function makeAdapter(raw) {
 
 beforeAll(() => {
   const Database = require("better-sqlite3");
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-mig010-"));
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "mmomarket-mig010-"));
   const dbPath = path.join(tempDir, "test.sqlite");
   rawDb = new Database(dbPath);
   adapter = makeAdapter(rawDb);
@@ -130,7 +130,7 @@ describe("Migration 010 — vuz-2 connection", () => {
   it("gracefully skips when vuz does not exist", async () => {
     const unknownCtx = (() => {
       const Database = require("better-sqlite3");
-      const tempDir2 = fs.mkdtempSync(path.join(os.tmpdir(), "9router-mig010-empty-"));
+      const tempDir2 = fs.mkdtempSync(path.join(os.tmpdir(), "mmomarket-mig010-empty-"));
       const r = new Database(path.join(tempDir2, "empty.sqlite"));
       const a = makeAdapter(r);
       a.exec(`CREATE TABLE IF NOT EXISTS providerConnections (

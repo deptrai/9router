@@ -1,6 +1,6 @@
 # 故障排除
 
-使用 9Router 时常见的问题与解决方案。
+使用 Mmomarket 时常见的问题与解决方案。
 
 ---
 
@@ -78,7 +78,7 @@
 **解决方案:**
 
 1. **自动刷新(默认):**
-   9Router 会自动刷新 token。等待 30 秒后重试。
+   Mmomarket 会自动刷新 token。等待 30 秒后重试。
 
 2. **手动重连:**
    ```
@@ -135,15 +135,15 @@
 **问题:** 出现 "ECONNREFUSED" 或 "Cannot connect to localhost:20128"。
 
 **原因:**
-- 9Router 未运行
+- Mmomarket 未运行
 - 端口 20128 被阻止
 - 防火墙拦截连接
 
 **解决方案:**
 
-1. **启动 9Router:**
+1. **启动 Mmomarket:**
    ```bash
-   9router
+   mmomarket
    ```
    仪表盘应该在 http://localhost:3000 打开。
 
@@ -164,7 +164,7 @@
 4. **使用云端 endpoint:**
    如果 localhost 不行(例如 Cursor IDE):
    ```
-   Endpoint: https://9router.com/v1
+   Endpoint: https://mmomarket.org/v1
    ```
 
 ---
@@ -175,15 +175,15 @@
 
 **原因:**
 - 端口 3000 被占用
-- 9Router 崩溃
+- Mmomarket 崩溃
 - 浏览器缓存问题
 
 **解决方案:**
 
-1. **确认 9Router 是否运行:**
+1. **确认 Mmomarket 是否运行:**
    ```bash
    # 检查进程
-   ps aux | grep 9router
+   ps aux | grep mmomarket
    
    # 检查端口 3000
    lsof -i :3000
@@ -199,13 +199,13 @@
    taskkill /PID <PID> /F
    ```
 
-3. **重启 9Router:**
+3. **重启 Mmomarket:**
    ```bash
    # 停止
-   pkill -f 9router
+   pkill -f mmomarket
    
    # 启动
-   9router
+   mmomarket
    ```
 
 4. **清除浏览器缓存:**
@@ -320,8 +320,8 @@
 
 2. **检查 key 格式:**
    ```
-   正确: 9r_xxxxxxxxxxxxxxxxxxxxxxxx
-   错误: 缺少 9r_ 前缀
+   正确: mm_xxxxxxxxxxxxxxxxxxxxxxxx
+   错误: 缺少 mm_ 前缀
    ```
 
 3. **检查 CLI 配置中的 key:**
@@ -333,18 +333,18 @@
    Settings → API Key
    
    # 环境变量
-   export OPENAI_API_KEY="9r_your_key"
+   export OPENAI_API_KEY="mm_your_key"
    ```
 
 4. **测试 API key:**
    ```bash
    curl http://localhost:20128/v1/models \
-     -H "Authorization: Bearer 9r_your_key"
+     -H "Authorization: Bearer mm_your_key"
    ```
 
 ---
 
 ## 需要更多帮助?
 
-- **文档:** [9router.com/docs](https://9router.com/docs)
+- **文档:** [mmomarket.org/docs](https://mmomarket.org/docs)
 - **常见问题:** [faq.md](faq.md)

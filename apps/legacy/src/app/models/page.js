@@ -2,7 +2,7 @@ import { getPricing } from "@/lib/db/repos/pricingRepo";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Supported Models — 9Router", description: "All AI models supported by 9Router with token pricing." };
+export const metadata = { title: "Supported Models — Mmomarket", description: "All AI models supported by Mmomarket with token pricing." };
 
 function formatPrice(v) {
   if (!v || v === 0) return "—";
@@ -31,11 +31,11 @@ export default async function ModelsPage() {
     <div className="min-h-screen bg-[#181411] text-white font-sans px-4 py-10">
       <div className="max-w-6xl mx-auto">
         <div className="mb-8 flex items-center gap-4">
-          <Link href="/" className="text-[#f97815] hover:underline text-sm">← Back to 9Router</Link>
+          <Link href="/" className="text-[#f97815] hover:underline text-sm">← Back to Mmomarket</Link>
         </div>
 
         <h1 className="text-3xl font-bold mb-2">Supported Models</h1>
-        <p className="text-gray-400 mb-8">All models available via 9Router. Prices shown in USD per 1M tokens.</p>
+        <p className="text-gray-400 mb-8">All models available via Mmomarket. Prices shown in USD per 1M tokens.</p>
 
         {providers.map((provider) => (
           <div key={provider} className="mb-10">

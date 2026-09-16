@@ -336,7 +336,7 @@ export function normalizeProduct(raw) {
     deliveryMode: raw.deliveryMode || "admin_fulfill",
     // NOTE (AC6, amended 2026-07-28): targetType/targetId are produced here for contract
     // completeness, but catalogSync intentionally does NOT persist them for external
-    // products — those columns route internal fulfilment (`9router_plan`) and 2-38 is
+    // products — those columns route internal fulfilment (`mmomarket_plan`) and 2-38 is
     // catalog-sync only (QĐ7). They move into scope with the auto-checkout story.
     targetType: raw.targetType || "telegram_bot_scraper",
     targetId: raw.targetId || null,

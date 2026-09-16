@@ -33,7 +33,7 @@ await settlePayment(payment, settlement);
 
 - File: `src/lib/payment/bitcart.js:85`
 - Vấn đề: Shared secret được nhúng trực tiếp vào `notification_url` dưới dạng query param `?token=<secret>`. URL này được gửi đến Bitcart server (third-party) và sẽ xuất hiện trong:
-  1. Access logs của reverse proxy (Nginx/Traefik) phía 9Router — query string thường được log mặc định.
+  1. Access logs của reverse proxy (Nginx/Traefik) phía Mmomarket — query string thường được log mặc định.
   2. HTTP Referer header nếu có redirect.
   3. Bitcart lưu `notification_url` trong invoice record — nếu Bitcart bị compromise, secret bị lộ.
   Kẻ tấn công có secret này có thể giả mạo IPN `{"id": "<bất kỳ gatewayId>", "status": "complete"}` và trigger settlement cho bất kỳ payment nào.
@@ -123,7 +123,7 @@ const creditsToAward = standardAmount + bonusAmount;
 - Bằng chứng:
 ```js
 // storeCheckout.js:224-237
-if (product?.kind === "plan" && product?.targetType === "9router_plan" && product?.targetId) {
+if (product?.kind === "plan" && product?.targetType === "mmomarket_plan" && product?.targetId) {
   try {
     const planResult = await purchasePlanForUser({ ... }); // POST-COMMIT
     result.planActivation = planResult;

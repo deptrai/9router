@@ -549,7 +549,7 @@ export class KiroService {
       code_challenge: codeChallenge,
       code_challenge_method: "S256",
       redirect_uri: KIRO_SSO_REDIRECT_URI,
-      redirect_from: "9router",
+      redirect_from: "mmomarket",
     });
     return `${KIRO_SSO_SIGNIN_URL}?${params.toString()}`;
   }

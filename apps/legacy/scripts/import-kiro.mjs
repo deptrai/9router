@@ -29,7 +29,7 @@ loadEnvFile(path.join(projectRoot, ".env"));
 loadEnvFile(path.join(projectRoot, ".env.local"));
 
 if (!process.env.DATA_DIR) {
-  process.env.DATA_DIR = path.join(process.env.HOME || "~", ".9router");
+  process.env.DATA_DIR = path.join(process.env.HOME || "~", ".mmomarket");
 }
 
 const { default: BetterSqlite3 } = await import("better-sqlite3");

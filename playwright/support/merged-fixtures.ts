@@ -1,7 +1,7 @@
 /**
  * Merged Fixtures — Single import point for all E2E tests
  *
- * Currently uses native Playwright fixtures + custom 9router fixtures.
+ * Currently uses native Playwright fixtures + custom mmomarket fixtures.
  *
  * When @seontechnologies/playwright-utils becomes available on npm,
  * replace this file with the mergeTests composition pattern:

@@ -15,7 +15,7 @@ Status: review
 
 ## Story
 
-As a **người dùng 9Router**,
+As a **người dùng Mmomarket**,
 I want **chia sẻ link giới thiệu để nhận hoa hồng khi người được giới thiệu nạp tiền**,
 so that **tôi được khuyến khích mời bạn bè sử dụng dịch vụ**.
 

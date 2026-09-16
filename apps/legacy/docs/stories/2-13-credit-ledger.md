@@ -9,7 +9,7 @@ Status: done
 
 ## Story
 
-As a **admin/operator 9Router cần truy được mọi đồng credit (nguồn nạp, lý do trừ) + nền tảng cho 3-loại-credit và plan-overflow**,
+As a **admin/operator Mmomarket cần truy được mọi đồng credit (nguồn nạp, lý do trừ) + nền tảng cho 3-loại-credit và plan-overflow**,
 I want **một bảng `creditTransactions` immutable append-only là single source of truth cho mọi thay đổi credit, với `users.creditsBalance` chỉ còn là cache rebuild được**,
 so that **mọi giao dịch có audit trail bất biến, balance reconcile được khi lệch, và 3-credit (FR-13/14/15) + plan-overflow (FR-26) xây trên nền này KHÔNG phải refactor money lần hai**.
 
@@ -64,7 +64,7 @@ so that **mọi giao dịch có audit trail bất biến, balance reconcile đư
 - Kế thừa pattern `saveRequestUsage` hiện có (deduction đã trong transaction ghi usageHistory). `addCredits` mới cũng vậy.
 
 ### BP-6 — Money precision (known-limitation, ghi rõ)
-- 9Router hiện dùng `creditsBalance REAL` (float), đồng nhất với `usageHistory.cost` (USD float). Story này **GIỮ REAL** để không gây breaking change.
+- Mmomarket hiện dùng `creditsBalance REAL` (float), đồng nhất với `usageHistory.cost` (USD float). Story này **GIỮ REAL** để không gây breaking change.
 - ⚠️ Ghi rõ trong code comment + Dev Notes: "Known limitation — money dùng REAL/float; rủi ro làm tròn tích luỹ chấp nhận được ở quy mô hiện tại (cost LLM nhỏ). Cân nhắc chuyển micro-USD integer nếu scale tài chính lớn." KHÔNG tự ý đổi sang integer trong story này (out of scope).
 - `balanceAfter` trên mỗi dòng lưu snapshot REAL tại thời điểm ghi (cho audit/debug).
 

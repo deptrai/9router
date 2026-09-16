@@ -18,13 +18,13 @@ Status: done
 
 ## Story
 
-**As a** 9Router operator,
+**As a** Mmomarket operator,
 **I want** Bitcart làm provider crypto thứ hai (self-hosted, own RPC) đứng sau một lớp provider abstraction,
 **so that** khi NOWPayments chưa config hoặc lỗi/down, hệ thống vẫn nhận topup crypto được — và ta không lệ thuộc một gateway bên thứ ba duy nhất.
 
 > **Story thứ hai của Epic D.** Story 2.8 (done) đã làm crypto topup qua **NOWPayments**. Story này KHÔNG viết lại flow — nó **refactor code 2.8 thành provider-agnostic** rồi thêm **Bitcart adapter** như provider thứ hai. Reuse 100% schema `payments`, `paymentsRepo`, credit-award transaction, Credits-page UI, rate-limit, email gate. Selection theo env `CRYPTO_PAYMENT_PROVIDER` (`auto` | `nowpayments` | `bitcart`); `auto` = NOWPayments nếu có key, else Bitcart nếu config.
 >
-> **Khác biệt cốt lõi của Bitcart so với NOWPayments** (đã verify local 2026-06-07, xem Dev Notes): IPN payload chỉ `{id, status}` — **KHÔNG ký HMAC, KHÔNG kèm amount**. Nên webhook Bitcart PHẢI **fetch lại full invoice** từ Bitcart API rồi mới award credit, và kênh Bitcart→9Router xác thực bằng **shared-secret token nhúng trong `notification_url`** (không phải HMAC như NOWPayments).
+> **Khác biệt cốt lõi của Bitcart so với NOWPayments** (đã verify local 2026-06-07, xem Dev Notes): IPN payload chỉ `{id, status}` — **KHÔNG ký HMAC, KHÔNG kèm amount**. Nên webhook Bitcart PHẢI **fetch lại full invoice** từ Bitcart API rồi mới award credit, và kênh Bitcart→Mmomarket xác thực bằng **shared-secret token nhúng trong `notification_url`** (không phải HMAC như NOWPayments).
 
 ## Acceptance Criteria
 
@@ -129,13 +129,13 @@ Status: done
 ## Dev Notes
 
 ### Bitcart API contract (verified bằng local smoke test 2026-06-07)
-- **Auth**: `POST /token` `{email,password,permissions:["full_control"]}` → field `access_token` là bearer. Với 9Router dùng **API token tạo sẵn** lưu trong `BITCART_API_KEY` (không login runtime).
+- **Auth**: `POST /token` `{email,password,permissions:["full_control"]}` → field `access_token` là bearer. Với Mmomarket dùng **API token tạo sẵn** lưu trong `BITCART_API_KEY` (không login runtime).
 - **Invoice create**: `POST /invoices` `{store_id, price, currency, order_id}` → trả `{id, status, payments:[{payment_address, payment_url, amount, rate}], time_left, expiration}`.
 - **Invoice status**: `GET /invoices/{id}` → `{status, payments[...]}`. Webhook DÙNG endpoint này để re-fetch.
 - **IPN payload TỐI GIẢN & KHÔNG KÝ**: chỉ `{"id": invoice_id, "status": status}` (xem `api/services/ipn_sender.py`, `# TODO: IPN v2`). → bắt buộc re-fetch + xác thực bằng shared-secret token trong `notification_url`.
 - **Invoice status enum** (`api/invoices.py`): `pending, paid, unconfirmed, confirmed, expired, invalid, complete, refunded`. `complete` = settled; `expired`/`invalid` = failed.
-- **Cảnh báo fiat rate**: invoice `currency:"USD"` cần Bitcart gọi CoinGecko (có thể chậm/timeout nếu môi trường chặn out-bound). Crypto-denominated nhanh. → 9Router gửi `currency` USD nhưng cần Bitcart server có CoinGecko reachable; ghi rõ ops requirement.
-- **Vận hành Bitcart = 3 process**: API + worker + coin daemon. PaymentProcessor (detect payment → fire IPN) chạy trong **worker** (`api/ioc/worker.py`), KHÔNG phải API. → đây là deployment dependency, không thuộc code 9Router nhưng phải có để IPN bắn.
+- **Cảnh báo fiat rate**: invoice `currency:"USD"` cần Bitcart gọi CoinGecko (có thể chậm/timeout nếu môi trường chặn out-bound). Crypto-denominated nhanh. → Mmomarket gửi `currency` USD nhưng cần Bitcart server có CoinGecko reachable; ghi rõ ops requirement.
+- **Vận hành Bitcart = 3 process**: API + worker + coin daemon. PaymentProcessor (detect payment → fire IPN) chạy trong **worker** (`api/ioc/worker.py`), KHÔNG phải API. → đây là deployment dependency, không thuộc code Mmomarket nhưng phải có để IPN bắn.
 
 ### Bitcart local self-host setup — kinh nghiệm cấu hình (2026-07-30)
 
@@ -173,7 +173,7 @@ BNB_NO_DOWNTIME_PROCESSING=true
 BNB_MAX_SYNC_BLOCKS=1
 ```
 - `*_EXPERIMENTAL_NOSYNC=true` + `*_NO_DOWNTIME_PROCESSING=true` + `*_MAX_SYNC_BLOCKS=1` giúp daemon không treo khi test invoice trong môi trường public RPC chậm.
-- `BITCART_CRYPTOS` **phải liệt kê đủ coin** mà 9Router cần (ví dụ `trx,bnb`); thiếu coin khi tạo invoice sẽ bị 422 hoặc sinh payment method sai.
+- `BITCART_CRYPTOS` **phải liệt kê đủ coin** mà Mmomarket cần (ví dụ `trx,bnb`); thiếu coin khi tạo invoice sẽ bị 422 hoặc sinh payment method sai.
 
 **3. Khởi động đúng thứ tự**
 1. Coin daemon trước: `uv run just daemon trx` (port 5009), `uv run just daemon bnb` (port 5006).
@@ -188,7 +188,7 @@ BNB_MAX_SYNC_BLOCKS=1
   - `TRX USDT`: `TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t`
   - `BSC USDT`: `0x55d398326f99059ff775485246999027b3197955`
 - Tạo `store` gắn wallet(s); nên set `checkout_settings.rate_rules` cố định để tránh Bitcart gọi CoinGecko (ví dụ nội dung 3 dòng: `USDT_USD=1`, `TRX_USD=1`, `BNB_USD=1`).
-- `allow_anonymous_invoice_creation=true` cho phép 9Router tạo invoice mà không cần user Bitcart.
+- `allow_anonymous_invoice_creation=true` cho phép Mmomarket tạo invoice mà không cần user Bitcart.
 
 **5. Giới hạn public RPC khi test USDT token**
 - **Native coin** (TRX/BNB) tạo invoice nhanh với public RPC.
@@ -197,7 +197,7 @@ BNB_MAX_SYNC_BLOCKS=1
   - BSC: QuickNode, Alchemy, Chainstack, Ankr private endpoint, Blast API…
   - TRX: TronGrid API key hoặc Tron full node riêng.
 
-**6. Cấu hình 9Router `.env` để trỏ về local Bitcart**
+**6. Cấu hình Mmomarket `.env` để trỏ về local Bitcart**
 ```
 CRYPTO_PAYMENT_PROVIDER=bitcart
 BITCART_BASE_URL=http://127.0.0.1:8000
@@ -210,7 +210,7 @@ BASE_URL=http://localhost:20128
 - Để test webhook IPN local cần expose `BASE_URL` (ngrok/localtunnel) hoặc gọi `POST /api/webhooks/bitcart` thủ công với body `{"id":"...","status":"complete"}`.
 
 **7. Các lỗi thường gặp khi dev**
-- `DELETE /invoices/{id}` (cancelInvoice) cần quyền store owner/superuser token. 9Router gọi với `Authorization: Bearer <BITCART_API_KEY>`.
+- `DELETE /invoices/{id}` (cancelInvoice) cần quyền store owner/superuser token. Mmomarket gọi với `Authorization: Bearer <BITCART_API_KEY>`.
 - Tạo invoice treo 10s rồi timeout: thường do daemon chưa chạy, daemon đang sync, hoặc public RPC không hỗ trợ query token logs.
 - Bitcart API trả 401: token thiếu quyền `full_control` hoặc token đã bị xóa.
 - `Wallet ... is not connected to store`: wallet chưa được thêm vào store hoặc `BITCART_CRYPTOS` không chứa coin đó.
@@ -239,7 +239,7 @@ BASE_URL=http://localhost:20128
 
 ### Môi trường test
 - Project root `node_modules` RỖNG. Test deps ở `/tmp/node_modules`, chạy từ `tests/`.
-- Lệnh: `cd /Users/luisphan/Documents/9router/tests && npm test -- unit/<file>.test.js`. vitest, alias `@/`→`src/`.
+- Lệnh: `cd /Users/luisphan/Documents/mmomarket/tests && npm test -- unit/<file>.test.js`. vitest, alias `@/`→`src/`.
 - Mock `global.fetch` cho bitcart client + webhook re-fetch. Test DB: `process.env.DATA_DIR=tempDir`, `delete global._dbAdapter`, `vi.resetModules()`.
 
 ### Scope guard — KHÔNG làm ở story này

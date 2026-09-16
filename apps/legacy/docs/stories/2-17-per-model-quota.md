@@ -11,7 +11,7 @@ Status: done
 
 ## Story
 
-Là **admin/operator quản lý subscription plans của 9Router**,
+Là **admin/operator quản lý subscription plans của Mmomarket**,
 tôi muốn **các override theo model trong `plans.perModelLimits` được thực thi khi chat admission và được hiển thị trong quota/admin UI**,
 để **mỗi plan có thể đặt giới hạn token 5h/weekly khác nhau cho model đắt tiền so với model thường mà không thay thế quota tổng, RPM, overflow, hoặc ledger hiện có**.
 
@@ -107,7 +107,7 @@ Với user có active plan:
 - [x] **C3**: Extend `tests/unit/plan-quota-status.test.js` và `tests/unit/users-me-quota-api.test.js` cho optional `model` query và `perModel` response fields.
 - [x] **C4**: Add/extend UI/source tests cho admin Plans label để không còn claim `perModelLimits` chưa enforced.
 - [x] **C5**: Run targeted tests từ `tests/` bằng dependency hiện tại nếu `/tmp/node_modules` không có:
-  - `NODE_PATH=/Users/luisphan/Documents/9router/tests/node_modules ./node_modules/.bin/vitest run --reporter=verbose unit/plan-quota.test.js unit/chat-plan-billing.test.js unit/plan-quota-status.test.js unit/users-me-quota-api.test.js unit/resolve-plan.test.js unit/plans-admin-api.test.js`
+  - `NODE_PATH=/Users/luisphan/Documents/mmomarket/tests/node_modules ./node_modules/.bin/vitest run --reporter=verbose unit/plan-quota.test.js unit/chat-plan-billing.test.js unit/plan-quota-status.test.js unit/users-me-quota-api.test.js unit/resolve-plan.test.js unit/plans-admin-api.test.js`
   - Sau đó chạy broader suite nếu feasible; nếu chỉ còn known unrelated xAI flake thì document rõ.
 
 ## Dev Notes
@@ -179,11 +179,11 @@ GPT-5 Codex
 
 ### Debug Log References
 
-- Targeted RED/GREEN: `NODE_PATH=/Users/luisphan/Documents/9router/tests/node_modules /Users/luisphan/Documents/9router/tests/node_modules/.bin/vitest run --config tests/vitest.config.js tests/unit/plan-quota.test.js tests/unit/chat-plan-billing.test.js tests/unit/plan-quota-status.test.js tests/unit/users-me-quota-api.test.js tests/unit/plans-admin-api.test.js --reporter=verbose` -> 40 passed.
-- Extra regression: `NODE_PATH=/Users/luisphan/Documents/9router/tests/node_modules /Users/luisphan/Documents/9router/tests/node_modules/.bin/vitest run --config tests/vitest.config.js tests/unit/resolve-plan.test.js --reporter=verbose` -> 11 passed.
+- Targeted RED/GREEN: `NODE_PATH=/Users/luisphan/Documents/mmomarket/tests/node_modules /Users/luisphan/Documents/mmomarket/tests/node_modules/.bin/vitest run --config tests/vitest.config.js tests/unit/plan-quota.test.js tests/unit/chat-plan-billing.test.js tests/unit/plan-quota-status.test.js tests/unit/users-me-quota-api.test.js tests/unit/plans-admin-api.test.js --reporter=verbose` -> 40 passed.
+- Extra regression: `NODE_PATH=/Users/luisphan/Documents/mmomarket/tests/node_modules /Users/luisphan/Documents/mmomarket/tests/node_modules/.bin/vitest run --config tests/vitest.config.js tests/unit/resolve-plan.test.js --reporter=verbose` -> 11 passed.
 - Lint: `npx eslint src/lib/quota/planQuota.js src/lib/quota/planQuotaStatus.js src/app/api/users/me/quota/route.js 'src/app/(dashboard)/dashboard/plan/page.js' 'src/app/(dashboard)/dashboard/plans/page.js' tests/unit/plan-quota.test.js tests/unit/plan-quota-status.test.js tests/unit/users-me-quota-api.test.js tests/unit/plans-admin-api.test.js` -> passed.
 - Build: `npm run build` -> passed.
-- Full regression: `NODE_PATH=/Users/luisphan/Documents/9router/tests/node_modules /Users/luisphan/Documents/9router/tests/node_modules/.bin/vitest run --reporter=verbose` from `tests/` -> 1065 passed, 24 skipped, 0 failed.
+- Full regression: `NODE_PATH=/Users/luisphan/Documents/mmomarket/tests/node_modules /Users/luisphan/Documents/mmomarket/tests/node_modules/.bin/vitest run --reporter=verbose` from `tests/` -> 1065 passed, 24 skipped, 0 failed.
 
 ### Completion Notes List
 

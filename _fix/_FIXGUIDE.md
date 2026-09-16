@@ -1,6 +1,6 @@
-# Fix-guide chung — đội sửa backend 9router
+# Fix-guide chung — đội sửa backend mmomarket
 
-Bạn là kỹ sư sửa lỗi backend 9router, làm trong WORKTREE: `/Users/luisphan/Documents/9router/.claude/worktrees/fix-backend-review`. Báo cáo review nguồn ở `_review/R1..R6-*.md` và `_review/_SUMMARY.md` trong worktree này.
+Bạn là kỹ sư sửa lỗi backend mmomarket, làm trong WORKTREE: `/Users/luisphan/Documents/mmomarket/.claude/worktrees/fix-backend-review`. Báo cáo review nguồn ở `_review/R1..R6-*.md` và `_review/_SUMMARY.md` trong worktree này.
 
 ## Nguyên tắc tối thượng (yêu cầu user: "không tính năng nào bị lỗi sau khi sửa")
 1. **Chỉ sửa file thuộc vùng được giao** (danh sách trong prompt). Tuyệt đối KHÔNG sửa file ngoài vùng — 4 agent chạy song song, đụng file = hỏng.
@@ -13,7 +13,7 @@ Bạn là kỹ sư sửa lỗi backend 9router, làm trong WORKTREE: `/Users/lui
 1. Đọc các finding thuộc vùng mình trong `_review/R*.md`.
 2. Với mỗi finding: Read file → hiểu luồng → sửa tối thiểu, đúng trọng tâm → giữ style xung quanh.
 3. Sau khi sửa xong nhóm file, CHẠY TEST liên quan để chắc không phá:
-   `cd /Users/luisphan/Documents/9router/.claude/worktrees/fix-backend-review/tests && npm test -- unit/<file>.test.js`
+   `cd /Users/luisphan/Documents/mmomarket/.claude/worktrees/fix-backend-review/tests && npm test -- unit/<file>.test.js`
    (deps đã có sẵn; baseline hiện tại 1983 pass 0 fail — đừng làm đỏ test nào đang xanh).
 4. Nếu fix của bạn cần test mới (vd. guard auth mới) và vùng bạn có thời gian, thêm test — nhưng ưu tiên không phá test cũ.
 

@@ -76,7 +76,7 @@ async function loadModules() {
 }
 
 beforeEach(async () => {
-  tmpDir = mkdtempSync(join(tmpdir(), "9router-purchase-worker-"));
+  tmpDir = mkdtempSync(join(tmpdir(), "mmomarket-purchase-worker-"));
   process.env.DATA_DIR = tmpDir;
   process.env.STORE_ENC_KEY = TEST_ENC_KEY;
   delete global._dbAdapter;

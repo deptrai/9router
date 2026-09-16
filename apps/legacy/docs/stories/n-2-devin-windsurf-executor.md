@@ -46,7 +46,7 @@ Status: done
 
 ## Story
 
-As a **developer tích hợp 9router**,
+As a **developer tích hợp mmomarket**,
 I want **gọi `devin/normal|fast|lite|ultra` (agent session REST v3) và `windsurf/swe` (LLM chat free tier Cascade WS) qua `POST /v1/chat/completions`**,
 so that **agent khác (Claude, GPT, custom bot) có thể dùng Devin agent + Windsurf LLM qua 1 endpoint OpenAI-compatible thống nhất**.
 
@@ -129,7 +129,7 @@ so that **agent khác (Claude, GPT, custom bot) có thể dùng Devin agent + Wi
 - [ ] **AC5:** `hasSpecializedExecutor("windsurf") === true` (executor đăng ký trong index.js)
 - [ ] **AC6:** `windsurf` có trong `PROVIDERS` + `PROVIDER_MODELS` + `APIKEY_PROVIDERS` (3 registry sync)
 - [ ] **AC7:** Validate endpoint `POST /api/providers/validate {provider:"windsurf", apiKey:"devin-session-token$..."}` → `valid:true` nếu fetchJwt thành công, `valid:false` nếu fail
-- [ ] **AC8:** Auto-extract từ `state.vscdb` hoạt động khi env không set (port `extract-key.mjs`, `sql.js` đã có sẵn trong 9router `^1.14.1`)
+- [ ] **AC8:** Auto-extract từ `state.vscdb` hoạt động khi env không set (port `extract-key.mjs`, `sql.js` đã có sẵn trong mmomarket `^1.14.1`)
 
 ### Phase 2 — Devin Executor (REST v3)
 
@@ -197,7 +197,7 @@ so that **agent khác (Claude, GPT, custom bot) có thể dùng Devin agent + Wi
 
 - **KHÔNG log windsurf token** (`devin-session-token$...`) hoặc cog_* key ở bất kỳ đâu (NFR29). Không return trong API response, không trong error message, không trong SSE stream.
 - **KHÔNG sửa N.1 artifact.** Không đụng `devin` registry đã chốt (PROVIDERS, PROVIDER_MODELS, APIKEY_PROVIDERS). Không sửa validate/testUtils case `devin`. Không sửa devin env shortcut. Chỉ ADD case `windsurf` và ADD executor `devin`.
-- **Port protobuf nguyên vẹn** từ deepgrep — không sửa logic encode/decode, chỉ adapt import/export sang ESM 9router. Test từng function độc lập nếu cần.
+- **Port protobuf nguyên vẹn** từ deepgrep — không sửa logic encode/decode, chỉ adapt import/export sang ESM mmomarket. Test từng function độc lập nếu cần.
 - **Poll loop abort-safe:** check `signal.aborted` trước mỗi iteration, `clearTimeout` khi done/throw, không leak handle.
 - **`format: "windsurf"` và `format: "devin"` là custom** — đảm bảo không có nơi nào assume format ∈ {openai, claude, gemini,...} mà crash khi gặp "windsurf"/"devin" ở các đường mã N.2 chạm tới.
 - **Windsurf token expire:** `getCachedJwt` check `exp` (port `_getJwtExp`), refresh auto khi within 60s of expiration. Document: user phải re-login IDE nếu token expire hoàn toàn.
@@ -205,8 +205,8 @@ so that **agent khác (Claude, GPT, custom bot) có thể dùng Devin agent + Wi
 - **Devin `usage`:** REST v3 không trả token count. `usage: {prompt_tokens:0, completion_tokens:0, total_tokens:0}` placeholder, document rõ.
 - **Windsurf `WS_MODEL` env:** Default `swe-1-6` (updated 2026-06-26, mirror catalog mới), env `WS_MODEL` override. Lịch sử: default cũ `MODEL_SWE_1_6_SLOW` (mirror deepgrep `core.mjs:88`).
 - **Windsurf `WS_APP_VER`/`WS_LS_VER`:** Default từ deepgrep (`1.48.2`/`1.9544.35`), env override nếu cần.
-- **Auto-extract `state.vscdb`:** Port `extract-key.mjs` đọc `windsurfAuthStatus.apiKey` từ DB. `sql.js` đã có sẵn trong 9router (`^1.14.1`, verified F8). Risk: server deploy không có IDE → auto-extract fail → phải set env `WINDSURF_API_KEY`. Document rõ trong error message.
-- **Test deps:** `cd /Users/luisphan/Documents/9router/tests && npm test -- unit/<file>.test.js` (vitest, alias `@/`→`src/`, deps `/tmp/node_modules`).
+- **Auto-extract `state.vscdb`:** Port `extract-key.mjs` đọc `windsurfAuthStatus.apiKey` từ DB. `sql.js` đã có sẵn trong mmomarket (`^1.14.1`, verified F8). Risk: server deploy không có IDE → auto-extract fail → phải set env `WINDSURF_API_KEY`. Document rõ trong error message.
+- **Test deps:** `cd /Users/luisphan/Documents/mmomarket/tests && npm test -- unit/<file>.test.js` (vitest, alias `@/`→`src/`, deps `/tmp/node_modules`).
 - **F1 — Executor return contract (CRITICAL):** Cả `DevinExecutor` và `WindsurfExecutor` override `execute()` hoàn toàn, **KHÔNG gọi `super.execute()`**. Trả về `{response, url, headers, transformedBody}`:
   - `response` = synthetic `new Response(body, {status:200, headers})` với body đã là **OpenAI format** (SSE stream hoặc JSON).
   - `stream: true` → body là `ReadableStream` emit `data: {choices:[{index:0, delta:{content:"..."}, finish_reason:null}]}\n\n` → `data: {choices:[{index:0, delta:{}, finish_reason:"stop"}]}\n\n` → `data: [DONE]\n\n`. Header `Content-Type: text/event-stream`.
@@ -241,7 +241,7 @@ so that **agent khác (Claude, GPT, custom bot) có thể dùng Devin agent + Wi
 | Total override execute() không rõ (F5) | MEDIUM (resolved) | QĐ11 + Dev Notes F5 chốt KHÔNG gọi super.execute() |
 | messages→prompt format drift (F6) | MEDIUM (resolved) | QĐ15 + AC15b + T9 chốt format cụ thể |
 | Poll interval lệch epics (F7) | LOW (resolved) | QĐ6 + AC12b + T9 chốt DEVIN_POLL_INTERVAL_MS env |
-| `sql.js` dependency (F8) | LOW (resolved) | Đã verify `sql.js@^1.14.1` có sẵn trong 9router, Node v22 OK |
+| `sql.js` dependency (F8) | LOW (resolved) | Đã verify `sql.js@^1.14.1` có sẵn trong mmomarket, Node v22 OK |
 
 ### Review Findings
 

@@ -1,6 +1,6 @@
-# 9router E2E Tests
+# mmomarket E2E Tests
 
-End-to-end testing infrastructure cho 9router dashboard, sử dụng **Playwright** + **@seontechnologies/playwright-utils**.
+End-to-end testing infrastructure cho mmomarket dashboard, sử dụng **Playwright** + **@seontechnologies/playwright-utils**.
 
 ## Quick Start
 

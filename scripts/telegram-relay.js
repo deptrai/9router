@@ -2,7 +2,7 @@
  * Telegram Scraper Relay — Multi-account bot-to-bot interaction relay (Story 2-38)
  *
  * Đăng nhập nhiều account Telegram (GramJS/MTProto), chạy flow send/press với
- * supplier bot, nhận response mới và trả về cho 9router adapter.
+ * supplier bot, nhận response mới và trả về cho mmomarket adapter.
  *
  * Features:
  * - Multi-account pool: round-robin + fallback khi account lỗi

@@ -9,7 +9,7 @@ Status: done
 
 ## Story
 
-Là **visitor chưa đăng ký** hoặc **user đang tìm hiểu 9Router**,
+Là **visitor chưa đăng ký** hoặc **user đang tìm hiểu Mmomarket**,
 tôi muốn **xem landing page đầy đủ (hero, features, pricing, FAQ, Discord CTA, endpoint highlights) và một trang `/models` public liệt kê các model được hỗ trợ cùng giá token**,
 để **hiểu sản phẩm, so sánh plan, và quyết định đăng ký mà không cần đăng nhập**.
 
@@ -69,7 +69,7 @@ Không làm:
   - Render bảng models grouped by provider.
   - Columns: Model, Input ($/1M), Output ($/1M), Cached, Reasoning.
   - Mobile: `overflow-x-auto` wrapper.
-  - Link về landing: "← Back to 9Router".
+  - Link về landing: "← Back to Mmomarket".
 
 ### Part B — Dark/light toggle (AC#2, 8)
 
@@ -100,14 +100,14 @@ Không làm:
   - "Get Started" button → `/register`.
   - Insufficient credits hint nếu plan có priceCredits > 0: "Top up credits after signup".
 - [x] **D2**: Tạo `src/app/landing/components/FAQ.js`:
-  - Static accordion, ít nhất 5 câu hỏi về 9Router (API compatibility, pricing, credit system, supported models, getting started).
+  - Static accordion, ít nhất 5 câu hỏi về Mmomarket (API compatibility, pricing, credit system, supported models, getting started).
   - Expand/collapse via React state; không cần library.
 - [x] **D3**: Tạo `src/app/landing/components/EndpointHighlights.js`:
   - 2 cards: OpenAI-compatible (`/v1/chat/completions`) và Anthropic-compatible (`/api/v1beta/messages`).
   - Code snippet nhỏ (curl hoặc Python) cho mỗi endpoint.
 - [x] **D4**: Update `src/app/landing/page.js`:
   - Import và thêm Pricing, FAQ, EndpointHighlights vào đúng thứ tự.
-  - Discord CTA button trong HeroSection hoặc GetStarted (link `https://discord.gg/9router` — placeholder).
+  - Discord CTA button trong HeroSection hoặc GetStarted (link `https://discord.gg/mmomarket` — placeholder).
   - Wrap toàn bộ page với `useTheme` + `useLocale` hooks để truyền xuống components.
 - [x] **D5**: Verify responsive: plan cards `grid-cols-1 md:grid-cols-3`; models table `overflow-x-auto`.
 
@@ -147,7 +147,7 @@ Tailwind dark mode cần `darkMode: 'class'` trong `tailwind.config.js`. Existin
 
 ### Testing note
 
-Test deps tại `tests/node_modules`. Chạy: `cd /Users/luisphan/Documents/9router/tests && NODE_PATH=/Users/luisphan/Documents/9router/tests/node_modules npx vitest run --config tests/vitest.config.js tests/unit/<file>.test.js`.
+Test deps tại `tests/node_modules`. Chạy: `cd /Users/luisphan/Documents/mmomarket/tests && NODE_PATH=/Users/luisphan/Documents/mmomarket/tests/node_modules npx vitest run --config tests/vitest.config.js tests/unit/<file>.test.js`.
 
 ## References
 

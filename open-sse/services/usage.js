@@ -764,7 +764,7 @@ async function getKiroUsage(accessToken, providerSpecificData, proxyOptions = nu
   // quota API available. Skip the AWS calls (they always 403) and show a friendly message.
   if (authMethod === "api_key") {
     return {
-      message: "Kiro API key — usage is tracked per-request via 9Router's quota system.",
+      message: "Kiro API key — usage is tracked per-request via Mmomarket's quota system.",
       quotas: {},
     };
   }

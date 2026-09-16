@@ -9,7 +9,7 @@ Status: done
 
 ## Story
 
-As a **admin vận hành 9Router muốn bán gói subscription (free/pro/max)**,
+As a **admin vận hành Mmomarket muốn bán gói subscription (free/pro/max)**,
 I want **một bảng `plans` là template giới hạn (quota 5h/weekly + RPM, có per-model override) mà user tham chiếu qua `users.planId`, kèm logic resolve giới hạn hiệu dụng cho mỗi request**,
 so that **mỗi user được áp đúng giới hạn theo gói đang dùng; sửa gói thì mọi user trên gói đó đổi theo ngay; user hết hạn/không gói thì fallback về pay-as-you-go credit như hiện tại**.
 

@@ -9,7 +9,7 @@ const saved = {};
 const KEYS = ["DATA_DIR","CRYPTO_PAYMENT_PROVIDER","NOWPAYMENTS_API_KEY","BITCART_BASE_URL","BITCART_API_KEY","BITCART_STORE_ID","BITCART_WEBHOOK_SECRET"];
 
 beforeEach(() => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-prov-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "mmomarket-prov-"));
   KEYS.forEach(k => { saved[k] = process.env[k]; delete process.env[k]; });
   process.env.DATA_DIR = tempDir;
   delete global._dbAdapter;

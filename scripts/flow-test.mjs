@@ -1,5 +1,5 @@
 /**
- * End-to-end flow test for 9router Telegram Store.
+ * End-to-end flow test for mmomarket Telegram Store.
  *
  * Flow:
  * 1. Admin creates a global markup rule.
@@ -19,7 +19,7 @@ import { execSync } from 'node:child_process';
 const BASE_URL = 'http://localhost:20128';
 const JWT_SECRET = 'flow-test-jwt-secret';
 const TELEGRAM_BOT_TOKEN = 'test-bot-token';
-const DATA_DIR = '/tmp/9router-flow-test';
+const DATA_DIR = '/tmp/mmomarket-flow-test';
 
 const ADMIN_ID = '00000000-0000-0000-0000-000000000001';
 const BUYER_ID = '00000000-0000-0000-0000-000000000002';

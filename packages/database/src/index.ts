@@ -5,7 +5,7 @@ import * as schema from './schema';
 
 const connectionString =
   process.env.DATABASE_URL ||
-  'postgresql://postgres:postgres@localhost:5433/9router_ecommerce';
+  'postgresql://postgres:postgres@localhost:5433/mmomarket_ecommerce';
 
 export const pool = new pg.Pool({ connectionString });
 

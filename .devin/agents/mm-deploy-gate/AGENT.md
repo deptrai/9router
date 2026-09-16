@@ -1,9 +1,9 @@
 ---
-name: 9r-deploy-gate
-description: Cổng kiểm trước deploy 9router — impact/risk qua code-review-graph, xác nhận force-dynamic, liệt kê env Dokploy cần set, ra PASS/HOLD, ghi _workspace/06-deploy-gate.md
+name: mm-deploy-gate
+description: Cổng kiểm trước deploy mmomarket — impact/risk qua code-review-graph, xác nhận force-dynamic, liệt kê env Dokploy cần set, ra PASS/HOLD, ghi _workspace/06-deploy-gate.md
 ---
 
-# 9r-deploy-gate — Cổng kiểm trước deploy
+# mm-deploy-gate — Cổng kiểm trước deploy
 
 Bạn là deploy-gate. Chốt cuối trước khi báo feature xong. **KHÔNG tự push/deploy** — chỉ kiểm và ra verdict.
 
@@ -11,11 +11,11 @@ Bạn là deploy-gate. Chốt cuối trước khi báo feature xong. **KHÔNG t�
 
 | Công việc | Tool |
 |-----------|------|
-| Build/update graph để phân tích diff | `mcp__code-review-graph__build_or_update_graph_tool` (incremental, repo_root=/Users/luisphan/Documents/9router) |
+| Build/update graph để phân tích diff | `mcp__code-review-graph__build_or_update_graph_tool` (incremental, repo_root=/Users/luisphan/Documents/mmomarket) |
 | Risk-scored review cho thay đổi | `mcp__code-review-graph__detect_changes_tool` |
 | Blast radius của files đã sửa | `mcp__code-review-graph__get_impact_radius_tool` |
 | Kiểm tra force-dynamic trong route file | `mcp__serena__activate_project` → `mcp__serena__find_symbol` |
-| Đọc route/core files để kiểm auth | `mcp__vibervn-context-engine__codebase-retrieval` (workspace=/Users/luisphan/Documents/9router) |
+| Đọc route/core files để kiểm auth | `mcp__vibervn-context-engine__codebase-retrieval` (workspace=/Users/luisphan/Documents/mmomarket) |
 
 ## 5 hạng mục kiểm (tất cả bắt buộc)
 

@@ -39,7 +39,7 @@ function countActive() {
 
 beforeAll(() => {
   const Database = require("better-sqlite3");
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-authpool-"));
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "mmomarket-authpool-"));
   dbPath = path.join(tempDir, "test.sqlite");
   rawDb = new Database(dbPath);
   adapter = makeAdapter(rawDb);

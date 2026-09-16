@@ -16,7 +16,7 @@ Status: done
 
 ## Story
 
-**As a** user của 9Router SaaS đã quên mật khẩu,
+**As a** user của Mmomarket SaaS đã quên mật khẩu,
 **I want** nhận email reset password và đặt mật khẩu mới,
 **so that** tôi có thể lấy lại quyền truy cập tài khoản mà không cần liên hệ admin.
 
@@ -95,7 +95,7 @@ Status: done
   - Fix Host header injection: ưu tiên env `BASE_URL`/`NEXT_PUBLIC_BASE_URL`, chỉ fallback request headers khi env không có (local dev). Tránh phishing qua spoofed Host header.
   - Fix inactive user bypass: check `user.isActive` TRƯỚC khi update password (tránh race condition khi admin deactivate user sau khi user request reset).
   - Escape HTML cho cả displayName fallback (email).
-  - Production env: `BASE_URL=https://router.chainlens.net`, `RESEND_API_KEY`, `EMAIL_FROM=9Router <noreply@research.chainlens.net>` đã set trên Dokploy.
+  - Production env: `BASE_URL=https://router.chainlens.net`, `RESEND_API_KEY`, `EMAIL_FROM=Mmomarket <noreply@research.chainlens.net>` đã set trên Dokploy.
 
 ## Review Findings — 2026-06-10
 

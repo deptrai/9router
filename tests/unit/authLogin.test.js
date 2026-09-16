@@ -11,7 +11,7 @@ const originalDataDir = process.env.DATA_DIR;
 const originalAdminEmail = process.env.ADMIN_EMAIL;
 
 beforeEach(() => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-authLogin-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "mmomarket-authLogin-"));
   process.env.DATA_DIR = tempDir;
   process.env.JWT_SECRET = "test-secret-for-login";
   delete process.env.ADMIN_EMAIL;

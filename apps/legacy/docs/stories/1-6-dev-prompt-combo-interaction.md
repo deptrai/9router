@@ -127,7 +127,7 @@ describe("combo fallback — AC#9: 429 falls through without waiting", () => {
 ### Verify
 
 ```bash
-cd /Users/luisphan/Documents/9router/tests
+cd /Users/luisphan/Documents/mmomarket/tests
 NODE_PATH=/tmp/node_modules npm test -- unit/combo-fallback-429-no-wait.test.js
 ```
 Expect: 3/3 pass.

@@ -12,7 +12,7 @@ This is a *thin wrapper*: the intelligence lives in the BMAD skills and agents. 
 ## Conventions
 
 - Bare paths resolve from the project working directory unless prefixed.
-- `{project-root}` = the project working directory (`/Users/luisphan/Documents/9router`).
+- `{project-root}` = the project working directory (`/Users/luisphan/Documents/mmomarket`).
 - Communicate in **Vietnamese** (per `AGENTS.md` / project convention). Keep code identifiers, commands, paths, and skill names in English.
 - Never write into `_bmad/` (installer-managed). All generated artifacts go under `_bmad-output/`.
 

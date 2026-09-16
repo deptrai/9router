@@ -62,7 +62,7 @@ function resolveBundledServerPath() {
 }
 
 // Copy bundled server.js into DATA_DIR so MITM doesn't lock node_modules
-// (prevents EBUSY on `npm i -g 9router@latest` while MITM is running).
+// (prevents EBUSY on `npm i -g mmomarket@latest` while MITM is running).
 function ensureRuntimeServer(bundledPath) {
   try {
     if (!bundledPath || !fs.existsSync(bundledPath)) return bundledPath;
@@ -97,7 +97,7 @@ const ENCRYPT_ALGO = "aes-256-gcm";
 // Legacy salt — kept ONLY to decrypt passwords encrypted by older builds (v0
 // ciphertext, no version prefix). New ciphertext uses a random per-install key
 // (see deriveKeyV1). Do NOT use this for new encryption.
-const LEGACY_ENCRYPT_SALT = "9router-mitm-pwd";
+const LEGACY_ENCRYPT_SALT = "mmomarket-mitm-pwd";
 
 function getProcessUsingPort443() {
   try {
@@ -627,7 +627,7 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
     log(`[MITM] server.js missing at ${effectiveServerPath} → recopying`);
     effectiveServerPath = ensureRuntimeServer(resolveBundledServerPath());
     if (!effectiveServerPath || !fs.existsSync(effectiveServerPath)) {
-      throw new Error(`MITM server.js not found at ${effectiveServerPath}. Reinstall 9router.`);
+      throw new Error(`MITM server.js not found at ${effectiveServerPath}. Reinstall mmomarket.`);
     }
   }
   const mitmRouterBase = await resolveMitmRouterBaseUrl();

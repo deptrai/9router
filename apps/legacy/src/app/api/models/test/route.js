@@ -3,7 +3,7 @@ import { getApiKeys } from "@/lib/localDb";
 import { APP_CONFIG } from "@/shared/constants/config";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 
-const CLI_TOKEN_SALT = "9r-cli-auth";
+const CLI_TOKEN_SALT = "mm-cli-auth";
 
 // POST /api/models/test - Ping a single model via internal completions or embeddings
 export async function POST(request) {
@@ -23,7 +23,7 @@ export async function POST(request) {
     const headers = { "Content-Type": "application/json" };
     if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
     // Bypass dashboardGuard for internal self-call via CLI token (machineId-based)
-    headers["x-9r-cli-token"] = await getConsistentMachineId(CLI_TOKEN_SALT);
+    headers["x-mm-cli-token"] = await getConsistentMachineId(CLI_TOKEN_SALT);
 
     const start = Date.now();
 

@@ -1,9 +1,9 @@
 ---
-name: 9router
-description: Entry point for 9Router — local/remote AI gateway with OpenAI-compatible REST for chat, image, TTS, embeddings, web search, web fetch. Use when the user mentions 9Router, NINEROUTER_URL, or wants AI without writing provider boilerplate. This skill covers setup + indexes capability skills; fetch the relevant capability SKILL.md from the URLs below when needed.
+name: mmomarket
+description: Entry point for Mmomarket — local/remote AI gateway with OpenAI-compatible REST for chat, image, TTS, embeddings, web search, web fetch. Use when the user mentions Mmomarket, NINEROUTER_URL, or wants AI without writing provider boilerplate. This skill covers setup + indexes capability skills; fetch the relevant capability SKILL.md from the URLs below when needed.
 ---
 
-# 9Router
+# Mmomarket
 
 Local/remote AI gateway exposing OpenAI-compatible REST. One key, many providers, auto-fallback.
 
@@ -46,13 +46,13 @@ When the user needs a specific capability, fetch that skill's `SKILL.md` from it
 
 | Capability | Raw URL |
 |---|---|
-| Chat / code-gen | https://9router.com/skills/9router-chat/SKILL.md |
-| Image generation | https://9router.com/skills/9router-image/SKILL.md |
-| Text-to-speech | https://9router.com/skills/9router-tts/SKILL.md |
-| Speech-to-text | https://9router.com/skills/9router-stt/SKILL.md |
-| Embeddings | https://9router.com/skills/9router-embeddings/SKILL.md |
-| Web search | https://9router.com/skills/9router-web-search/SKILL.md |
-| Web fetch (URL → markdown) | https://9router.com/skills/9router-web-fetch/SKILL.md |
+| Chat / code-gen | https://mmomarket.org/skills/mmomarket-chat/SKILL.md |
+| Image generation | https://mmomarket.org/skills/mmomarket-image/SKILL.md |
+| Text-to-speech | https://mmomarket.org/skills/mmomarket-tts/SKILL.md |
+| Speech-to-text | https://mmomarket.org/skills/mmomarket-stt/SKILL.md |
+| Embeddings | https://mmomarket.org/skills/mmomarket-embeddings/SKILL.md |
+| Web search | https://mmomarket.org/skills/mmomarket-web-search/SKILL.md |
+| Web fetch (URL → markdown) | https://mmomarket.org/skills/mmomarket-web-fetch/SKILL.md |
 
 ## Errors
 

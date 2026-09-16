@@ -1,7 +1,7 @@
 /**
  * API Health Check Tests
  *
- * Verifies the 9router API is responding correctly.
+ * Verifies the mmomarket API is responding correctly.
  */
 import { test, expect } from '../support/merged-fixtures';
 

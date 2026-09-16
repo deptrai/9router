@@ -3,15 +3,15 @@
 > **Status:** approved — user đã sign-off 4 open questions, sẵn sàng implement
 > **Date:** 2026-06-25
 > **Prerequisite:** N.1 done (provider config + 4 model tĩnh + validate + env shortcut)
-> **Scope flag:** Đụng **5 core artifact** (2 executor mới + 2 registry windsurf + validate/testUtils windsurf + models route windsurf env) — VƯỢT ngưỡng 3 handler mà skill `9r-feature-spec` khuyến nghị chẻ nhỏ. User đã chọn "1 story lớn" → giữ nguyên nhưng flag risk cao.
+> **Scope flag:** Đụng **5 core artifact** (2 executor mới + 2 registry windsurf + validate/testUtils windsurf + models route windsurf env) — VƯỢT ngưỡng 3 handler mà skill `mm-feature-spec` khuyến nghị chẻ nhỏ. User đã chọn "1 story lớn" → giữ nguyên nhưng flag risk cao.
 >
 > **Update 2026-06-26 (post-launch):** Catalog windsurf mở rộng từ 1 model lên ~60+ model. Canonical model đổi: `windsurf/swe` (upstream `MODEL_SWE_1_6_SLOW`) → `windsurf/swe-1-6` (upstream `swe-1-6`). `WS_MODEL` default đổi sang `swe-1-6`. QĐ7/AC3-AC5 dưới đây vẫn ghi `windsurf/swe` (historical) — canonical hiện tại = `windsurf/swe-1-6`.
 
 ## Mục tiêu (User story)
 
-**Mục tiêu tổng:** Expose toàn bộ model Devin (4 mode agent + 1 LLM chat windsurf) qua 9router `/v1/chat/completions` để agent khác gọi được qua OpenAI-compatible API.
+**Mục tiêu tổng:** Expose toàn bộ model Devin (4 mode agent + 1 LLM chat windsurf) qua mmomarket `/v1/chat/completions` để agent khác gọi được qua OpenAI-compatible API.
 
-**Story:** Tôi là developer tích hợp 9router, tôi muốn **gọi `devin/normal|fast|lite|ultra` (agent session) và `windsurf/swe` (LLM chat free tier) qua `/v1/chat/completions`**, để **agent khác (Claude, GPT, custom bot) có thể dùng Devin agent + Windsurf LLM qua 1 endpoint thống nhất**.
+**Story:** Tôi là developer tích hợp mmomarket, tôi muốn **gọi `devin/normal|fast|lite|ultra` (agent session) và `windsurf/swe` (LLM chat free tier) qua `/v1/chat/completions`**, để **agent khác (Claude, GPT, custom bot) có thể dùng Devin agent + Windsurf LLM qua 1 endpoint thống nhất**.
 
 ## Bối cảnh & quyết định architecture
 
@@ -35,8 +35,8 @@
 - **QĐ2 — `windsurf` là provider mới.** Phải add vào 3 registry (giống N.1 pattern): `PROVIDERS` (open-sse/config/providers.js), `PROVIDER_MODELS` (1 model `swe`), `APIKEY_PROVIDERS` (src/shared/constants/providers.js). `format: "windsurf"` (custom).
 - **QĐ3 — DevinExecutor: REST v3 wrap.** `POST /v3/organizations/{org_id}/sessions {devin_mode}` → poll `GET .../sessions/{id}` mỗi 2s tới `status_enum=finished` (timeout 30ph) → extract `output` → emit OpenAI SSE (fake-stream, chunk output thành delta). 403 `out_of_quota` → surface error, KHÔNG fallback sang windsurf.
 - **QĐ4 — WindsurfExecutor: port protobuf từ deepgrep.** Port `fetchJwt`, `checkRateLimit`, `_buildRequest`, `_streamingRequest`, `connectFrameEncode`, `ProtobufEncoder` từ `deepgrep/src/core.mjs` + `protobuf.mjs`. Parse protobuf response → extract text delta → re-wrap thành OpenAI SSE. True streaming.
-- **QĐ5 — Windsurf auth: env `WINDSURF_API_KEY` hoặc auto-extract.** Env shortcut `WINDSURF_API_KEY` (token `devin-session-token$...`) + `DEVIN_ORG_ID` không cần (WS không dùng org). Auto-extract từ `state.vscdb` qua logic `extract-key.mjs` (port sang 9router) nếu env không set. KHÔNG lưu DB connection cho windsurf ở N.2 (env-only, defer UI connection sang story sau).
-- **QĐ6 — Polling là pattern mới, không có tiền lệ trong 9router.** Các executor hiện tại (codex/kiro/cursor/qoder) đều true-stream hoặc unwrap envelope, không có poll-to-finished. DevinExecutor phải implement poll loop mới + timeout + abort. Risk: block 1 connection slot lâu (phút-giờ).
+- **QĐ5 — Windsurf auth: env `WINDSURF_API_KEY` hoặc auto-extract.** Env shortcut `WINDSURF_API_KEY` (token `devin-session-token$...`) + `DEVIN_ORG_ID` không cần (WS không dùng org). Auto-extract từ `state.vscdb` qua logic `extract-key.mjs` (port sang mmomarket) nếu env không set. KHÔNG lưu DB connection cho windsurf ở N.2 (env-only, defer UI connection sang story sau).
+- **QĐ6 — Polling là pattern mới, không có tiền lệ trong mmomarket.** Các executor hiện tại (codex/kiro/cursor/qoder) đều true-stream hoặc unwrap envelope, không có poll-to-finished. DevinExecutor phải implement poll loop mới + timeout + abort. Risk: block 1 connection slot lâu (phút-giờ).
 - **QĐ7 — Model `windsurf/swe` mapping.** `PROVIDER_MODELS["windsurf"] = [{ id: "swe", name: "Windsurf SWE LLM (free tier, code search)", ... }]`. Upstream model = `MODEL_SWE_1_6_SLOW` (env override `WS_MODEL`).
 - **QĐ8 — KHÔNG sửa N.1 artifact.** Không đụng `devin` registry đã chốt. Không sửa validate/testUtils case `devin` (chỉ ADD case `windsurf`).
 

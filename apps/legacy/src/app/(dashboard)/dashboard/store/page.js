@@ -473,7 +473,7 @@ export default function StorePage() {
                     <input
                       value={form.targetType}
                       onChange={(e) => setForm({ ...form, targetType: e.target.value })}
-                      placeholder="e.g. 9router_plan"
+                      placeholder="e.g. mmomarket_plan"
                       className="w-full px-3 py-2 rounded-lg bg-surface-1 border border-border-subtle text-sm text-text-main"
                       disabled={editingProduct && editingProduct.source !== "local"}
                     />

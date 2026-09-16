@@ -27,7 +27,7 @@ Status: done
 
 ## Story
 
-**As a** user và admin của 9Router SaaS,
+**As a** user và admin của Mmomarket SaaS,
 **I want** user thấy balance + usage của riêng mình (sidebar gọn), còn admin có tab Users để topup credit + xem toàn bộ users, và user bị chặn khỏi các API admin,
 **so that** dashboard phân quyền đúng role, data isolation per-user, và admin quản trị được credit.
 

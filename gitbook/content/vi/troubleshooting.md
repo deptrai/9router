@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Các vấn đề và giải pháp phổ biến khi dùng 9Router.
+Các vấn đề và giải pháp phổ biến khi dùng Mmomarket.
 
 ---
 
@@ -78,7 +78,7 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 **Giải pháp:**
 
 1. **Auto-refresh (mặc định):**
-   9Router tự refresh tokens. Đợi 30 giây rồi thử lại.
+   Mmomarket tự refresh tokens. Đợi 30 giây rồi thử lại.
 
 2. **Kết nối lại thủ công:**
    ```
@@ -135,15 +135,15 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 **Vấn đề:** Lỗi "ECONNREFUSED" hoặc "Cannot connect to localhost:20128".
 
 **Nguyên nhân:**
-- 9Router không chạy
+- Mmomarket không chạy
 - Port 20128 bị chặn
 - Firewall chặn kết nối
 
 **Giải pháp:**
 
-1. **Khởi động 9Router:**
+1. **Khởi động Mmomarket:**
    ```bash
-   9router
+   mmomarket
    ```
    Dashboard sẽ mở tại http://localhost:3000
 
@@ -164,7 +164,7 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 4. **Dùng cloud endpoint:**
    Nếu localhost không hoạt động (ví dụ: Cursor IDE):
    ```
-   Endpoint: https://9router.com/v1
+   Endpoint: https://mmomarket.org/v1
    ```
 
 ---
@@ -175,15 +175,15 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 
 **Nguyên nhân:**
 - Port 3000 đã được dùng
-- 9Router bị crash
+- Mmomarket bị crash
 - Vấn đề cache browser
 
 **Giải pháp:**
 
-1. **Kiểm tra 9Router có chạy không:**
+1. **Kiểm tra Mmomarket có chạy không:**
    ```bash
    # Check process
-   ps aux | grep 9router
+   ps aux | grep mmomarket
    
    # Check port 3000
    lsof -i :3000
@@ -199,13 +199,13 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
    taskkill /PID <PID> /F
    ```
 
-3. **Khởi động lại 9Router:**
+3. **Khởi động lại Mmomarket:**
    ```bash
    # Stop
-   pkill -f 9router
+   pkill -f mmomarket
    
    # Start
-   9router
+   mmomarket
    ```
 
 4. **Xóa cache browser:**
@@ -320,8 +320,8 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 
 2. **Xác minh format key:**
    ```
-   Correct: 9r_xxxxxxxxxxxxxxxxxxxxxxxx
-   Wrong: Missing 9r_ prefix
+   Correct: mm_xxxxxxxxxxxxxxxxxxxxxxxx
+   Wrong: Missing mm_ prefix
    ```
 
 3. **Kiểm tra key trong CLI config:**
@@ -333,18 +333,18 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
    Settings → API Key
    
    # Environment variable
-   export OPENAI_API_KEY="9r_your_key"
+   export OPENAI_API_KEY="mm_your_key"
    ```
 
 4. **Test API key:**
    ```bash
    curl http://localhost:20128/v1/models \
-     -H "Authorization: Bearer 9r_your_key"
+     -H "Authorization: Bearer mm_your_key"
    ```
 
 ---
 
 ## Cần trợ giúp thêm?
 
-- **Documentation:** [9router.com/docs](https://9router.com/docs)
+- **Documentation:** [mmomarket.org/docs](https://mmomarket.org/docs)
 - **FAQ:** [faq.md](faq.md)

@@ -56,7 +56,7 @@ async function makeSelfConnectProduct(overrides = {}) {
 }
 
 beforeEach(async () => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-entitlements-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "mmomarket-entitlements-"));
   process.env.DATA_DIR = tempDir;
   process.env.STORE_ENC_KEY = TEST_ENC_KEY;
   delete global._dbAdapter;

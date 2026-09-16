@@ -14,7 +14,7 @@ Status: done
 
 ## Story
 
-**As a** 9Router user xem dashboard,
+**As a** Mmomarket user xem dashboard,
 **I want** Credits page hiển thị đầy đủ: balance theo từng bucket (Standard/Bonus/Resource), validity dates, thứ tự ưu tiên trừ, linked auth providers, và Request History có breakdown theo loại credit,
 **so that** tôi hiểu rõ credit của mình đến từ đâu, hết hạn khi nào, bị trừ thế nào — minh bạch hoàn toàn.
 

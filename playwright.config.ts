@@ -6,7 +6,7 @@ import crypto from 'crypto';
 import { loadEnvConfig } from '@next/env';
 
 /**
- * 9router E2E Test Configuration
+ * mmomarket E2E Test Configuration
  *
  * Environment switching: TEST_ENV=local|staging (default: local)
  * Base URL: env.BASE_URL || http://localhost:20128
@@ -14,7 +14,7 @@ import { loadEnvConfig } from '@next/env';
 
 // Load .env / .env.local the SAME way Next.js does so the test process resolves
 // the identical DATA_DIR (and thus the same jwt-secret file) as the running
-// server. Without this, admin-token.ts falls back to ~/.9router/jwt-secret while
+// server. Without this, admin-token.ts falls back to ~/.mmomarket/jwt-secret while
 // the server signs with <DATA_DIR>/jwt-secret → JWT signature mismatch → 401.
 loadEnvConfig(__dirname);
 
@@ -27,10 +27,10 @@ function ensurePlaywrightDataDir() {
       fs.mkdirSync(candidate, { recursive: true });
       return candidate;
     } catch {
-      // .env may point at /var/lib/9router which is not writable on macOS; fall through.
+      // .env may point at /var/lib/mmomarket which is not writable on macOS; fall through.
     }
   }
-  return fs.mkdtempSync(path.join(os.tmpdir(), '9router-playwright-'));
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'mmomarket-playwright-'));
 }
 process.env.DATA_DIR = ensurePlaywrightDataDir();
 if (!process.env.STORE_ENC_KEY) {

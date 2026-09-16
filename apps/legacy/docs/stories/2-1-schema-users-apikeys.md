@@ -19,7 +19,7 @@ source-arch: docs/ARCHITECTURE_SAAS_MULTITENANT.md
 
 ## Story
 
-**As a** hệ thống 9Router SaaS,
+**As a** hệ thống Mmomarket SaaS,
 **I want** có bảng `users` và các cột ownership (`userId`, `description`, `lastUsedAt`) trên bảng `apiKeys`,
 **so that** toàn bộ Sprint 2 (auth, key ownership, credit billing, dashboard phân quyền) có nền schema để build, mà không phá vỡ flow single-tenant hiện tại.
 
@@ -186,13 +186,13 @@ Pattern: copy setup từ `tests/unit/db-migration-chain.test.js` (tempDir + DATA
 
 Chạy test:
 ```bash
-cd /Users/luisphan/Documents/9router/tests && npm test -- unit/saas-schema.test.js
+cd /Users/luisphan/Documents/mmomarket/tests && npm test -- unit/saas-schema.test.js
 ```
 
 ### Task 6 — Regression check (AC7)
 - [x] Chạy các test liên quan DB + key:
 ```bash
-cd /Users/luisphan/Documents/9router/tests && npm test -- unit/db-migration-chain.test.js unit/key-quota.test.js unit/dashboard-guard.test.js
+cd /Users/luisphan/Documents/mmomarket/tests && npm test -- unit/db-migration-chain.test.js unit/key-quota.test.js unit/dashboard-guard.test.js
 ```
 - [x] Xác nhận tất cả pass.
 
@@ -226,7 +226,7 @@ cd /Users/luisphan/Documents/9router/tests && npm test -- unit/db-migration-chai
 
 ### Môi trường test (QUAN TRỌNG)
 - Project root `node_modules` RỖNG. Test deps ở `/tmp/node_modules`, chạy từ thư mục `tests/`.
-- Lệnh: `cd /Users/luisphan/Documents/9router/tests && npm test -- unit/<file>.test.js`
+- Lệnh: `cd /Users/luisphan/Documents/mmomarket/tests && npm test -- unit/<file>.test.js`
 - vitest@4. Alias `@/` → `src/` (đã config trong vitest setup của tests/).
 - Test DB pattern: set `process.env.DATA_DIR = tempDir`, `delete global._dbAdapter`, `vi.resetModules()` mỗi test (xem `db-migration-chain.test.js`).
 

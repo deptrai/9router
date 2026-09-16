@@ -1,5 +1,5 @@
 # ============================================================================
-# Multi-stage Dockerfile for 9Router API & Scraper Worker
+# Multi-stage Dockerfile for Mmomarket API & Scraper Worker
 # ============================================================================
 
 FROM node:22-alpine AS base

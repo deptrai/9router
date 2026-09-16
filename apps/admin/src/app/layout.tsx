@@ -5,8 +5,8 @@ import { AdminKeyModal } from '../components/AdminKeyModal';
 import { ToastProvider } from '../components/Toast';
 
 export const metadata: Metadata = {
-  title: '9Router Admin Portal',
-  description: 'Management portal for 9Router E-Commerce Platform',
+  title: 'Mmomarket Admin Portal',
+  description: 'Management portal for Mmomarket E-Commerce Platform',
 };
 
 export default function RootLayout({

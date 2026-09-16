@@ -20,7 +20,7 @@ const STATUS_MAP = {
   invalid: "failed", refunded: "failed",
 };
 
-// 9router network name -> Bitcart wallet currency
+// mmomarket network name -> Bitcart wallet currency
 const NETWORK_CURRENCY = {
   tron: "trx",
   bsc: "bnb",

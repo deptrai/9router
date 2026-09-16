@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-find_bots.py — Tìm bot Telegram theo keyword (AI tự sinh keyword + loop) cho 9router.
+find_bots.py — Tìm bot Telegram theo keyword (AI tự sinh keyword + loop) cho mmomarket.
 
 Tính năng:
   • Tìm bot qua contacts.search (MTProto, account thật).
   • AI tự nghĩ keyword & loop nhiều vòng — gọi model trên router.chainlens.net
     (OpenAI-compatible /v1/chat/completions). AI đọc kết quả vòng trước để sinh
     keyword mới chưa thử, mở rộng độ phủ.
-  • Đánh dấu bot ĐÃ ĐĂNG KÝ trong 9router (đọc registered.json do helper node xuất).
+  • Đánh dấu bot ĐÃ ĐĂNG KÝ trong mmomarket (đọc registered.json do helper node xuất).
     --hide-registered để loại hẳn; mặc định giữ lại và ghi note [ĐÃ ĐĂNG KÝ].
   • (Tùy chọn, MẶC ĐỊNH TẮT) --join-groups: tự join group khớp keyword rồi quét
     member để moi thêm bot. ⚠️ RỦI RO BAN ACCOUNT — xem README.
@@ -228,7 +228,7 @@ async def run(args):
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Tìm bot Telegram theo keyword cho 9router")
+    p = argparse.ArgumentParser(description="Tìm bot Telegram theo keyword cho mmomarket")
     p.add_argument("keywords", nargs="?", default="", help="keyword gốc, cách nhau dấu phẩy")
     p.add_argument("--session", default="find_bots", help="tên file session telethon")
     p.add_argument("--registered", default="registered.json", help="file bot đã đăng ký (node helper xuất)")
@@ -237,7 +237,7 @@ def parse_args():
     # AI
     p.add_argument("--ai-rounds", type=int, default=0, help="số vòng AI sinh keyword (0=tắt)")
     p.add_argument("--router-url", default=os.environ.get("ROUTER_URL", "https://router.chainlens.net"))
-    p.add_argument("--router-key", default=os.environ.get("ROUTER_KEY", ""), help="Bearer key 9router")
+    p.add_argument("--router-key", default=os.environ.get("ROUTER_KEY", ""), help="Bearer key mmomarket")
     p.add_argument("--model", default=os.environ.get("ROUTER_MODEL", "kiro/auto"))
     # group join (mặc định tắt — rủi ro ban)
     p.add_argument("--join-groups", action="store_true", help="⚠️ tự join group quét member (rủi ro ban account)")

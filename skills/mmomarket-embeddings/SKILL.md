@@ -1,11 +1,11 @@
 ---
-name: 9router-embeddings
-description: Generate vector embeddings via 9Router /v1/embeddings using OpenAI / Gemini / Mistral / Voyage / Nvidia / GitHub embedding models for RAG, semantic search, similarity. Use when the user wants embeddings, vectors, RAG, semantic search, or to embed text.
+name: mmomarket-embeddings
+description: Generate vector embeddings via Mmomarket /v1/embeddings using OpenAI / Gemini / Mistral / Voyage / Nvidia / GitHub embedding models for RAG, semantic search, similarity. Use when the user wants embeddings, vectors, RAG, semantic search, or to embed text.
 ---
 
-# 9Router — Embeddings
+# Mmomarket — Embeddings
 
-Requires `NINEROUTER_URL` (and `NINEROUTER_KEY` if auth enabled). See https://9router.com/skills/9router/SKILL.md for setup.
+Requires `NINEROUTER_URL` (and `NINEROUTER_KEY` if auth enabled). See https://mmomarket.org/skills/mmomarket/SKILL.md for setup.
 
 ## Discover
 

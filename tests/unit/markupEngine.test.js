@@ -18,7 +18,7 @@ let savedStoreEncKey;
 beforeEach(async () => {
   savedDataDir = process.env.DATA_DIR;
   savedStoreEncKey = process.env.STORE_ENC_KEY;
-  tmpDir = mkdtempSync(join(tmpdir(), "9router-markupengine-"));
+  tmpDir = mkdtempSync(join(tmpdir(), "mmomarket-markupengine-"));
   process.env.DATA_DIR = tmpDir;
   process.env.STORE_ENC_KEY = "0".repeat(64);
   delete global._dbAdapter;

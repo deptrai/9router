@@ -1,5 +1,5 @@
 /**
- * Shared formatting utilities for 9Router Admin Console.
+ * Shared formatting utilities for Mmomarket Admin Console.
  * Ensures consistent locale formatting ('vi-VN') and defensive null/NaN guards across all admin views.
  */
 

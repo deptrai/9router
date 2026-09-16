@@ -34,7 +34,7 @@ Kết quả (final run):
 - **Total:** 218 passed | 0 flaky | 0 failed
 - **Exit code:** 0
 - **Thêm:** `playwright/e2e/dashboard-store-admin-publish-group.spec.ts` — E2E kiểm chứng trình duyệt cho nút "Publish all variants"
-- **Lỗi pre-existing đã fix:** `dashboard.spec.ts` selector `getByRole('heading')` → `getByRole('heading', { name: '9Router' })` trên `/login`.
+- **Lỗi pre-existing đã fix:** `dashboard.spec.ts` selector `getByRole('heading')` → `getByRole('heading', { name: 'Mmomarket' })` trên `/login`.
 - **Cấu hình cần thiết để E2E pass:** `STORE_ENC_KEY` phải được set trước khi chạy (dùng cho credential encryption). Có thể set qua env hoặc `.env.local`.
 
 ## Build

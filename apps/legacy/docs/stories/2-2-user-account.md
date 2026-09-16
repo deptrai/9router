@@ -23,7 +23,7 @@ Status: done
 
 ## Story
 
-**As a** người dùng cuối của 9Router SaaS,
+**As a** người dùng cuối của Mmomarket SaaS,
 **I want** tự đăng ký tài khoản, đăng nhập bằng email/password và quản lý hồ sơ (đổi tên hiển thị, đổi mật khẩu),
 **so that** tôi có danh tính riêng (user identity) để sở hữu API key và credit — trong khi admin password login + OIDC của hệ thống single-tenant hiện tại KHÔNG bị ảnh hưởng.
 
@@ -180,7 +180,7 @@ Status: done
 
 ### Môi trường test (QUAN TRỌNG)
 - Project root `node_modules` RỖNG. Test deps ở `/tmp/node_modules`, chạy từ thư mục `tests/`.
-- Lệnh: `cd /Users/luisphan/Documents/9router/tests && npm test -- unit/<file>.test.js`
+- Lệnh: `cd /Users/luisphan/Documents/mmomarket/tests && npm test -- unit/<file>.test.js`
 - vitest@4. Alias `@/` → `src/`. Test DB pattern: `process.env.DATA_DIR = tempDir`, `delete global._dbAdapter`, `vi.resetModules()` mỗi test (xem `tests/unit/db-migration-chain.test.js` và `tests/unit/saas-schema.test.js`).
 
 ### Scope guard — KHÔNG làm ở story này

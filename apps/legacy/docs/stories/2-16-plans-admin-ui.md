@@ -11,7 +11,7 @@ Status: done
 
 ## Story
 
-As an **admin/operator of 9Router subscriptions**,
+As an **admin/operator of Mmomarket subscriptions**,
 I want **an admin dashboard to create/edit/disable plans, assign or upgrade a user's plan/expiry, and top up credits through the existing ledger-backed money path**,
 so that **I can operate free/pro/max subscriptions without editing SQLite manually, while keeping plan enforcement live and credit audit trails intact**.
 
@@ -197,7 +197,7 @@ GPT-5 Codex
 - `npx eslint 'src/app/(dashboard)/dashboard/plans/page.js' 'src/app/(dashboard)/dashboard/users/page.js' 'src/app/api/plans/route.js' 'src/app/api/plans/[id]/route.js' 'src/app/api/users/[id]/plan/route.js' 'src/lib/plans/validatePlanInput.js' 'src/lib/db/repos/plansRepo.js' 'src/lib/db/repos/usersRepo.js'` → passed.
 - `NODE_PATH=/tmp/node_modules npm test` from `tests/` → 1050 passed, 24 skipped, 2 failed in known unrelated `unit/xai-oauth-service.test.js` flake (`PKCE` timeout + token endpoint mock undefined).
 - `npm run build` → passed; `/api/plans`, `/api/plans/[id]`, `/api/users/[id]/plan`, `/dashboard/plans`, `/dashboard/users` generated.
-- Code review patches: `NODE_PATH=/Users/luisphan/Documents/9router/tests/node_modules ./node_modules/.bin/vitest run --reporter=verbose unit/plans-admin-api.test.js unit/user-plan-admin-api.test.js unit/adminTopup.test.js` → 18 passed.
+- Code review patches: `NODE_PATH=/Users/luisphan/Documents/mmomarket/tests/node_modules ./node_modules/.bin/vitest run --reporter=verbose unit/plans-admin-api.test.js unit/user-plan-admin-api.test.js unit/adminTopup.test.js` → 18 passed.
 - Code review patches: `npx eslint 'src/app/(dashboard)/dashboard/users/page.js' 'src/lib/plans/validatePlanInput.js' 'tests/unit/plans-admin-api.test.js' 'tests/unit/user-plan-admin-api.test.js'` → passed.
 - Code review patches: `npm run build` → passed.
 

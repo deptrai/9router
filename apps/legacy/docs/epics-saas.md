@@ -1,5 +1,5 @@
 ---
-title: 9Router SaaS — Epics (code-grounded v3, readiness-passed)
+title: Mmomarket SaaS — Epics (code-grounded v3, readiness-passed)
 status: ready
 created: 2026-06-06
 updated: 2026-06-06
@@ -7,7 +7,7 @@ source-prd: docs/PRD_SAAS_MVP.md
 readiness: READY — full FR-37 traceability; non-core FRs deferred explicitly (MVP-2/3)
 ---
 
-# 9Router SaaS — Epic Breakdown (verify code thật, v2)
+# Mmomarket SaaS — Epic Breakdown (verify code thật, v2)
 
 > Nguồn: `docs/PRD_SAAS_MVP.md`. Kiến trúc: `docs/ARCHITECTURE_SAAS_MULTITENANT.md`.
 > Tài liệu cấp epic + story list. Task breakdown chi tiết → story file `N-N-slug.md` (tạo qua `bmad-create-story`).

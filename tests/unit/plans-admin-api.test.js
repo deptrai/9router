@@ -10,7 +10,7 @@ let tempDir;
 const originalDataDir = process.env.DATA_DIR;
 
 beforeEach(() => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-plansAdminApi-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "mmomarket-plansAdminApi-"));
   process.env.DATA_DIR = tempDir;
   delete global._dbAdapter;
   vi.resetModules();

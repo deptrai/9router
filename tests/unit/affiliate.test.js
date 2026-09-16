@@ -34,7 +34,7 @@ const ENV_KEYS = [
 ];
 
 beforeEach(() => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-aff-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "mmomarket-aff-"));
   ENV_KEYS.forEach(k => { savedEnv[k] = process.env[k]; });
   process.env.DATA_DIR = tempDir;
   process.env.TELEGRAM_BOT_TOKEN = "test-bot-token";

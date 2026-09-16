@@ -52,7 +52,7 @@ async function seedPaidOrder(userId, productOverrides = {}) {
 }
 
 beforeEach(async () => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-fulfill-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "mmomarket-fulfill-"));
   process.env.DATA_DIR = tempDir;
   process.env.STORE_ENC_KEY = TEST_ENC_KEY;
   delete global._dbAdapter;

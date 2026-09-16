@@ -1,11 +1,11 @@
 ---
-name: 9router-chat
-description: Chat / code generation via 9Router using OpenAI /v1/chat/completions or Anthropic /v1/messages format with streaming + auto-fallback combos. Use when the user wants to ask an LLM, generate code, summarize text, or run prompts through 9Router.
+name: mmomarket-chat
+description: Chat / code generation via Mmomarket using OpenAI /v1/chat/completions or Anthropic /v1/messages format with streaming + auto-fallback combos. Use when the user wants to ask an LLM, generate code, summarize text, or run prompts through Mmomarket.
 ---
 
-# 9Router — Chat
+# Mmomarket — Chat
 
-Requires `NINEROUTER_URL` (and `NINEROUTER_KEY` if auth enabled). See https://9router.com/skills/9router/SKILL.md for setup.
+Requires `NINEROUTER_URL` (and `NINEROUTER_KEY` if auth enabled). See https://mmomarket.org/skills/mmomarket/SKILL.md for setup.
 
 ## Endpoints
 

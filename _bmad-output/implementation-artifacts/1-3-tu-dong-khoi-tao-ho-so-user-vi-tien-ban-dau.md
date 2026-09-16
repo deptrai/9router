@@ -4,9 +4,9 @@ story_id: 1.3
 epic: 1
 baseline_commit: 4dee4867
 context:
-  - _bmad-output/planning-artifacts/prds/prd-9router-ecommerce-2026-09-09/prd.md
-  - _bmad-output/planning-artifacts/prds/prd-9router-ecommerce-2026-09-09/addendum.md
-  - _bmad-output/planning-artifacts/architecture/architecture-9router-ecommerce-2026-09-09/ARCHITECTURE-SPINE.md
+  - _bmad-output/planning-artifacts/prds/prd-mmomarket-ecommerce-2026-09-09/prd.md
+  - _bmad-output/planning-artifacts/prds/prd-mmomarket-ecommerce-2026-09-09/addendum.md
+  - _bmad-output/planning-artifacts/architecture/architecture-mmomarket-ecommerce-2026-09-09/ARCHITECTURE-SPINE.md
   - _bmad-output/planning-artifacts/epics.md
   - _bmad-output/implementation-artifacts/1-2-xac-thuc-stateless-telegram-webapp-qua-hmac-sha256.md
 ---

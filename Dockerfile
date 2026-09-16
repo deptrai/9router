@@ -22,7 +22,7 @@ RUN echo "cache-bust: ${CACHE_BUST}" && npm run build
 FROM ${NODE_IMAGE} AS runner
 WORKDIR /app
 
-LABEL org.opencontainers.image.title="9router"
+LABEL org.opencontainers.image.title="mmomarket"
 
 ENV NODE_ENV=production
 ENV PORT=20128
@@ -44,7 +44,7 @@ COPY --from=builder /app/node_modules/next ./node_modules/next
 
 RUN mkdir -p /app/data && chown -R node:node /app && \
   mkdir -p /app/data-home && chown node:node /app/data-home && \
-  ln -sf /app/data-home /root/.9router 2>/dev/null || true
+  ln -sf /app/data-home /root/.mmomarket 2>/dev/null || true
 
 # Fix permissions at runtime (handles mounted volumes)
 RUN apk --no-cache upgrade && apk --no-cache add su-exec && \

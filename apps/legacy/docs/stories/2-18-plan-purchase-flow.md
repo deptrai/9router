@@ -11,7 +11,7 @@ Status: done
 
 ## Story
 
-Là **user 9Router có credit balance**,
+Là **user Mmomarket có credit balance**,
 tôi muốn **tự xem giá plan, mua plan, gia hạn plan hiện tại, hoặc đổi sang plan khác từ `/dashboard/plan`**,
 để **tự phục vụ subscription mà không cần admin set SQLite thủ công, trong khi mọi charge đều ghi ledger audit và quota window được xử lý nhất quán khi đổi gói**.
 
@@ -192,7 +192,7 @@ Không làm:
   - Contains `/dashboard/credits` insufficient-credit CTA.
   - Admin `/dashboard/plans` includes price/duration controls.
 - [x] **E6**: Run targeted suite:
-  - `NODE_PATH=/Users/luisphan/Documents/9router/tests/node_modules /Users/luisphan/Documents/9router/tests/node_modules/.bin/vitest run --config tests/vitest.config.js tests/unit/plans-admin-api.test.js tests/unit/user-plan-admin-api.test.js tests/unit/users-me-quota-api.test.js tests/unit/users-me-ledger-api.test.js tests/unit/plan-purchase.test.js tests/unit/users-me-plans-api.test.js tests/unit/users-me-plan-purchase-api.test.js --reporter=verbose`
+  - `NODE_PATH=/Users/luisphan/Documents/mmomarket/tests/node_modules /Users/luisphan/Documents/mmomarket/tests/node_modules/.bin/vitest run --config tests/vitest.config.js tests/unit/plans-admin-api.test.js tests/unit/user-plan-admin-api.test.js tests/unit/users-me-quota-api.test.js tests/unit/users-me-ledger-api.test.js tests/unit/plan-purchase.test.js tests/unit/users-me-plans-api.test.js tests/unit/users-me-plan-purchase-api.test.js --reporter=verbose`
 - [x] **E7**: Run lint/build for touched files and broader suite if feasible. Known historical xAI OAuth flake may be documented only if unrelated and reproduced.
 
 ### Review Findings
@@ -254,7 +254,7 @@ Không làm:
 
 ### Testing notes
 
-- Current test deps may live in `tests/node_modules`; use `NODE_PATH=/Users/luisphan/Documents/9router/tests/node_modules` when needed.
+- Current test deps may live in `tests/node_modules`; use `NODE_PATH=/Users/luisphan/Documents/mmomarket/tests/node_modules` when needed.
 - Prefer focused unit tests around purchase helper because transaction/idempotency bugs are easier to catch below UI.
 - Full suite recently passed `1065 pass / 0 fail` after 2.17; if full regression fails only in known unrelated xAI OAuth tests, document clearly.
 
@@ -299,7 +299,7 @@ GPT-5 Codex
 - D: Mở rộng `/dashboard/plan` với catalog/action CTA, `plan_activation` label, top-up CTA, và refetch sau purchase.
 - Validation: targeted suite 31 pass; full suite 1080 pass / 24 skip / 2 unrelated xAI flake; xAI OAuth rerun riêng 5 pass; build pass.
 - Code review patches: fixed migration rerun zero-price preservation, purchase UI pending-button lock/re-entry guard, and active indefinite same-plan renew action.
-- Code review targeted suite: `NODE_PATH=/Users/luisphan/Documents/9router/tests/node_modules /Users/luisphan/Documents/9router/tests/node_modules/.bin/vitest run --config tests/vitest.config.js tests/unit/plans-admin-api.test.js tests/unit/user-plan-admin-api.test.js tests/unit/users-me-quota-api.test.js tests/unit/users-me-ledger-api.test.js tests/unit/plan-purchase.test.js tests/unit/users-me-plans-api.test.js tests/unit/users-me-plan-purchase-api.test.js tests/unit/plan-purchase-migration.test.js tests/unit/plan-page-source.test.js --reporter=verbose` -> 36 pass.
+- Code review targeted suite: `NODE_PATH=/Users/luisphan/Documents/mmomarket/tests/node_modules /Users/luisphan/Documents/mmomarket/tests/node_modules/.bin/vitest run --config tests/vitest.config.js tests/unit/plans-admin-api.test.js tests/unit/user-plan-admin-api.test.js tests/unit/users-me-quota-api.test.js tests/unit/users-me-ledger-api.test.js tests/unit/plan-purchase.test.js tests/unit/users-me-plans-api.test.js tests/unit/users-me-plan-purchase-api.test.js tests/unit/plan-purchase-migration.test.js tests/unit/plan-page-source.test.js --reporter=verbose` -> 36 pass.
 - Code review lint: `npx eslint 'src/app/(dashboard)/dashboard/plan/page.js' src/lib/plans/planPurchase.js src/lib/db/migrations/005-plan-purchase-fields.js tests/unit/plan-page-source.test.js tests/unit/plan-purchase.test.js tests/unit/plan-purchase-migration.test.js` -> pass.
 - Code review build: `npm run build` -> pass (`EXIT:0`).
 

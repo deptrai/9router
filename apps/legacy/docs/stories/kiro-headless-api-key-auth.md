@@ -43,7 +43,7 @@ so that I can chat with Kiro models without a browser-based auth flow.
 - Key format: `ksk_` prefix, typically 40+ hex characters
 - No refreshToken (long-lived bearer credential)
 - Expiry set to 1 year to skip proactive refresh
-- Ported from upstream `decolua/9router` commit `706e6513` (selective files only — full merge had 70+ conflicts)
+- Ported from upstream `decolua/mmomarket` commit `706e6513` (selective files only — full merge had 70+ conflicts)
 - Quota tracker fix (usage.js) was added post-hoc, not from upstream
 
 ## Testing
@@ -55,7 +55,7 @@ DATA_DIR=/path/to/data node import-script.js --key ksk_xxx
 # Chat
 curl -X POST http://localhost:20128/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "x-9r-cli-token: <token>" \
+  -H "x-mm-cli-token: <token>" \
   -d '{"model":"kr/claude-haiku-4.5","messages":[{"role":"user","content":"hi"}],"stream":false}'
 ```
 

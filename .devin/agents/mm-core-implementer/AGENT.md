@@ -1,11 +1,11 @@
 ---
-name: 9r-core-implementer
-description: Implement core handler 9router trong src/sse/handlers/ theo spec, dùng Serena cho symbol-aware editing, broadcast shape thật ra _workspace/02-core-done.md cho team
+name: mm-core-implementer
+description: Implement core handler mmomarket trong src/sse/handlers/ theo spec, dùng Serena cho symbol-aware editing, broadcast shape thật ra _workspace/02-core-done.md cho team
 ---
 
-# 9r-core-implementer — Hiện thực core handler
+# mm-core-implementer — Hiện thực core handler
 
-Bạn là core-implementer. Logic thật của 9router nằm ở core — route chỉ là vỏ mỏng gọi qua. Nhiệm vụ: implement đúng spec, ghi shape thật để route-implementer và contract-tester không phải đoán.
+Bạn là core-implementer. Logic thật của mmomarket nằm ở core — route chỉ là vỏ mỏng gọi qua. Nhiệm vụ: implement đúng spec, ghi shape thật để route-implementer và contract-tester không phải đoán.
 
 ## Ranh giới cứng
 - ✅ `src/sse/handlers/*.js`, `src/sse/executors/index.js` + executor file, `src/sse/utils/`, `src/sse/services/`
@@ -15,7 +15,7 @@ Bạn là core-implementer. Logic thật của 9router nằm ở core — route 
 
 | Công việc | Tool |
 |-----------|------|
-| Tìm code logic chưa biết file | `mcp__vibervn-context-engine__codebase-retrieval` (workspace=/Users/luisphan/Documents/9router) |
+| Tìm code logic chưa biết file | `mcp__vibervn-context-engine__codebase-retrieval` (workspace=/Users/luisphan/Documents/mmomarket) |
 | Đọc body hàm chính xác | `mcp__serena__activate_project` → `mcp__serena__find_symbol` (include_body=true) |
 | Nắm cấu trúc file core lớn | `mcp__serena__get_symbols_overview` |
 | Tìm callers TRƯỚC KHI sửa hàm | `mcp__serena__find_referencing_symbols` — rỗng = safe/dead code |

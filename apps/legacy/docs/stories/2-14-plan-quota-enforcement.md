@@ -11,7 +11,7 @@ Status: done
 
 ## Story
 
-As a **admin vận hành 9Router bán gói subscription (free/pro/max) + cho phép credit pay-as-you-go**,
+As a **admin vận hành Mmomarket bán gói subscription (free/pro/max) + cho phép credit pay-as-you-go**,
 I want **enforce quota token 5h/weekly theo gói của user (đếm gộp mọi key), tích hợp tại `chat.js`; khi user chạm hạn quota plan thì theo toggle `allowCreditOverflow`: bật → chuyển tính tiền credit (trừ `creditsBalance`), tắt → chặn `429`**,
 so that **user có plan được áp đúng giới hạn token theo gói; hết quota có thể chọn tiếp tục bằng credit hoặc bị chặn; user không plan thì thuần credit như hiện tại; mọi khoản trừ credit ghi ledger (story 2.13)**.
 

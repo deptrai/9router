@@ -144,7 +144,7 @@ test.describe('API: External Product Checkout & Sourcing Status Polling', () => 
   // Fund a user's wallet directly in Postgres — there is no admin topup/credit
   // endpoint, so checkout tests that need a non-zero balance seed it here.
   function fundWallet(telegramId: number, amount: string = '1000000.00'): void {
-    const dbUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5433/9router_ecommerce';
+    const dbUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5433/mmomarket_ecommerce';
     const psql = process.env.PSQL_PATH || 'psql';
     const sql =
       `INSERT INTO users (telegram_id, first_name, role) VALUES (${telegramId}, 'fund', 'CUSTOMER') ` +

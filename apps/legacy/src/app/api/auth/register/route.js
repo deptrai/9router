@@ -105,7 +105,7 @@ export async function POST(request) {
       const token = await createEmailVerifyToken(user.id, user.email);
       await sendEmail({
         to: user.email,
-        subject: "Xác minh email 9Router",
+        subject: "Xác minh email Mmomarket",
         html: `<p>Chào ${escapeHtml(user.displayName || user.email)},</p>
 <p>Click vào link dưới đây để xác minh địa chỉ email của bạn:</p>
 <p><a href="${baseUrl}/verify-email?token=${token}">${baseUrl}/verify-email?token=${token}</a></p>

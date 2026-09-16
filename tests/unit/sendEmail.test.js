@@ -39,7 +39,7 @@ describe("sendEmail — no provider", () => {
 describe("sendEmail — Resend adapter", () => {
   it("Resend OK (2xx) → { sent:true }", async () => {
     process.env.RESEND_API_KEY = "re_test_key";
-    process.env.EMAIL_FROM = "noreply@9router.dev";
+    process.env.EMAIL_FROM = "noreply@mmomarket.dev";
 
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -54,13 +54,13 @@ describe("sendEmail — Resend adapter", () => {
     expect(url).toBe("https://api.resend.com/emails");
     expect(opts.headers.Authorization).toBe("Bearer re_test_key");
     const body = JSON.parse(opts.body);
-    expect(body.from).toBe("noreply@9router.dev");
+    expect(body.from).toBe("noreply@mmomarket.dev");
     expect(body.to).toBe("user@example.com");
   });
 
   it("Resend 4xx → { sent:false, error } (no throw)", async () => {
     process.env.RESEND_API_KEY = "re_test_key";
-    process.env.EMAIL_FROM = "noreply@9router.dev";
+    process.env.EMAIL_FROM = "noreply@mmomarket.dev";
 
     global.fetch = vi.fn().mockResolvedValue({
       ok: false,
@@ -77,7 +77,7 @@ describe("sendEmail — Resend adapter", () => {
 
   it("Resend network error → { sent:false, error } (no throw)", async () => {
     process.env.RESEND_API_KEY = "re_test_key";
-    process.env.EMAIL_FROM = "noreply@9router.dev";
+    process.env.EMAIL_FROM = "noreply@mmomarket.dev";
 
     global.fetch = vi.fn().mockRejectedValue(new Error("Network unreachable"));
 
@@ -92,7 +92,7 @@ describe("sendEmail — Resend adapter", () => {
 describe("sendEmail — Mailpit adapter", () => {
   it("Mailpit OK → { sent:true }, to is array of objects in body", async () => {
     process.env.MAILPIT_URL = "http://localhost:8025";
-    process.env.EMAIL_FROM = "9Router <noreply@localhost>";
+    process.env.EMAIL_FROM = "Mmomarket <noreply@localhost>";
 
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -110,14 +110,14 @@ describe("sendEmail — Mailpit adapter", () => {
     expect(Array.isArray(body.To)).toBe(true);
     expect(body.To[0].Email).toBe("user@example.com");
     expect(body.From.Email).toBe("noreply@localhost");
-    expect(body.From.Name).toBe("9Router");
+    expect(body.From.Name).toBe("Mmomarket");
     expect(body.Subject).toBe("Test");
   });
 
   it("Mailpit takes priority over Resend when both set", async () => {
     process.env.MAILPIT_URL = "http://localhost:8025";
     process.env.RESEND_API_KEY = "re_test_key";
-    process.env.EMAIL_FROM = "noreply@9router.dev";
+    process.env.EMAIL_FROM = "noreply@mmomarket.dev";
 
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -164,6 +164,6 @@ describe("sendEmail — Mailpit adapter", () => {
 
     const body = JSON.parse(global.fetch.mock.calls[0][1].body);
     expect(body.From.Email).toBe("noreply@localhost");
-    expect(body.From.Name).toBe("9Router");
+    expect(body.From.Name).toBe("Mmomarket");
   });
 });

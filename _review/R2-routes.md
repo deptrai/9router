@@ -134,7 +134,7 @@ Phạm vi đã đọc: `src/app/api/v1/**/route.js` + `src/app/api/v1beta/**/rou
     }
   }
   ```
-- **Đề xuất:** Cần xác minh ý định thiết kế — nếu 9router là private instance, thêm optional auth check. Nếu là public catalog, tài liệu hoá rõ ràng đây là public endpoint có chủ ý.
+- **Đề xuất:** Cần xác minh ý định thiết kế — nếu mmomarket là private instance, thêm optional auth check. Nếu là public catalog, tài liệu hoá rõ ràng đây là public endpoint có chủ ý.
 
 ---
 

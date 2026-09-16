@@ -4,8 +4,8 @@ story_id: 2.2
 epic: 2
 baseline_commit: 4a3940b0
 context:
-  - _bmad-output/planning-artifacts/prds/prd-9router-ecommerce-2026-09-09/prd.md
-  - _bmad-output/planning-artifacts/architecture/architecture-9router-ecommerce-2026-09-09/ARCHITECTURE-SPINE.md
+  - _bmad-output/planning-artifacts/prds/prd-mmomarket-ecommerce-2026-09-09/prd.md
+  - _bmad-output/planning-artifacts/architecture/architecture-mmomarket-ecommerce-2026-09-09/ARCHITECTURE-SPINE.md
   - _bmad-output/planning-artifacts/epics.md
   - _bmad-output/implementation-artifacts/2-1-tao-yeu-cau-nap-tien-sinh-ma-vietqr-dong-trong-mini-app.md
   - _bmad-output/implementation-artifacts/1-4-quan-ly-so-cai-tai-chinh-kep-bao-ve-so-du-khong-am.md

@@ -277,7 +277,7 @@ So that my profit margins are consistently maintained when upstream prices fluct
 
 ### Task 9: Chạy verify tổng
 
-- [x] **9.1** `cd /Users/luisphan/Documents/9router-upstream && pnpm turbo run lint build test` — toàn bộ xanh.
+- [x] **9.1** `cd /Users/luisphan/Documents/mmomarket-upstream && pnpm turbo run lint build test` — toàn bộ xanh.
 - [x] **9.2** Manual smoke (nếu infra chạy): `docker compose up -d postgres redis` → `pnpm db:migrate` + `pnpm db:seed` → trigger `POST /api/products/sync-prices` → verify `products.price` cập nhật đúng công thức và `admin_alerts` có row khi breach.
 
 ### Review Findings

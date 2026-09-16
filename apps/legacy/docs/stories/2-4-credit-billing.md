@@ -24,7 +24,7 @@ Status: review
 
 ## Story
 
-**As a** hệ thống 9Router SaaS,
+**As a** hệ thống Mmomarket SaaS,
 **I want** trừ credit (USD) khỏi balance của user mỗi request thành công (atomic), và chặn request khi user hết credit (429),
 **so that** SaaS thu phí đúng theo usage; key legacy không bị tính; lỗi billing không làm chết request (fail-open).
 

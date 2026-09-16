@@ -215,7 +215,7 @@ const [purchaseRow] = await db.execute<{ total: string | null }>(sql`
 
 ### References
 
-- Architecture: `_bmad-output/planning-artifacts/architecture/architecture-9router-ecommerce-2026-09-09/ARCHITECTURE-SPINE.md` — sections AD-3 (Ledger Invariant), AD-5 (Order State Machine).
+- Architecture: `_bmad-output/planning-artifacts/architecture/architecture-mmomarket-ecommerce-2026-09-09/ARCHITECTURE-SPINE.md` — sections AD-3 (Ledger Invariant), AD-5 (Order State Machine).
 - Schema: `packages/database/src/schema.ts` — `ledgerTransactions`, `wallets`, `orders`, `supplierOrders`.
 - Previous story pattern: `apps/api/src/modules/orders/admin-orders.controller.ts` + `apps/admin/src/app/orders/page.tsx`.
 - Story 5.3 spec: `_bmad-output/implementation-artifacts/5-3-giam-sat-don-hang-can-thiep-thu-cong-hoan-tien.md`.

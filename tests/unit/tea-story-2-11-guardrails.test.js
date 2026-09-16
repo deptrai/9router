@@ -17,7 +17,7 @@ let tempDir;
 const originalDataDir = process.env.DATA_DIR;
 
 beforeEach(() => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-tea-2-11-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "mmomarket-tea-2-11-"));
   process.env.DATA_DIR = tempDir;
   delete global._dbAdapter;
   vi.resetModules();

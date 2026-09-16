@@ -1,7 +1,7 @@
 /**
  * Authentication E2E Tests
  *
- * Tests login/logout flows for the 9router dashboard.
+ * Tests login/logout flows for the mmomarket dashboard.
  */
 import { test, expect } from '../support/merged-fixtures';
 import { createUser } from '../support/factories';

@@ -3,7 +3,7 @@ baseline_commit: 803e5c8
 epic: I
 context:
   - _bmad-output/planning-artifacts/sprint-change-proposal-2026-07-30.md
-  - _bmad-output/planning-artifacts/architecture/architecture-9router-2026-07-30/ARCHITECTURE-SPINE.md
+  - _bmad-output/planning-artifacts/architecture/architecture-mmomarket-2026-07-30/ARCHITECTURE-SPINE.md
   - docs/stories/2-25-telegram-user-linking-product-catalog.md
   - docs/stories/2-26-telegram-checkout-orders.md
   - docs/stories/2-39-vnd-bank-transfer-topup.md
@@ -358,4 +358,4 @@ await handleBuyConfirm(chatId, productId);
 - `docs/stories/2-26-telegram-checkout-orders.md`
 - `docs/stories/2-39-vnd-bank-transfer-topup.md`
 - `_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-30.md`
-- `_bmad-output/planning-artifacts/architecture/architecture-9router-2026-07-30/ARCHITECTURE-SPINE.md`
+- `_bmad-output/planning-artifacts/architecture/architecture-mmomarket-2026-07-30/ARCHITECTURE-SPINE.md`

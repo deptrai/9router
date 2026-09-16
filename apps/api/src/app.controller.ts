@@ -10,7 +10,7 @@ export class AppController {
     const redisHealthy = this.redisService ? await this.redisService.isHealthy() : null;
     return {
       status: 'ok',
-      service: '9router-ecommerce-api',
+      service: 'mmomarket-ecommerce-api',
       redis: redisHealthy,
       timestamp: new Date().toISOString(),
     };

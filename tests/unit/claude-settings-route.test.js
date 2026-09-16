@@ -35,7 +35,7 @@ let tempHome;
 const origHome = process.env.HOME;
 
 beforeEach(() => {
-  tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "9router-claude-settings-"));
+  tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "mmomarket-claude-settings-"));
   // Điều hướng os.homedir() bằng HOME env
   process.env.HOME = tempHome;
   vi.resetModules();

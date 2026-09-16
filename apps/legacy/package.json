@@ -1,7 +1,7 @@
 {
   "name": "@repo/legacy",
   "version": "0.4.66",
-  "description": "9Router web dashboard",
+  "description": "Mmomarket web dashboard",
   "private": true,
   "scripts": {
     "dev": "next dev --webpack --port 20128",

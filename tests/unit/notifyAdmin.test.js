@@ -18,7 +18,7 @@ afterEach(() => {
 
 const payload = {
   type: "vnd",
-  userEmail: "buyer@9router.dev",
+  userEmail: "buyer@mmomarket.dev",
   credits: 12.3456,
   amount: 300000,
   currency: "VND",
@@ -54,7 +54,7 @@ describe("notifyAdminPaymentSettled (M.5)", () => {
     expect(sendMessage).toHaveBeenCalledOnce();
     const [chatId, text] = sendMessage.mock.calls[0];
     expect(chatId).toBe("12345");
-    expect(text).toContain("buyer@9router.dev");
+    expect(text).toContain("buyer@mmomarket.dev");
     expect(text).toContain("12.3456"); // credits.toFixed(4)
     expect(text).toContain("VND");
     expect(text).toContain("pay-1");

@@ -1,4 +1,4 @@
-# tg-bot-finder — Tìm bot Telegram theo keyword cho 9router
+# tg-bot-finder — Tìm bot Telegram theo keyword cho mmomarket
 
 Tìm `botUsername` để đăng ký vào supplier source `telegram_bot_scraper`. Dùng MTProto
 (account Telegram thật) vì Bot API không tìm được bot khác.
@@ -19,9 +19,9 @@ pip install telethon
 ## Quy trình
 
 ### Bước 1 — Xuất danh sách bot đã đăng ký (để đánh dấu/lọc)
-Chạy bằng Node, cần `STORE_ENC_KEY` + đường dẫn `data.sqlite` giống 9router:
+Chạy bằng Node, cần `STORE_ENC_KEY` + đường dẫn `data.sqlite` giống mmomarket:
 ```bash
-# Local (DB mặc định ~/.9router/db/data.sqlite hoặc $DATA_DIR/db/data.sqlite)
+# Local (DB mặc định ~/.mmomarket/db/data.sqlite hoặc $DATA_DIR/db/data.sqlite)
 STORE_ENC_KEY=<key> node scripts/tg-bot-finder/export-registered-bots.mjs --out registered.json
 
 # Chỉ định DB thủ công
@@ -44,9 +44,9 @@ python3 find_bots.py "nạp game, thẻ cào, topup"
 # Có sẵn registered.json → tự đánh dấu [ĐÃ ĐĂNG KÝ]; thêm --hide-registered để ẩn hẳn
 python3 find_bots.py "nạp game, thẻ cào" --registered registered.json --hide-registered
 
-# Bật AI tự sinh keyword + loop (key 9router tự tạo trong dashboard)
+# Bật AI tự sinh keyword + loop (key mmomarket tự tạo trong dashboard)
 python3 find_bots.py "nạp game" --ai-rounds 3 \
-  --router-url https://router.chainlens.net --router-key <key_9router> --model glm-4.6
+  --router-url https://router.chainlens.net --router-key <key_mmomarket> --model glm-4.6
 
 # ⚠️ Bật join group quét member (RỦI RO BAN — account phụ)
 python3 find_bots.py "nạp game" --join-groups --max-joins 2 --out result.json
@@ -60,7 +60,7 @@ Lần đầu hỏi SĐT (`+84...`) + OTP, lưu `find_bots.session` cho lần sau
 | `--registered <file>` | file bot đã đăng ký (bước 1) | `registered.json` |
 | `--hide-registered` | ẩn hẳn bot đã đăng ký khỏi kết quả | tắt (chỉ ghi note) |
 | `--ai-rounds N` | số vòng AI sinh keyword mới | `0` (tắt) |
-| `--router-url / --router-key / --model` | gọi model trên 9router | env `ROUTER_*` |
+| `--router-url / --router-key / --model` | gọi model trên mmomarket | env `ROUTER_*` |
 | `--join-groups` | ⚠️ tự join group quét member | tắt |
 | `--max-joins / --max-members` | trần join / member quét | `3 / 200` |
 | `--out <file>` | ghi kết quả JSON | — |
@@ -71,4 +71,4 @@ Lần đầu hỏi SĐT (`+84...`) + OTP, lưu `find_bots.session` cho lần sau
 
 ## Giới hạn
 - `contacts.search` Telegram cắt ~vài chục kết quả/keyword, **không phân trang** → phủ rộng bằng nhiều keyword (AI giúp việc này).
-- AI cần key 9router của anh (key gọi `/v1`, tạo trong dashboard), không phải secret hệ thống.
+- AI cần key mmomarket của anh (key gọi `/v1`, tạo trong dashboard), không phải secret hệ thống.

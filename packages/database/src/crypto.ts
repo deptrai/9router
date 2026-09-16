@@ -17,7 +17,7 @@ function getMasterKey(customKey?: string): Buffer {
     // Dev/test fallback — never use in production.
     return crypto
       .createHash('sha256')
-      .update('9router-insecure-dev-master-key-32b!')
+      .update('mmomarket-insecure-dev-master-key-32b!')
       .digest();
   }
 

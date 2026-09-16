@@ -9,7 +9,7 @@ Status: review
 
 ## Story
 
-**As a** 9Router user với nhiều loại credit (Standard/Bonus/Resource),
+**As a** Mmomarket user với nhiều loại credit (Standard/Bonus/Resource),
 **I want** hệ thống tự động trừ credit theo thứ tự ưu tiên đúng (Resource → Bonus → Standard) và áp hệ số nhân cho bonus credit,
 **so that** credit bonus (từ topup/gift) được dùng trước và hết hạn đúng hạn, credit của tôi được quản lý minh bạch và đúng quy tắc.
 
@@ -308,7 +308,7 @@ export async function GET(request) {
 Test deps tại `tests/node_modules`. Chạy:
 ```
 \
-NODE_PATH=/Users/luisphan/Documents/9router/tests/node_modules \
+NODE_PATH=/Users/luisphan/Documents/mmomarket/tests/node_modules \
 npx vitest run --config tests/vitest.config.js tests/unit/creditBucketPriority.test.js
 ```
 

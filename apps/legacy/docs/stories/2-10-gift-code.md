@@ -22,7 +22,7 @@ Status: done
 
 ## Story
 
-**As an** admin of 9Router SaaS,  
+**As an** admin of Mmomarket SaaS,  
 **I want** to create limited-use gift/promo codes that verified users can redeem for credits,  
 **so that** I can support users, run promotions, and provide a fallback credit-grant path without manual admin topup or payment-provider dependency.
 
@@ -173,7 +173,7 @@ Status: done
 - Admin UI: show state clearly: active, inactive, expired, exhausted; show redeemedCount/maxRedemptions; allow disable/revoke.
 
 ### Testing requirements
-- Project test deps live under `/tmp/node_modules`; run tests from `tests/`: `cd /Users/luisphan/Documents/9router/tests && npm test -- unit/<file>.test.js`.
+- Project test deps live under `/tmp/node_modules`; run tests from `tests/`: `cd /Users/luisphan/Documents/mmomarket/tests && npm test -- unit/<file>.test.js`.
 - For DB tests: use temp `DATA_DIR`, `delete global._dbAdapter`, `vi.resetModules()` (same pattern as payments/users tests).
 - Required tests:
   - repo: normalization, duplicate code, duplicate redemption, list clamps

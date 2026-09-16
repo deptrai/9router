@@ -9,7 +9,7 @@ describe("escapeHtml — email template sanitization (Story 2.6)", () => {
   });
 
   it("[P0] preserves safe alphanumeric text and punctuation", () => {
-    const input = "User Name 123 (Welcome to 9Router!) - No markup.";
+    const input = "User Name 123 (Welcome to Mmomarket!) - No markup.";
     expect(escapeHtml(input)).toBe(input);
   });
 

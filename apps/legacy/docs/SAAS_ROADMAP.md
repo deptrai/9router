@@ -1,4 +1,4 @@
-# 9Router SaaS — Roadmap & Status
+# Mmomarket SaaS — Roadmap & Status
 
 ## Documents đã tạo
 - `docs/SAAS_ARCHITECTURE.md` — phân tích tổng quan ban đầu

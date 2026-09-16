@@ -56,7 +56,7 @@ export async function sendEmail({ to, subject, html } = {}) {
 }
 
 async function sendViaMailpit({ to, subject, html, mailpitUrl }) {
-  const fromStr = process.env.EMAIL_FROM || "9Router <noreply@localhost>";
+  const fromStr = process.env.EMAIL_FROM || "Mmomarket <noreply@localhost>";
 
   // Mailpit API expects { Name, Email } object for From/To, not plain string
   const parseAddress = (addr) => {

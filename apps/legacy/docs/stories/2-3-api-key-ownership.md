@@ -25,7 +25,7 @@ Status: done
 
 ## Story
 
-**As a** user của 9Router SaaS,
+**As a** user của Mmomarket SaaS,
 **I want** tạo/xem/sửa/xoá API key của riêng mình (tối đa 10 key), thấy Description / Last Used / Credit Usage của từng key,
 **so that** tôi quản lý được key của mình mà không thấy/đụng key của user khác; admin vẫn thấy toàn bộ; key legacy (`userId=null`) chạy không giới hạn.
 
@@ -139,7 +139,7 @@ Status: done
 - UX guide: `docs/UX_SAAS_MVP1.md` §4 (key table + modals).
 
 ### Môi trường test
-- `cd /Users/luisphan/Documents/9router/tests && npm test -- unit/<file>.test.js` (vitest@4, alias `@/`→`src/`, DATA_DIR tempDir + reset `global._dbAdapter`).
+- `cd /Users/luisphan/Documents/mmomarket/tests && npm test -- unit/<file>.test.js` (vitest@4, alias `@/`→`src/`, DATA_DIR tempDir + reset `global._dbAdapter`).
 
 ### Scope guard — KHÔNG làm
 - KHÔNG per-key credit limit (FR-9 → MVP-2).

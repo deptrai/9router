@@ -223,7 +223,7 @@ export async function storeCheckout(userId, productId, { quantity = 1, idempoten
   // ── Post-commit plan activation (Story 2.36, AC8): product kind=plan → activate plan ──
   if (!result.alreadyProcessed) {
     const product = adapter.get(`SELECT * FROM products WHERE id = ?`, [productId]);
-    if (product?.kind === "plan" && product?.targetType === "9router_plan" && product?.targetId) {
+    if (product?.kind === "plan" && product?.targetType === "mmomarket_plan" && product?.targetId) {
       try {
         const planResult = await purchasePlanForUser({
           userId,

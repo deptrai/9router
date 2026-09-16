@@ -15,7 +15,7 @@ function makeReq({ body, token } = {}) {
 }
 
 beforeEach(() => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-bcwh-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "mmomarket-bcwh-"));
   KEYS.forEach(k => { saved[k] = process.env[k]; delete process.env[k]; });
   process.env.DATA_DIR = tempDir;
   process.env.BITCART_WEBHOOK_SECRET = "test-secret";

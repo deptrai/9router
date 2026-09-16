@@ -6,6 +6,6 @@ test('AppController getHealth returns status ok', async () => {
   const controller = new AppController();
   const health = await controller.getHealth();
   assert.strictEqual(health.status, 'ok');
-  assert.strictEqual(health.service, '9router-ecommerce-api');
+  assert.strictEqual(health.service, 'mmomarket-ecommerce-api');
   assert.ok(typeof health.timestamp === 'string');
 });

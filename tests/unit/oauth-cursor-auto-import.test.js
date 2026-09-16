@@ -50,7 +50,7 @@ async function loadGET() {
 
 describe("GET /api/oauth/cursor/auto-import", () => {
   beforeEach(() => {
-    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "9router-cursor-"));
+    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "mmomarket-cursor-"));
     globalThis.__cursorTempHome = tempHome;
     Object.defineProperty(process, "platform", { value: "darwin", writable: true });
   });

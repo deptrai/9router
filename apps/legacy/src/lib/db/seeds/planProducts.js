@@ -22,7 +22,7 @@ export async function seedPlanProducts() {
 
   for (const plan of plans) {
     const existing = adapter.get(
-      `SELECT id FROM products WHERE kind = 'plan' AND targetType = '9router_plan' AND targetId = ?`,
+      `SELECT id FROM products WHERE kind = 'plan' AND targetType = 'mmomarket_plan' AND targetId = ?`,
       [plan.id]
     );
     if (existing) {
@@ -35,7 +35,7 @@ export async function seedPlanProducts() {
       kind: "plan",
       priceCredits: plan.priceCredits,
       deliveryMode: "instant",
-      targetType: "9router_plan",
+      targetType: "mmomarket_plan",
       targetId: plan.id,
       description: plan.description || `Gói ${plan.displayName || plan.name} — ${plan.durationDays} ngày`,
       stock: null,

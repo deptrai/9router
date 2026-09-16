@@ -4,7 +4,7 @@ import Script from 'next/script';
 import BottomNav from '../components/BottomNav';
 
 export const metadata: Metadata = {
-  title: '9Router Telegram Store',
+  title: 'Mmomarket Telegram Store',
   description: 'Telegram Mini App E-Commerce',
 };
 

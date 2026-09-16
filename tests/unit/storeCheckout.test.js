@@ -29,7 +29,7 @@ async function seedUser(credits) {
 }
 
 beforeEach(async () => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-checkout-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "mmomarket-checkout-"));
   process.env.DATA_DIR = tempDir;
   process.env.STORE_ENC_KEY = TEST_ENC_KEY;
   delete global._dbAdapter;
